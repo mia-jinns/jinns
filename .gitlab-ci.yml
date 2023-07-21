@@ -1,4 +1,4 @@
-image: "registry.forgemia.inra.fr/mia-paris/docker-images/generic:quarto-python-jax"
+image: "registry.gitlab.com/jbleger/docker-image-quarto-jax-torch-sphinx"
 
 stages:
   - linting
