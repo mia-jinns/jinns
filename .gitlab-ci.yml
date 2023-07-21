@@ -1,4 +1,4 @@
-image: "registry.gitlab.com/mia_jinns/docker-image-quarto-jax-sphinx"
+image: "registry.gitlab.com/mia_jinns/docker-image-quarto-jax-sphinx:latest"
 
 stages:
   - linting
