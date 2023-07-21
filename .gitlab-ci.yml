@@ -61,6 +61,20 @@ build_package:
     expire_in: 1 week
   tags:
     - docker
+    
+    
+publish_package:
+  stage: publish
+  before_script:
+    - pip install twine
+  script:
+    - TWINE_PASSWORD=${PYPI_UPLOAD_TOKEN}
+      TWINE_USERNAME=__token__
+      python -m twine upload dist/*
+  tags:
+    - docker
+  only:
+    - tags
 
 pages:
   stage: publish
