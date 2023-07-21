@@ -1,0 +1,54 @@
+---
+title: "Parameter estimation in PINNs"
+
+format:
+  rst
+---
+
+In these notes we gives insight about joint parameter estimation in PINN
+problems, i.e., we wish to estimate both the differential equation parameters
+and its solution with a PINN. We use and specify notation from the previous
+notes: this differential operator $\mathcal{N}[.]$ is now parameterized by the
+equation parameters $\nu$ and the PINN $u$ is again parameterized by $\theta$.
+Hence the dynamic loss equation becomes
+
+``` math
+\begin{equation}
+\mathcal{N}_{\nu}[u_{\theta}](t, x)=0.
+\end{equation}
+```
+
+# Vanilla parameter estimation
+
+A direct and quite successful approach has been proposed in _Physics-informed
+neural networks: A deep learning framework for solving forward and inverse
+problems involving nonlinear partial differential equations_, Raissi et al.,
+2019. This procedure consists in a joint alternate minimization of the dynamic
+loss with respect to $\nu$ and $\theta$,
+
+``` math
+\begin{equation}
+\text{Alternate between }
+$\hat{\nu}=\mathrm{argmin}_{\nu}\Vert\mathcal{N}_{\nu}[u_{\theta}](t,x)\Vert
+\text{ and }
+$\hat{\theta}=\mathrm{argmin}_{\theta}\Vert\mathcal{N}_{\nu}[u_{\theta}](t,x)\Vert,
+\end{equation}
+```
+
+along with an additional mean square error term with respect to an available batch of
+observations,
+
+``` math
+\begin{equation}
+\mathrm{argmin}_{\theta} \sum_{i}(u_{\theta}(t_i,x_i) - u^{obs}(t_i,x_i))^2
+\end{equation}
+```
+
+In some of our example notebooks we show how to perform joint estimation according to
+this procedure.
+
+# Vanilla parameter estimation + $\nu$ is fed in the PINN
+TODO ?
+
+# A full statistical model for parameter estimation
+TODO ?
