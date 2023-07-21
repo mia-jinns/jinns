@@ -61,6 +61,7 @@ build_package:
     
 publish_package:
   stage: publish
+  image: "python:3.9"
   before_script:
     - pip install twine
   script:
