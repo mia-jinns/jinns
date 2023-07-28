@@ -18,7 +18,14 @@ Welcome to jinn's documentation!
 .. toctree::
    :glob:
    :maxdepth: 1
-   :caption: Notebook tutorials
+   :caption: Package tutorials
+
+   Notebooks/Tutorials/*
+
+.. toctree::
+   :glob:
+   :maxdepth: 1
+   :caption: Notebooks example
 
    Notebooks/ODE/*
    Notebooks/PDE/*
