@@ -1,0 +1,113 @@
+---
+title: "Mathematical foundations of physics-informed neural-networks (PINNs)"
+
+format:
+  rst
+---
+
+# Mathematical framework and notations
+
+Recently, the machine learning litterature have been interested in tackling the problem of learning the solution of partial differential equation (PDE) thanks to parametric function - such as neural-networks - and a dedicated loss function representing the PDE dynamic. This methodology have been pinned [physics-informed neural-networks](https://maziarraissi.github.io/PINNs/) (PINNS) in the litterature.
+
+## The general case
+
+Introducing some notations, we wish to learn a solution $`u`$ to a PDE driven by the a differential operator $`\mathcal{N}`$ on a space domain $`\Omega \subset \mathbb{R}^d`$, a time interval $`I = [0, T]`$, with possible border condition on $`\partial \Omega`$ and initial condition $`u(x, 0) = u_0(x)`$.
+
+``` math
+\begin{equation}
+ \begin{cases}
+      &\mathcal{N}[u](x, t) = 0, \quad\forall x\in \Omega \subset \mathbb{R}, \; \forall t\in I. & \textrm{(PDE dynamic)}\\
+      &u(x,0)=u_0(x), \quad \forall x\in \Omega \subset \mathbb{R}, & \textrm{(initial condition)} \\
+      & u(x, t) = u_b(x, t), \quad \forall x\in \partial \Omega \subset \mathbb{R}, \; \forall t\in I. & \textrm{(border condition)}
+  \end{cases} \qquad
+\end{equation}
+```
+
+While traditional methods try to learn a solution $`u`$ via numerical scheme and solvers, which gives a discrete array of values $`\{u(x_i, t_j)\}`$, we are rather interested in learning a solution $`u_{\theta}(x, t)`$ in the form of a differentiable neural network with parameters $`\theta`$. This learning problem can be cast as
+
+``` math
+\begin{equation}
+ \hat{\theta} := \arg\min_{\theta} \left\{ L(\theta) = \Vert \mathcal{N}(u_\theta) \Vert_{dyn} + w_t \Vert u_{\theta}(\cdot, 0) - u_0 \Vert_{temp} + w_b \Vert u_{\theta} - u_b \Vert_{border} \right\},
+\end{equation}
+```
+
+where the norms $`\Vert \cdot \Vert`$ operates on different functional spaces
+and may be chosen as long as they are differentiable w.r.t. $`\theta`$. In
+addition, those norms are approximated on a finite **training** subset of
+$`\{x_i, x^b_j, t_k \}_{i,j,k} \subset \Omega \times\partial\Omega \times I`$
+of size $`n \times n_b \times n_t`$, where we usually work with standard mean squared errors:
+
+``` math
+\begin{equation}
+  \begin{cases}
+ & \Vert \mathcal{N}(u_\theta) \Vert_{dyn} = \sum_{i= 1}^n \sum_{k=1}^{n_t}\mathcal{N}(u_\theta)(x_i, t_j)^2, \\
+  & \Vert u_{\theta}(\cdot, 0) - u_0 \Vert_{temp} = \sum_{i= 1}^n (u_{\theta}(x_i,0) - u_0(x_i))^2, \\
+ & \Vert u_{\theta} - u_b \Vert_{border} = \sum_{j= 1}^{n_b} \sum_{k=1}^{n_t} (u(x^b_j, t_k) - u_b(x^b_j, t_k))^2
+ \end{cases}
+\end{equation}
+```
+
+::: callout-important
+The training may be done via stochastic gradient descent on batches of the training sets. In addition, automatic differentiation can be used both for computing the differential operator $`\mathcal{N}`$ and gradients with respect to $`\theta`$.
+:::
+
+### Stochastic differential equations (SDE) & the Fokker-Planck equation (FPE)
+
+While the framework above is very general, we are more interested in a specific case of PDE called the Fokker-Planck equation, describing the dynamic of the probability density function (p.d.f.) $`u(x,t)`$ of a stochastic process $`(X_t)_t`$ with initial distribution $`X_0 \sim u_0`$ defined as the following diffusion:
+
+``` math
+\begin{equation}
+\begin{cases}
+    & {\mathrm d} X_t =  \mu(X_t, t) {\mathrm d}t + \sigma(X_t, t) {\mathrm d} W_t,\\
+    & X_0 \sim u_0. \\
+\end{cases}
+\tag{SDE}
+\end{equation}
+```
+
+The [Fokker-Planck equation](https://en.wikipedia.org/wiki/Fokker%E2%80%93Planck_equation) describes the evolution of $`u(x,t)`$ the law of $`X_t`$. We give the 1-dimensional formulation here but the d-dimensional fomulation can be found [on wikipedia](https://en.wikipedia.org/wiki/Fokker%E2%80%93Planck_equation#Higher_dimensions)
+
+``` math
+\begin{equation}
+ \begin{cases}
+      &\frac{\partial}{\partial t} u(x, t) = - \frac{\partial}{\partial x} \left[  \mu(x,t) u(x,t) \right] +   \frac{1}{2} \frac{\partial^2}{\partial x^2}  \left[  \sigma(x,t)^2  u(x,t) \right], \\
+      &u(x,0)=u_0(x), \quad \textrm{(initial condition)} \\
+      & \int_{\Omega} u(x, t) \mathrm d x = 1, \quad \textrm{(p.d.f. condition)}\\
+  \end{cases} \qquad x\in \Omega \subset \mathbb{R}, t\in\mathbb{R}^+.
+\end{equation}
+```
+
+Thus, we wish to solve FPE to learn $`u_{\hat{\theta}}(x, t)`$ with a PINN loss
+
+``` math
+\begin{equation}
+  L_{\textrm{FPE}}(\theta) = \Vert - \frac{\partial}{\partial t} u_\theta - \frac{\partial}{\partial x} \left[  \mu u_\theta \right] +   \frac{1}{2} \frac{\partial^2}{\partial x^2}  \left[  \sigma^2  u_\theta \right] \Vert_{dyn} + w_t \Vert u_{\theta}(\cdot, 0) - u_0 \Vert_{temp} + w_{pdf} \Vert u_{\theta} \Vert_{L^1(\Omega)} ,
+\end{equation}
+```
+If we wish to learn the stationary distribution, the $`- \frac{\partial}{\partial t} u`$ is set to 0 in the FPE loss.
+
+::: callout-important
+There is no border condition on $`\partial \Omega`$ here, but an additional
+loss term: the p.d.f. condition which prevents the neural-network from learning
+the trivial solution $`u_\theta = 0`$. The $`L^1`$ loss is approximated via
+Monte-Carlo integration on $`\Omega`$.
+:::
+
+
+## Examples
+
+Several example in different dimension $`d`$, stationary or not, are presented in the `Notebooks/` folder.
+
+-   **1-dimensional**
+
+    1. Stationnary & non-stationary [Ornstein–Uhlenbeck](https://en.wikipedia.org/wiki/Ornstein%E2%80%93Uhlenbeck_process) (OU) process
+    2. Stationnary & non-stationary [Cox–Ingersoll–Ross](https://en.wikipedia.org/wiki/Cox%E2%80%93Ingersoll%E2%80%93Ross_model) (CIR) process
+    3. Burger equation which is a standard PDE not related to SDE
+
+
+-   **2-dimensional**
+
+    1. Stationnary & non-stationary OU
+
+
+# TODO : update example list and generalize to not only FPE equations ?
