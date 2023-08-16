@@ -1,7 +1,8 @@
 import jax
 from jax import jit, grad
 import jax.numpy as jnp
-from jinns.loss._DynamicLossAbstract import (ODE, PDEStatio, PDENonStatio)
+from jinns.loss._DynamicLossAbstract import ODE, PDEStatio, PDENonStatio
+
 
 class FisherKPP(PDENonStatio):
     r"""

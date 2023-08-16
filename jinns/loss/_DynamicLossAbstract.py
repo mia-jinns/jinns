@@ -2,6 +2,7 @@ import jax
 from jax import jit, grad
 import jax.numpy as jnp
 
+
 class DynamicLoss:
     r"""
     Abstract base class for dynamic losses whose aim is to implement the term:
@@ -127,5 +128,3 @@ class PDENonStatio(DynamicLoss):
             equation solution with as PINN.
         """
         super().__init__(Tmax, derivatives)
-
-
