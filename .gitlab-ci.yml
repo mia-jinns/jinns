@@ -27,11 +27,8 @@ build_doc:
   stage: build
   before_script:
     - quarto render doc/source/math_pinn.qmd
-    - 'sed -i "s/\`\`/\`/g" doc/source/math_pinn.rst' # otherwise sphinx fails to render math inline
-    - 'sed -i "s/code:: math/math::/g" doc/source/math_pinn.rst' # otherwise sphinx fails to render math blocks
     - quarto render doc/source/param_estim_pinn.qmd
-    - 'sed -i "s/\`\`/\`/g" doc/source/param_estim_pinn.rst' # otherwise sphinx fails to render math inline
-    - 'sed -i "s/code:: math/math::/g" doc/source/param_estim_pinn.rst' # otherwise sphinx fails to render math blocks
+    - quarto render doc/source/fokker_planck.qmd
     - pip install --break-system-packages sphinx sphinx_rtd_theme
     - apt install pandoc
     - pip install --break-system-packages nbsphinx pandoc
@@ -43,7 +40,7 @@ build_doc:
     expire_in: 1 week
   tags:
     - docker
-    
+
 build_package:
   stage: build
   image: "python:3.9"
@@ -57,8 +54,8 @@ build_package:
     expire_in: 1 week
   tags:
     - docker
-    
-    
+
+
 publish_package:
   stage: publish
   image: "python:3.9"
