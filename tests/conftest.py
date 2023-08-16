@@ -8,7 +8,6 @@ up is done in conftest.py since it needs to be done before import JAX
 
 
 def pytest_addoption(parser):
-    print("\n\n\n\n HERE")
     parser.addoption(
         "--gpu",
         action="store_true",
