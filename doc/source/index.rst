@@ -18,7 +18,14 @@ Welcome to jinn's documentation!
 .. toctree::
    :glob:
    :maxdepth: 1
-   :caption: Notebook tutorials
+   :caption: Package tutorials
+
+   Notebooks/Tutorials/*
+
+.. toctree::
+   :glob:
+   :maxdepth: 1
+   :caption: Notebooks example
 
    Notebooks/ODE/*
    Notebooks/PDE/*
@@ -28,6 +35,7 @@ Welcome to jinn's documentation!
    :caption: Background
 
    math_pinn.rst
+   fokker_planck.rst
    param_estim_pinn.rst
 
 

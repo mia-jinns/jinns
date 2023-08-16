@@ -1,3 +1,4 @@
+from ._DynamicLossAbstract import ODE, PDEStatio, PDENonStatio
 from ._DynamicLoss import (
     FisherKPP,
     Malthus,
