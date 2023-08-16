@@ -35,6 +35,7 @@ Welcome to jinn's documentation!
    :caption: Background
 
    math_pinn.rst
+   fokker_planck.rst
    param_estim_pinn.rst
 
 
