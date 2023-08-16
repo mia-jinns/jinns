@@ -28,6 +28,7 @@ pip install -e .
 ```bash
 pip install pre-commit
 pre-commit install
+pre-commit install --hook-type pre-push
 ```
 
 * Open a merge request once you are done with your changes.
