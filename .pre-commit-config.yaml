@@ -1,3 +1,4 @@
+default_stages: [commit]
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.4.0
@@ -8,3 +9,12 @@ repos:
     rev: 23.3.0
     hooks:
       - id: black
+  - repo: local
+    hooks:
+    -   id: pytest-check
+        name: pytest-check
+        #stages: [push]
+        types: [python]
+        entry: bash -c "cd tests/ && sh runtests.sh"
+        language: system
+        pass_filenames: false

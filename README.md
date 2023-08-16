@@ -3,9 +3,9 @@ jinns
 
 # Installation
 
-Install the latest version with pip 
+Install the latest version with pip
 
-```bash 
+```bash
 pip install jinns
 ```
 
@@ -17,7 +17,7 @@ The project's documentation is available at [https://mia_jinns.gitlab.io/jinns/i
 
 * First fork the library on Gitlab.
 
-* Then clone and install the library in development mode with 
+* Then clone and install the library in development mode with
 
 ```bash
 pip install -e .
@@ -36,4 +36,3 @@ pre-commit install
 
 *Active*: Hugo Gangloff, Nicolas Jouvin
 *Past*: Pierre Gloaguen, Charles Ollion, Achille Thin
-
