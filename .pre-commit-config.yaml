@@ -4,11 +4,14 @@ repos:
     rev: v4.4.0
     hooks:
     -   id: trailing-whitespace
+        stages: [commit]
     -   id: end-of-file-fixer
+        stages: [commit]
   - repo: https://github.com/psf/black
     rev: 23.3.0
     hooks:
-      - id: black
+    -   id: black
+        stages: [commit]
   - repo: local
     hooks:
     -   id: pytest-check
