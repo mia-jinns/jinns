@@ -21,7 +21,7 @@ run_tests:
   script:
     - pip install --break-system-packages .
     - cd tests
-    - pytest
+    - sh runtests.sh # without GPU on gitlab CI/CD
 
 build_doc:
   stage: build
