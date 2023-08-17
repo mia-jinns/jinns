@@ -374,21 +374,57 @@ class LossPDEStatio(LossPDEAbstract):
             A batch of points in the domain and a batch of points in the domain
             border
         """
-        omega_batch, omega_border_batch = batch
+        if len(batch) == 2:
+            omega_batch, omega_border_batch = batch
+        else:
+            omega_batch, omega_border_batch, additional_eq_params_batch_dict = batch
         n = omega_batch.shape[0]
 
         # dynamic part
         if self.dynamic_loss is not None:
-            v_dyn_loss = vmap(
-                lambda x: self.dynamic_loss.evaluate(
-                    x,
-                    self.u,
-                    params,
-                ),
-                (0),
-                0,
-            )
-            mse_dyn_loss = jnp.mean(v_dyn_loss(omega_batch) ** 2)
+            if additional_eq_params_batch_dict is None:
+                v_dyn_loss = vmap(
+                    lambda x: self.dynamic_loss.evaluate(
+                        x,
+                        self.u,
+                        params,
+                    ),
+                    (0),
+                    0,
+                )
+                mse_dyn_loss = jnp.mean(v_dyn_loss(omega_batch) ** 2)
+            else:
+                for k in additional_eq_params_batch_dict.keys():
+                    params["eq_params"][k] = jnp.repeat(
+                        additional_eq_params_batch_dict[k], n, axis=0
+                    )
+
+                tile_omega_batch = jnp.tile(omega_batch, reps=(n, 1))
+
+                v_dyn_loss = vmap(
+                    lambda x, params: self.dynamic_loss.evaluate(
+                        x,
+                        self.u,
+                        params,
+                    ),
+                    (
+                        0,
+                        {
+                            "eq_params": {
+                                k: (
+                                    0
+                                    if k in additional_eq_params_batch_dict.keys()
+                                    else None
+                                )
+                                for k in params["eq_params"].keys()
+                            },
+                            "nn_params": None,
+                        },
+                    ),
+                    0,
+                )
+
+                mse_dyn_loss = jnp.mean(v_dyn_loss(tile_omega_batch, params) ** 2)
         else:
             mse_dyn_loss = 0
 
@@ -1030,6 +1066,9 @@ class SystemLossPDE:
         if len(batch) == 2:  # statio batch
             omega_batch, omega_border_batch = batch
             n = omega_batch.shape[0]
+        elif len(batch) == 3 and isinstance(batch[2], dict):
+            omega_batch, omega_border_batch, additional_eq_params_batch_dict = batch
+            n = omega_batch.shape[0]
         else:  # non statio batch
             omega_batch, omega_border_batch, times_batch = batch
             n = omega_batch.shape[0]
@@ -1050,14 +1089,50 @@ class SystemLossPDE:
         for i in self.dynamic_loss_dict.keys():
             # dynamic part
             if isinstance(self.dynamic_loss_dict[i], PDEStatio):
-                v_dyn_loss = vmap(
-                    lambda x: self.dynamic_loss_dict[i].evaluate(
-                        x, self.u_dict, params_dict
-                    ),
-                    0,
-                    0,
-                )
-                mse_dyn_loss += jnp.mean(v_dyn_loss(omega_batch) ** 2)
+                if additional_eq_params_batch_dict is None:
+                    v_dyn_loss = vmap(
+                        lambda x: self.dynamic_loss_dict[i].evaluate(
+                            x, self.u_dict, params_dict
+                        ),
+                        0,
+                        0,
+                    )
+                    mse_dyn_loss += jnp.mean(v_dyn_loss(omega_batch) ** 2)
+
+                else:
+                    for k in additional_eq_params_batch_dict.keys():
+                        params_dict["eq_params"][k] = additional_eq_params_batch_dict[k]
+                        # params_dict['eq_params'][k] = jnp.repeat(
+                        #        additional_eq_params_batch_dict[k],
+                        #        n,
+                        #        axis=0)
+
+                    # tile_omega_batch = jnp.tile(omega_batch, reps=(n, 1))
+
+                    v_dyn_loss = vmap(
+                        lambda x, params_dict: self.dynamic_loss_dict[i].evaluate(
+                            x,
+                            self.u_dict,
+                            params_dict,
+                        ),
+                        (
+                            0,
+                            {
+                                "eq_params": {
+                                    k: (
+                                        0
+                                        if k in additional_eq_params_batch_dict.keys()
+                                        else None
+                                    )
+                                    for k in params_dict["eq_params"].keys()
+                                },
+                                "nn_params": None,
+                            },
+                        ),
+                        0,
+                    )
+
+                    mse_dyn_loss += jnp.mean(v_dyn_loss(omega_batch, params_dict) ** 2)
             else:
                 v_dyn_loss = vmap(
                     lambda t, x: self.dynamic_loss_dict[i].evaluate(

@@ -227,6 +227,7 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         min_pts,
         max_pts,
         method="grid",
+        additional_data_ranges={},
         data_exists=False,
     ):
         """
@@ -265,6 +266,13 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             The method that generates the `nt` time points. `grid` means
             regularly spaced points over the domain. `uniform` means uniformly
             sampled points over the domain
+        additional_data_ranges
+            A dict. Default `{}`. A dict of tuples (min, max), which
+            reprensents the range of real numbers where to sample batches (of
+            length `omega_batch_size` among `n` points) of an additional variable.
+            We can have as much additional variable as we want since it is just
+            a key in this dictionary but we currently only support
+            unidimensional additional variable.
         data_exists
             Must be left to `False` when created by the user. Avoids the
             regeneration of :math:`\Omega`, :math:`\partial\Omega` and
@@ -281,6 +289,8 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         self.n = n
 
         self.omega_batch_size = omega_batch_size
+
+        self.additional_data_ranges = additional_data_ranges
 
         if omega_border_batch_size is None:
             self.nb = None
@@ -317,6 +327,20 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
                         self._key,
                         self.omega_border,
                         self.curr_omega_border_idx,
+                        None,
+                    )
+                )
+
+            # The previous call to self.generate_data() has created
+            # the dict self.additional_data
+            self.curr_additional_data_idx = {}
+            for k in self.additional_data_ranges.keys():
+                self.curr_additional_data_idx[k] = 0
+                self._key, self.additional_data[k], _ = _reset_batch_idx_and_permute(
+                    (
+                        self._key,
+                        self.additional_data[k],
+                        self.curr_additional_data_idx[k],
                         None,
                     )
                 )
@@ -441,6 +465,22 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
                 f"Generation of the border of a cube in dimension > 2 is not implemented yet. You are asking for generation in dimension d={self.dim}."
             )
 
+        # Generate additional data batches
+        self.additional_data = {}
+        for k, e in self.additional_data_ranges.items():
+            # TODO add support for multidimensional additional_data key
+            if self.method == "grid":
+                xmin, xmax = e[0], e[1]
+                self.partial = (xmax - xmin) / self.n
+                # shape (n, 1)
+                self.additional_data[k] = jnp.arange(xmin, xmax, self.partial)[:, None]
+            elif self.method == "uniform":
+                xmin, xmax = e[0], e[1]
+                self._key, subkey = random.split(self._key, 2)
+                self.additional_data[k] = random.uniform(
+                    subkey, shape=(self.n, 1), minval=xmin, maxval=xmax
+                )
+
     def inside_batch(self):
         """
         Return a batch of points in :math:`\Omega`.
@@ -524,20 +564,60 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
                 slice_sizes=(self.omega_border_batch_size, self.dim, 2 * self.dim),
             )
 
+    def additional_batch(self):
+        """
+        Return a batch of points in :math:`\Omega`.
+        If all the batches have been seen, we reshuffle them,
+        otherwise we just return the next unseen batch.
+        """
+        for k in self.additional_data.keys():
+            bstart = self.curr_additional_data_idx[k]
+            bend = bstart + self.omega_batch_size
+
+            (
+                self._key,
+                self.additional_data[k],
+                self.curr_additional_data_idx[k],
+            ) = jax.lax.cond(
+                bend > self.n,
+                _reset_batch_idx_and_permute,
+                _increment_batch_idx,
+                (
+                    self._key,
+                    self.additional_data[k],
+                    self.curr_additional_data_idx[k],
+                    self.omega_batch_size,
+                ),
+            )
+
+        return {
+            k: jax.lax.dynamic_slice(
+                self.additional_data[k],
+                start_indices=(self.curr_additional_data_idx[k], 0),
+                slice_sizes=(self.omega_batch_size, 1),
+            )
+            for k in self.additional_data.keys()
+        }
+
     def get_batch(self):
         """
         Generic method to return a batch. Here we call `self.inside_batch()`
         and `self.border_batch()`
         """
-        return self.inside_batch(), self.border_batch()
+        if not self.additional_data:
+            return self.inside_batch(), self.border_batch()
+        else:
+            return self.inside_batch(), self.border_batch(), self.additional_batch()
 
     def tree_flatten(self):
         children = (
             self._key,
             self.omega,
             self.omega_border,
+            self.additional_data,
             self.curr_omega_idx,
             self.curr_omega_border_idx,
+            self.curr_additional_data_idx,
             self.min_pts,
             self.max_pts,
         )
@@ -566,8 +646,10 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             key,
             omega,
             omega_border,
+            additional_data,
             curr_omega_idx,
             curr_omega_border_idx,
+            curr_additional_data_idx,
             min_pts,
             max_pts,
         ) = children
@@ -582,8 +664,10 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         )
         obj.omega = omega
         obj.omega_border = omega_border
+        obj.additional_data = additional_data
         obj.curr_omega_idx = curr_omega_idx
         obj.curr_omega_border_idx = curr_omega_border_idx
+        obj.curr_additional_data_idx = curr_additional_data_idx
         return obj
 
 

@@ -133,7 +133,7 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=[]):
 
     # TODO check the consistency between the parameters and the declared number of
     # inputs
-    dim_t = 1
+    dim_t = 0 if eq_type == "statio_PDE" else 1
     dim_in_params = len(with_eq_params)
     try:
         nb_inputs_declared = eqx_list[0][1]  # normally we look for 2nd ele of 1st layer
@@ -173,9 +173,9 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=[]):
                     eq_params_flatten = jnp.concatenate(
                         [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
                     )
-                    eq_params_flatten = jnp.repeat(
-                        eq_params_flatten, t.shape[0], axis=0
-                    )
+                    # eq_params_flatten = jnp.repeat(
+                    #    eq_params_flatten, t.shape[0], axis=0
+                    # )
                     t_eq_params = jnp.concatenate([t, eq_params_flatten], axis=-1)
                     return model(t_eq_params).squeeze()
 
@@ -196,9 +196,10 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=[]):
                     eq_params_flatten = jnp.concatenate(
                         [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
                     )
-                    eq_params_flatten = jnp.repeat(
-                        eq_params_flatten, t.shape[0], axis=0
-                    )
+                    # if eq_params_flatten.shape[-1] == 1:
+                    #    eq_params_flatten = jnp.repeat(
+                    #        eq_params_flatten, x.shape[0], axis=0
+                    #    )
                     x_eq_params = jnp.concatenate([x, eq_params_flatten], axis=-1)
                     return model(x_eq_params).squeeze()
 
@@ -221,9 +222,9 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=[]):
                     eq_params_flatten = jnp.concatenate(
                         [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
                     )
-                    eq_params_flatten = jnp.repeat(
-                        eq_params_flatten, t.shape[0], axis=0
-                    )
+                    # eq_params_flatten = jnp.repeat(
+                    #    eq_params_flatten, t.shape[0], axis=0
+                    # )
                     t_x_eq_params = jnp.concatenate([t_x, eq_params_flatten], axis=-1)
                     return model(t_x_eq_params).squeeze()
 
