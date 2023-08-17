@@ -107,18 +107,20 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=[]):
         jax random key
     apply_fn
         A function to apply the neural network on given inputs for given
-        parameters. A typical call will be of the form `u(t, nn_params)` for
-        ODE or `u(t, x, nn_params)` for nD PDEs (`x` being multidimensional)
-        or even `u(t, x, nn_params, eq_params)` if with_eq_params is `True`
+        parameters. A typical call will be of the form ``u(t, nn_params)`` for
+        ODE or ``u(t, x, nn_params)`` for nD PDEs (``x`` being multidimensional)
+        or even ``u(t, x, nn_params, eq_params)`` if with_eq_params is ``True``
 
     Raises
     ------
     RuntimeError
-        If the parameter value for eq_type is not in `["ODE", "statio_PDE",
-        "nonstatio_PDE"]`
+        If the parameter value for `eq_type`` is not in ``["ODE", "statio_PDE",
+        "nonstatio_PDE"]``
     RuntimeError
-        If we have a `dim_x > 0` and `eq_type == "ODE"`
-        or if we have a `dim_x = 0` and `eq_type != "ODE"`
+        If we have a ``dim_x > 0`` and ``eq_type == "ODE"``
+        or if we have a ``dim_x = 0`` and ``eq_type != "ODE"``
+    RuntimeError
+        If ``dim_t + dim_x + dim_in_params != nb_inputs_declared``
     """
     if eq_type not in ["ODE", "statio_PDE", "nonstatio_PDE"]:
         raise RuntimeError("Wrong parameter value for eq_type")
@@ -131,6 +133,16 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=[]):
 
     # TODO check the consistency between the parameters and the declared number of
     # inputs
+    dim_t = 1
+    dim_in_params = len(with_eq_params)
+    try:
+        nb_inputs_declared = eqx_list[0][1]  # normally we look for 2nd ele of 1st layer
+    except IndexError:
+        nb_inputs_declared = eqx_list[1][
+            1
+        ]  # but we can have, eg, a flatten first layer
+    if dim_t + dim_x + dim_in_params != nb_inputs_declared:
+        raise RuntimeError("Error in the declarations of the number of parameters")
 
     def make_mlp(key, eqx_list):
         mlp = _MLP(key, eqx_list)
@@ -232,8 +244,8 @@ def alternate_optax_solver(
     given learning rates, others are not updated (learning rate = 0)
     The optimizers are scaled by adam parameters.
 
-    __Note:__ The alternating pattern relies on
-    `optax.piecewise_constant_schedule` which __multiplies__ learning rates of
+    **Note:** The alternating pattern relies on
+    ``optax.piecewise_constant_schedule`` which **multiplies** learning rates of
     previous steps (current included) to set the new learning rate. Hence, our
     strategy used here is to relying on potentially cancelling power of tens to
     create the alternating scheme.
@@ -273,7 +285,7 @@ def alternate_optax_solver(
 
     def map_nested_fn(fn):
         """
-        Recursively apply `fn` to the key-value pairs of a nested dict
+        Recursively apply ``fn`` to the key-value pairs of a nested dict
         We follow the example from
         https://optax.readthedocs.io/en/latest/api.html#optax.multi_transform
         for different learning rates
