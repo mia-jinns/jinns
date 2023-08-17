@@ -1,6 +1,9 @@
 jinns
 =====
 
+Physics Informed Neural Networks with JAX. **jinns** has been developed to estimate solutions to your ODE et PDE problems using neural networks.
+**jinns** is built on JAX.
+
 # Installation
 
 Install the latest version with pip
