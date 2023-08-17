@@ -1,11 +1,11 @@
 #!/bin/bash
-pytest test_DataGeneratorODE.py test_CubicMeshPDEStatio.py test_CubicMeshPDENonStatio.py
-pytest test_GLV_x32.py test_GLV_x64.py
+pytest dataGenerator_tests/*
+pytest solver_tests/*
 if [ $# = 1 ]
 then
     if [ $1 = '--with_gpu_tests' ]
     then
-        pytest --gpu test_GLV_x32_gpu.py test_GLV_x64_gpu.py
+        pytest --gpu solver_tests_gpu/*
     fi
 fi
 echo "Tests done"
