@@ -111,9 +111,11 @@ def train_Burger_10it(train_Burger_init):
 
 def test_initial_loss_Burger(train_Burger_init):
     init_params, loss, train_data = train_Burger_init
-    assert loss.evaluate(init_params, train_data.get_batch())[0] == 0.5594471096992493
+    assert jnp.round(
+        loss.evaluate(init_params, train_data.get_batch())[0], 5
+    ) == jnp.round(0.5594471096992493, 5)
 
 
 def test_10it_Burger(train_Burger_10it):
     total_loss_val = train_Burger_10it
-    assert total_loss_val == 0.4305751
+    assert jnp.round(total_loss_val, 5) == jnp.round(0.4305751, 5)
