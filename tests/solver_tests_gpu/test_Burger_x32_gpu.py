@@ -11,6 +11,8 @@ import jinns
 
 @pytest.fixture
 def train_Burger_init():
+    jax.config.update("jax_enable_x64", False)
+    print(jax.config.FLAGS.jax_enable_x64)
     print(jax.devices())
     key = random.PRNGKey(2)
     eqx_list = [
