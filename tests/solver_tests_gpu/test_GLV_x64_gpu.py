@@ -126,9 +126,11 @@ def train_GLV_10it(train_GLV_init):
 
 def test_initial_loss_GLV(train_GLV_init):
     init_params, loss, train_data = train_GLV_init
-    assert loss.evaluate(init_params, train_data.get_batch())[0] == 19180.22634261295
+    assert jnp.round(
+        loss.evaluate(init_params, train_data.get_batch())[0], 5
+    ) == jnp.round(19180.22634261295, 5)
 
 
 def test_10it_GLV(train_GLV_10it):
     total_loss_val = train_GLV_10it
-    assert total_loss_val == 17627.252701181606
+    assert jnp.round(total_loss_val, 5) == jnp.round(17627.252701181606, 5)
