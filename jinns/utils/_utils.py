@@ -55,7 +55,7 @@ class _MLP(eqx.Module):
         return t
 
 
-def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=False):
+def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=[]):
     """
     Utility function to create a standard PINN neural network with the equinox
     library.
@@ -69,8 +69,8 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=False):
         describe the PINN architecture. The inner lists have the eqx module or
         axtivation function as first item, other items represents arguments
         that could be required (eg. the size of the layer).
-        __Note:__ the `key` argument need not be given.
-        Thus typical example is `eqx_list=
+        __Note:__ the ``key`` argument need not be given.
+        Thus typical example is ``eqx_list=
         [[eqx.nn.Linear, 2, 20],
         [jax.nn.tanh],
         [eqx.nn.Linear, 20, 20],
@@ -78,25 +78,27 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=False):
         [eqx.nn.Linear, 20, 20],
         [jax.nn.tanh],
         [eqx.nn.Linear, 20, 1]
-        ]`
+        ]``
     eq_type
         A string with three possibilities.
-        "ODE": the PINN is called with one input `t`.
-        "statio_PDE": the PINN is called with one input `x`, `x`
+        "ODE": the PINN is called with one input ``t``.
+        "statio_PDE": the PINN is called with one input ``x``, ``x``
         can be high dimensional.
-        "nonstatio_PDE": the PINN is called with two inputs `t` and `x`, `x`
+        "nonstatio_PDE": the PINN is called with two inputs ``t`` and ``x``,
+        ``x``
         can be high dimensional.
-        __Note: the input dimension as given in eqx_list has to match the sum
-        of the dimension of `t` + the dimension of `x` + the number of
-        parameters in `eq_params` if with_eq_params is `True` (see below)__
+        **Note: the input dimension as given in eqx_list has to match the sum
+        of the dimension of ``t`` + the dimension of ``x`` + the number of
+        parameters in ``eq_params`` if with_eq_params is ``True`` (see below)**
     dim_x
-        An integer. The dimension of `x`. Default `0`
+        An integer. The dimension of ``x``. Default ``0``
     with_eq_params
-        A boolean. Default is False. Whether the network also takes as inputs
-        the equation parameters (`eq_params`). __If `True`, the input dimension
-        as given in eqx_list must take into account the number of parameters
-        (addition dimension of `t` + the dimension of `x` + the number of
-        `eq_params`)__
+        A list. Default is ``[]``. A list of keys from the dict `eq_params`,
+        i.e, a list of equation parameters  that the network will also take as inputs.
+        **If some keys are provided, the input dimension
+        as given in eqx_list must take into account the number of such provided
+        keys (i.e., the input dimension is the addition of the dimension of ``t``
+        + the dimension of ``x`` + the number of ``eq_params``)**
 
     Returns
     -------
@@ -157,7 +159,7 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=False):
                         None
                     ]  # Note that we added a dimension to t which is lacking for the ODE batches
                     eq_params_flatten = jnp.concatenate(
-                        [e.ravel() for k, e in eq_params.items()]
+                        [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
                     )
                     eq_params_flatten = jnp.repeat(
                         eq_params_flatten, t.shape[0], axis=0
@@ -180,7 +182,7 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=False):
                 def apply_fn(x, u_params, eq_params):
                     model = eqx.combine(u_params, static)
                     eq_params_flatten = jnp.concatenate(
-                        [e.ravel() for k, e in eq_params.items()]
+                        [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
                     )
                     eq_params_flatten = jnp.repeat(
                         eq_params_flatten, t.shape[0], axis=0
@@ -205,7 +207,7 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=False):
                     model = eqx.combine(u_params, static)
                     t_x = jnp.concatenate([t, x], axis=-1)
                     eq_params_flatten = jnp.concatenate(
-                        [e.ravel() for k, e in eq_params.items()]
+                        [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
                     )
                     eq_params_flatten = jnp.repeat(
                         eq_params_flatten, t.shape[0], axis=0
