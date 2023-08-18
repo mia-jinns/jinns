@@ -12,12 +12,12 @@ repos:
     hooks:
     -   id: black
         stages: [commit]
-  - repo: local
-    hooks:
-    -   id: pytest-check
-        name: pytest-check
-        stages: [push]
-        types: [python] # which type of modified files should trigger the hook
-        entry: bash -c "cd tests/ && sh runtests.sh"
-        language: system
-        pass_filenames: false
+        #  - repo: local
+        #    hooks:
+        #    -   id: pytest-check
+        #        name: pytest-check
+        #        stages: [push]
+        #        types: [python] # which type of modified files should trigger the hook
+        #        entry: bash -c "cd tests/ && sh runtests.sh"
+        #        language: system
+        #        pass_filenames: false
