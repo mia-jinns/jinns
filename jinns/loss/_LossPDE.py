@@ -396,11 +396,12 @@ class LossPDEStatio(LossPDEAbstract):
                 mse_dyn_loss = jnp.mean(v_dyn_loss(omega_batch) ** 2)
             else:
                 for k in additional_eq_params_batch_dict.keys():
-                    params["eq_params"][k] = jnp.repeat(
-                        additional_eq_params_batch_dict[k], n, axis=0
-                    )
+                    params["eq_params"][k] = additional_eq_params_batch_dict[k]
+                    # params["eq_params"][k] = jnp.repeat(
+                    #    additional_eq_params_batch_dict[k], n, axis=0
+                    # )
 
-                tile_omega_batch = jnp.tile(omega_batch, reps=(n, 1))
+                # tile_omega_batch = jnp.tile(omega_batch, reps=(n, 1))
 
                 v_dyn_loss = vmap(
                     lambda x, params: self.dynamic_loss.evaluate(
@@ -425,7 +426,7 @@ class LossPDEStatio(LossPDEAbstract):
                     0,
                 )
 
-                mse_dyn_loss = jnp.mean(v_dyn_loss(tile_omega_batch, params) ** 2)
+                mse_dyn_loss = jnp.mean(v_dyn_loss(omega_batch, params) ** 2)
         else:
             mse_dyn_loss = 0
 
