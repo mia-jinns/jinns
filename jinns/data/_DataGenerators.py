@@ -227,8 +227,8 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         min_pts,
         max_pts,
         method="grid",
-        additional_data_ranges={},
         data_exists=False,
+        additional_data_ranges={},
     ):
         """
         Parameters
@@ -266,6 +266,10 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             The method that generates the `nt` time points. `grid` means
             regularly spaced points over the domain. `uniform` means uniformly
             sampled points over the domain
+        data_exists
+            Must be left to `False` when created by the user. Avoids the
+            regeneration of :math:`\Omega`, :math:`\partial\Omega` and
+            time points at each pytree flattening and unflattening.
         additional_data_ranges
             A dict. Default `{}`. A dict of tuples (min, max), which
             reprensents the range of real numbers where to sample batches (of
@@ -273,10 +277,6 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             We can have as much additional variable as we want since it is just
             a key in this dictionary but we currently only support
             unidimensional additional variable.
-        data_exists
-            Must be left to `False` when created by the user. Avoids the
-            regeneration of :math:`\Omega`, :math:`\partial\Omega` and
-            time points at each pytree flattening and unflattening.
         """
         super().__init__(data_exists=data_exists)
         self.method = method
