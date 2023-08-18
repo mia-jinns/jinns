@@ -36,6 +36,7 @@ class PinnSolver:
         opt_state=None,
         seq2seq=None,
         accu_vars=[],
+        param_data=None,
     ):
         """
         Performs the optimization process via stochastic gradient descent
@@ -72,7 +73,9 @@ class PinnSolver:
             to access a leaf in init_params (and later on params). Each
             selected leaf will be tracked and stored at each iteration and
             returned by the solve function
-
+        param_data
+            Default None. A DataGeneratorParameter object which can be used to
+            sample equation parameters.
 
         Returns
         -------
@@ -90,9 +93,14 @@ class PinnSolver:
             A dictionary. At each key an array of the values of the parameters
             given in accu_vars is stored
         """
+
         params = init_params
         if opt_state is None:
-            batch = data.get_batch()
+            batch = (
+                data.get_batch()
+                if param_data is None
+                else (data.get_batch() + (param_data.get_batch(),))
+            )
             opt_state = self.optax_solver.init_state(params, batch=batch)
 
         curr_seq = 0
@@ -107,6 +115,7 @@ class PinnSolver:
             # https://jax.readthedocs.io/en/latest/jep/4410-omnistaging.html
             # proabably because data.omega is not static ?!
 
+            # TODO update the class to data.get_batch() in the following:
             update_seq2seq = initialize_seq2seq(self.loss, data, seq2seq)
 
         else:
@@ -121,7 +130,11 @@ class PinnSolver:
 
         # initialize the dict for stored loss values
         stored_loss_terms = {}
-        batch = data.get_batch()
+        batch = (
+            data.get_batch()
+            if param_data is None
+            else (data.get_batch() + (param_data.get_batch(),))
+        )
         _, loss_terms = self.loss(params, batch)
         for loss_name, _ in loss_terms.items():
             stored_loss_terms[loss_name] = jnp.zeros((self.n_iter,))
@@ -136,7 +149,11 @@ class PinnSolver:
             """
             Main optimization loop
             """
-            batch = carry["data"].get_batch()
+            batch = (
+                carry["data"].get_batch()
+                if carry["param_data"] is None
+                else (carry["data"].get_batch() + (carry["param_data"].get_batch(),))
+            )
             params, opt_state = self.optax_solver.update(
                 params=carry["params"], state=carry["state"], batch=batch
             )
@@ -154,7 +171,7 @@ class PinnSolver:
                     (
                         carry["loss"],
                         seq2seq,
-                        carry["data"],
+                        carry["data"],  # TODO update call to data.get_batch there
                         carry["params"],
                         carry["curr_seq"],
                     ),
@@ -181,6 +198,7 @@ class PinnSolver:
                 "params": params,
                 "state": opt_state,
                 "data": carry["data"],
+                "param_data": carry["param_data"],
                 "curr_seq": curr_seq,
                 "seq2seq": seq2seq,
                 "stored_values": carry["stored_values"],
@@ -194,6 +212,7 @@ class PinnSolver:
                 "params": init_params,
                 "state": opt_state,
                 "data": data,
+                "param_data": param_data,
                 "curr_seq": curr_seq,
                 "seq2seq": seq2seq,
                 "stored_values": stored_values,
