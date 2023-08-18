@@ -376,7 +376,8 @@ class LossPDEStatio(LossPDEAbstract):
         """
         if len(batch) == 2:
             omega_batch, omega_border_batch = batch
-        else:
+            additional_eq_params_batch_dict = None
+        elif len(batch) == 3 and isinstance(batch[2], dict):
             omega_batch, omega_border_batch, additional_eq_params_batch_dict = batch
         n = omega_batch.shape[0]
 
@@ -1066,11 +1067,13 @@ class SystemLossPDE:
         if len(batch) == 2:  # statio batch
             omega_batch, omega_border_batch = batch
             n = omega_batch.shape[0]
+            additional_eq_params_batch_dict = None
         elif len(batch) == 3 and isinstance(batch[2], dict):
             omega_batch, omega_border_batch, additional_eq_params_batch_dict = batch
             n = omega_batch.shape[0]
         else:  # non statio batch
             omega_batch, omega_border_batch, times_batch = batch
+            additional_eq_params_batch_dict = None
             n = omega_batch.shape[0]
             nt = times_batch.shape[0]
             times_batch = times_batch.reshape(nt, 1)
@@ -1178,7 +1181,7 @@ class SystemLossPDE:
             "observations": mse_observation_loss,
         }
 
-        if len(batch) == 3:
+        if len(batch) == 3 and not isinstance(batch[2], dict):
             total_loss += self.loss_weights["temporal_loss"] * mse_temporal_loss
             return_dict["temporal_loss"] = mse_temporal_loss
 
