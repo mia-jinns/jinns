@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @author: Nicolas Jouvin
-# @email: nicolas.jouvin@inrae.fr
-
 import jax.numpy as jnp
 from jax import random, vmap
 from jax.tree_util import register_pytree_node_class
