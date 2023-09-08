@@ -7,19 +7,28 @@ import warnings
 
 # utility function for jax.lax.cond in *_batch() method
 def _reset_batch_idx_and_permute(operands):
-    key, domain, curr_idx, _ = operands
+    key, domain, curr_idx, _, p = operands
     # resetting counter
     curr_idx = 0
     # reshuffling
     key, subkey = random.split(key)
     domain = random.permutation(subkey, domain, axis=0, independent=False)
+    # we want that permutation = choice when p=None
+    # otherwise p is used to avoid collocation points not in nt_start
+    # domain = random.choice(
+    #    subkey,
+    #    domain,
+    #    shape=domain.shape,
+    #    replace=False,
+    #    p=p
+    # )
 
     # return updated
     return (key, domain, curr_idx)
 
 
 def _increment_batch_idx(operands):
-    key, domain, curr_idx, batch_size = operands
+    key, domain, curr_idx, batch_size, _ = operands
     # simply increases counter and get the batch
     curr_idx += batch_size
     return (key, domain, curr_idx)
@@ -46,6 +55,8 @@ class DataGeneratorODE:
         tmax,
         temporal_batch_size,
         method="uniform",
+        rar_parameters=None,
+        nt_start=None,
         data_exists=False,
     ):
         """
@@ -69,6 +80,22 @@ class DataGeneratorODE:
             The method that generates the `nt` time points. `grid` means
             regularly spaced points over the domain. `uniform` means uniformly
             sampled points over the domain
+        rar_parameters
+            Default to None: do not use Residual Adaptative Resampling.
+            Otherwise a dictionary with keys. `start_iter`
+            `sample_size`, `selected_sample_size`, `update_rate_iter`,
+            `iter_from_last_sampling`... XXXX
+            "DeepXDE: A deep learning library for solving differential
+            equations", L. Lu, SIAM Review, 2021
+        nt_start
+            Defaults to None. The effective size of nt used at start time.
+            This value must be
+            provided when rar_parameters is not None. Otherwise we set internally
+            nt_start = nt and this is hidden from the user.
+            This is needed since we cannot change the shape of self.times over
+            the iterations in a jitted function but this is what needs to be
+            done in Residual Adaptative Resampling for example. In RAR, nt_start
+            then corresponds to the initial number of points we train the PINN.
         data_exists
             Must be left to `False` when created by the user. Avoids the
             regeneration of the `nt` time points at each pytree flattening and
@@ -81,28 +108,50 @@ class DataGeneratorODE:
         self.tmax = tmax
         self.temporal_batch_size = temporal_batch_size
         self.method = method
+        self.rar_parameters = rar_parameters
+
+        if rar_parameters is not None and nt_start is None:
+            raise ValueError(
+                "nt_start must be provided in the context of RAR" " sampling scheme"
+            )
+        elif rar_parameters is not None:
+            self.nt_start = nt_start
+            # Default p is None. However, in the RAR sampling scheme we use 0
+            # probability to specify non-used collocation points (i.e. points
+            # above nt_start). Thus, p is a vector of probability of shape (nt, 1).
+            self.p = jnp.zeros((self.nt,))
+            self.p = self.p.at[: self.nt_start].set(1 / nt_start)
+
+        if rar_parameters is None or nt_start is None:
+            self.nt_start = self.nt
+            self.p = None
+
         if not self.data_exists:
             # Useful when using a lax.scan with pytree
             # Optionally can tell JAX not to re-generate data
             self.curr_time_idx = 0
             self.generate_time_data()
             self._key, self.times, _ = _reset_batch_idx_and_permute(
-                (self._key, self.times, self.curr_time_idx, None)
+                (self._key, self.times, self.curr_time_idx, None, self.p)
             )
+
+    def sample_in_time_domain(self, n_samples):
+        self._key, subkey = random.split(self._key, 2)
+        return random.uniform(subkey, (n_samples,), minval=self.tmin, maxval=self.tmax)
 
     def generate_time_data(self):
         """
         Construct a complete set of `self.nt` time points according to the
         specified `self.method`
+
+        Note that self.times has always size self.nt and not self.nt_start, even
+        in RAR scheme, we must allocate all the collocation points
         """
         if self.method == "grid":
             self.partial_times = (self.tmax - self.tmin) / self.nt
             self.times = jnp.arange(self.tmin, self.tmax, self.partial_times)
         elif self.method == "uniform":
-            self._key, subkey = random.split(self._key, 2)
-            self.times = random.uniform(
-                subkey, (self.nt,), minval=self.tmin, maxval=self.tmax
-            )
+            self.times = self.sample_in_time_domain(self.nt)
 
     def temporal_batch(self):
         """
@@ -112,8 +161,17 @@ class DataGeneratorODE:
         bstart = self.curr_time_idx
         bend = bstart + self.temporal_batch_size
 
+        # Compute the effective number of used collocation points
+        if self.rar_parameters is not None:
+            nt_eff = (
+                self.nt_start
+                + self.rar_parameters["iter_nb"]
+                * self.rar_parameters["selected_sample_size"]
+            )
+        else:
+            nt_eff = self.nt
         (self._key, self.times, self.curr_time_idx) = jax.lax.cond(
-            bend > self.nt,
+            bend > nt_eff,
             _reset_batch_idx_and_permute,
             _increment_batch_idx,
             (
@@ -121,11 +179,13 @@ class DataGeneratorODE:
                 self.times,
                 self.curr_time_idx,
                 self.temporal_batch_size,
+                self.p,
             ),
         )
 
         # commands below are equivalent to
         # return self.times[i:(i+t_batch_size)]
+        # start indices can be dynamic be the slice shape is fixed
         return jax.lax.dynamic_slice(
             self.times,
             start_indices=(self.curr_time_idx,),
@@ -145,14 +205,12 @@ class DataGeneratorODE:
             self.curr_time_idx,
             self.tmin,
             self.tmax,
+            self.rar_parameters,
+            self.p,
         )  # arrays / dynamic values
         aux_data = {
             k: vars(self)[k]
-            for k in [
-                "nt",
-                "temporal_batch_size",
-                "method",
-            ]
+            for k in ["temporal_batch_size", "method", "nt", "nt_start"]
         }  # static values
         return (children, aux_data)
 
@@ -164,22 +222,18 @@ class DataGeneratorODE:
         unflattening that happens e.g. during the gradient descent in the
         optimization process
         """
-        (
-            key,
-            times,
-            curr_time_idx,
-            tmin,
-            tmax,
-        ) = children
+        (key, times, curr_time_idx, tmin, tmax, rar_parameters, p) = children
         obj = cls(
             key=key,
             data_exists=True,
             tmin=tmin,
             tmax=tmax,
+            rar_parameters=rar_parameters,
             **aux_data,
         )
         obj.times = times
         obj.curr_time_idx = curr_time_idx
+        obj.p = p
         return obj
 
 
