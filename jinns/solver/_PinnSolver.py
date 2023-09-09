@@ -212,7 +212,6 @@ class PinnSolver:
                 "params": params,
                 "state": opt_state,
                 "data": carry["data"],
-                "param_data": carry["param_data"],
                 "curr_seq": carry["curr_seq"],
                 "seq2seq": seq2seq,
                 "stored_values": carry["stored_values"],
