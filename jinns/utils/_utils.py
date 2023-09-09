@@ -55,7 +55,7 @@ class _MLP(eqx.Module):
         return t
 
 
-def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=[]):
+def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=False):
     """
     Utility function to create a standard PINN neural network with the equinox
     library.
@@ -69,8 +69,8 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=[]):
         describe the PINN architecture. The inner lists have the eqx module or
         axtivation function as first item, other items represents arguments
         that could be required (eg. the size of the layer).
-        __Note:__ the ``key`` argument need not be given.
-        Thus typical example is ``eqx_list=
+        __Note:__ the `key` argument need not be given.
+        Thus typical example is `eqx_list=
         [[eqx.nn.Linear, 2, 20],
         [jax.nn.tanh],
         [eqx.nn.Linear, 20, 20],
@@ -78,27 +78,25 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=[]):
         [eqx.nn.Linear, 20, 20],
         [jax.nn.tanh],
         [eqx.nn.Linear, 20, 1]
-        ]``
+        ]`
     eq_type
         A string with three possibilities.
-        "ODE": the PINN is called with one input ``t``.
-        "statio_PDE": the PINN is called with one input ``x``, ``x``
+        "ODE": the PINN is called with one input `t`.
+        "statio_PDE": the PINN is called with one input `x`, `x`
         can be high dimensional.
-        "nonstatio_PDE": the PINN is called with two inputs ``t`` and ``x``,
-        ``x``
+        "nonstatio_PDE": the PINN is called with two inputs `t` and `x`, `x`
         can be high dimensional.
-        **Note: the input dimension as given in eqx_list has to match the sum
-        of the dimension of ``t`` + the dimension of ``x`` + the number of
-        parameters in ``eq_params`` if with_eq_params is ``True`` (see below)**
+        __Note: the input dimension as given in eqx_list has to match the sum
+        of the dimension of `t` + the dimension of `x` + the number of
+        parameters in `eq_params` if with_eq_params is `True` (see below)__
     dim_x
-        An integer. The dimension of ``x``. Default ``0``
+        An integer. The dimension of `x`. Default `0`
     with_eq_params
-        A list. Default is ``[]``. A list of keys from the dict `eq_params`,
-        i.e, a list of equation parameters  that the network will also take as inputs.
-        **If some keys are provided, the input dimension
-        as given in eqx_list must take into account the number of such provided
-        keys (i.e., the input dimension is the addition of the dimension of ``t``
-        + the dimension of ``x`` + the number of ``eq_params``)**
+        A boolean. Default is False. Whether the network also takes as inputs
+        the equation parameters (`eq_params`). __If `True`, the input dimension
+        as given in eqx_list must take into account the number of parameters
+        (addition dimension of `t` + the dimension of `x` + the number of
+        `eq_params`)__
 
     Returns
     -------
@@ -107,20 +105,18 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=[]):
         jax random key
     apply_fn
         A function to apply the neural network on given inputs for given
-        parameters. A typical call will be of the form ``u(t, nn_params)`` for
-        ODE or ``u(t, x, nn_params)`` for nD PDEs (``x`` being multidimensional)
-        or even ``u(t, x, nn_params, eq_params)`` if with_eq_params is ``True``
+        parameters. A typical call will be of the form `u(t, nn_params)` for
+        ODE or `u(t, x, nn_params)` for nD PDEs (`x` being multidimensional)
+        or even `u(t, x, nn_params, eq_params)` if with_eq_params is `True`
 
     Raises
     ------
     RuntimeError
-        If the parameter value for `eq_type`` is not in ``["ODE", "statio_PDE",
-        "nonstatio_PDE"]``
+        If the parameter value for eq_type is not in `["ODE", "statio_PDE",
+        "nonstatio_PDE"]`
     RuntimeError
-        If we have a ``dim_x > 0`` and ``eq_type == "ODE"``
-        or if we have a ``dim_x = 0`` and ``eq_type != "ODE"``
-    RuntimeError
-        If ``dim_t + dim_x + dim_in_params != nb_inputs_declared``
+        If we have a `dim_x > 0` and `eq_type == "ODE"`
+        or if we have a `dim_x = 0` and `eq_type != "ODE"`
     """
     if eq_type not in ["ODE", "statio_PDE", "nonstatio_PDE"]:
         raise RuntimeError("Wrong parameter value for eq_type")
@@ -133,16 +129,6 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=[]):
 
     # TODO check the consistency between the parameters and the declared number of
     # inputs
-    dim_t = 0 if eq_type == "statio_PDE" else 1
-    dim_in_params = len(with_eq_params)
-    try:
-        nb_inputs_declared = eqx_list[0][1]  # normally we look for 2nd ele of 1st layer
-    except IndexError:
-        nb_inputs_declared = eqx_list[1][
-            1
-        ]  # but we can have, eg, a flatten first layer
-    if dim_t + dim_x + dim_in_params != nb_inputs_declared:
-        raise RuntimeError("Error in the declarations of the number of parameters")
 
     def make_mlp(key, eqx_list):
         mlp = _MLP(key, eqx_list)
@@ -171,11 +157,11 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=[]):
                         None
                     ]  # Note that we added a dimension to t which is lacking for the ODE batches
                     eq_params_flatten = jnp.concatenate(
-                        [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
+                        [e.ravel() for k, e in eq_params.items()]
                     )
-                    # eq_params_flatten = jnp.repeat(
-                    #    eq_params_flatten, t.shape[0], axis=0
-                    # )
+                    eq_params_flatten = jnp.repeat(
+                        eq_params_flatten, t.shape[0], axis=0
+                    )
                     t_eq_params = jnp.concatenate([t, eq_params_flatten], axis=-1)
                     return model(t_eq_params).squeeze()
 
@@ -194,12 +180,11 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=[]):
                 def apply_fn(x, u_params, eq_params):
                     model = eqx.combine(u_params, static)
                     eq_params_flatten = jnp.concatenate(
-                        [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
+                        [e.ravel() for k, e in eq_params.items()]
                     )
-                    # if eq_params_flatten.shape[-1] == 1:
-                    #    eq_params_flatten = jnp.repeat(
-                    #        eq_params_flatten, x.shape[0], axis=0
-                    #    )
+                    eq_params_flatten = jnp.repeat(
+                        eq_params_flatten, t.shape[0], axis=0
+                    )
                     x_eq_params = jnp.concatenate([x, eq_params_flatten], axis=-1)
                     return model(x_eq_params).squeeze()
 
@@ -220,11 +205,11 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=[]):
                     model = eqx.combine(u_params, static)
                     t_x = jnp.concatenate([t, x], axis=-1)
                     eq_params_flatten = jnp.concatenate(
-                        [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
+                        [e.ravel() for k, e in eq_params.items()]
                     )
-                    # eq_params_flatten = jnp.repeat(
-                    #    eq_params_flatten, t.shape[0], axis=0
-                    # )
+                    eq_params_flatten = jnp.repeat(
+                        eq_params_flatten, t.shape[0], axis=0
+                    )
                     t_x_eq_params = jnp.concatenate([t_x, eq_params_flatten], axis=-1)
                     return model(t_x_eq_params).squeeze()
 
@@ -245,8 +230,8 @@ def alternate_optax_solver(
     given learning rates, others are not updated (learning rate = 0)
     The optimizers are scaled by adam parameters.
 
-    **Note:** The alternating pattern relies on
-    ``optax.piecewise_constant_schedule`` which **multiplies** learning rates of
+    __Note:__ The alternating pattern relies on
+    `optax.piecewise_constant_schedule` which __multiplies__ learning rates of
     previous steps (current included) to set the new learning rate. Hence, our
     strategy used here is to relying on potentially cancelling power of tens to
     create the alternating scheme.
@@ -286,7 +271,7 @@ def alternate_optax_solver(
 
     def map_nested_fn(fn):
         """
-        Recursively apply ``fn`` to the key-value pairs of a nested dict
+        Recursively apply `fn` to the key-value pairs of a nested dict
         We follow the example from
         https://optax.readthedocs.io/en/latest/api.html#optax.multi_transform
         for different learning rates
