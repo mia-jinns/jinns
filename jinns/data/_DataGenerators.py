@@ -1,3 +1,8 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @author: Nicolas Jouvin
+# @email: nicolas.jouvin@inrae.fr
+
 import jax.numpy as jnp
 from jax import random, vmap
 from jax.tree_util import register_pytree_node_class
@@ -277,6 +282,7 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         max_pts,
         method="grid",
         data_exists=False,
+        additional_data_ranges={},
     ):
         """
         Parameters
@@ -318,6 +324,13 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             Must be left to `False` when created by the user. Avoids the
             regeneration of :math:`\Omega`, :math:`\partial\Omega` and
             time points at each pytree flattening and unflattening.
+        additional_data_ranges
+            A dict. Default `{}`. A dict of tuples (min, max), which
+            reprensents the range of real numbers where to sample batches (of
+            length `omega_batch_size` among `n` points) of an additional variable.
+            We can have as much additional variable as we want since it is just
+            a key in this dictionary but we currently only support
+            unidimensional additional variable.
         """
         super().__init__(data_exists=data_exists)
         self.method = method
@@ -330,6 +343,8 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         self.n = n
 
         self.omega_batch_size = omega_batch_size
+
+        self.additional_data_ranges = additional_data_ranges
 
         if omega_border_batch_size is None:
             self.nb = None
@@ -366,6 +381,20 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
                         self._key,
                         self.omega_border,
                         self.curr_omega_border_idx,
+                        None,
+                    )
+                )
+
+            # The previous call to self.generate_data() has created
+            # the dict self.additional_data
+            self.curr_additional_data_idx = {}
+            for k in self.additional_data_ranges.keys():
+                self.curr_additional_data_idx[k] = 0
+                self._key, self.additional_data[k], _ = _reset_batch_idx_and_permute(
+                    (
+                        self._key,
+                        self.additional_data[k],
+                        self.curr_additional_data_idx[k],
                         None,
                     )
                 )
@@ -490,6 +519,22 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
                 f"Generation of the border of a cube in dimension > 2 is not implemented yet. You are asking for generation in dimension d={self.dim}."
             )
 
+        # Generate additional data batches
+        self.additional_data = {}
+        for k, e in self.additional_data_ranges.items():
+            # TODO add support for multidimensional additional_data key
+            if self.method == "grid":
+                xmin, xmax = e[0], e[1]
+                self.partial = (xmax - xmin) / self.n
+                # shape (n, 1)
+                self.additional_data[k] = jnp.arange(xmin, xmax, self.partial)[:, None]
+            elif self.method == "uniform":
+                xmin, xmax = e[0], e[1]
+                self._key, subkey = random.split(self._key, 2)
+                self.additional_data[k] = random.uniform(
+                    subkey, shape=(self.n, 1), minval=xmin, maxval=xmax
+                )
+
     def inside_batch(self):
         """
         Return a batch of points in :math:`\Omega`.
@@ -573,20 +618,60 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
                 slice_sizes=(self.omega_border_batch_size, self.dim, 2 * self.dim),
             )
 
+    def additional_batch(self):
+        """
+        Return a batch of points in :math:`\Omega`.
+        If all the batches have been seen, we reshuffle them,
+        otherwise we just return the next unseen batch.
+        """
+        for k in self.additional_data.keys():
+            bstart = self.curr_additional_data_idx[k]
+            bend = bstart + self.omega_batch_size
+
+            (
+                self._key,
+                self.additional_data[k],
+                self.curr_additional_data_idx[k],
+            ) = jax.lax.cond(
+                bend > self.n,
+                _reset_batch_idx_and_permute,
+                _increment_batch_idx,
+                (
+                    self._key,
+                    self.additional_data[k],
+                    self.curr_additional_data_idx[k],
+                    self.omega_batch_size,
+                ),
+            )
+
+        return {
+            k: jax.lax.dynamic_slice(
+                self.additional_data[k],
+                start_indices=(self.curr_additional_data_idx[k], 0),
+                slice_sizes=(self.omega_batch_size, 1),
+            )
+            for k in self.additional_data.keys()
+        }
+
     def get_batch(self):
         """
         Generic method to return a batch. Here we call `self.inside_batch()`
         and `self.border_batch()`
         """
-        return self.inside_batch(), self.border_batch()
+        if not self.additional_data:
+            return self.inside_batch(), self.border_batch()
+        else:
+            return self.inside_batch(), self.border_batch(), self.additional_batch()
 
     def tree_flatten(self):
         children = (
             self._key,
             self.omega,
             self.omega_border,
+            self.additional_data,
             self.curr_omega_idx,
             self.curr_omega_border_idx,
+            self.curr_additional_data_idx,
             self.min_pts,
             self.max_pts,
         )
@@ -615,8 +700,10 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             key,
             omega,
             omega_border,
+            additional_data,
             curr_omega_idx,
             curr_omega_border_idx,
+            curr_additional_data_idx,
             min_pts,
             max_pts,
         ) = children
@@ -631,8 +718,10 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         )
         obj.omega = omega
         obj.omega_border = omega_border
+        obj.additional_data = additional_data
         obj.curr_omega_idx = curr_omega_idx
         obj.curr_omega_border_idx = curr_omega_border_idx
+        obj.curr_additional_data_idx = curr_additional_data_idx
         return obj
 
 
@@ -863,163 +952,4 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         obj.curr_omega_idx = curr_omega_idx
         obj.curr_omega_border_idx = curr_omega_border_idx
         obj.curr_time_idx = curr_time_idx
-        return obj
-
-
-@register_pytree_node_class
-class DataGeneratorParameter:
-    """
-    A data generator for (an) additional unidimensional parameter(s)
-    """
-
-    def __init__(
-        self,
-        key,
-        n,
-        param_batch_size,
-        param_ranges,
-        method="grid",
-        data_exists=False,
-    ):
-        """
-        Parameters
-        ----------
-        key
-            Jax random key to sample new time points and to shuffle batches
-        n
-            An integer. The number of total points that will be divided in
-            batches. Batches are made so that each data point is seen only
-            once during 1 epoch.
-        param_batch_size
-            An integer. The size of the batch of randomly selected points among
-            the `n` points
-        param_ranges
-            A dict. A dict of tuples (min, max), which
-            reprensents the range of real numbers where to sample batches (of
-            length `param_batch_size` among `n` points).
-            The key corresponds to the parameter name.
-            By providing several entries in this dictionary we can sample an arbitrary
-            number of parameters.
-            **Note** that we currently only support unidimensional parameters
-        method
-            Either `grid` or `uniform`, default is `grid`. `grid` means
-            regularly spaced points over the domain. `uniform` means uniformly
-            sampled points over the domain
-        data_exists
-            Must be left to `False` when created by the user. Avoids the
-            regeneration of :math:`\Omega`, :math:`\partial\Omega` and
-            time points at each pytree flattening and unflattening.
-        """
-        self.data_exists = data_exists
-        self.method = method
-        self._key = key
-        self.n = n
-        self.param_batch_size = param_batch_size
-        self.param_ranges = param_ranges
-
-        if not self.data_exists:
-            self.generate_data()
-            # The previous call to self.generate_data() has created
-            # the dict self.param_n_samples
-            self.curr_param_idx = {}
-            for k in self.param_ranges.keys():
-                self.curr_param_idx[k] = 0
-                self._key, self.param_n_samples[k], _ = _reset_batch_idx_and_permute(
-                    (
-                        self._key,
-                        self.param_n_samples[k],
-                        self.curr_param_idx[k],
-                        None,
-                    )
-                )
-
-    def generate_data(self):
-        # Generate param n samples
-        self.param_n_samples = {}
-        for k, e in self.param_ranges.items():
-            # TODO add support for multidimensional additional_data key
-            if self.method == "grid":
-                xmin, xmax = e[0], e[1]
-                self.partial = (xmax - xmin) / self.n
-                # shape (n, 1)
-                self.param_n_samples[k] = jnp.arange(xmin, xmax, self.partial)[:, None]
-            elif self.method == "uniform":
-                xmin, xmax = e[0], e[1]
-                self._key, subkey = random.split(self._key, 2)
-                self.param_n_samples[k] = random.uniform(
-                    subkey, shape=(self.n, 1), minval=xmin, maxval=xmax
-                )
-
-    def param_batch(self):
-        """
-        Return a ditionary with batches of parameters
-        If all the batches have been seen, we reshuffle them,
-        otherwise we just return the next unseen batch.
-        """
-        for k in self.param_n_samples.keys():
-            bstart = self.curr_param_idx[k]
-            bend = bstart + self.param_batch_size
-
-            (
-                self._key,
-                self.param_n_samples[k],
-                self.curr_param_idx[k],
-            ) = jax.lax.cond(
-                bend > self.n,
-                _reset_batch_idx_and_permute,
-                _increment_batch_idx,
-                (
-                    self._key,
-                    self.param_n_samples[k],
-                    self.curr_param_idx[k],
-                    self.param_batch_size,
-                ),
-            )
-
-        return {
-            k: jax.lax.dynamic_slice(
-                self.param_n_samples[k],
-                start_indices=(self.curr_param_idx[k], 0),
-                slice_sizes=(self.param_batch_size, 1),
-            )
-            for k in self.param_n_samples.keys()
-        }
-
-    def get_batch(self):
-        """
-        Generic method to return a batch
-        """
-        return self.param_batch()
-
-    def tree_flatten(self):
-        children = (
-            self._key,
-            self.param_n_samples,
-            self.curr_param_idx,
-        )
-        aux_data = {
-            k: vars(self)[k]
-            for k in [
-                "n",
-                "param_batch_size",
-                "method",
-                "param_ranges",
-            ]
-        }
-        return (children, aux_data)
-
-    @classmethod
-    def tree_unflatten(cls, aux_data, children):
-        (
-            key,
-            param_n_samples,
-            curr_param_idx,
-        ) = children
-        obj = cls(
-            key=key,
-            data_exists=True,
-            **aux_data,
-        )
-        obj.param_n_samples = param_n_samples
-        obj.curr_param_idx = curr_param_idx
         return obj
