@@ -17,16 +17,10 @@ def _reset_batch_idx_and_permute(operands):
     curr_idx = 0
     # reshuffling
     key, subkey = random.split(key)
-    domain = random.permutation(subkey, domain, axis=0, independent=False)
+    # domain = random.permutation(subkey, domain, axis=0, independent=False)
     # we want that permutation = choice when p=None
     # otherwise p is used to avoid collocation points not in nt_start
-    # domain = random.choice(
-    #    subkey,
-    #    domain,
-    #    shape=domain.shape,
-    #    replace=False,
-    #    p=p
-    # )
+    domain = random.choice(subkey, domain, shape=domain.shape, replace=False, p=p)
 
     # return updated
     return (key, domain, curr_idx)
