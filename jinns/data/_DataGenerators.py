@@ -281,6 +281,8 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         min_pts,
         max_pts,
         method="grid",
+        rar_parameters=None,
+        n_start=None,
         data_exists=False,
     ):
         """
@@ -319,6 +321,10 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             The method that generates the `nt` time points. `grid` means
             regularly spaced points over the domain. `uniform` means uniformly
             sampled points over the domain
+        rar_parameters
+            XXX
+        n_start
+            XXX
         data_exists
             Must be left to `False` when created by the user. Avoids the
             regeneration of :math:`\Omega`, :math:`\partial\Omega` and
@@ -333,6 +339,25 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         assert dim == len(min_pts) and isinstance(min_pts, tuple)
         assert dim == len(max_pts) and isinstance(max_pts, tuple)
         self.n = n
+        self.rar_parameters = rar_parameters
+
+        if rar_parameters is not None and nt_start is None:
+            raise ValueError(
+                "nt_start must be provided in the context of RAR" " sampling scheme"
+            )
+        elif rar_parameters is not None:
+            self.n_start = n_start
+            # Default p is None. However, in the RAR sampling scheme we use 0
+            # probability to specify non-used collocation points (i.e. points
+            # above n_start). Thus, p is a vector of probability of shape (n, 1).
+            self.p = jnp.zeros((self.n,))
+            self.p = self.p.at[: self.n_start].set(1 / n_start)
+
+        if rar_parameters is None or n_start is None:
+            self.n_start = self.n
+            self.p = None
+
+        self.p_border = None  # no RAR sampling for border for now
 
         self.omega_batch_size = omega_batch_size
 
@@ -363,7 +388,7 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             self.curr_omega_border_idx = 0
             self.generate_data()
             self._key, self.omega, _ = _reset_batch_idx_and_permute(
-                (self._key, self.omega, self.curr_omega_idx, None)
+                (self._key, self.omega, self.curr_omega_idx, None, self.p)
             )
             if self.omega_border is not None:
                 self._key, self.omega_border, _ = _reset_batch_idx_and_permute(
@@ -372,6 +397,7 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
                         self.omega_border,
                         self.curr_omega_border_idx,
                         None,
+                        self.p_border,
                     )
                 )
 
@@ -501,19 +527,24 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         If all the batches have been seen, we reshuffle them,
         otherwise we just return the next unseen batch.
         """
+        # Compute the effective number of used collocation points
+        if self.rar_parameters is not None:
+            n_eff = (
+                self.n_start
+                + self.rar_parameters["iter_nb"]
+                * self.rar_parameters["selected_sample_size"]
+            )
+        else:
+            n_eff = self.n
+
         bstart = self.curr_omega_idx
         bend = bstart + self.omega_batch_size
 
         (self._key, self.omega, self.curr_omega_idx) = jax.lax.cond(
-            bend > self.n,
+            bend > n_eff,
             _reset_batch_idx_and_permute,
             _increment_batch_idx,
-            (
-                self._key,
-                self.omega,
-                self.curr_omega_idx,
-                self.omega_batch_size,
-            ),
+            (self._key, self.omega, self.curr_omega_idx, self.omega_batch_size, self.p),
         )
 
         # commands below are equivalent to
@@ -565,6 +596,7 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
                     self.omega_border,
                     self.curr_omega_border_idx,
                     self.omega_border_batch_size,
+                    self.p_border,
                 ),  # arguments
             )
 
@@ -594,6 +626,8 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             self.curr_omega_border_idx,
             self.min_pts,
             self.max_pts,
+            self.rar_parameters,
+            self.p,
         )
         aux_data = {
             k: vars(self)[k]
@@ -604,6 +638,7 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
                 "omega_border_batch_size",
                 "method",
                 "dim",
+                "n_start",
             ]
         }
         return (children, aux_data)
@@ -624,6 +659,8 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             curr_omega_border_idx,
             min_pts,
             max_pts,
+            rar_parameters,
+            p,
         ) = children
         # force data_exists=True here in order not to re-generate the data
         # at each iteration of lax.scan
@@ -632,12 +669,14 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             data_exists=True,
             min_pts=min_pts,
             max_pts=max_pts,
+            rar_parameters=rar_parameters,
             **aux_data,
         )
         obj.omega = omega
         obj.omega_border = omega_border
         obj.curr_omega_idx = curr_omega_idx
         obj.curr_omega_border_idx = curr_omega_border_idx
+        obj.p = p
         return obj
 
 
@@ -668,6 +707,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         tmin,
         tmax,
         method="grid",
+        rar_parameters=None,
+        n_start=None,
         data_exists=False,
     ):
         """
@@ -717,6 +758,16 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             The method that generates the `nt` time points. `grid` means
             regularly spaced points over the domain. `uniform` means uniformly
             sampled points over the domain
+        rar_parameters
+            XXX
+            NOTE that if RAR sampling is chosen it will currently affect both
+            self.times and self.omega with the same hyperparameters
+            (rar_parameters and n_start)
+        n_start
+            XXX
+            NOTE that if RAR sampling is chosen it will currently affect both
+            self.times and self.omega with the same hyperparameters
+            (rar_parameters and n_start)
         data_exists
             Must be left to `False` when created by the user. Avoids the
             regeneration of :math:`\Omega`, :math:`\partial\Omega` and
@@ -732,6 +783,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             min_pts,
             max_pts,
             method,
+            rar_parameters,
+            n_start,
             data_exists,
         )
         self.temporal_batch_size = temporal_batch_size
@@ -744,7 +797,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.curr_time_idx = 0
             self.generate_data_nonstatio()
             self._key, self.times, _ = _reset_batch_idx_and_permute(
-                (self._key, self.times, self.curr_time_idx, None)
+                (self._key, self.times, self.curr_time_idx, None, self.p)
             )
 
     def temporal_batch(self):
@@ -755,8 +808,18 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         bstart = self.curr_time_idx
         bend = bstart + self.temporal_batch_size
 
+        # Compute the effective number of used collocation points
+        if self.rar_parameters is not None:
+            nt_eff = (
+                self.n_start
+                + self.rar_parameters["iter_nb"]
+                * self.rar_parameters["selected_sample_size"]
+            )
+        else:
+            nt_eff = self.nt
+
         (self._key, self.times, self.curr_time_idx) = jax.lax.cond(
-            bend > self.nt,
+            bend > nt_eff,
             _reset_batch_idx_and_permute,
             _increment_batch_idx,
             (
@@ -764,6 +827,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
                 self.times,
                 self.curr_time_idx,
                 self.temporal_batch_size,
+                self.p,
             ),
         )
 
@@ -816,6 +880,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.max_pts,
             self.tmin,
             self.tmax,
+            self.rar_parameters,
+            self.p,
         )
         aux_data = {
             k: vars(self)[k]
@@ -828,6 +894,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
                 "temporal_batch_size",
                 "method",
                 "dim",
+                "n_start",
             ]
         }
         return (children, aux_data)
@@ -852,6 +919,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             max_pts,
             tmin,
             tmax,
+            rar_parameters,
+            p,
         ) = children
         obj = cls(
             key=key,
@@ -860,6 +929,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             max_pts=max_pts,
             tmin=tmin,
             tmax=tmax,
+            rar_parameters=rar_parameters,
             **aux_data,
         )
         obj.omega = omega
@@ -868,4 +938,5 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         obj.curr_omega_idx = curr_omega_idx
         obj.curr_omega_border_idx = curr_omega_border_idx
         obj.curr_time_idx = curr_time_idx
+        obj.p = p
         return obj
