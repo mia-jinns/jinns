@@ -31,13 +31,13 @@ def train_GLV_init():
 
     init_nn_params = init_param_fn()
 
-    n = 10000
-    batch_size = 64
+    n = 320
+    batch_size = 32
     method = "uniform"
     tmin = 0
     tmax = 1
 
-    Tmax = 100
+    Tmax = 30
     key, subkey = random.split(key)
     train_data = jinns.data.DataGeneratorODE(subkey, n, tmin, tmax, batch_size, method)
 
@@ -128,9 +128,9 @@ def test_initial_loss_GLV(train_GLV_init):
     init_params, loss, train_data = train_GLV_init
     assert jnp.round(
         loss.evaluate(init_params, train_data.get_batch())[0], 5
-    ) == jnp.round(19180.22634261295, 5)
+    ) == jnp.round(4233.245370360475, 5)
 
 
 def test_10it_GLV(train_GLV_10it):
     total_loss_val = train_GLV_10it
-    assert jnp.round(total_loss_val, 5) == jnp.round(17627.25270118161, 5)
+    assert jnp.round(total_loss_val, 5) == jnp.round(3867.97425219, 5)
