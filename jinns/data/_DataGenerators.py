@@ -9,8 +9,11 @@ from jax.tree_util import register_pytree_node_class
 import jax.lax
 import warnings
 
+import math
 
 # utility function for jax.lax.cond in *_batch() method
+
+
 def _reset_batch_idx_and_permute(operands):
     key, domain, curr_idx, _, p = operands
     # resetting counter
@@ -20,7 +23,7 @@ def _reset_batch_idx_and_permute(operands):
     # domain = random.permutation(subkey, domain, axis=0, independent=False)
     # we want that permutation = choice when p=None
     # otherwise p is used to avoid collocation points not in nt_start
-    domain = random.choice(subkey, domain, shape=domain.shape, replace=False, p=p)
+    domain = random.choice(subkey, domain, shape=(domain.shape[0],), replace=False, p=p)
 
     # return updated
     return (key, domain, curr_idx)
@@ -369,8 +372,16 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         #               " self.border_batch() will return [xmin, xmax]"
         #               )
         else:
-            # number of border point must be a multiple of 2xd (the # of faces
-            # of a d-dimensional cube)
+            if nb % (2 * self.dim) != 0 or nb < 2 * self.dim:
+                raise ValueError(
+                    "number of border point must be"
+                    " a multiple of 2xd (the # of faces of a d-dimensional cube)"
+                )
+            if nb // (2 * self.dim) < omega_border_batch_size:
+                raise ValueError(
+                    "number of points per facets (nb//2*self.dim)"
+                    " cannot be lower than border batch size"
+                )
             self.nb = int((2 * self.dim) * (nb // (2 * self.dim)))
             self.omega_border_batch_size = omega_border_batch_size
 
@@ -459,7 +470,6 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             # currently hard-coded the 4 edges for d==2
             # TODO : find a general & efficient way to sample from the border
             # (facets) of the hypercube in general dim.
-            self.omega_border = jnp.empty(shape=(1, 1))
 
             facet_n = self.nb // (2 * self.dim)
             keys = random.split(self._key, 5)
