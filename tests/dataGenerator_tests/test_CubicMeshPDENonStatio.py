@@ -57,12 +57,25 @@ def test_omega_border_range_1D(create_1DCubicMeshPDENonStatio):
     )
 
 
+def test_get_batch_1D(create_1DCubicMeshPDENonStatio):
+    OneD_obj = create_1DCubicMeshPDENonStatio
+    inside_batch, border_batch, times_batch = OneD_obj.get_batch()
+    assert (
+        jnp.all(inside_batch[:] >= OneD_obj.min_pts[0])
+        and jnp.all(inside_batch[:] <= OneD_obj.max_pts[0])
+        and jnp.all(border_batch[:] >= OneD_obj.min_pts[0])
+        and jnp.all(border_batch[:] <= OneD_obj.max_pts[0])
+        and jnp.all(times_batch[:] >= OneD_obj.tmin)
+        and jnp.all(times_batch[:] <= OneD_obj.tmax)
+    )
+
+
 @pytest.fixture
 def create_2DCubicMeshPDENonStatio():
     key = jax.random.PRNGKey(2)
     key, subkey = jax.random.split(key)
     n = 1024
-    nb = 2
+    nb = 8
     nt = 1000
     omega_batch_size = 32
     temporal_batch_size = 20
@@ -121,4 +134,38 @@ def test_omega_border_ranges_2D(create_2DCubicMeshPDENonStatio):
             )
             for i in range(TwoD_obj.dim)
         ]
+    )
+
+
+def test_get_batch_2D(create_2DCubicMeshPDENonStatio):
+    TwoD_obj = create_2DCubicMeshPDENonStatio
+    inside_batch, border_batch, times_batch = TwoD_obj.get_batch()
+    assert (
+        all(
+            [
+                (
+                    jnp.all(inside_batch[:, i] >= TwoD_obj.min_pts[i])
+                    and jnp.all(inside_batch[:, i] <= TwoD_obj.max_pts[i])
+                )
+                for i in range(TwoD_obj.dim)
+            ]
+        )
+        and all(
+            [
+                (
+                    jnp.all(border_batch[:, i] >= TwoD_obj.min_pts[i])
+                    and jnp.all(border_batch[:, i] <= TwoD_obj.max_pts[i])
+                )
+                for i in range(TwoD_obj.dim)
+            ]
+        )
+        and all(
+            [
+                (
+                    jnp.all(times_batch[:] >= TwoD_obj.tmin)
+                    and jnp.all(times_batch[:] <= TwoD_obj.tmax)
+                )
+                for i in range(TwoD_obj.dim)
+            ]
+        )
     )
