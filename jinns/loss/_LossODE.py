@@ -277,7 +277,7 @@ class SystemLossODE:
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
-    def evaluate(self, params_dict, batch, reduction="mean", dyn_loss=False):
+    def evaluate(self, params_dict, batch, reduction="mean", dyn_only=False):
         """
         Evaluate the loss function at a batch of points for given parameters.
 
