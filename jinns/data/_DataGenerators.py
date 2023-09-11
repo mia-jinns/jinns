@@ -338,9 +338,9 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         self.n = n
         self.rar_parameters = rar_parameters
 
-        if rar_parameters is not None and nt_start is None:
+        if rar_parameters is not None and n_start is None:
             raise ValueError(
-                "nt_start must be provided in the context of RAR" " sampling scheme"
+                "n_start must be provided in the context of RAR" " sampling scheme"
             )
         elif rar_parameters is not None:
             self.n_start = n_start
@@ -406,72 +406,42 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
                     )
                 )
 
-    def generate_data(self):
-        """
-        Construct a complete set of `self.n` :math:`\Omega` points according to the
-        specified `self.method`. Also constructs a complete set of `self.nb`
-        :math:`\partial\Omega` points if `self.omega_border_batch_size` is not
-        `None`. If the latter is `None` we set `self.omega_border` to `None`.
-        """
-
-        # Generate Omega
-        if self.method == "grid":
-            if self.dim == 1:
-                xmin, xmax = self.min_pts[0], self.max_pts[0]
-                self.partial = (xmax - xmin) / self.n
-                # shape (n, 1)
-                self.omega = jnp.arange(xmin, xmax, self.partial)[:, None]
-            else:
-                self.partials = [
-                    (self.max_pts[i] - self.min_pts[i]) / jnp.sqrt(self.n)
-                    for i in range(self.dim)
-                ]
-                xyz_ = jnp.meshgrid(
-                    *[
-                        jnp.arange(self.min_pts[i], self.max_pts[i], self.partials[i])
-                        for i in range(self.dim)
-                    ]
-                )
-                xyz_ = [a.reshape((self.n, 1)) for a in xyz_]
-                self.omega = jnp.concatenate(xyz_, axis=-1)
-        elif self.method == "uniform":
-            if self.dim == 1:
-                xmin, xmax = self.min_pts[0], self.max_pts[0]
-                self._key, subkey = random.split(self._key, 2)
-                self.omega = random.uniform(
-                    subkey, shape=(self.n, 1), minval=xmin, maxval=xmax
-                )
-            else:
-                keys = random.split(self._key, self.dim + 1)
-                self._key = keys[0]
-                self.omega = jnp.concatenate(
-                    [
-                        random.uniform(
-                            keys[i + 1],
-                            (self.n, 1),
-                            minval=self.min_pts[i],
-                            maxval=self.max_pts[i],
-                        )
-                        for i in range(self.dim)
-                    ],
-                    axis=-1,
-                )
+    def sample_in_omega_domain(self, n_samples):
+        if self.dim == 1:
+            xmin, xmax = self.min_pts[0], self.max_pts[0]
+            self._key, subkey = random.split(self._key, 2)
+            return random.uniform(
+                subkey, shape=(n_samples, 1), minval=xmin, maxval=xmax
+            )
         else:
-            raise ValueError("Method " + self.method + " is not implemented.")
+            keys = random.split(self._key, self.dim + 1)
+            self._key = keys[0]
+            return jnp.concatenate(
+                [
+                    random.uniform(
+                        keys[i + 1],
+                        (n_samples, 1),
+                        minval=self.min_pts[i],
+                        maxval=self.max_pts[i],
+                    )
+                    for i in range(self.dim)
+                ],
+                axis=-1,
+            )
 
-        # Generate border of omega
+    def sample_in_omega_border_domain(self, n_samples):
         if self.omega_border_batch_size is None:
-            self.omega_border = None
+            return None
         elif self.dim == 1:
             xmin = self.min_pts[0]
             xmax = self.max_pts[0]
-            self.omega_border = jnp.array([xmin, xmax]).astype(float)
+            return jnp.array([xmin, xmax]).astype(float)
         elif self.dim == 2:
             # currently hard-coded the 4 edges for d==2
             # TODO : find a general & efficient way to sample from the border
             # (facets) of the hypercube in general dim.
 
-            facet_n = self.nb // (2 * self.dim)
+            facet_n = n_samples // (2 * self.dim)
             keys = random.split(self._key, 5)
             self._key = keys[0]
             subkeys = keys[1:]
@@ -519,11 +489,47 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
                     self.max_pts[1] * jnp.ones((facet_n, 1)),
                 ]
             )
-            self.omega_border = jnp.stack([xmin, xmax, ymin, ymax], axis=-1)
+            return jnp.stack([xmin, xmax, ymin, ymax], axis=-1)
         else:
             raise NotImplementedError(
                 f"Generation of the border of a cube in dimension > 2 is not implemented yet. You are asking for generation in dimension d={self.dim}."
             )
+
+    def generate_data(self):
+        """
+        Construct a complete set of `self.n` :math:`\Omega` points according to the
+        specified `self.method`. Also constructs a complete set of `self.nb`
+        :math:`\partial\Omega` points if `self.omega_border_batch_size` is not
+        `None`. If the latter is `None` we set `self.omega_border` to `None`.
+        """
+
+        # Generate Omega
+        if self.method == "grid":
+            if self.dim == 1:
+                xmin, xmax = self.min_pts[0], self.max_pts[0]
+                self.partial = (xmax - xmin) / self.n
+                # shape (n, 1)
+                self.omega = jnp.arange(xmin, xmax, self.partial)[:, None]
+            else:
+                self.partials = [
+                    (self.max_pts[i] - self.min_pts[i]) / jnp.sqrt(self.n)
+                    for i in range(self.dim)
+                ]
+                xyz_ = jnp.meshgrid(
+                    *[
+                        jnp.arange(self.min_pts[i], self.max_pts[i], self.partials[i])
+                        for i in range(self.dim)
+                    ]
+                )
+                xyz_ = [a.reshape((self.n, 1)) for a in xyz_]
+                self.omega = jnp.concatenate(xyz_, axis=-1)
+        elif self.method == "uniform":
+            self.omega = self.sample_in_omega_domain(self.n)
+        else:
+            raise ValueError("Method " + self.method + " is not implemented.")
+
+        # Generate border of omega
+        self.omega_border = self.sample_in_omega_border_domain(self.nb)
 
     def inside_batch(self):
         """
@@ -804,6 +810,23 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
                 (self._key, self.times, self.curr_time_idx, None, self.p)
             )
 
+    def sample_in_time_domain(self, n_samples):
+        self._key, subkey = random.split(self._key, 2)
+        return random.uniform(subkey, (n_samples,), minval=self.tmin, maxval=self.tmax)
+
+    def generate_data_nonstatio(self):
+        """
+        Construct a complete set of `self.nt` time points according to the
+        specified `self.method`. This completes the `super` function
+        `generate_data()` which generates :math:`\Omega` and
+        :math:`\partial\Omega` points.
+        """
+        if self.method == "grid":
+            self.partial_times = (self.tmax - self.tmin) / self.nt
+            self.times = jnp.arange(self.tmin, self.tmax, self.partial_times)
+        elif self.method == "uniform":
+            self.times = self.sample_in_time_domain(self.nt)
+
     def temporal_batch(self):
         """
         Return a batch of time points. If all the batches have been seen, we
@@ -843,22 +866,6 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             start_indices=(self.curr_time_idx,),
             slice_sizes=(self.temporal_batch_size,),
         )
-
-    def generate_data_nonstatio(self):
-        """
-        Construct a complete set of `self.nt` time points according to the
-        specified `self.method`. This completes the `super` function
-        `generate_data()` which generates :math:`\Omega` and
-        :math:`\partial\Omega` points.
-        """
-        if self.method == "grid":
-            self.partial_times = (self.tmax - self.tmin) / self.nt
-            self.times = jnp.arange(self.tmin, self.tmax, self.partial_times)
-        elif self.method == "uniform":
-            self._key, subkey = random.split(self._key, 2)
-            self.times = random.uniform(
-                subkey, (self.nt,), minval=self.tmin, maxval=self.tmax
-            )
 
     def get_batch(self):
         """
