@@ -116,10 +116,9 @@ def train_GLV_10it(train_GLV_init):
     )
     n_iter = 10
     pinn_solver = jinns.solver.PinnSolver(optax_solver=solver, loss=loss, n_iter=n_iter)
-    seq2seq = {"time_steps": jnp.linspace(0, 1.0, 11)}
-    seq2seq["iter_steps"] = seq2seq["time_steps"] * n_iter
-    params, total_loss_list, loss_by_term_dict, _, _ = pinn_solver.solve(
-        init_params=params, data=train_data, seq2seq=seq2seq
+    params, total_loss_list, loss_by_term_dict, data, _, _ = pinn_solver.solve(
+        init_params=params,
+        data=train_data,
     )
     return total_loss_list[9]
 

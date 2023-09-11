@@ -130,7 +130,7 @@ def train_NSPipeFlow_10it(train_NSPipeFlow_init):
     )
     n_iter = 10
     pinn_solver = jinns.solver.PinnSolver(optax_solver=solver, loss=loss, n_iter=n_iter)
-    params, total_loss_list, loss_by_term_dict, _, _ = pinn_solver.solve(
+    params, total_loss_list, loss_by_term_dict, _, _, _ = pinn_solver.solve(
         init_params=params, data=train_data
     )
     return total_loss_list[9]
