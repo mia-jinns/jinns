@@ -245,6 +245,7 @@ class PinnSolver:
             params,
             accu[0, :],
             res["stored_loss_terms"],
+            data,
             opt_state,
             res["stored_values"],
         )
