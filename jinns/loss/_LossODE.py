@@ -277,7 +277,7 @@ class SystemLossODE:
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
-    def evaluate(self, params_dict, batch, reduction="mean"):
+    def evaluate(self, params_dict, batch, reduction="mean", dyn_loss=False):
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -314,6 +314,9 @@ class SystemLossODE:
                 mse_dyn_loss += jnp.mean(v_dyn_loss(temporal_batch) ** 2)
             else:
                 mse_dyn_loss += v_dyn_loss(temporal_batch) ** 2
+
+        if dyn_only:
+            return mse_dyn_loss
 
         # initial conditions and observation_loss via the internal LossODE
         for i in self.u_dict.keys():
