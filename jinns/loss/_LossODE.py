@@ -74,7 +74,7 @@ class LossODE:
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
-    def evaluate(self, params, batch, reduction="mean"):
+    def evaluate(self, params, batch, reduction="mean", dyn_only=False):
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -110,6 +110,9 @@ class LossODE:
                 mse_dyn_loss = v_dyn_loss(temporal_batch) ** 2
         else:
             mse_dyn_loss = 0
+
+        if dyn_only:
+            return mse_dyn_loss
 
         # initial condition
         if self.initial_condition is not None:
