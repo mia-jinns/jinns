@@ -357,7 +357,7 @@ class LossPDEStatio(LossPDEAbstract):
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
-    def evaluate(self, params, batch):
+    def evaluate(self, params, batch, reduction="mean", dyn_only=False):
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -388,9 +388,15 @@ class LossPDEStatio(LossPDEAbstract):
                 (0),
                 0,
             )
-            mse_dyn_loss = jnp.mean(v_dyn_loss(omega_batch) ** 2)
+            if reduction == "mean":
+                mse_dyn_loss = jnp.mean(v_dyn_loss(omega_batch) ** 2)
+            else:
+                mse_dyn_loss = v_dyn_loss(omega_batch) ** 2
         else:
             mse_dyn_loss = 0
+
+        if dyn_only:
+            return mse_dyn_loss
 
         # normalization part
         if self.normalization_loss is not None:
@@ -623,7 +629,14 @@ class LossPDENonStatio(LossPDEStatio):
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
-    def evaluate(self, params, batch):
+    def evaluate(
+        self,
+        params,
+        batch,
+        reduction="mean",
+        dyn_only=False,
+        dyn_cartesian_product=True,
+    ):
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -645,8 +658,6 @@ class LossPDENonStatio(LossPDEStatio):
         nt = times_batch.shape[0]
         times_batch = times_batch.reshape(nt, 1)
 
-        tile_omega_batch = jnp.tile(omega_batch, reps=(nt, 1))
-
         def rep_times(k):
             return jnp.repeat(times_batch, k, axis=0)
 
@@ -657,9 +668,21 @@ class LossPDENonStatio(LossPDEStatio):
                 (0, 0),
                 0,
             )
-            mse_dyn_loss = jnp.mean(v_dyn_loss(rep_times(n), tile_omega_batch) ** 2)
+            if dyn_cartesian_product:
+                omega_batch_ = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
+                times_batch_ = rep_times(n)  # it is repeated
+            else:
+                omega_batch_ = omega_batch
+                times_batch_ = times_batch
+            if reduction == "mean":
+                mse_dyn_loss = jnp.mean(v_dyn_loss(times_batch_, omega_batch_) ** 2)
+            else:
+                mse_dyn_loss = v_dyn_loss(times_batch_, omega_batch_) ** 2
         else:
             mse_dyn_loss = 0
+
+        if dyn_only:
+            return mse_dyn_loss
 
         # normalization part
         if self.normalization_loss is not None:
@@ -1008,7 +1031,14 @@ class SystemLossPDE:
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
-    def evaluate(self, params_dict, batch):
+    def evaluate(
+        self,
+        params_dict,
+        batch,
+        reduction="mean",
+        dyn_only=False,
+        dyn_cartesian_product=True,
+    ):
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -1036,8 +1066,6 @@ class SystemLossPDE:
             nt = times_batch.shape[0]
             times_batch = times_batch.reshape(nt, 1)
 
-            tile_omega_batch = jnp.tile(omega_batch, reps=(nt, 1))
-
             def rep_times(k):
                 return jnp.repeat(times_batch, k, axis=0)
 
@@ -1057,7 +1085,10 @@ class SystemLossPDE:
                     0,
                     0,
                 )
-                mse_dyn_loss += jnp.mean(v_dyn_loss(omega_batch) ** 2)
+                if reduction == "mean":
+                    mse_dyn_loss += jnp.mean(v_dyn_loss(omega_batch) ** 2)
+                else:
+                    mse_dyn_loss += v_dyn_loss(omega_batch) ** 2
             else:
                 v_dyn_loss = vmap(
                     lambda t, x: self.dynamic_loss_dict[i].evaluate(
@@ -1066,9 +1097,25 @@ class SystemLossPDE:
                     (0, 0),
                     0,
                 )
-                mse_dyn_loss += jnp.mean(
-                    v_dyn_loss(rep_times(n), tile_omega_batch) ** 2
-                )
+
+                tile_omega_batch = jnp.tile(omega_batch, reps=(nt, 1))
+
+                if dyn_cartesian_product:
+                    omega_batch_ = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
+                    times_batch_ = rep_times(n)  # it is repeated
+                else:
+                    omega_batch_ = omega_batch
+                    times_batch_ = times_batch
+
+                if reduction == "mean":
+                    mse_dyn_loss += jnp.mean(
+                        v_dyn_loss(times_batch_, omega_batch_) ** 2
+                    )
+                else:
+                    mse_dyn_loss += v_dyn_loss(times_batch_, omega_batch_) ** 2
+
+        if dyn_only:
+            return mse_dyn_loss
 
         # boundary conditions, normalization conditions, observation_loss,
         # temporal boundary condition... loss this is done via the internal
