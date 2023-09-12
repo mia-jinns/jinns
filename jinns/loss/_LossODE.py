@@ -88,7 +88,15 @@ class LossODE:
             differential equation parameters and the neural network parameter
         batch
             A batch of time points at which to evaluate the loss
-
+        reduction
+            Default `"mean"`. Whether to take the mean of the dynamic loss over the
+            batch or not. In general you want to take the mean. An edge case
+            where element-wise dynamic loss is needed is in the RAR sampling
+            scheme
+        dyn_only
+            Default False. Whether to return only the dynamic loss term (and
+            thus avoid computing the other terms). This is used in particular
+            in RAR sampling scheme.
         """
         if isinstance(params, tuple):
             params_ = params[0]
@@ -291,7 +299,15 @@ class SystemLossODE:
             differential equation parameters and the neural network parameter
         batch
             A batch of time points at which to evaluate the loss
-
+        reduction
+            Default `"mean"`. Whether to take the mean of the dynamic loss over the
+            batch or not. In general you want to take the mean. An edge case
+            where element-wise dynamic loss is needed is in the RAR sampling
+            scheme
+        dyn_only
+            Default False. Whether to return only the dynamic loss term (and
+            thus avoid computing the other terms). This is used in particular
+            in RAR sampling scheme.
         """
         if self.u_dict.keys() != params_dict["nn_params"].keys():
             raise ValueError("u_dict and params_dict[nn_params] should have same keys ")

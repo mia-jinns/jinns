@@ -373,6 +373,15 @@ class LossPDEStatio(LossPDEAbstract):
             A tuple.
             A batch of points in the domain and a batch of points in the domain
             border
+        reduction
+            Default `"mean"`. Whether to take the mean of the dynamic loss over the
+            batch or not. In general you want to take the mean. An edge case
+            where element-wise dynamic loss is needed is in the RAR sampling
+            scheme
+        dyn_only
+            Default False. Whether to return only the dynamic loss term (and
+            thus avoid computing the other terms). This is used in particular
+            in RAR sampling scheme.
         """
         omega_batch, omega_border_batch = batch
         n = omega_batch.shape[0]
@@ -652,6 +661,21 @@ class LossPDENonStatio(LossPDEStatio):
             A tuple.
             A batch of points in the domain, a batch of points in the domain
             border and a batch of time points
+        reduction
+            Default `"mean"`. Whether to take the mean of the dynamic loss over the
+            batch or not. In general you want to take the mean. An edge case
+            where element-wise dynamic loss is needed is in the RAR sampling
+            scheme
+        dyn_only
+            Default False. Whether to return only the dynamic loss term (and
+            thus avoid computing the other terms). This is used in particular
+            in RAR sampling scheme.
+        dyn_cartesian_product
+            Default True. Whether to take the cartesian product of time_batch
+            and omega_batch. This is what is done in a traditional loss
+            evaluation. But in RAR sampling scheme we provide (large) batches
+            which should only be concatenate in collocation points without
+            cartesian product
         """
         omega_batch, omega_border_batch, times_batch = batch
         n = omega_batch.shape[0]
@@ -1052,7 +1076,15 @@ class SystemLossPDE:
             differential equation parameters and the neural network parameter
         batch
             A batch of time points at which to evaluate the loss
-
+        reduction
+            Default `"mean"`. Whether to take the mean of the dynamic loss over the
+            batch or not. In general you want to take the mean. An edge case
+            where element-wise dynamic loss is needed is in the RAR sampling
+            scheme
+        dyn_only
+            Default False. Whether to return only the dynamic loss term (and
+            thus avoid computing the other terms). This is used in particular
+            in RAR sampling scheme.
         """
         if self.u_dict.keys() != params_dict["nn_params"].keys():
             raise ValueError("u_dict and params_dict[nn_params] should have same keys ")
