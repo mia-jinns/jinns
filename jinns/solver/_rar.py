@@ -40,7 +40,10 @@ def rar_step_init(sample_size, selected_sample_size):
             data.times = jax.lax.dynamic_update_slice(
                 data.times,
                 higher_residual_points,
-                (data.rar_parameters["iter_nb"] * selected_sample_size,),
+                (
+                    data.nt_start
+                    + data.rar_parameters["iter_nb"] * selected_sample_size,
+                ),
             )
 
             ## rearrange probabilities so that the probabilities of the new
@@ -90,7 +93,7 @@ def rar_step_init(sample_size, selected_sample_size):
             data.omega = jax.lax.dynamic_update_slice(
                 data.omega,
                 higher_residual_points,
-                (data.rar_parameters["iter_nb"] * selected_sample_size,),
+                (data.n_start + data.rar_parameters["iter_nb"] * selected_sample_size,),
             )
 
             ## rearrange probabilities so that the probabilities of the new
@@ -146,14 +149,18 @@ def rar_step_init(sample_size, selected_sample_size):
             data.times = jax.lax.dynamic_update_slice(
                 data.times,
                 higher_residual_points_st,
-                (data.rar_parameters["iter_nb"] * selected_sample_size,),
+                (data.n_start + data.rar_parameters["iter_nb"] * selected_sample_size,),
             )
 
             ## add the new points in omega
             data.omega = jax.lax.dynamic_update_slice(
                 data.omega,
                 higher_residual_points_sx,
-                (data.rar_parameters["iter_nb"] * selected_sample_size, data.dim),
+                (
+                    data.n_start
+                    + data.rar_parameters["iter_nb"] * selected_sample_size,
+                    data.dim,
+                ),
             )
 
             ## rearrange probabilities so that the probabilities of the new
