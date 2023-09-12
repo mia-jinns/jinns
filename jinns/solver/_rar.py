@@ -32,7 +32,7 @@ def rar_step_init(sample_size, selected_sample_size):
             )
             higher_residual_points = s[higher_residual_idx]
 
-            data.rar_parameters["iter_from_last_sampling"] = 0
+            data.rar_iter_from_last_sampling = 0
 
             ## add the new points in times
             # start indices of update can be dynamic but the the shape (length)
@@ -40,17 +40,12 @@ def rar_step_init(sample_size, selected_sample_size):
             data.times = jax.lax.dynamic_update_slice(
                 data.times,
                 higher_residual_points,
-                (
-                    data.nt_start
-                    + data.rar_parameters["iter_nb"] * selected_sample_size,
-                ),
+                (data.nt_start + data.rar_iter_nb * selected_sample_size,),
             )
 
             ## rearrange probabilities so that the probabilities of the new
             ## points are non-zero
-            new_proba = 1 / (
-                data.nt_start + data.rar_parameters["iter_nb"] * selected_sample_size
-            )
+            new_proba = 1 / (data.nt_start + data.rar_iter_nb * selected_sample_size)
             # the next work because nt_start is static
             data.p = data.p.at[: data.nt_start].set(new_proba)
 
@@ -62,11 +57,9 @@ def rar_step_init(sample_size, selected_sample_size):
                     ((data.nt_start + (i + 1) * selected_sample_size),),
                 )
 
-            data.p = jax.lax.fori_loop(
-                0, data.rar_parameters["iter_nb"], update_slices, data.p
-            )
+            data.p = jax.lax.fori_loop(0, data.rar_iter_nb, update_slices, data.p)
 
-            data.rar_parameters["iter_nb"] += 1
+            data.rar_iter_nb += 1
 
             # NOTE must return data to be correctly updated because we cannot
             # have side effects in this function that will be jitted
@@ -85,7 +78,7 @@ def rar_step_init(sample_size, selected_sample_size):
             )
             higher_residual_points = s[higher_residual_idx]
 
-            data.rar_parameters["iter_from_last_sampling"] = 0
+            data.rar_iter_from_last_sampling = 0
 
             ## add the new points in times
             # start indices of update can be dynamic but the the shape (length)
@@ -93,14 +86,12 @@ def rar_step_init(sample_size, selected_sample_size):
             data.omega = jax.lax.dynamic_update_slice(
                 data.omega,
                 higher_residual_points,
-                (data.n_start + data.rar_parameters["iter_nb"] * selected_sample_size,),
+                (data.n_start + data.rar_iter_nb * selected_sample_size,),
             )
 
             ## rearrange probabilities so that the probabilities of the new
             ## points are non-zero
-            new_proba = 1 / (
-                data.n_start + data.rar_parameters["iter_nb"] * selected_sample_size
-            )
+            new_proba = 1 / (data.n_start + data.rar_iter_nb * selected_sample_size)
             # the next work because n_start is static
             data.p = data.p.at[: data.n_start].set(new_proba)
 
@@ -112,11 +103,9 @@ def rar_step_init(sample_size, selected_sample_size):
                     ((data.n_start + (i + 1) * selected_sample_size),),
                 )
 
-            data.p = jax.lax.fori_loop(
-                0, data.rar_parameters["iter_nb"], update_slices, data.p
-            )
+            data.p = jax.lax.fori_loop(0, data.rar_iter_nb, update_slices, data.p)
 
-            data.rar_parameters["iter_nb"] += 1
+            data.rar_iter_nb += 1
 
             # NOTE must return data to be correctly updated because we cannot
             # have side effects in this function that will be jitted
@@ -141,7 +130,7 @@ def rar_step_init(sample_size, selected_sample_size):
             higher_residual_points_st = st[higher_residual_idx]
             higher_residual_points_sx = sx[higher_residual_idx]
 
-            data.rar_parameters["iter_from_last_sampling"] = 0
+            data.rar_iter_from_last_sampling = 0
 
             ## add the new points in times
             # start indices of update can be dynamic but the the shape (length)
@@ -149,7 +138,7 @@ def rar_step_init(sample_size, selected_sample_size):
             data.times = jax.lax.dynamic_update_slice(
                 data.times,
                 higher_residual_points_st,
-                (data.n_start + data.rar_parameters["iter_nb"] * selected_sample_size,),
+                (data.n_start + data.rar_iter_nb * selected_sample_size,),
             )
 
             ## add the new points in omega
@@ -157,17 +146,14 @@ def rar_step_init(sample_size, selected_sample_size):
                 data.omega,
                 higher_residual_points_sx,
                 (
-                    data.n_start
-                    + data.rar_parameters["iter_nb"] * selected_sample_size,
+                    data.n_start + data.rar_iter_nb * selected_sample_size,
                     data.dim,
                 ),
             )
 
             ## rearrange probabilities so that the probabilities of the new
             ## points are non-zero
-            new_proba = 1 / (
-                data.n_start + data.rar_parameters["iter_nb"] * selected_sample_size
-            )
+            new_proba = 1 / (data.n_start + data.rar_iter_nb * selected_sample_size)
             # the next work because nt_start is static
             data.p = data.p.at[: data.n_start].set(new_proba)
 
@@ -179,11 +165,9 @@ def rar_step_init(sample_size, selected_sample_size):
                     ((data.n_start + (i + 1) * selected_sample_size),),
                 )
 
-            data.p = jax.lax.fori_loop(
-                0, data.rar_parameters["iter_nb"], update_slices, data.p
-            )
+            data.p = jax.lax.fori_loop(0, data.rar_iter_nb, update_slices, data.p)
 
-            data.rar_parameters["iter_nb"] += 1
+            data.rar_iter_nb += 1
 
             # NOTE must return data to be correctly updated because we cannot
             # have side effects in this function that will be jitted
@@ -193,11 +177,11 @@ def rar_step_init(sample_size, selected_sample_size):
         loss_evaluate_fun, params, data, i = operands
 
         # Add 1 only if we are after the burn in period
-        data.rar_parameters["iter_from_last_sampling"] = jax.lax.cond(
+        data.rar_iter_from_last_sampling = jax.lax.cond(
             i < data.rar_parameters["start_iter"],
             lambda operand: 0,
             lambda operand: operand + 1,
-            (data.rar_parameters["iter_from_last_sampling"]),
+            (data.rar_iter_from_last_sampling),
         )
 
         return data
