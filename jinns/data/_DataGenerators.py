@@ -84,9 +84,14 @@ class DataGeneratorODE:
             sampled points over the domain
         rar_parameters
             Default to None: do not use Residual Adaptative Resampling.
-            Otherwise a dictionary with keys. `start_iter`
-            `sample_size`, `selected_sample_size`, `update_rate_iter`,
-            `iter_from_last_sampling`... XXXX
+            Otherwise a dictionary with keys. `start_iter`: the iteration at
+            which we start the RAR sampling scheme (we first have a burn in
+            period). `update_rate`: the number of gradient steps taken between
+            each appending of collocation points in the RAR algo.
+            `sample_size`: the size of the sample from which we will select new
+            collocation points. `selected_sample_size`: the number of selected
+            points from the sample to be added to the current collocation
+            points
             "DeepXDE: A deep learning library for solving differential
             equations", L. Lu, SIAM Review, 2021
         nt_start
@@ -94,9 +99,7 @@ class DataGeneratorODE:
             This value must be
             provided when rar_parameters is not None. Otherwise we set internally
             nt_start = nt and this is hidden from the user.
-            This is needed since we cannot change the shape of self.times over
-            the iterations in a jitted function but this is what needs to be
-            done in Residual Adaptative Resampling for example. In RAR, nt_start
+            In RAR, nt_start
             then corresponds to the initial number of points we train the PINN.
         data_exists
             Must be left to `False` when created by the user. Avoids the
@@ -123,6 +126,12 @@ class DataGeneratorODE:
             # above nt_start). Thus, p is a vector of probability of shape (nt, 1).
             self.p = jnp.zeros((self.nt,))
             self.p = self.p.at[: self.nt_start].set(1 / nt_start)
+            # set internal counter for the number of gradient steps since the
+            # last new collocation points have been added
+            seld.data.rar_parameters["iter_from_last_sampling"] = 0
+            # set iternal counter for the number of times collocation points
+            # have been added
+            self.data.rar_parameters["iter_nb"] = 0
 
         if rar_parameters is None or nt_start is None:
             self.nt_start = self.nt
@@ -319,9 +328,24 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             regularly spaced points over the domain. `uniform` means uniformly
             sampled points over the domain
         rar_parameters
-            XXX
+            Default to None: do not use Residual Adaptative Resampling.
+            Otherwise a dictionary with keys. `start_iter`: the iteration at
+            which we start the RAR sampling scheme (we first have a burn in
+            period). `update_rate`: the number of gradient steps taken between
+            each appending of collocation points in the RAR algo.
+            `sample_size`: the size of the sample from which we will select new
+            collocation points. `selected_sample_size`: the number of selected
+            points from the sample to be added to the current collocation
+            points
+            "DeepXDE: A deep learning library for solving differential
+            equations", L. Lu, SIAM Review, 2021
         n_start
-            XXX
+            Defaults to None. The effective size of n used at start time.
+            This value must be
+            provided when rar_parameters is not None. Otherwise we set internally
+            n_start = n and this is hidden from the user.
+            In RAR, n_start
+            then corresponds to the initial number of points we train the PINN.
         data_exists
             Must be left to `False` when created by the user. Avoids the
             regeneration of :math:`\Omega`, :math:`\partial\Omega` and
@@ -349,6 +373,12 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             # above n_start). Thus, p is a vector of probability of shape (n, 1).
             self.p = jnp.zeros((self.n,))
             self.p = self.p.at[: self.n_start].set(1 / n_start)
+            # set internal counter for the number of gradient steps since the
+            # last new collocation points have been added
+            seld.data.rar_parameters["iter_from_last_sampling"] = 0
+            # set iternal counter for the number of times collocation points
+            # have been added
+            self.data.rar_parameters["iter_nb"] = 0
 
         if rar_parameters is None or n_start is None:
             self.n_start = self.n
@@ -769,13 +799,28 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             regularly spaced points over the domain. `uniform` means uniformly
             sampled points over the domain
         rar_parameters
-            XXX
-            NOTE that if RAR sampling is chosen it will currently affect both
+            Default to None: do not use Residual Adaptative Resampling.
+            Otherwise a dictionary with keys. `start_iter`: the iteration at
+            which we start the RAR sampling scheme (we first have a burn in
+            period). `update_rate`: the number of gradient steps taken between
+            each appending of collocation points in the RAR algo.
+            `sample_size`: the size of the sample from which we will select new
+            collocation points. `selected_sample_size`: the number of selected
+            points from the sample to be added to the current collocation
+            points.
+            __Note:__ that if RAR sampling is chosen it will currently affect both
             self.times and self.omega with the same hyperparameters
             (rar_parameters and n_start)
+            "DeepXDE: A deep learning library for solving differential
+            equations", L. Lu, SIAM Review, 2021
         n_start
-            XXX
-            NOTE that if RAR sampling is chosen it will currently affect both
+            Defaults to None. The effective size of n used at start time.
+            This value must be
+            provided when rar_parameters is not None. Otherwise we set internally
+            n_start = n and this is hidden from the user.
+            In RAR, n_start
+            then corresponds to the initial number of points we train the PINN.
+            __Note:__ that if RAR sampling is chosen it will currently affect both
             self.times and self.omega with the same hyperparameters
             (rar_parameters and n_start)
         data_exists
