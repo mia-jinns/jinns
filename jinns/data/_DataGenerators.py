@@ -128,14 +128,16 @@ class DataGeneratorODE:
             self.p = self.p.at[: self.nt_start].set(1 / nt_start)
             # set internal counter for the number of gradient steps since the
             # last new collocation points have been added
-            seld.data.rar_parameters["iter_from_last_sampling"] = 0
+            self.rar_iter_from_last_sampling = 0
             # set iternal counter for the number of times collocation points
             # have been added
-            self.data.rar_parameters["iter_nb"] = 0
+            self.rar_iter_nb = 0
 
         if rar_parameters is None or nt_start is None:
             self.nt_start = self.nt
             self.p = None
+            self.rar_iter_from_last_sampling = None
+            self.rar_iter_nb = None
 
         if not self.data_exists:
             # Useful when using a lax.scan with pytree
@@ -176,8 +178,7 @@ class DataGeneratorODE:
         if self.rar_parameters is not None:
             nt_eff = (
                 self.nt_start
-                + self.rar_parameters["iter_nb"]
-                * self.rar_parameters["selected_sample_size"]
+                + self.rar_iter_nb * self.rar_parameters["selected_sample_size"]
             )
         else:
             nt_eff = self.nt
@@ -218,6 +219,8 @@ class DataGeneratorODE:
             self.tmax,
             self.rar_parameters,
             self.p,
+            self.rar_iter_from_last_sampling,
+            self.rar_iter_nb,
         )  # arrays / dynamic values
         aux_data = {
             k: vars(self)[k]
@@ -233,7 +236,17 @@ class DataGeneratorODE:
         unflattening that happens e.g. during the gradient descent in the
         optimization process
         """
-        (key, times, curr_time_idx, tmin, tmax, rar_parameters, p) = children
+        (
+            key,
+            times,
+            curr_time_idx,
+            tmin,
+            tmax,
+            rar_parameters,
+            p,
+            rar_iter_from_last_sampling,
+            rar_iter_nb,
+        ) = children
         obj = cls(
             key=key,
             data_exists=True,
@@ -245,6 +258,8 @@ class DataGeneratorODE:
         obj.times = times
         obj.curr_time_idx = curr_time_idx
         obj.p = p
+        obj.rar_iter_from_last_sampling = rar_iter_from_last_sampling
+        obj.rar_iter_nb = rar_iter_nb
         return obj
 
 
@@ -375,14 +390,16 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             self.p = self.p.at[: self.n_start].set(1 / n_start)
             # set internal counter for the number of gradient steps since the
             # last new collocation points have been added
-            seld.data.rar_parameters["iter_from_last_sampling"] = 0
+            self.rar_iter_from_last_sampling = 0
             # set iternal counter for the number of times collocation points
             # have been added
-            self.data.rar_parameters["iter_nb"] = 0
+            self.rar_iter_nb = 0
 
         if rar_parameters is None or n_start is None:
             self.n_start = self.n
             self.p = None
+            self.rar_iter_from_last_sampling = None
+            self.rar_iter_nb = None
 
         self.p_border = None  # no RAR sampling for border for now
 
@@ -571,8 +588,7 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         if self.rar_parameters is not None:
             n_eff = (
                 self.n_start
-                + self.rar_parameters["iter_nb"]
-                * self.rar_parameters["selected_sample_size"]
+                + self.rar_iter_nb * self.rar_parameters["selected_sample_size"]
             )
         else:
             n_eff = self.n
@@ -668,6 +684,8 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             self.max_pts,
             self.rar_parameters,
             self.p,
+            self.rar_iter_from_last_sampling,
+            self.rar_iter_nb,
         )
         aux_data = {
             k: vars(self)[k]
@@ -701,6 +719,8 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             max_pts,
             rar_parameters,
             p,
+            rar_iter_from_last_sampling,
+            rar_iter_nb,
         ) = children
         # force data_exists=True here in order not to re-generate the data
         # at each iteration of lax.scan
@@ -717,6 +737,8 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         obj.curr_omega_idx = curr_omega_idx
         obj.curr_omega_border_idx = curr_omega_border_idx
         obj.p = p
+        obj.rar_iter_from_last_sampling = rar_iter_from_last_sampling
+        obj.rar_iter_nb = rar_iter_nb
         return obj
 
 
@@ -884,8 +906,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         if self.rar_parameters is not None:
             nt_eff = (
                 self.n_start
-                + self.rar_parameters["iter_nb"]
-                * self.rar_parameters["selected_sample_size"]
+                + self.rar_iter_nb * self.rar_parameters["selected_sample_size"]
             )
         else:
             nt_eff = self.nt
@@ -938,6 +959,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.tmax,
             self.rar_parameters,
             self.p,
+            self.rar_iter_from_last_sampling,
+            self.rar_iter_nb,
         )
         aux_data = {
             k: vars(self)[k]
@@ -977,6 +1000,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             tmax,
             rar_parameters,
             p,
+            rar_iter_from_last_sampling,
+            rar_iter_nb,
         ) = children
         obj = cls(
             key=key,
@@ -995,4 +1020,6 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         obj.curr_omega_border_idx = curr_omega_border_idx
         obj.curr_time_idx = curr_time_idx
         obj.p = p
+        obj.rar_iter_from_last_sampling = rar_iter_from_last_sampling
+        obj.rar_iter_nb = rar_iter_nb
         return obj
