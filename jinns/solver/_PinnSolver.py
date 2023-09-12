@@ -179,11 +179,15 @@ class PinnSolver:
                     jnp.all(
                         jnp.array(
                             [
+                                # check if enough it since last points added
                                 carry["data"].rar_parameters["update_rate"]
-                                == carry["data"].rar_parameters[
-                                    "iter_from_last_sampling"
-                                ],
+                                == carry["data"].rar_iter_from_last_sampling,
+                                # check if burn in period has ended
                                 carry["data"].rar_parameters["start_iter"] < i,
+                                # check if we still have room to append new
+                                # collocation points in the allocated jnp array
+                                carry["data"].rar_parameters["selected_sample_size"]
+                                <= jnp.count_nonzero(carry["data"].p == 0),
                             ]
                         )
                     ),
