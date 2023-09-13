@@ -74,7 +74,7 @@ class LossODE:
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
-    def evaluate(self, params, batch, reduction="mean", dyn_only=False):
+    def evaluate(self, params, batch):
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -88,15 +88,6 @@ class LossODE:
             differential equation parameters and the neural network parameter
         batch
             A batch of time points at which to evaluate the loss
-        reduction
-            Default `"mean"`. Whether to take the mean of the dynamic loss over the
-            batch or not. In general you want to take the mean. An edge case
-            where element-wise dynamic loss is needed is in the RAR sampling
-            scheme
-        dyn_only
-            Default False. Whether to return only the dynamic loss term (and
-            thus avoid computing the other terms). This is used in particular
-            in RAR sampling scheme.
         """
         if isinstance(params, tuple):
             params_ = params[0]
@@ -112,15 +103,9 @@ class LossODE:
                 (0),
                 0,
             )
-            if reduction == "mean":
-                mse_dyn_loss = jnp.mean(v_dyn_loss(temporal_batch) ** 2)
-            else:
-                mse_dyn_loss = v_dyn_loss(temporal_batch) ** 2
+            mse_dyn_loss = jnp.mean(v_dyn_loss(temporal_batch) ** 2)
         else:
             mse_dyn_loss = 0
-
-        if dyn_only:
-            return mse_dyn_loss
 
         # initial condition
         if self.initial_condition is not None:
@@ -285,7 +270,7 @@ class SystemLossODE:
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
-    def evaluate(self, params_dict, batch, reduction="mean", dyn_only=False):
+    def evaluate(self, params_dict, batch):
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -299,15 +284,6 @@ class SystemLossODE:
             differential equation parameters and the neural network parameter
         batch
             A batch of time points at which to evaluate the loss
-        reduction
-            Default `"mean"`. Whether to take the mean of the dynamic loss over the
-            batch or not. In general you want to take the mean. An edge case
-            where element-wise dynamic loss is needed is in the RAR sampling
-            scheme
-        dyn_only
-            Default False. Whether to return only the dynamic loss term (and
-            thus avoid computing the other terms). This is used in particular
-            in RAR sampling scheme.
         """
         if self.u_dict.keys() != params_dict["nn_params"].keys():
             raise ValueError("u_dict and params_dict[nn_params] should have same keys ")
@@ -326,13 +302,7 @@ class SystemLossODE:
                 (0),
                 0,
             )
-            if reduction == "mean":
-                mse_dyn_loss += jnp.mean(v_dyn_loss(temporal_batch) ** 2)
-            else:
-                mse_dyn_loss += v_dyn_loss(temporal_batch) ** 2
-
-        if dyn_only:
-            return mse_dyn_loss
+            mse_dyn_loss += jnp.mean(v_dyn_loss(temporal_batch) ** 2)
 
         # initial conditions and observation_loss via the internal LossODE
         for i in self.u_dict.keys():

@@ -357,7 +357,7 @@ class LossPDEStatio(LossPDEAbstract):
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
-    def evaluate(self, params, batch, reduction="mean", dyn_only=False):
+    def evaluate(self, params, batch):
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -373,15 +373,6 @@ class LossPDEStatio(LossPDEAbstract):
             A tuple.
             A batch of points in the domain and a batch of points in the domain
             border
-        reduction
-            Default `"mean"`. Whether to take the mean of the dynamic loss over the
-            batch or not. In general you want to take the mean. An edge case
-            where element-wise dynamic loss is needed is in the RAR sampling
-            scheme
-        dyn_only
-            Default False. Whether to return only the dynamic loss term (and
-            thus avoid computing the other terms). This is used in particular
-            in RAR sampling scheme.
         """
         omega_batch, omega_border_batch = batch
         n = omega_batch.shape[0]
@@ -397,15 +388,9 @@ class LossPDEStatio(LossPDEAbstract):
                 (0),
                 0,
             )
-            if reduction == "mean":
-                mse_dyn_loss = jnp.mean(v_dyn_loss(omega_batch) ** 2)
-            else:
-                mse_dyn_loss = v_dyn_loss(omega_batch) ** 2
+            mse_dyn_loss = jnp.mean(v_dyn_loss(omega_batch) ** 2)
         else:
             mse_dyn_loss = 0
-
-        if dyn_only:
-            return mse_dyn_loss
 
         # normalization part
         if self.normalization_loss is not None:
@@ -642,9 +627,6 @@ class LossPDENonStatio(LossPDEStatio):
         self,
         params,
         batch,
-        reduction="mean",
-        dyn_only=False,
-        dyn_cartesian_product=True,
     ):
         """
         Evaluate the loss function at a batch of points for given parameters.
@@ -661,21 +643,6 @@ class LossPDENonStatio(LossPDEStatio):
             A tuple.
             A batch of points in the domain, a batch of points in the domain
             border and a batch of time points
-        reduction
-            Default `"mean"`. Whether to take the mean of the dynamic loss over the
-            batch or not. In general you want to take the mean. An edge case
-            where element-wise dynamic loss is needed is in the RAR sampling
-            scheme
-        dyn_only
-            Default False. Whether to return only the dynamic loss term (and
-            thus avoid computing the other terms). This is used in particular
-            in RAR sampling scheme.
-        dyn_cartesian_product
-            Default True. Whether to take the cartesian product of time_batch
-            and omega_batch. This is what is done in a traditional loss
-            evaluation. But in RAR sampling scheme we provide (large) batches
-            which should only be concatenate in collocation points without
-            cartesian product
         """
         omega_batch, omega_border_batch, times_batch = batch
         n = omega_batch.shape[0]
@@ -692,21 +659,11 @@ class LossPDENonStatio(LossPDEStatio):
                 (0, 0),
                 0,
             )
-            if dyn_cartesian_product:
-                omega_batch_ = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
-                times_batch_ = rep_times(n)  # it is repeated
-            else:
-                omega_batch_ = omega_batch
-                times_batch_ = times_batch
-            if reduction == "mean":
-                mse_dyn_loss = jnp.mean(v_dyn_loss(times_batch_, omega_batch_) ** 2)
-            else:
-                mse_dyn_loss = v_dyn_loss(times_batch_, omega_batch_) ** 2
+            omega_batch_ = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
+            times_batch_ = rep_times(n)  # it is repeated
+            mse_dyn_loss = jnp.mean(v_dyn_loss(times_batch_, omega_batch_) ** 2)
         else:
             mse_dyn_loss = 0
-
-        if dyn_only:
-            return mse_dyn_loss
 
         # normalization part
         if self.normalization_loss is not None:
@@ -1059,9 +1016,6 @@ class SystemLossPDE:
         self,
         params_dict,
         batch,
-        reduction="mean",
-        dyn_only=False,
-        dyn_cartesian_product=True,
     ):
         """
         Evaluate the loss function at a batch of points for given parameters.
@@ -1076,15 +1030,6 @@ class SystemLossPDE:
             differential equation parameters and the neural network parameter
         batch
             A batch of time points at which to evaluate the loss
-        reduction
-            Default `"mean"`. Whether to take the mean of the dynamic loss over the
-            batch or not. In general you want to take the mean. An edge case
-            where element-wise dynamic loss is needed is in the RAR sampling
-            scheme
-        dyn_only
-            Default False. Whether to return only the dynamic loss term (and
-            thus avoid computing the other terms). This is used in particular
-            in RAR sampling scheme.
         """
         if self.u_dict.keys() != params_dict["nn_params"].keys():
             raise ValueError("u_dict and params_dict[nn_params] should have same keys ")
@@ -1117,10 +1062,7 @@ class SystemLossPDE:
                     0,
                     0,
                 )
-                if reduction == "mean":
-                    mse_dyn_loss += jnp.mean(v_dyn_loss(omega_batch) ** 2)
-                else:
-                    mse_dyn_loss += v_dyn_loss(omega_batch) ** 2
+                mse_dyn_loss += jnp.mean(v_dyn_loss(omega_batch) ** 2)
             else:
                 v_dyn_loss = vmap(
                     lambda t, x: self.dynamic_loss_dict[i].evaluate(
@@ -1132,22 +1074,10 @@ class SystemLossPDE:
 
                 tile_omega_batch = jnp.tile(omega_batch, reps=(nt, 1))
 
-                if dyn_cartesian_product:
-                    omega_batch_ = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
-                    times_batch_ = rep_times(n)  # it is repeated
-                else:
-                    omega_batch_ = omega_batch
-                    times_batch_ = times_batch
+                omega_batch_ = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
+                times_batch_ = rep_times(n)  # it is repeated
 
-                if reduction == "mean":
-                    mse_dyn_loss += jnp.mean(
-                        v_dyn_loss(times_batch_, omega_batch_) ** 2
-                    )
-                else:
-                    mse_dyn_loss += v_dyn_loss(times_batch_, omega_batch_) ** 2
-
-        if dyn_only:
-            return mse_dyn_loss
+                mse_dyn_loss += jnp.mean(v_dyn_loss(times_batch_, omega_batch_) ** 2)
 
         # boundary conditions, normalization conditions, observation_loss,
         # temporal boundary condition... loss this is done via the internal

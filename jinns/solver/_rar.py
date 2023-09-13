@@ -1,10 +1,13 @@
 import jax
+from jax import vmap
 import jax.numpy as jnp
 from jinns.data._DataGenerators import (
     DataGeneratorODE,
     CubicMeshPDEStatio,
     CubicMeshPDENonStatio,
 )
+from jinns.loss._LossPDE import LossPDEStatio, LossPDENonStatio, SystemLossPDE
+from jinns.loss._LossODE import LossODE, SystemLossODE
 from functools import partial
 
 
@@ -19,11 +22,32 @@ def rar_step_init(sample_size, selected_sample_size):
     """
 
     def rar_step_true(operands):
-        loss_evaluate_fun, params, data, i = operands
+        loss, params, data, i = operands
 
         if isinstance(data, DataGeneratorODE):
             s = data.sample_in_time_domain(sample_size)
-            mse_on_s = loss_evaluate_fun(params, s, reduction=None, dyn_only=True)
+
+            # We can have different types of Loss
+            if isinstance(loss, LossODE):
+                v_dyn_loss = vmap(
+                    lambda t: loss.dynamic_loss.evaluate(t, loss.u, params),
+                    (0),
+                    0,
+                )
+                mse_on_s = (v_dyn_loss(s) ** 2).flatten()
+            elif isinstance(loss, SystemLossODE):
+                mse_on_s = 0
+
+                for i in loss.dynamic_loss_dict.keys():
+                    v_dyn_loss = vmap(
+                        lambda t: loss.dynamic_loss_dict[i].evaluate(
+                            t, loss.u_dict, params
+                        ),
+                        (0),
+                        0,
+                    )
+                    mse_on_s += (v_dyn_loss(s) ** 2).flatten()
+
             ## Select the m points with higher dynamic loss
             higher_residual_idx = jax.lax.dynamic_slice(
                 jnp.argsort(mse_on_s),
@@ -69,7 +93,32 @@ def rar_step_init(sample_size, selected_sample_size):
             data, CubicMeshPDENonStatio
         ):
             s = data.sample_in_omega_domain(sample_size)
-            mse_on_s = loss_evaluate_fun(params, s, reduction=None, dyn_only=True)
+
+            # We can have different types of Loss
+            if isinstance(loss, LossPDEStatio):
+                v_dyn_loss = vmap(
+                    lambda x: loss.dynamic_loss.evaluate(
+                        x,
+                        loss.u,
+                        params,
+                    ),
+                    (0),
+                    0,
+                )
+                mse_on_s = (v_dyn_loss(s) ** 2).flatten()
+            elif isinstance(loss, SystemLossPDE):
+                mse_on_s = 0
+                for i in loss.dynamic_loss_dict.keys():
+                    # only the case LossPDEStatio here
+                    v_dyn_loss = vmap(
+                        lambda x: loss.dynamic_loss_dict[i].evaluate(
+                            x, loss.u_dict, params
+                        ),
+                        0,
+                        0,
+                    )
+                    mse_on_s += (v_dyn_loss(s) ** 2).flatten()
+
             ## Select the m points with higher dynamic loss
             higher_residual_idx = jax.lax.dynamic_slice(
                 jnp.argsort(mse_on_s),
@@ -114,14 +163,54 @@ def rar_step_init(sample_size, selected_sample_size):
         elif isinstance(data, CubicMeshPDENonStatio):
             st = data.sample_in_time_domain(sample_size)
             sx = data.sample_in_omega_domain(sample_size)
-            mse_on_s = loss_evaluate_fun(
-                params,
-                (sx, None, st),
-                reduction=None,
-                dyn_only=True,
-                dyn_cartesian_product=False,
-            ).flatten()
-            ## Select the m points with higher dynamic loss
+
+            # According to the Loss type we have different syntax to call the
+            # dynamic_loss evaluate function
+            if isinstance(loss, LossPDEStatio) and not isinstance(
+                loss, LossPDENonStatio
+            ):
+                # This case might not happen very often...
+                v_dyn_loss = vmap(
+                    lambda x: loss.dynamic_loss.evaluate(
+                        x,
+                        loss.u,
+                        params,
+                    ),
+                    (0),
+                    0,
+                )
+                mse_on_s = (v_dyn_loss(sx) ** 2).flatten()
+            elif isinstance(loss, LossPDENonStatio):
+                v_dyn_loss = vmap(
+                    lambda t, x: loss.dynamic_loss.evaluate(t, x, loss.u, params),
+                    (0, 0),
+                    0,
+                )
+                mse_on_s = (v_dyn_loss(st[..., None], sx) ** 2).flatten()
+            elif isinstance(loss, SystemLossPDE):
+                mse_on_s = 0
+                for i in loss.dynamic_loss_dict.keys():
+                    if isinstance(loss.dynamic_loss_dict[i], PDEStatio):
+                        v_dyn_loss = vmap(
+                            lambda x: loss.dynamic_loss_dict[i].evaluate(
+                                x, loss.u_dict, params
+                            ),
+                            0,
+                            0,
+                        )
+                        mse_on_s += (v_dyn_loss(sx) ** 2).flatten()
+                    else:
+                        v_dyn_loss = vmap(
+                            lambda t, x: loss.dynamic_loss_dict[i].evaluate(
+                                t, x, loss.u_dict, params
+                            ),
+                            (0, 0),
+                            0,
+                        )
+                        mse_on_s += (v_dyn_loss(st[..., None], sx) ** 2).flatten()
+
+            ## Now that we have the residuals, select the m points
+            # with higher dynamic loss (residuals)
             higher_residual_idx = jax.lax.dynamic_slice(
                 jnp.argsort(mse_on_s),
                 (mse_on_s.shape[0] - selected_sample_size,),
