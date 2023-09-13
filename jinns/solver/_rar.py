@@ -34,7 +34,11 @@ def rar_step_init(sample_size, selected_sample_size):
                     (0),
                     0,
                 )
-                mse_on_s = (v_dyn_loss(s) ** 2).flatten()
+                dyn_on_s = v_dyn_loss(s)
+                if dyn_on_s.ndim > 1:
+                    mse_on_s = (jnp.linalg.norm(dyn_on_s, axis=-1) ** 2).flatten()
+                else:
+                    mse_on_s = dyn_on_s**2
             elif isinstance(loss, SystemLossODE):
                 mse_on_s = 0
 
@@ -46,7 +50,11 @@ def rar_step_init(sample_size, selected_sample_size):
                         (0),
                         0,
                     )
-                    mse_on_s += (v_dyn_loss(s) ** 2).flatten()
+                    dyn_on_s = v_dyn_loss(s)
+                    if dyn_on_s.ndim > 1:
+                        mse_on_s += (jnp.linalg.norm(dyn_on_s, axis=-1) ** 2).flatten()
+                    else:
+                        mse_on_s += dyn_on_s**2
 
             ## Select the m points with higher dynamic loss
             higher_residual_idx = jax.lax.dynamic_slice(
@@ -105,7 +113,11 @@ def rar_step_init(sample_size, selected_sample_size):
                     (0),
                     0,
                 )
-                mse_on_s = (v_dyn_loss(s) ** 2).flatten()
+                dyn_on_s = v_dyn_loss(s)
+                if dyn_on_s.ndim > 1:
+                    mse_on_s = (jnp.linalg.norm(dyn_on_s, axis=-1) ** 2).flatten()
+                else:
+                    mse_on_s = dyn_on_s**2
             elif isinstance(loss, SystemLossPDE):
                 mse_on_s = 0
                 for i in loss.dynamic_loss_dict.keys():
@@ -117,7 +129,11 @@ def rar_step_init(sample_size, selected_sample_size):
                         0,
                         0,
                     )
-                    mse_on_s += (v_dyn_loss(s) ** 2).flatten()
+                    dyn_on_s = v_dyn_loss(s)
+                    if dyn_on_s.ndim > 1:
+                        mse_on_s += (jnp.linalg.norm(dyn_on_s, axis=-1) ** 2).flatten()
+                    else:
+                        mse_on_s += dyn_on_s**2
 
             ## Select the m points with higher dynamic loss
             higher_residual_idx = jax.lax.dynamic_slice(
@@ -135,7 +151,7 @@ def rar_step_init(sample_size, selected_sample_size):
             data.omega = jax.lax.dynamic_update_slice(
                 data.omega,
                 higher_residual_points,
-                (data.n_start + data.rar_iter_nb * selected_sample_size,),
+                (data.n_start + data.rar_iter_nb * selected_sample_size, data.dim),
             )
 
             ## rearrange probabilities so that the probabilities of the new
@@ -179,14 +195,22 @@ def rar_step_init(sample_size, selected_sample_size):
                     (0),
                     0,
                 )
-                mse_on_s = (v_dyn_loss(sx) ** 2).flatten()
+                dyn_on_s = v_dyn_loss(sx)
+                if dyn_on_s.ndim > 1:
+                    mse_on_s = (jnp.linalg.norm(dyn_on_s, axis=-1) ** 2).flatten()
+                else:
+                    mse_on_s = dyn_on_s**2
             elif isinstance(loss, LossPDENonStatio):
                 v_dyn_loss = vmap(
                     lambda t, x: loss.dynamic_loss.evaluate(t, x, loss.u, params),
                     (0, 0),
                     0,
                 )
-                mse_on_s = (v_dyn_loss(st[..., None], sx) ** 2).flatten()
+                dyn_on_s = v_dyn_loss(st[..., None], sx)
+                if dyn_on_s.ndim > 1:
+                    mse_on_s = (jnp.linalg.norm(dyn_on_s, axis=-1) ** 2).flatten()
+                else:
+                    mse_on_s = dyn_on_s**2
             elif isinstance(loss, SystemLossPDE):
                 mse_on_s = 0
                 for i in loss.dynamic_loss_dict.keys():
@@ -198,7 +222,13 @@ def rar_step_init(sample_size, selected_sample_size):
                             0,
                             0,
                         )
-                        mse_on_s += (v_dyn_loss(sx) ** 2).flatten()
+                        dyn_on_s = v_dyn_loss(sx)
+                        if dyn_on_s.ndim > 1:
+                            mse_on_s += (
+                                jnp.linalg.norm(dyn_on_s, axis=-1) ** 2
+                            ).flatten()
+                        else:
+                            mse_on_s += dyn_on_s**2
                     else:
                         v_dyn_loss = vmap(
                             lambda t, x: loss.dynamic_loss_dict[i].evaluate(
@@ -207,7 +237,13 @@ def rar_step_init(sample_size, selected_sample_size):
                             (0, 0),
                             0,
                         )
-                        mse_on_s += (v_dyn_loss(st[..., None], sx) ** 2).flatten()
+                        dyn_on_s = v_dyn_loss(st[..., None], sx)
+                        if dyn_on_s.ndim > 1:
+                            mse_on_s += (
+                                jnp.linalg.norm(dyn_on_s, axis=-1) ** 2
+                            ).flatten()
+                        else:
+                            mse_on_s += dyn_on_s**2
 
             ## Now that we have the residuals, select the m points
             # with higher dynamic loss (residuals)
