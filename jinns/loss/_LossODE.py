@@ -88,7 +88,6 @@ class LossODE:
             differential equation parameters and the neural network parameter
         batch
             A batch of time points at which to evaluate the loss
-
         """
         if isinstance(params, tuple):
             params_ = params[0]
@@ -285,7 +284,6 @@ class SystemLossODE:
             differential equation parameters and the neural network parameter
         batch
             A batch of time points at which to evaluate the loss
-
         """
         if self.u_dict.keys() != params_dict["nn_params"].keys():
             raise ValueError("u_dict and params_dict[nn_params] should have same keys ")

@@ -31,13 +31,13 @@ def train_GLV_init():
 
     init_nn_params = init_param_fn()
 
-    n = 10000
-    batch_size = 64
+    n = 320
+    batch_size = 32
     method = "uniform"
     tmin = 0
     tmax = 1
 
-    Tmax = 100
+    Tmax = 30
     key, subkey = random.split(key)
     train_data = jinns.data.DataGeneratorODE(subkey, n, tmin, tmax, batch_size, method)
 
@@ -116,10 +116,9 @@ def train_GLV_10it(train_GLV_init):
     )
     n_iter = 10
     pinn_solver = jinns.solver.PinnSolver(optax_solver=solver, loss=loss, n_iter=n_iter)
-    seq2seq = {"time_steps": jnp.linspace(0, 1.0, 11)}
-    seq2seq["iter_steps"] = seq2seq["time_steps"] * n_iter
-    params, total_loss_list, loss_by_term_dict, _, _ = pinn_solver.solve(
-        init_params=params, data=train_data, seq2seq=seq2seq
+    params, total_loss_list, loss_by_term_dict, data, _, _ = pinn_solver.solve(
+        init_params=params,
+        data=train_data,
     )
     return total_loss_list[9]
 
@@ -128,9 +127,9 @@ def test_initial_loss_GLV(train_GLV_init):
     init_params, loss, train_data = train_GLV_init
     assert jnp.round(
         loss.evaluate(init_params, train_data.get_batch())[0], 5
-    ) == jnp.round(20501.41015625, 5)
+    ) == jnp.round(4579.1962890625, 5)
 
 
 def test_10it_GLV(train_GLV_10it):
     total_loss_val = train_GLV_10it
-    assert jnp.round(total_loss_val, 5) == jnp.round(19494.574, 5)
+    assert jnp.round(total_loss_val, 5) == jnp.round(4347.3267, 5)

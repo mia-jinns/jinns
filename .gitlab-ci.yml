@@ -81,5 +81,5 @@ pages:
     - public
   tags:
     - docker
- #only:
-   #- tags
+  only:
+    - main

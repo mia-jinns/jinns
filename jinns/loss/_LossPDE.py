@@ -623,7 +623,11 @@ class LossPDENonStatio(LossPDEStatio):
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
-    def evaluate(self, params, batch):
+    def evaluate(
+        self,
+        params,
+        batch,
+    ):
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -645,8 +649,6 @@ class LossPDENonStatio(LossPDEStatio):
         nt = times_batch.shape[0]
         times_batch = times_batch.reshape(nt, 1)
 
-        tile_omega_batch = jnp.tile(omega_batch, reps=(nt, 1))
-
         def rep_times(k):
             return jnp.repeat(times_batch, k, axis=0)
 
@@ -657,7 +659,9 @@ class LossPDENonStatio(LossPDEStatio):
                 (0, 0),
                 0,
             )
-            mse_dyn_loss = jnp.mean(v_dyn_loss(rep_times(n), tile_omega_batch) ** 2)
+            omega_batch_ = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
+            times_batch_ = rep_times(n)  # it is repeated
+            mse_dyn_loss = jnp.mean(v_dyn_loss(times_batch_, omega_batch_) ** 2)
         else:
             mse_dyn_loss = 0
 
@@ -1008,7 +1012,11 @@ class SystemLossPDE:
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
-    def evaluate(self, params_dict, batch):
+    def evaluate(
+        self,
+        params_dict,
+        batch,
+    ):
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -1022,7 +1030,6 @@ class SystemLossPDE:
             differential equation parameters and the neural network parameter
         batch
             A batch of time points at which to evaluate the loss
-
         """
         if self.u_dict.keys() != params_dict["nn_params"].keys():
             raise ValueError("u_dict and params_dict[nn_params] should have same keys ")
@@ -1035,8 +1042,6 @@ class SystemLossPDE:
             n = omega_batch.shape[0]
             nt = times_batch.shape[0]
             times_batch = times_batch.reshape(nt, 1)
-
-            tile_omega_batch = jnp.tile(omega_batch, reps=(nt, 1))
 
             def rep_times(k):
                 return jnp.repeat(times_batch, k, axis=0)
@@ -1066,9 +1071,13 @@ class SystemLossPDE:
                     (0, 0),
                     0,
                 )
-                mse_dyn_loss += jnp.mean(
-                    v_dyn_loss(rep_times(n), tile_omega_batch) ** 2
-                )
+
+                tile_omega_batch = jnp.tile(omega_batch, reps=(nt, 1))
+
+                omega_batch_ = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
+                times_batch_ = rep_times(n)  # it is repeated
+
+                mse_dyn_loss += jnp.mean(v_dyn_loss(times_batch_, omega_batch_) ** 2)
 
         # boundary conditions, normalization conditions, observation_loss,
         # temporal boundary condition... loss this is done via the internal

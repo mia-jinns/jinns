@@ -67,7 +67,7 @@ def train_Burger_init():
 
     be_loss = jinns.loss.BurgerEquation(Tmax=Tmax)
 
-    loss_weights = {"dyn_loss": 1, "temporal_loss": 1, "boundary_loss": 0.75}
+    loss_weights = {"dyn_loss": 1, "temporal_loss": 5, "boundary_loss": 1}
 
     loss = jinns.loss.LossPDENonStatio(
         u=u,
@@ -103,7 +103,7 @@ def train_Burger_10it(train_Burger_init):
     )
     n_iter = 10
     pinn_solver = jinns.solver.PinnSolver(optax_solver=solver, loss=loss, n_iter=n_iter)
-    params, total_loss_list, loss_by_term_dict, _, _ = pinn_solver.solve(
+    params, total_loss_list, loss_by_term_dict, _, _, _ = pinn_solver.solve(
         init_params=params, data=train_data
     )
     return total_loss_list[9]
@@ -114,9 +114,9 @@ def test_initial_loss_Burger(train_Burger_init):
 
     assert jnp.round(
         loss.evaluate(init_params, train_data.get_batch())[0], 5
-    ) == jnp.round(0.5594470500946045, 5)
+    ) == jnp.round(2.6052262783050537, 5)
 
 
 def test_10it_Burger(train_Burger_10it):
     total_loss_val = train_Burger_10it
-    assert jnp.round(total_loss_val, 5) == jnp.round(0.43057507, 5)
+    assert jnp.round(total_loss_val, 5) == jnp.round(2.0848744, 5)

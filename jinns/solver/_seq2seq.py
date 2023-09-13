@@ -49,7 +49,7 @@ def initialize_seq2seq(loss, data, seq2seq):
         data.curr_omega_idx = 0
         data.generate_time_data()
         data._key, data.times, _ = _reset_batch_idx_and_permute(
-            (data._key, data.times, data.curr_omega_idx, None)
+            (data._key, data.times, data.curr_omega_idx, None, data.p)
         )
     elif isinstance(loss, LossPDENonStatio):
         raise RuntimeError("Untrusted function, do not use")
@@ -80,6 +80,8 @@ def initialize_seq2seq(loss, data, seq2seq):
         #        )
         #    )
 
+    # No need to return data here since this function will not be jitted and
+    # side effects are allowed
     return update_seq2seq
 
 
@@ -140,9 +142,9 @@ def update_seq2seq_SystemLossODE(operands):
     data.curr_omega_idx = 0
     data.generate_time_data()
     data._key, data.times, _ = _reset_batch_idx_and_permute(
-        (data._key, data.times, data.curr_omega_idx, None)
+        (data._key, data.times, data.curr_omega_idx, None, data.p)
     )
-    return curr_seq
+    return curr_seq, loss, data
 
 
 def update_seq2seq_LossPDENonStatio(operands):
@@ -200,11 +202,6 @@ def update_seq2seq_LossPDENonStatio(operands):
     if data.omega_border is not None:
         data.curr_omega_border_idx = 0
         data._key, data.omega_border, _ = _reset_batch_idx_and_permute(
-            (
-                data._key,
-                data.omega_border,
-                data.curr_omega_border_idx,
-                None,
-            )
+            (data._key, data.omega_border, data.curr_omega_border_idx, None, data.p)
         )
     return curr_seq
