@@ -11,9 +11,11 @@ import warnings
 
 import math
 
+from typing import NamedTuple
+from jax.typing import ArrayLike
+
+
 # utility function for jax.lax.cond in *_batch() method
-
-
 def _reset_batch_idx_and_permute(operands):
     key, domain, curr_idx, _, p = operands
     # resetting counter
@@ -39,6 +41,10 @@ def _increment_batch_idx(operands):
 #####################################################
 # DataGenerator for ODE : only returns time_batches
 #####################################################
+class ODEBatch(NamedTuple):
+    temporal_batch: ArrayLike
+
+
 @register_pytree_node_class
 class DataGeneratorODE:
     """
@@ -208,7 +214,7 @@ class DataGeneratorODE:
         """
         Generic method to return a batch. Here we call `self.temporal_batch()`
         """
-        return self.temporal_batch()
+        return ODEBatch(temporal_batch=self.temporal_batch())
 
     def tree_flatten(self):
         children = (
@@ -278,6 +284,11 @@ class DataGeneratorPDEAbstract:
         # Useful when using a lax.scan with a DataGenerator in the carry
         # It tells JAX not to re-generate data in the __init__()
         self.data_exists = data_exists
+
+
+class PDEStatioBatch(NamedTuple):
+    inside_batch: ArrayLike
+    border_batch: ArrayLike
 
 
 @register_pytree_node_class
@@ -671,7 +682,9 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         Generic method to return a batch. Here we call `self.inside_batch()`
         and `self.border_batch()`
         """
-        return self.inside_batch(), self.border_batch()
+        return PDEStatioBatch(
+            inside_batch=self.inside_batch(), border_batch=self.border_batch()
+        )
 
     def tree_flatten(self):
         children = (
@@ -740,6 +753,12 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         obj.rar_iter_from_last_sampling = rar_iter_from_last_sampling
         obj.rar_iter_nb = rar_iter_nb
         return obj
+
+
+class PDENonStatioBatch(NamedTuple):
+    inside_batch: ArrayLike
+    border_batch: ArrayLike
+    temporal_batch: ArrayLike
 
 
 @register_pytree_node_class
@@ -938,10 +957,10 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         Generic method to return a batch. Here we call `self.inside_batch()`,
         `self.border_batch()` and `self.temporal_batch()`
         """
-        return (
-            self.inside_batch(),
-            self.border_batch(),
-            self.temporal_batch(),
+        return PDENonStatioBatch(
+            inside_batch=self.inside_batch(),
+            border_batch=self.border_batch(),
+            temporal_batch=self.temporal_batch(),
         )
 
     def tree_flatten(self):
@@ -1022,4 +1041,167 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         obj.p = p
         obj.rar_iter_from_last_sampling = rar_iter_from_last_sampling
         obj.rar_iter_nb = rar_iter_nb
+        return obj
+
+
+class ParamBatch(NamedTuple):
+    param_batch_dict: dict
+
+
+@register_pytree_node_class
+class DataGeneratorParameter:
+    """
+    A data generator for additional unidimensional parameter(s)
+    """
+
+    def __init__(
+        self,
+        key,
+        n,
+        param_batch_size,
+        param_ranges,
+        method="grid",
+        data_exists=False,
+    ):
+        """
+        Parameters
+        ----------
+        key
+            Jax random key to sample new time points and to shuffle batches
+        n
+            An integer. The number of total points that will be divided in
+            batches. Batches are made so that each data point is seen only
+            once during 1 epoch.
+        param_batch_size
+            An integer. The size of the batch of randomly selected points among
+            the `n` points
+        param_ranges
+            A dict. A dict of tuples (min, max), which
+            reprensents the range of real numbers where to sample batches (of
+            length `param_batch_size` among `n` points).
+            The key corresponds to the parameter name.
+            By providing several entries in this dictionary we can sample an arbitrary
+            number of parameters.
+            **Note** that we currently only support unidimensional parameters
+        method
+            Either `grid` or `uniform`, default is `grid`. `grid` means
+            regularly spaced points over the domain. `uniform` means uniformly
+            sampled points over the domain
+        data_exists
+            Must be left to `False` when created by the user. Avoids the
+            regeneration of :math:`\Omega`, :math:`\partial\Omega` and
+            time points at each pytree flattening and unflattening.
+        """
+        self.data_exists = data_exists
+        self.method = method
+        self._key = key
+        self.n = n
+        self.param_batch_size = param_batch_size
+        self.param_ranges = param_ranges
+
+        if not self.data_exists:
+            self.generate_data()
+            # The previous call to self.generate_data() has created
+            # the dict self.param_n_samples
+            self.curr_param_idx = {}
+            for k in self.param_ranges.keys():
+                self.curr_param_idx[k] = 0
+                self._key, self.param_n_samples[k], _ = _reset_batch_idx_and_permute(
+                    (
+                        self._key,
+                        self.param_n_samples[k],
+                        self.curr_param_idx[k],
+                        None,
+                    )
+                )
+
+    def generate_data(self):
+        # Generate param n samples
+        self.param_n_samples = {}
+        for k, e in self.param_ranges.items():
+            # TODO add support for multidimensional additional_data key
+            if self.method == "grid":
+                xmin, xmax = e[0], e[1]
+                self.partial = (xmax - xmin) / self.n
+                # shape (n, 1)
+                self.param_n_samples[k] = jnp.arange(xmin, xmax, self.partial)[:, None]
+            elif self.method == "uniform":
+                xmin, xmax = e[0], e[1]
+                self._key, subkey = random.split(self._key, 2)
+                self.param_n_samples[k] = random.uniform(
+                    subkey, shape=(self.n, 1), minval=xmin, maxval=xmax
+                )
+
+    def param_batch(self):
+        """
+        Return a ditionary with batches of parameters
+        If all the batches have been seen, we reshuffle them,
+        otherwise we just return the next unseen batch.
+        """
+        for k in self.param_n_samples.keys():
+            bstart = self.curr_param_idx[k]
+            bend = bstart + self.param_batch_size
+
+            (
+                self._key,
+                self.param_n_samples[k],
+                self.curr_param_idx[k],
+            ) = jax.lax.cond(
+                bend > self.n,
+                _reset_batch_idx_and_permute,
+                _increment_batch_idx,
+                (
+                    self._key,
+                    self.param_n_samples[k],
+                    self.curr_param_idx[k],
+                    self.param_batch_size,
+                ),
+            )
+
+        return {
+            k: jax.lax.dynamic_slice(
+                self.param_n_samples[k],
+                start_indices=(self.curr_param_idx[k], 0),
+                slice_sizes=(self.param_batch_size, 1),
+            )
+            for k in self.param_n_samples.keys()
+        }
+
+    def get_batch(self):
+        """
+        Generic method to return a batch
+        """
+        return ParamBatch(param_batch_dict=self.param_batch())
+
+    def tree_flatten(self):
+        children = (
+            self._key,
+            self.param_n_samples,
+            self.curr_param_idx,
+        )
+        aux_data = {
+            k: vars(self)[k]
+            for k in [
+                "n",
+                "param_batch_size",
+                "method",
+                "param_ranges",
+            ]
+        }
+        return (children, aux_data)
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        (
+            key,
+            param_n_samples,
+            curr_param_idx,
+        ) = children
+        obj = cls(
+            key=key,
+            data_exists=True,
+            **aux_data,
+        )
+        obj.param_n_samples = param_n_samples
+        obj.curr_param_idx = curr_param_idx
         return obj

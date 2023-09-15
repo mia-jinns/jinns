@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 from jax import vmap
 from jax.tree_util import register_pytree_node_class
+from jinns.data._DataGenerators import ODEBatch
 
 
 @register_pytree_node_class
@@ -94,7 +95,7 @@ class LossODE:
         else:
             params_ = params
 
-        temporal_batch = batch
+        temporal_batch = batch.temporal_batch
 
         # dynamic part
         if self.dynamic_loss is not None:
@@ -288,7 +289,7 @@ class SystemLossODE:
         if self.u_dict.keys() != params_dict["nn_params"].keys():
             raise ValueError("u_dict and params_dict[nn_params] should have same keys ")
 
-        temporal_batch = batch
+        temporal_batch = batch.temporal_batch
         mse_dyn_loss = 0
         mse_initial_condition = 0
         mse_observation_loss = 0
@@ -311,7 +312,7 @@ class SystemLossODE:
                     "nn_params": params_dict["nn_params"][i],
                     "eq_params": params_dict["eq_params"],
                 },
-                temporal_batch,
+                batch,
             )
             # note that the results have already been scaled internally in the
             # call to evaluate

@@ -9,6 +9,7 @@ from jinns.loss._boundary_conditions import (
     _compute_boundary_loss_nonstatio,
 )
 from jinns.loss._DynamicLoss import ODE, PDEStatio, PDENonStatio
+from jinns.data._DataGenerators import PDEStatioBatch, PDENonStatioBatch
 
 _IMPLEMENTED_BOUNDARY_CONDITIONS = [
     "dirichlet",
@@ -374,7 +375,7 @@ class LossPDEStatio(LossPDEAbstract):
             A batch of points in the domain and a batch of points in the domain
             border
         """
-        omega_batch, omega_border_batch = batch
+        omega_batch, omega_border_batch = batch.inside_batch, batch.border_batch
         n = omega_batch.shape[0]
 
         # dynamic part
@@ -644,7 +645,11 @@ class LossPDENonStatio(LossPDEStatio):
             A batch of points in the domain, a batch of points in the domain
             border and a batch of time points
         """
-        omega_batch, omega_border_batch, times_batch = batch
+        omega_batch, omega_border_batch, times_batch = (
+            batch.inside_batch,
+            batch.border_batch,
+            batch.temporal_batch,
+        )
         n = omega_batch.shape[0]
         nt = times_batch.shape[0]
         times_batch = times_batch.reshape(nt, 1)
@@ -1034,17 +1039,24 @@ class SystemLossPDE:
         if self.u_dict.keys() != params_dict["nn_params"].keys():
             raise ValueError("u_dict and params_dict[nn_params] should have same keys ")
 
-        if len(batch) == 2:  # statio batch
-            omega_batch, omega_border_batch = batch
+        if isinstance(batch, PDEStatioBatch):
+            omega_batch, omega_border_batch = batch.inside_batch, batch.border_batch
             n = omega_batch.shape[0]
-        else:  # non statio batch
-            omega_batch, omega_border_batch, times_batch = batch
+        elif isinstance(batch, PDENonStatioBatch):
+            omega_batch, omega_border_batch, times_batch = (
+                batch.inside_batch,
+                batch.border_batch,
+                batch.temporal_batch,
+            )
             n = omega_batch.shape[0]
             nt = times_batch.shape[0]
             times_batch = times_batch.reshape(nt, 1)
 
             def rep_times(k):
                 return jnp.repeat(times_batch, k, axis=0)
+
+        else:
+            raise ValueError("Wrong type of batch")
 
         mse_dyn_loss = 0
         mse_boundary_loss = 0
