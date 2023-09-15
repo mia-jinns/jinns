@@ -27,7 +27,8 @@ def test_t_range_DataGeneratorODE(create_DataGeneratorODE):
 
 def test_get_batch(create_DataGeneratorODE):
     data_generator_ode = create_DataGeneratorODE
-    times_batch = data_generator_ode.get_batch()
+    times_batch = data_generator_ode.get_batch().temporal_batch
+    print(times_batch)
     assert jnp.all(times_batch[:] >= data_generator_ode.tmin) and jnp.all(
         times_batch[:] <= data_generator_ode.tmax
     )
