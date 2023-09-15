@@ -4,7 +4,12 @@ from jax import jit
 import jax.numpy as jnp
 from jinns.solver._seq2seq import initialize_seq2seq
 from jinns.solver._rar import rar_step_init
-from jinns.data._DataGenerators import append_param_batch
+from jinns.data._DataGenerators import (
+    DataGeneratorODE,
+    CubicMeshPDEStatio,
+    CubicMeshPDENonStatio,
+    append_param_batch,
+)
 
 
 class PinnSolver:
@@ -98,6 +103,30 @@ class PinnSolver:
             given in accu_vars is stored
         """
         params = init_params
+
+        if param_data is not None:
+            if (
+                (
+                    isinstance(data, DataGeneratorODE)
+                    and param_data.param_batch_size != data.temporal_batch_size
+                )
+                or (
+                    isinstance(data, CubicMeshPDEStatio)
+                    and param_data.param_batch_size != data.omega_batch_size
+                )
+                or (
+                    isinstance(data, CubicMeshPDENonStatio)
+                    and param_data.param_batch_size
+                    != data.omega_batch_size * data.temporal_batch_size
+                )
+            ):
+                raise ValueError(
+                    "Optional param_data.param_batch_size must be"
+                    " equal to data.temporal_batch_size or data.omega_batch_size or"
+                    " the product of both dependeing on the type of the main"
+                    " datagenerator"
+                )
+
         if opt_state is None:
             batch = data.get_batch()
             if param_data is not None:
