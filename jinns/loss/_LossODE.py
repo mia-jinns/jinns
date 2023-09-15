@@ -2,6 +2,8 @@ import jax
 import jax.numpy as jnp
 from jax import vmap
 from jax.tree_util import register_pytree_node_class
+from jinns.data._DataGenerators import ODEBatch
+from jinns.utils._utils import _get_vmap_in_axes_params
 
 
 @register_pytree_node_class
@@ -94,16 +96,30 @@ class LossODE:
         else:
             params_ = params
 
-        temporal_batch = batch
+        temporal_batch = batch.temporal_batch
+
+        vmap_in_axes_t = (0,)
+
+        # Retrieve the optional eq_params_batch
+        # and update eq_params with the latter
+        # and update vmap_in_axes
+        if batch.param_batch_dict is not None:
+            eq_params_batch_dict = batch.param_batch_dict
+
+            # feed the eq_params with the batch
+            for k in eq_params_batch_dict.keys():
+                params["eq_params"][k] = eq_params_batch_dict[k]
+
+        vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
         # dynamic part
         if self.dynamic_loss is not None:
             v_dyn_loss = vmap(
-                lambda t: self.dynamic_loss.evaluate(t, self.u, params),
-                (0),
+                lambda t, params: self.dynamic_loss.evaluate(t, self.u, params),
+                vmap_in_axes_t + vmap_in_axes_params,
                 0,
             )
-            mse_dyn_loss = jnp.mean(v_dyn_loss(temporal_batch) ** 2)
+            mse_dyn_loss = jnp.mean(v_dyn_loss(temporal_batch, params) ** 2)
         else:
             mse_dyn_loss = 0
 
@@ -288,7 +304,24 @@ class SystemLossODE:
         if self.u_dict.keys() != params_dict["nn_params"].keys():
             raise ValueError("u_dict and params_dict[nn_params] should have same keys ")
 
-        temporal_batch = batch
+        temporal_batch = batch.temporal_batch
+
+        vmap_in_axes_t = (0,)
+
+        # Retrieve the optional eq_params_batch
+        # and update eq_params with the latter
+        # and update vmap_in_axes
+        if batch.param_batch_dict is not None:
+            eq_params_batch_dict = batch.param_batch_dict
+
+            # feed the eq_params with the batch
+            for k in eq_params_batch_dict.keys():
+                params_dict["eq_params"][k] = eq_params_batch_dict[k]
+
+        vmap_in_axes_params = _get_vmap_in_axes_params(
+            batch.param_batch_dict, params_dict
+        )
+
         mse_dyn_loss = 0
         mse_initial_condition = 0
         mse_observation_loss = 0
@@ -296,13 +329,13 @@ class SystemLossODE:
         for i in self.dynamic_loss_dict.keys():
             # dynamic part
             v_dyn_loss = vmap(
-                lambda t: self.dynamic_loss_dict[i].evaluate(
+                lambda t, params_dict: self.dynamic_loss_dict[i].evaluate(
                     t, self.u_dict, params_dict
                 ),
-                (0),
+                vmap_in_axes_t + vmap_in_axes_params,
                 0,
             )
-            mse_dyn_loss += jnp.mean(v_dyn_loss(temporal_batch) ** 2)
+            mse_dyn_loss += jnp.mean(v_dyn_loss(temporal_batch, params_dict) ** 2)
 
         # initial conditions and observation_loss via the internal LossODE
         for i in self.u_dict.keys():
@@ -311,7 +344,7 @@ class SystemLossODE:
                     "nn_params": params_dict["nn_params"][i],
                     "eq_params": params_dict["eq_params"],
                 },
-                temporal_batch,
+                batch,
             )
             # note that the results have already been scaled internally in the
             # call to evaluate

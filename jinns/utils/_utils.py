@@ -55,7 +55,7 @@ class _MLP(eqx.Module):
         return t
 
 
-def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=False):
+def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=None):
     """
     Utility function to create a standard PINN neural network with the equinox
     library.
@@ -86,17 +86,20 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=False):
         can be high dimensional.
         "nonstatio_PDE": the PINN is called with two inputs `t` and `x`, `x`
         can be high dimensional.
-        __Note: the input dimension as given in eqx_list has to match the sum
+        **Note: the input dimension as given in eqx_list has to match the sum
         of the dimension of `t` + the dimension of `x` + the number of
-        parameters in `eq_params` if with_eq_params is `True` (see below)__
+        parameters in `eq_params` if with_eq_params is `True` (see below)**
     dim_x
         An integer. The dimension of `x`. Default `0`
     with_eq_params
-        A boolean. Default is False. Whether the network also takes as inputs
-        the equation parameters (`eq_params`). __If `True`, the input dimension
-        as given in eqx_list must take into account the number of parameters
-        (addition dimension of `t` + the dimension of `x` + the number of
-        `eq_params`)__
+        Default is None. Otherwise a list of keys from the dict `eq_params`
+        that  the network also takes as inputs.
+        the equation parameters (`eq_params`).
+        **If some keys are provided, the input dimension
+        as given in eqx_list must take into account the number of such provided
+        keys (i.e., the input dimension is the addition of the dimension of ``t``
+        + the dimension of ``x`` + the number of ``eq_params``)**
+
 
     Returns
     -------
@@ -127,8 +130,16 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=False):
     if eq_type != "ODE" and dim_x == 0:
         raise RuntimeError("Wrong parameter combination eq_type and dim_x")
 
-    # TODO check the consistency between the parameters and the declared number of
-    # inputs
+    dim_t = 0 if eq_type == "statio_PDE" else 1
+    dim_in_params = len(with_eq_params) if with_eq_params is not None else 0
+    try:
+        nb_inputs_declared = eqx_list[0][1]  # normally we look for 2nd ele of 1st layer
+    except IndexError:
+        nb_inputs_declared = eqx_list[1][
+            1
+        ]  # but we can have, eg, a flatten first layer
+    if dim_t + dim_x + dim_in_params != nb_inputs_declared:
+        raise RuntimeError("Error in the declarations of the number of parameters")
 
     def make_mlp(key, eqx_list):
         mlp = _MLP(key, eqx_list)
@@ -138,11 +149,9 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=False):
             return params
 
         if eq_type == "ODE":
-            if not with_eq_params:
+            if with_eq_params is None:
 
-                def apply_fn(
-                    t, u_params, eq_params=None
-                ):  # NOTE here the unused eq_params
+                def apply_fn(t, u_params, eq_params=None):
                     model = eqx.combine(u_params, static)
                     t = t[
                         None
@@ -155,23 +164,18 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=False):
                     model = eqx.combine(u_params, static)
                     t = t[
                         None
-                    ]  # Note that we added a dimension to t which is lacking for the ODE batches
+                    ]  # We added a dimension to t which is lacking for the ODE batches
                     eq_params_flatten = jnp.concatenate(
-                        [e.ravel() for k, e in eq_params.items()]
-                    )
-                    eq_params_flatten = jnp.repeat(
-                        eq_params_flatten, t.shape[0], axis=0
+                        [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
                     )
                     t_eq_params = jnp.concatenate([t, eq_params_flatten], axis=-1)
                     return model(t_eq_params).squeeze()
 
         elif eq_type == "statio_PDE":
             # Here we add an argument `x` which can be high dimensional
-            if not with_eq_params:
+            if with_eq_params is None:
 
-                def apply_fn(
-                    x, u_params, eq_params=None
-                ):  # NOTE here the unused eq_params
+                def apply_fn(x, u_params, eq_params=None):
                     model = eqx.combine(u_params, static)
                     return model(x).squeeze()
 
@@ -180,21 +184,16 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=False):
                 def apply_fn(x, u_params, eq_params):
                     model = eqx.combine(u_params, static)
                     eq_params_flatten = jnp.concatenate(
-                        [e.ravel() for k, e in eq_params.items()]
-                    )
-                    eq_params_flatten = jnp.repeat(
-                        eq_params_flatten, t.shape[0], axis=0
+                        [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
                     )
                     x_eq_params = jnp.concatenate([x, eq_params_flatten], axis=-1)
                     return model(x_eq_params).squeeze()
 
         elif eq_type == "nonstatio_PDE":
             # Here we add an argument `x` which can be high dimensional
-            if not with_eq_params:
+            if with_eq_params is None:
 
-                def apply_fn(
-                    t, x, u_params, eq_params=None
-                ):  # NOTE here the unused eq_params
+                def apply_fn(t, x, u_params, eq_params=None):
                     model = eqx.combine(u_params, static)
                     t_x = jnp.concatenate([t, x], axis=-1)
                     return model(t_x).squeeze()
@@ -205,10 +204,7 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=False):
                     model = eqx.combine(u_params, static)
                     t_x = jnp.concatenate([t, x], axis=-1)
                     eq_params_flatten = jnp.concatenate(
-                        [e.ravel() for k, e in eq_params.items()]
-                    )
-                    eq_params_flatten = jnp.repeat(
-                        eq_params_flatten, t.shape[0], axis=0
+                        [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
                     )
                     t_x_eq_params = jnp.concatenate([t_x, eq_params_flatten], axis=-1)
                     return model(t_x_eq_params).squeeze()
@@ -219,6 +215,31 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=False):
         return init_fn, apply_fn
 
     return make_mlp(key, eqx_list)
+
+
+def _get_vmap_in_axes_params(eq_params_batch_dict, params):
+    """
+    Return the input vmap axes when there is batch(es) of parameters to vmap
+    over. The latter are designated by keys in eq_params_batch_dict
+    If eq_params_batch_dict (ie no additional parameter batch), we return None
+    """
+    if eq_params_batch_dict is None:
+        return (None,)
+    else:
+        # We use pytree indexing of vmapped axes and vmap on axis
+        # 0 of the eq_parameters for which we have a batch
+        # this is for a fine-grained vmaping
+        # scheme over the params
+        vmap_in_axes_params = (
+            {
+                "eq_params": {
+                    k: (0 if k in eq_params_batch_dict.keys() else None)
+                    for k in params["eq_params"].keys()
+                },
+                "nn_params": None,
+            },
+        )
+        return vmap_in_axes_params
 
 
 def alternate_optax_solver(
