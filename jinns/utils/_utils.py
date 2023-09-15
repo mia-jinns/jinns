@@ -217,6 +217,31 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=None):
     return make_mlp(key, eqx_list)
 
 
+def _get_vmap_in_axes_params(eq_params_batch_dict, params):
+    """
+    Return the input vmap axes when there is batch(es) of parameters to vmap
+    over. The latter are designated by keys in eq_params_batch_dict
+    If eq_params_batch_dict (ie no additional parameter batch), we return None
+    """
+    if eq_params_batch_dict is None:
+        return (None,)
+    else:
+        # We use pytree indexing of vmapped axes and vmap on axis
+        # 0 of the eq_parameters for which we have a batch
+        # this is for a fine-grained vmaping
+        # scheme over the params
+        vmap_in_axes_params = (
+            {
+                "eq_params": {
+                    k: (0 if k in eq_params_batch_dict.keys() else None)
+                    for k in params["eq_params"].keys()
+                },
+                "nn_params": None,
+            },
+        )
+        return vmap_in_axes_params
+
+
 def alternate_optax_solver(
     steps, parameters_set1, parameters_set2, lr_set1, lr_set2, label_fn=None
 ):

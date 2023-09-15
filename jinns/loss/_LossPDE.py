@@ -10,6 +10,7 @@ from jinns.loss._boundary_conditions import (
 )
 from jinns.loss._DynamicLoss import ODE, PDEStatio, PDENonStatio
 from jinns.data._DataGenerators import PDEStatioBatch, PDENonStatioBatch
+from jinns.utils._utils import _get_vmap_in_axes_params
 
 _IMPLEMENTED_BOUNDARY_CONDITIONS = [
     "dirichlet",
@@ -390,21 +391,7 @@ class LossPDEStatio(LossPDEAbstract):
             for k in eq_params_batch_dict.keys():
                 params["eq_params"][k] = eq_params_batch_dict[k]
 
-            # We use pytree indexing of vmapped axes and vmap on axis
-            # 0 of the eq_parameters for which we have a batch
-            # this is for a fine-grained vmaping
-            # scheme over the params
-            vmap_in_axes_params = (
-                {
-                    "eq_params": {
-                        k: (0 if k in eq_params_batch_dict.keys() else None)
-                        for k in params["eq_params"].keys()
-                    },
-                    "nn_params": None,
-                },
-            )
-        else:
-            vmap_in_axes_params = (None,)
+        vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
         # dynamic part
         if self.dynamic_loss is not None:
@@ -698,21 +685,7 @@ class LossPDENonStatio(LossPDEStatio):
             for k in eq_params_batch_dict.keys():
                 params["eq_params"][k] = eq_params_batch_dict[k]
 
-            # We use pytree indexing of vmapped axes and vmap on axis
-            # 0 of the eq_parameters for which we have a batch
-            # this is for a fine-grained vmaping
-            # scheme over the params
-            vmap_in_axes_params = (
-                {
-                    "eq_params": {
-                        k: (0 if k in eq_params_batch_dict.keys() else None)
-                        for k in params["eq_params"].keys()
-                    },
-                    "nn_params": None,
-                },
-            )
-        else:
-            vmap_in_axes_params = (None,)
+        vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
         # dynamic part
         if self.dynamic_loss is not None:
@@ -1128,21 +1101,9 @@ class SystemLossPDE:
             for k in eq_params_batch_dict.keys():
                 params_dict["eq_params"][k] = eq_params_batch_dict[k]
 
-            # We use pytree indexing of vmapped axes and vmap on axis
-            # 0 of the eq_parameters for which we have a batch
-            # this is for a fine-grained vmaping
-            # scheme over the params
-            vmap_in_axes_params = (
-                {
-                    "eq_params": {
-                        k: (0 if k in eq_params_batch_dict.keys() else None)
-                        for k in params_dict["eq_params"].keys()
-                    },
-                    "nn_params": None,
-                },
-            )
-        else:
-            vmap_in_axes_params = (None,)
+        vmap_in_axes_params = _get_vmap_in_axes_params(
+            batch.param_batch_dict, params_dict
+        )
 
         mse_dyn_loss = 0
         mse_boundary_loss = 0
