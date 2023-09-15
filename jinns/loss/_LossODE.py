@@ -97,14 +97,42 @@ class LossODE:
 
         temporal_batch = batch.temporal_batch
 
+        vmap_in_axes_t = (0,)
+
+        # Retrieve the optional eq_params_batch
+        # and update eq_params with the latter
+        # and update vmap_in_axes
+        if batch.param_batch_dict is not None:
+            eq_params_batch_dict = batch.param_batch_dict
+
+            # feed the eq_params with the batch
+            for k in eq_params_batch_dict.keys():
+                params["eq_params"][k] = eq_params_batch_dict[k]
+
+            # We use pytree indexing of vmapped axes and vmap on axis
+            # 0 of the eq_parameters for which we have a batch
+            # this is for a fine-grained vmaping
+            # scheme over the params
+            vmap_in_axes_params = (
+                {
+                    "eq_params": {
+                        k: (0 if k in eq_params_batch_dict.keys() else None)
+                        for k in params["eq_params"].keys()
+                    },
+                    "nn_params": None,
+                },
+            )
+        else:
+            vmap_in_axes_params = (None,)
+
         # dynamic part
         if self.dynamic_loss is not None:
             v_dyn_loss = vmap(
-                lambda t: self.dynamic_loss.evaluate(t, self.u, params),
-                (0),
+                lambda t, params: self.dynamic_loss.evaluate(t, self.u, params),
+                vmap_in_axes_t + vmap_in_axes_params,
                 0,
             )
-            mse_dyn_loss = jnp.mean(v_dyn_loss(temporal_batch) ** 2)
+            mse_dyn_loss = jnp.mean(v_dyn_loss(temporal_batch, params) ** 2)
         else:
             mse_dyn_loss = 0
 
@@ -290,6 +318,35 @@ class SystemLossODE:
             raise ValueError("u_dict and params_dict[nn_params] should have same keys ")
 
         temporal_batch = batch.temporal_batch
+
+        vmap_in_axes_t = (0,)
+
+        # Retrieve the optional eq_params_batch
+        # and update eq_params with the latter
+        # and update vmap_in_axes
+        if batch.param_batch_dict is not None:
+            eq_params_batch_dict = batch.param_batch_dict
+
+            # feed the eq_params with the batch
+            for k in eq_params_batch_dict.keys():
+                params_dict["eq_params"][k] = eq_params_batch_dict[k]
+
+            # We use pytree indexing of vmapped axes and vmap on axis
+            # 0 of the eq_parameters for which we have a batch
+            # this is for a fine-grained vmaping
+            # scheme over the params
+            vmap_in_axes_params = (
+                {
+                    "eq_params": {
+                        k: (0 if k in eq_params_batch_dict.keys() else None)
+                        for k in params_dict["eq_params"].keys()
+                    },
+                    "nn_params": None,
+                },
+            )
+        else:
+            vmap_in_axes_params = (None,)
+
         mse_dyn_loss = 0
         mse_initial_condition = 0
         mse_observation_loss = 0
@@ -297,13 +354,13 @@ class SystemLossODE:
         for i in self.dynamic_loss_dict.keys():
             # dynamic part
             v_dyn_loss = vmap(
-                lambda t: self.dynamic_loss_dict[i].evaluate(
+                lambda t, params_dict: self.dynamic_loss_dict[i].evaluate(
                     t, self.u_dict, params_dict
                 ),
-                (0),
+                vmap_in_axes_t + vmap_in_axes_params,
                 0,
             )
-            mse_dyn_loss += jnp.mean(v_dyn_loss(temporal_batch) ** 2)
+            mse_dyn_loss += jnp.mean(v_dyn_loss(temporal_batch, params_dict) ** 2)
 
         # initial conditions and observation_loss via the internal LossODE
         for i in self.u_dict.keys():

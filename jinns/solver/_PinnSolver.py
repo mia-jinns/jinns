@@ -4,6 +4,7 @@ from jax import jit
 import jax.numpy as jnp
 from jinns.solver._seq2seq import initialize_seq2seq
 from jinns.solver._rar import rar_step_init
+from jinns.data._DataGenerators import append_param_batch
 
 
 class PinnSolver:
@@ -37,6 +38,7 @@ class PinnSolver:
         opt_state=None,
         seq2seq=None,
         accu_vars=[],
+        param_data=None,
     ):
         """
         Performs the optimization process via stochastic gradient descent
@@ -74,6 +76,9 @@ class PinnSolver:
             to access a leaf in init_params (and later on params). Each
             selected leaf will be tracked and stored at each iteration and
             returned by the solve function
+        param_data
+            Default None. A DataGeneratorParameter object which can be used to
+            sample equation parameters.
 
 
         Returns
@@ -95,6 +100,8 @@ class PinnSolver:
         params = init_params
         if opt_state is None:
             batch = data.get_batch()
+            if param_data is not None:
+                batch = append_param_batch(batch, param_data.get_batch())
             opt_state = self.optax_solver.init_state(params, batch=batch)
 
         curr_seq = 0
@@ -132,6 +139,9 @@ class PinnSolver:
         # initialize the dict for stored loss values
         stored_loss_terms = {}
         batch = data.get_batch()
+        if param_data is not None:
+            batch = append_param_batch(batch, param_data.get_batch())
+
         _, loss_terms = self.loss(params, batch)
         for loss_name, _ in loss_terms.items():
             stored_loss_terms[loss_name] = jnp.zeros((self.n_iter,))
@@ -147,6 +157,8 @@ class PinnSolver:
             Main optimization loop
             """
             batch = carry["data"].get_batch()
+            if carry["param_data"] is not None:
+                batch = append_param_batch(batch, carry["param_data"].get_batch())
             params, opt_state = self.optax_solver.update(
                 params=carry["params"], state=carry["state"], batch=batch
             )
@@ -221,6 +233,7 @@ class PinnSolver:
                 "stored_values": carry["stored_values"],
                 "stored_loss_terms": carry["stored_loss_terms"],
                 "loss": carry["loss"],
+                "param_data": carry["param_data"],
             }, accu
 
         res, accu = jax.lax.scan(
@@ -234,6 +247,7 @@ class PinnSolver:
                 "stored_values": stored_values,
                 "stored_loss_terms": stored_loss_terms,
                 "loss": self.loss,
+                "param_data": param_data,
             },
             jnp.arange(self.n_iter),
         )

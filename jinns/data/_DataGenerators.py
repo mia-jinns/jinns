@@ -15,6 +15,32 @@ from typing import NamedTuple
 from jax.typing import ArrayLike
 
 
+class ODEBatch(NamedTuple):
+    temporal_batch: ArrayLike
+    param_batch_dict: dict = None
+
+
+class PDENonStatioBatch(NamedTuple):
+    inside_batch: ArrayLike
+    border_batch: ArrayLike
+    temporal_batch: ArrayLike
+    param_batch_dict: dict = None
+
+
+class PDEStatioBatch(NamedTuple):
+    inside_batch: ArrayLike
+    border_batch: ArrayLike
+    param_batch_dict: dict = None
+
+
+def append_param_batch(batch, param_batch_dict):
+    """
+    Utility function that fill the param_batch_dict of a batch object with a
+    param_batch_dict
+    """
+    return batch._replace(param_batch_dict=param_batch_dict)
+
+
 # utility function for jax.lax.cond in *_batch() method
 def _reset_batch_idx_and_permute(operands):
     key, domain, curr_idx, _, p = operands
@@ -41,8 +67,6 @@ def _increment_batch_idx(operands):
 #####################################################
 # DataGenerator for ODE : only returns time_batches
 #####################################################
-class ODEBatch(NamedTuple):
-    temporal_batch: ArrayLike
 
 
 @register_pytree_node_class
@@ -284,11 +308,6 @@ class DataGeneratorPDEAbstract:
         # Useful when using a lax.scan with a DataGenerator in the carry
         # It tells JAX not to re-generate data in the __init__()
         self.data_exists = data_exists
-
-
-class PDEStatioBatch(NamedTuple):
-    inside_batch: ArrayLike
-    border_batch: ArrayLike
 
 
 @register_pytree_node_class
@@ -755,12 +774,6 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         return obj
 
 
-class PDENonStatioBatch(NamedTuple):
-    inside_batch: ArrayLike
-    border_batch: ArrayLike
-    temporal_batch: ArrayLike
-
-
 @register_pytree_node_class
 class CubicMeshPDENonStatio(CubicMeshPDEStatio):
     """
@@ -1044,10 +1057,6 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         return obj
 
 
-class ParamBatch(NamedTuple):
-    param_batch_dict: dict
-
-
 @register_pytree_node_class
 class DataGeneratorParameter:
     """
@@ -1112,6 +1121,7 @@ class DataGeneratorParameter:
                         self.param_n_samples[k],
                         self.curr_param_idx[k],
                         None,
+                        None,
                     )
                 )
 
@@ -1155,6 +1165,7 @@ class DataGeneratorParameter:
                     self.param_n_samples[k],
                     self.curr_param_idx[k],
                     self.param_batch_size,
+                    None,
                 ),
             )
 
@@ -1171,7 +1182,7 @@ class DataGeneratorParameter:
         """
         Generic method to return a batch
         """
-        return ParamBatch(param_batch_dict=self.param_batch())
+        return self.param_batch()
 
     def tree_flatten(self):
         children = (

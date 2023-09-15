@@ -378,18 +378,47 @@ class LossPDEStatio(LossPDEAbstract):
         omega_batch, omega_border_batch = batch.inside_batch, batch.border_batch
         n = omega_batch.shape[0]
 
+        vmap_in_axes_x = (0,)
+
+        # Retrieve the optional eq_params_batch
+        # and update eq_params with the latter
+        # and update vmap_in_axes
+        if batch.param_batch_dict is not None:
+            eq_params_batch_dict = batch.param_batch_dict
+
+            # feed the eq_params with the batch
+            for k in eq_params_batch_dict.keys():
+                params["eq_params"][k] = eq_params_batch_dict[k]
+
+            # We use pytree indexing of vmapped axes and vmap on axis
+            # 0 of the eq_parameters for which we have a batch
+            # this is for a fine-grained vmaping
+            # scheme over the params
+            vmap_in_axes_params = (
+                {
+                    "eq_params": {
+                        k: (0 if k in eq_params_batch_dict.keys() else None)
+                        for k in params["eq_params"].keys()
+                    },
+                    "nn_params": None,
+                },
+            )
+        else:
+            vmap_in_axes_params = (None,)
+
         # dynamic part
         if self.dynamic_loss is not None:
             v_dyn_loss = vmap(
-                lambda x: self.dynamic_loss.evaluate(
+                lambda x, params: self.dynamic_loss.evaluate(
                     x,
                     self.u,
                     params,
                 ),
-                (0),
+                vmap_in_axes_x + vmap_in_axes_params,
                 0,
             )
-            mse_dyn_loss = jnp.mean(v_dyn_loss(omega_batch) ** 2)
+            mse_dyn_loss = jnp.mean(v_dyn_loss(omega_batch, params) ** 2)
+
         else:
             mse_dyn_loss = 0
 
@@ -657,16 +686,44 @@ class LossPDENonStatio(LossPDEStatio):
         def rep_times(k):
             return jnp.repeat(times_batch, k, axis=0)
 
+        vmap_in_axes_x_t = (0, 0)
+
+        # Retrieve the optional eq_params_batch
+        # and update eq_params with the latter
+        # and update vmap_in_axes
+        if batch.param_batch_dict is not None:
+            eq_params_batch_dict = batch.param_batch_dict
+
+            # feed the eq_params with the batch
+            for k in eq_params_batch_dict.keys():
+                params["eq_params"][k] = eq_params_batch_dict[k]
+
+            # We use pytree indexing of vmapped axes and vmap on axis
+            # 0 of the eq_parameters for which we have a batch
+            # this is for a fine-grained vmaping
+            # scheme over the params
+            vmap_in_axes_params = (
+                {
+                    "eq_params": {
+                        k: (0 if k in eq_params_batch_dict.keys() else None)
+                        for k in params["eq_params"].keys()
+                    },
+                    "nn_params": None,
+                },
+            )
+        else:
+            vmap_in_axes_params = (None,)
+
         # dynamic part
         if self.dynamic_loss is not None:
             v_dyn_loss = vmap(
-                lambda t, x: self.dynamic_loss.evaluate(t, x, self.u, params),
-                (0, 0),
+                lambda t, x, params: self.dynamic_loss.evaluate(t, x, self.u, params),
+                vmap_in_axes_x_t + vmap_in_axes_params,
                 0,
             )
             omega_batch_ = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
             times_batch_ = rep_times(n)  # it is repeated
-            mse_dyn_loss = jnp.mean(v_dyn_loss(times_batch_, omega_batch_) ** 2)
+            mse_dyn_loss = jnp.mean(v_dyn_loss(times_batch_, omega_batch_, params) ** 2)
         else:
             mse_dyn_loss = 0
 
@@ -1058,6 +1115,35 @@ class SystemLossPDE:
         else:
             raise ValueError("Wrong type of batch")
 
+        vmap_in_axes_x = (0,)
+        vmap_in_axes_x_t = (0, 0)
+
+        # Retrieve the optional eq_params_batch
+        # and update eq_params with the latter
+        # and update vmap_in_axes
+        if batch.param_batch_dict is not None:
+            eq_params_batch_dict = batch.param_batch_dict
+
+            # feed the eq_params with the batch
+            for k in eq_params_batch_dict.keys():
+                params_dict["eq_params"][k] = eq_params_batch_dict[k]
+
+            # We use pytree indexing of vmapped axes and vmap on axis
+            # 0 of the eq_parameters for which we have a batch
+            # this is for a fine-grained vmaping
+            # scheme over the params
+            vmap_in_axes_params = (
+                {
+                    "eq_params": {
+                        k: (0 if k in eq_params_batch_dict.keys() else None)
+                        for k in params_dict["eq_params"].keys()
+                    },
+                    "nn_params": None,
+                },
+            )
+        else:
+            vmap_in_axes_params = (None,)
+
         mse_dyn_loss = 0
         mse_boundary_loss = 0
         mse_norm_loss = 0
@@ -1068,19 +1154,21 @@ class SystemLossPDE:
             # dynamic part
             if isinstance(self.dynamic_loss_dict[i], PDEStatio):
                 v_dyn_loss = vmap(
-                    lambda x: self.dynamic_loss_dict[i].evaluate(
-                        x, self.u_dict, params_dict
+                    lambda x, params_dict: self.dynamic_loss_dict[i].evaluate(
+                        x,
+                        self.u_dict,
+                        params_dict,
                     ),
-                    0,
+                    vmap_in_axes_x + vmap_in_axes_params,
                     0,
                 )
-                mse_dyn_loss += jnp.mean(v_dyn_loss(omega_batch) ** 2)
+                mse_dyn_loss += jnp.mean(v_dyn_loss(omega_batch, params_dict) ** 2)
             else:
                 v_dyn_loss = vmap(
-                    lambda t, x: self.dynamic_loss_dict[i].evaluate(
+                    lambda t, x, params_dict: self.dynamic_loss_dict[i].evaluate(
                         t, x, self.u_dict, params_dict
                     ),
-                    (0, 0),
+                    vmap_in_axes_x_t + vmap_in_axes_params,
                     0,
                 )
 
@@ -1089,7 +1177,9 @@ class SystemLossPDE:
                 omega_batch_ = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
                 times_batch_ = rep_times(n)  # it is repeated
 
-                mse_dyn_loss += jnp.mean(v_dyn_loss(times_batch_, omega_batch_) ** 2)
+                mse_dyn_loss += jnp.mean(
+                    v_dyn_loss(times_batch_, omega_batch_, params_dict) ** 2
+                )
 
         # boundary conditions, normalization conditions, observation_loss,
         # temporal boundary condition... loss this is done via the internal
