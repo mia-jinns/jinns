@@ -43,7 +43,7 @@ def initialize_seq2seq(loss, data, seq2seq):
         update_seq2seq = update_seq2seq_SystemLossODE
         # Note that boundaries for the first PINN are OK
         # set new boundaries for the batch generator
-        data.tmin = seq2seq["time_steps"][curr_seq]
+        # data.tmin = seq2seq["time_steps"][curr_seq]
         data.tmax = seq2seq["time_steps"][curr_seq + 1]
         # and do not forget to regenerate the data
         data.curr_omega_idx = 0
@@ -51,6 +51,11 @@ def initialize_seq2seq(loss, data, seq2seq):
         data._key, data.times, _ = _reset_batch_idx_and_permute(
             (data._key, data.times, data.curr_omega_idx, None, data.p)
         )
+        # Set new Tmax for the loss computations
+        for k in loss.dynamic_loss_dict.keys():
+            Tmax_ori = loss.dynamic_loss_dict[k].Tmax
+            loss.dynamic_loss_dict[k].Tmax = data.tmax * Tmax_ori
+
     elif isinstance(loss, LossPDENonStatio):
         raise RuntimeError("Untrusted function, do not use")
         # update_seq2seq = update_seq2seq_LossPDENonStatio
@@ -82,14 +87,11 @@ def initialize_seq2seq(loss, data, seq2seq):
 
     # No need to return data here since this function will not be jitted and
     # side effects are allowed
-    return update_seq2seq
+    return update_seq2seq, Tmax_ori
 
 
 def update_seq2seq_SystemLossODE(operands):
     """
-    __TODO__ check the u0 update in this function as it is not sure it is well
-    programed as we have temporal_boundary_fun in aux_data.
-
     Make all the necessary updates for a SystemLossODE in seq2seq learning mode
 
     Parameters
@@ -120,23 +122,10 @@ def update_seq2seq_SystemLossODE(operands):
         curr_seq
             A integer which represents which sequence we currently are in
     """
-    loss, seq2seq, data, params, curr_seq = operands
+    loss, seq2seq, data, params, curr_seq, Tmax_ori = operands
     curr_seq += 1
-    # NOTE this can cause a UnexpectedTracerException when reusing the loss
-    # whose attribute has been set in the following (jitted) line
-    loss.initial_condition_dict = {
-        i: (
-            seq2seq["time_steps"][curr_seq],
-            loss.u_dict[i](
-                jnp.array(seq2seq["time_steps"][curr_seq]),
-                params["nn_params"][i],
-                params["eq_params"][i],
-            ),
-        )
-        for i in loss.u_dict.keys()
-    }
     # set new boundaries for the batch generator
-    data.tmin = seq2seq["time_steps"][curr_seq]
+    # data.tmin = seq2seq["time_steps"][curr_seq]
     data.tmax = seq2seq["time_steps"][curr_seq + 1]
     # and do not forget to regenerate the data
     data.curr_omega_idx = 0
@@ -144,6 +133,11 @@ def update_seq2seq_SystemLossODE(operands):
     data._key, data.times, _ = _reset_batch_idx_and_permute(
         (data._key, data.times, data.curr_omega_idx, None, data.p)
     )
+    # Set new Tmax for the loss computations
+    for k in loss.dynamic_loss_dict.keys():
+        loss.dynamic_loss_dict[k].Tmax = data.tmax * Tmax_ori
+    jax.debug.print("{k}", k=loss.dynamic_loss_dict[k].Tmax)
+    # jax.debug.print("{k}", k=data.tmax)
     return curr_seq, loss, data
 
 
@@ -205,3 +199,7 @@ def update_seq2seq_LossPDENonStatio(operands):
             (data._key, data.omega_border, data.curr_omega_border_idx, None, data.p)
         )
     return curr_seq
+
+
+def _update_seq2seq_false(operands):
+    return (operands[-2], operands[0], operands[2])

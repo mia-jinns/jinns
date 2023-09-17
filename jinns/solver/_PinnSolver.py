@@ -2,7 +2,7 @@ from jax_tqdm import scan_tqdm
 import jax
 from jax import jit
 import jax.numpy as jnp
-from jinns.solver._seq2seq import initialize_seq2seq
+from jinns.solver._seq2seq import initialize_seq2seq, _update_seq2seq_false
 from jinns.solver._rar import rar_step_init
 from jinns.data._DataGenerators import (
     DataGeneratorODE,
@@ -67,7 +67,6 @@ class PinnSolver:
             Default None. Provide an optional initial optional state to the
             optimizer
         seq2seq
-            __Do not use, this feature needs to be upgraded !__
             Default None. A dictionary with keys 'times_steps'
             and 'iter_steps' which mush have same length. The first represents
             the time steps which represents the different time interval upon
@@ -134,22 +133,24 @@ class PinnSolver:
             opt_state = self.optax_solver.init_state(params, batch=batch)
 
         curr_seq = 0
-        # if seq2seq is not None:
-        #    assert data.method == "uniform", "data.method must be uniform if"
-        #    " using seq2seq learning !"
-        #    # NOTE this was the cause to a very hard to debug error probably
-        #    # due to the omnistaging of the jnp.arange which then do not
-        #    # accept that shape changes after compilation. Solution to use
-        #    # np.arange not available since although we declare tmin tmax
-        #    # or other as static argnums as the whole dataset class is jitted
-        #    # https://jax.readthedocs.io/en/latest/jep/4410-omnistaging.html
-        #    # proabably because data.omega is not static ?!
+        if seq2seq is not None:
+            assert data.method == "uniform", "data.method must be uniform if"
+            " using seq2seq learning !"
+            # NOTE this was the cause to a very hard to debug error probably
+            # due to the omnistaging of the jnp.arange which then do not
+            # accept that shape changes after compilation. Solution to use
+            # np.arange not available since although we declare tmin tmax
+            # or other as static argnums as the whole dataset class is jitted
+            # https://jax.readthedocs.io/en/latest/jep/4410-omnistaging.html
+            # proabably because data.omega is not static ?!
 
-        #    # TODO update the class to data.get_batch() in the following:
-        #    update_seq2seq = initialize_seq2seq(self.loss, data, seq2seq)
+            # TODO update the class to data.get_batch() in the following:
+            _update_seq2seq_true, Tmax_ori = initialize_seq2seq(
+                self.loss, data, seq2seq
+            )
 
-        # else:
-        #    update_seq2seq = None
+        else:
+            _update_seq2seq_true = None
 
         if data.rar_parameters is not None:
             rar_step_true, rar_step_false = rar_step_init(
@@ -193,27 +194,25 @@ class PinnSolver:
             )
             total_loss_val, loss_terms = self.loss(carry["params"], batch)
 
-            # seq2seq learning updates
-            # TODO correct the algorithm by added points from the new intervals
-            # not to unlearn !
-            # if seq2seq is not None:
-            #    carry["curr_seq"], carry["loss"], carry["data"] = jax.lax.cond(
-            #        carry["curr_seq"] + 1
-            #        < jnp.sum(
-            #            seq2seq["iter_steps"] < i
-            #        ),  # check if we fall in another time interval
-            #        update_seq2seq,
-            #        lambda operands: (operands[-1], operands[0], operands[2]),
-            #        (
-            #            carry["loss"],
-            #            seq2seq,
-            #            carry["data"],  # TODO update call to data.get_batch there
-            #            carry["params"],
-            #            carry["curr_seq"],
-            #        ),
-            #    )
-            # else:
-            #    carry["curr_seq"] = -1
+            if seq2seq is not None:
+                carry["curr_seq"], carry["loss"], carry["data"] = jax.lax.cond(
+                    carry["curr_seq"] + 1
+                    < jnp.sum(
+                        seq2seq["iter_steps"] < i
+                    ),  # check if we fall in another time interval
+                    _update_seq2seq_true,
+                    _update_seq2seq_false,
+                    (
+                        carry["loss"],
+                        seq2seq,
+                        carry["data"],  # TODO update call to data.get_batch there
+                        carry["params"],
+                        carry["curr_seq"],
+                        Tmax_ori,
+                    ),
+                )
+            else:
+                carry["curr_seq"] = -1
 
             if carry["data"].rar_parameters is not None:
                 carry["data"] = jax.lax.cond(
@@ -237,7 +236,6 @@ class PinnSolver:
                     (carry["loss"], carry["params"], carry["data"], i),
                 )
 
-            # jax.debug.print("{d}", d=data.nt)
             # saving selected parameters values with accumulator
             accu = [total_loss_val]
             for params_leaf_path in accu_vars:

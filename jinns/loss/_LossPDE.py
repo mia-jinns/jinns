@@ -489,10 +489,10 @@ class LossPDEStatio(LossPDEAbstract):
         )
 
     def tree_flatten(self):
-        children = (self.norm_key, self.norm_samples, self.obs_batch)
+        children = (self.norm_key, self.norm_samples, self.obs_batch, self.dynamic_loss)
         aux_data = {
             "u": self.u,
-            "dynamic_loss": self.dynamic_loss,
+            # "dynamic_loss": self.dynamic_loss,
             "omega_boundary_fun": self.omega_boundary_fun,
             "omega_boundary_condition": self.omega_boundary_condition,
             "norm_borders": self.norm_borders,
@@ -506,7 +506,8 @@ class LossPDEStatio(LossPDEAbstract):
         pls = cls(
             aux_data["u"],
             aux_data["loss_weights"],
-            aux_data["dynamic_loss"],
+            # aux_data["dynamic_loss"],
+            dynamic_loss,
             aux_data["omega_boundary_fun"],
             aux_data["omega_boundary_condition"],
             norm_key,
@@ -812,14 +813,10 @@ class LossPDENonStatio(LossPDEStatio):
         )
 
     def tree_flatten(self):
-        children = (
-            self.norm_key,
-            self.norm_samples,
-            self.obs_batch,
-        )
+        children = (self.norm_key, self.norm_samples, self.obs_batch, self.dynamic_loss)
         aux_data = {
             "u": self.u,
-            "dynamic_loss": self.dynamic_loss,
+            # "dynamic_loss": self.dynamic_loss,
             "omega_boundary_fun": self.omega_boundary_fun,
             "omega_boundary_condition": self.omega_boundary_condition,
             "temporal_boundary_fun": self.temporal_boundary_fun,
@@ -830,11 +827,12 @@ class LossPDENonStatio(LossPDEStatio):
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        (norm_key, norm_samples, obs_batch) = children
+        (norm_key, norm_samples, obs_batch, dynamic_loss) = children
         pls = cls(
             aux_data["u"],
             aux_data["loss_weights"],
-            aux_data["dynamic_loss"],
+            # aux_data["dynamic_loss"],
+            dynamic_loss,
             aux_data["omega_boundary_fun"],
             aux_data["omega_boundary_condition"],
             aux_data["temporal_boundary_fun"],
@@ -1187,11 +1185,12 @@ class SystemLossPDE:
             self.norm_key_dict,
             self.norm_samples_dict,
             self.temporal_boundary_fun_dict,
+            self.dynamic_loss_dict,
         )
         aux_data = {
             "loss_weights": self.loss_weights,
             "u_dict": self.u_dict,
-            "dynamic_loss_dict": self.dynamic_loss_dict,
+            # "dynamic_loss_dict": self.dynamic_loss_dict,
             "norm_borders_dict": self.norm_borders_dict,
             "omega_boundary_fun_dict": self.omega_boundary_fun_dict,
             "omega_boundary_condition_dict": self.omega_boundary_condition_dict,
@@ -1206,6 +1205,7 @@ class SystemLossPDE:
             norm_key_dict,
             norm_samples_dict,
             temporal_boundary_fun_dict,
+            dynamic_loss_dict,
         ) = children
         loss_ode = cls(
             obs_batch_dict=obs_batch_dict,

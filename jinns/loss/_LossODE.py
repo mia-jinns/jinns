@@ -167,23 +167,21 @@ class LossODE:
         )
 
     def tree_flatten(self):
-        children = (
-            self.initial_condition,
-            self.obs_batch,
-        )
+        children = (self.initial_condition, self.obs_batch, self.dynamic_loss)
         aux_data = {
             "loss_weights": self.loss_weights,
             "u": self.u,
-            "dynamic_loss": self.dynamic_loss,
+            # "dynamic_loss": self.dynamic_loss,
         }
         return (children, aux_data)
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        (initial_condition, obs_batch) = children
+        (initial_condition, obs_batch, dynamic_loss) = children
         loss_ode = cls(
             initial_condition=initial_condition,
             obs_batch=obs_batch,
+            dynamic_loss=dynamic_loss,
             **aux_data,
         )
         return loss_ode
@@ -369,23 +367,22 @@ class SystemLossODE:
         children = (
             self.initial_condition_dict,
             self.obs_batch_dict,
+            self.dynamic_loss_dict,
         )
         aux_data = {
             "loss_weights": self.loss_weights,
             "u_dict": self.u_dict,
-            "dynamic_loss_dict": self.dynamic_loss_dict,
+            # "dynamic_loss_dict": self.dynamic_loss_dict,
         }
         return (children, aux_data)
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        (
-            initial_condition_dict,
-            obs_batch_dict,
-        ) = children
+        (initial_condition_dict, obs_batch_dict, dynamic_loss_dict) = children
         loss_ode = cls(
             initial_condition_dict=initial_condition_dict,
             obs_batch_dict=obs_batch_dict,
+            dynamic_loss_dict=dynamic_loss_dict,
             **aux_data,
         )
 

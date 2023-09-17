@@ -1,8 +1,10 @@
 import jax
 from jax import jit, grad
 import jax.numpy as jnp
+from jax.tree_util import register_pytree_node_class
 
 
+@register_pytree_node_class
 class DynamicLoss:
     r"""
     Abstract base class for dynamic losses whose aim is to implement the term:
@@ -60,7 +62,23 @@ class DynamicLoss:
                 jax.lax.stop_gradient(eq_params),
             )
 
+    def tree_flatten(self):
+        children = (self.Tmax,)
+        aux_data = {"derivatives": self.derivatives}
+        return (children, aux_data)
 
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        (Tmax,) = children
+        obj = cls(
+            Tmax=Tmax,
+            **aux_data,
+        )
+
+        return obj
+
+
+@register_pytree_node_class
 class ODE(DynamicLoss):
     r"""
     Abstract base class for ODE dynamic losses
@@ -83,7 +101,23 @@ class ODE(DynamicLoss):
         """
         super().__init__(Tmax, derivatives)
 
+    def tree_flatten(self):
+        children = (self.Tmax,)
+        aux_data = {"derivatives": self.derivatives}
+        return (children, aux_data)
 
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        (Tmax,) = children
+        obj = cls(
+            Tmax=Tmax,
+            **aux_data,
+        )
+
+        return obj
+
+
+@register_pytree_node_class
 class PDEStatio(DynamicLoss):
     r"""
     Abstract base class for PDE statio dynamic losses
@@ -106,7 +140,23 @@ class PDEStatio(DynamicLoss):
         """
         super().__init__(Tmax, derivatives)
 
+    def tree_flatten(self):
+        children = (self.Tmax,)
+        aux_data = {"derivatives": self.derivatives}
+        return (children, aux_data)
 
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        (Tmax,) = children
+        obj = cls(
+            Tmax=Tmax,
+            **aux_data,
+        )
+
+        return obj
+
+
+@register_pytree_node_class
 class PDENonStatio(DynamicLoss):
     r"""
     Abstract base class for PDE Non statio dynamic losses
@@ -128,3 +178,18 @@ class PDENonStatio(DynamicLoss):
             equation solution with as PINN.
         """
         super().__init__(Tmax, derivatives)
+
+    def tree_flatten(self):
+        children = (self.Tmax,)
+        aux_data = {"derivatives": self.derivatives}
+        return (children, aux_data)
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        (Tmax,) = children
+        obj = cls(
+            Tmax=Tmax,
+            **aux_data,
+        )
+
+        return obj
