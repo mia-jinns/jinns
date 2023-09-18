@@ -11,7 +11,31 @@ from jinns.loss._LossODE import LossODE, SystemLossODE
 from functools import partial
 
 
-def rar_step_init(sample_size, selected_sample_size):
+def _rar_step_triggerer(carry, i, _rar_step_true, _rar_step_false):
+    carry["data"] = jax.lax.cond(
+        jnp.all(
+            jnp.array(
+                [
+                    # check if enough it since last points added
+                    carry["data"].rar_parameters["update_rate"]
+                    == carry["data"].rar_iter_from_last_sampling,
+                    # check if burn in period has ended
+                    carry["data"].rar_parameters["start_iter"] < i,
+                    # check if we still have room to append new
+                    # collocation points in the allocated jnp array
+                    carry["data"].rar_parameters["selected_sample_size"]
+                    <= jnp.count_nonzero(carry["data"].p == 0),
+                ]
+            )
+        ),
+        _rar_step_true,
+        _rar_step_false,
+        (carry["loss"], carry["params"], carry["data"], i),
+    )
+    return carry
+
+
+def _rar_step_init(sample_size, selected_sample_size):
     """
     This is a wrapper because the sampling size and
     selected_sample_size, must be treated static

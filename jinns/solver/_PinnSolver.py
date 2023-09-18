@@ -2,8 +2,12 @@ from jax_tqdm import scan_tqdm
 import jax
 from jax import jit
 import jax.numpy as jnp
-from jinns.solver._seq2seq import initialize_seq2seq, _update_seq2seq_false
-from jinns.solver._rar import rar_step_init
+from jinns.solver._seq2seq import (
+    _initialize_seq2seq,
+    _seq2seq_triggerer,
+    _update_seq2seq_false,
+)
+from jinns.solver._rar import _rar_step_init, _rar_step_triggerer
 from jinns.data._DataGenerators import (
     DataGeneratorODE,
     CubicMeshPDEStatio,
@@ -136,24 +140,16 @@ class PinnSolver:
         if seq2seq is not None:
             assert data.method == "uniform", "data.method must be uniform if"
             " using seq2seq learning !"
-            # NOTE this was the cause to a very hard to debug error probably
-            # due to the omnistaging of the jnp.arange which then do not
-            # accept that shape changes after compilation. Solution to use
-            # np.arange not available since although we declare tmin tmax
-            # or other as static argnums as the whole dataset class is jitted
-            # https://jax.readthedocs.io/en/latest/jep/4410-omnistaging.html
-            # proabably because data.omega is not static ?!
 
-            # TODO update the class to data.get_batch() in the following:
-            _update_seq2seq_true, Tmax_ori = initialize_seq2seq(
-                self.loss, data, seq2seq
+            _update_seq2seq_true = _initialize_seq2seq(
+                self.loss, data, seq2seq, opt_state
             )
 
         else:
             _update_seq2seq_true = None
 
         if data.rar_parameters is not None:
-            rar_step_true, rar_step_false = rar_step_init(
+            _rar_step_true, _rar_step_false = rar_step_init(
                 data.rar_parameters["sample_size"],
                 data.rar_parameters["selected_sample_size"],
             )
@@ -195,46 +191,14 @@ class PinnSolver:
             total_loss_val, loss_terms = self.loss(carry["params"], batch)
 
             if seq2seq is not None:
-                carry["curr_seq"], carry["loss"], carry["data"] = jax.lax.cond(
-                    carry["curr_seq"] + 1
-                    < jnp.sum(
-                        seq2seq["iter_steps"] < i
-                    ),  # check if we fall in another time interval
-                    _update_seq2seq_true,
-                    _update_seq2seq_false,
-                    (
-                        carry["loss"],
-                        seq2seq,
-                        carry["data"],  # TODO update call to data.get_batch there
-                        carry["params"],
-                        carry["curr_seq"],
-                        Tmax_ori,
-                    ),
+                carry = _seq2seq_triggerer(
+                    carry, seq2seq, i, _update_seq2seq_true, _update_seq2seq_false
                 )
             else:
                 carry["curr_seq"] = -1
 
             if carry["data"].rar_parameters is not None:
-                carry["data"] = jax.lax.cond(
-                    jnp.all(
-                        jnp.array(
-                            [
-                                # check if enough it since last points added
-                                carry["data"].rar_parameters["update_rate"]
-                                == carry["data"].rar_iter_from_last_sampling,
-                                # check if burn in period has ended
-                                carry["data"].rar_parameters["start_iter"] < i,
-                                # check if we still have room to append new
-                                # collocation points in the allocated jnp array
-                                carry["data"].rar_parameters["selected_sample_size"]
-                                <= jnp.count_nonzero(carry["data"].p == 0),
-                            ]
-                        )
-                    ),
-                    rar_step_true,
-                    rar_step_false,
-                    (carry["loss"], carry["params"], carry["data"], i),
-                )
+                carry = _rar_step_triggerer(carry, i, _rar_step_true, _rar_step_false)
 
             # saving selected parameters values with accumulator
             accu = [total_loss_val]
@@ -291,6 +255,7 @@ class PinnSolver:
             accu[0, :],
             res["stored_loss_terms"],
             data,
+            loss,
             opt_state,
             res["stored_values"],
         )
