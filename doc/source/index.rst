@@ -6,6 +6,23 @@
 Welcome to jinn's documentation!
 ================================
 
+Changelog:
+
+* v0.2.0
+    * Implement a vanilla version of Resisual Adaptative Resampling scheme as proposed
+    in _DeepXDE: A deep learning library for solving differential equations_, Lu Lu et
+    al., SIAM Review, 2021
+    * Implement metamodel learning, i.e., a parameter of the PDE/ODE is input of the
+    neural  network and the dynamic loss is minimized for all the values of that
+    parameter. For example, this is studied in _Surrogate modeling for fluid flows based on physics-constrained deep learning without simulation data_, Sun et al. 2020
+    * Implement seq2seq learning for ODE, based on the article _Characterizing possible
+    failure modes in physics-informed neural networks_, Krishnapriyan et al.,
+    NeurIPS 2021
+    * New notebooks to illustrate these approaches
+    * Minor bug fixes and code improvements
+* v0.1.0
+    * Initial development release
+
 .. toctree::
    :maxdepth: 1
    :caption: Documented modules
