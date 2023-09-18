@@ -81,9 +81,6 @@ def _initialize_seq2seq(loss, data, seq2seq, opt_state):
         opt_state.internal_state.hyperparams["learning_rate"] = seq2seq[
             "learning_rate"
         ][curr_seq]
-        opt_state.internal_state.hyperparams["clip_value"] = seq2seq["clip_value"][
-            curr_seq
-        ]
 
     elif (
         isinstance(loss, LossPDENonStatio)
@@ -143,7 +140,6 @@ def _update_seq2seq_SystemLossODE(operands):
     opt_state.internal_state.hyperparams["learning_rate"] = seq2seq["learning_rate"][
         curr_seq
     ]
-    opt_state.internal_state.hyperparams["clip_value"] = seq2seq["clip_value"][curr_seq]
     return curr_seq, loss, data, opt_state
 
 
