@@ -1,7 +1,6 @@
 import jax
 from jax import jit, grad
 import jax.numpy as jnp
-from jax.tree_util import register_pytree_node_class
 from jinns.loss._DynamicLossAbstract import ODE, PDEStatio, PDENonStatio
 
 
@@ -124,7 +123,6 @@ class Malthus(ODE):
         return du_dt - eq_params["growth_rate"]
 
 
-@register_pytree_node_class
 class BurgerEquation(PDENonStatio):
     r"""
     Return the Burger dynamic loss term (in 1 space dimension):
@@ -187,23 +185,7 @@ class BurgerEquation(PDENonStatio):
             - eq_params["nu"] * du2_dx2(t, x, nn_params, eq_params)[0]
         )
 
-    def tree_flatten(self):
-        children = (self.Tmax,)
-        aux_data = {"derivatives": self.derivatives}
-        return (children, aux_data)
 
-    @classmethod
-    def tree_unflatten(cls, aux_data, children):
-        (Tmax,) = children
-        obj = cls(
-            Tmax=Tmax,
-            **aux_data,
-        )
-
-        return obj
-
-
-@register_pytree_node_class
 class GeneralizedLotkaVolterra(ODE):
     r"""
     Return a dynamic loss from an equation of a Generalized Lotka Volterra
@@ -294,25 +276,6 @@ class GeneralizedLotkaVolterra(ODE):
         return du_dt + self.Tmax * (
             -u_eq_params["growth_rate"] - interaction_terms + carrying_term
         )
-
-    def tree_flatten(self):
-        children = (self.Tmax,)
-        aux_data = {
-            "key_main": self.key_main,
-            "keys_other": self.keys_other,
-            "derivatives": self.derivatives,
-        }
-        return (children, aux_data)
-
-    @classmethod
-    def tree_unflatten(cls, aux_data, children):
-        (Tmax,) = children
-        obj = cls(
-            Tmax=Tmax,
-            **aux_data,
-        )
-
-        return obj
 
 
 class FPEStatioLoss1D(PDEStatio):
