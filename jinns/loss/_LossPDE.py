@@ -812,11 +812,7 @@ class LossPDENonStatio(LossPDEStatio):
         )
 
     def tree_flatten(self):
-        children = (
-            self.norm_key,
-            self.norm_samples,
-            self.obs_batch,
-        )
+        children = (self.norm_key, self.norm_samples, self.obs_batch)
         aux_data = {
             "u": self.u,
             "dynamic_loss": self.dynamic_loss,

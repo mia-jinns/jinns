@@ -116,7 +116,7 @@ def train_GLV_10it(train_GLV_init):
     )
     n_iter = 10
     pinn_solver = jinns.solver.PinnSolver(optax_solver=solver, loss=loss, n_iter=n_iter)
-    params, total_loss_list, loss_by_term_dict, data, _, _ = pinn_solver.solve(
+    params, total_loss_list, loss_by_term_dict, data, _, _, _ = pinn_solver.solve(
         init_params=params,
         data=train_data,
     )
