@@ -149,7 +149,7 @@ class PinnSolver:
             _update_seq2seq_true = None
 
         if data.rar_parameters is not None:
-            _rar_step_true, _rar_step_false = rar_step_init(
+            _rar_step_true, _rar_step_false = _rar_step_init(
                 data.rar_parameters["sample_size"],
                 data.rar_parameters["selected_sample_size"],
             )
