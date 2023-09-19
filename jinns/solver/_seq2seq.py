@@ -34,14 +34,22 @@ def _initialize_seq2seq(loss, data, seq2seq, opt_state):
     Initialize the seq2seq parameters as described in “Characterizing possible
     failure modes in physics-informed neural networks”, A. S. Krishnapriyan,
     NeurIPS 2021.
+
     **Note:** we do not change tmin, we only let the interval grow longer.
     Indeed we noticed some unlearning happening.
+
     **Note:** using seq2seq might create some instability in training when
     interval changes. Some of this instability comes from the fact that Tmax in
-    the dynamic loss rescaling must be the true (and potentially large and
+    the dynamic loss rescaling must be the true and final (and potentially large and
     unstable) one from the beginning if we want to be able to catch the real dynamic.
-    However it does offer some better results for learning on
-    long time intervals.
+    However it does offer some better results for learning on long time intervals.
+
+    **Note:** As this is experimental some changes in the future might be:
+        - to dig deeper and try to attenuate the instability
+        - to try to attenuate the discrepancy with the real dynamic when we
+          also change Tmax in dynamic loss (this requires to treat the dynamic
+          loss as a dynamic attribute of a Loss class...).
+        - to investigate Tmax as input of the PINN
 
     Parameters
     ----------
