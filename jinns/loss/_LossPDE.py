@@ -691,14 +691,48 @@ class LossPDENonStatio(LossPDEStatio):
 
         # dynamic part
         if self.dynamic_loss is not None:
-            v_dyn_loss = vmap(
+            v_dyn_loss_ = vmap(
                 lambda t, x, params: self.dynamic_loss.evaluate(t, x, self.u, params),
                 vmap_in_axes_x_t + vmap_in_axes_params,
                 0,
             )
+            epsilon = 0.1
+            # v_dyn_loss = vmap(
+            #    lambda t, x, params: jax.lax.stop_gradient(
+            #        jnp.exp(-epsilon * jnp.roll(jnp.cumsum(self.dynamic_loss.evaluate(t, x, self.u,
+            #            params)))) * self.dynamic_loss.evaluate(t, x, self.u,
+            #                params),
+            #    (0, 0) + vmap_in_axes_params,
+            #    0,
+            # )
             omega_batch_ = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
             times_batch_ = rep_times(n)  # it is repeated
-            mse_dyn_loss = jnp.mean(v_dyn_loss(times_batch_, omega_batch_, params) ** 2)
+            times_batch_ = jnp.sort(times_batch_)
+            t1 = v_dyn_loss_(times_batch_, omega_batch_, params)
+            # mt1 = jnp.amax(t1)
+            # t2 = jax.lax.stop_gradient(jnp.roll(jnp.exp(-epsilon *
+            #    jnp.cumsum(t1) / mt1), shift=1,
+            #    axis=0)) * t1
+            mse_dyn_loss = jnp.mean(t1**2)
+
+            # v_dyn_loss = vmap(
+            #    lambda t, ti, x, params: v_dyn_loss_at_ti(t, ti, x, params),
+            #    (None, 0, None, None),
+            #    0
+            # )
+            # v_dyn_loss = vmap(
+            #    lambda t, x, params: jax.lax.stop_gradient(jnp.exp(-1e-1 *
+            #        self.dynamic_loss.evaluate(t[t < ti], x, self.u,
+            #            params))) *
+            #        self.dynamic_loss.evaluate(t, x, self.u, params),
+            #    vmap_in_axes_x_t + vmap_in_axes_params,
+            #    0,
+            # )
+            # omega_batch_ = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
+            # times_batch_ = rep_times(n)  # it is repeated
+            # times_batch_ = jnp.sort(times_batch_)
+            # mse_dyn_loss = jnp.mean(v_dyn_loss(times_batch_, omega_batch_,
+            #    params) ** 2)
         else:
             mse_dyn_loss = 0
 
