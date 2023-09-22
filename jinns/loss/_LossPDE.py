@@ -696,7 +696,7 @@ class LossPDENonStatio(LossPDEStatio):
                 vmap_in_axes_x_t + vmap_in_axes_params,
                 0,
             )
-            epsilon = 0.1
+            epsilon = 0.01
             # v_dyn_loss = vmap(
             #    lambda t, x, params: jax.lax.stop_gradient(
             #        jnp.exp(-epsilon * jnp.roll(jnp.cumsum(self.dynamic_loss.evaluate(t, x, self.u,
@@ -709,9 +709,8 @@ class LossPDENonStatio(LossPDEStatio):
             times_batch_ = rep_times(n)  # it is repeated
             times_batch_ = jnp.sort(times_batch_)
             t1 = v_dyn_loss_(times_batch_, omega_batch_, params)
-            # mt1 = jnp.amax(t1)
             # t2 = jax.lax.stop_gradient(jnp.roll(jnp.exp(-epsilon *
-            #    jnp.cumsum(t1) / mt1), shift=1,
+            #    jnp.cumsum(t1)), shift=1,
             #    axis=0)) * t1
             mse_dyn_loss = jnp.mean(t1**2)
 
