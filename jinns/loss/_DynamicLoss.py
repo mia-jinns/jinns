@@ -70,6 +70,83 @@ class FisherKPP(PDENonStatio):
         )
 
 
+class FisherKPP2D(PDENonStatio):
+    r"""
+    Return the Fisher KPP dynamic loss term (in 2 space dimension):
+
+    .. math::
+        \frac{\partial}{\partial t} u(t,x)=D\Delta u(t,x) + u(t,x)(r(x) - \gamma(x)u(t,x))
+
+    """
+
+    def __init__(self, Tmax=1, derivatives="nn_params"):
+        """
+        Parameters
+        ----------
+        Tmax
+            Tmax needs to be given when the PINN time input is normalized in
+            [0, 1], ie. we have performed renormalization of the differential
+            equation
+        derivatives
+            A string. Either ``nn_params``, ``eq_params``, ``both``. Determines
+            with respect to which set of parameters gradients of the dynamic
+            loss are computed. Default "nn_params", this is what is typically
+            done in solving forward problems, when we only estimate the
+            equation solution with as PINN.
+        """
+        super().__init__(Tmax, derivatives)
+
+    def evaluate(self, t, x, u, params):
+        """
+        Evaluate the dynamic loss at :math:`(t,x)`.
+
+        **Note:** In practice this `u` is vectorized and `t` and `x` have a
+        batch dimension.
+
+        Parameters
+        ---------
+        t
+            A time point
+        x
+            A point in :math:`\Omega`
+        u
+            The PINN
+        params
+            The dictionary of parameters of the model.
+            Typically, it is a dictionary of
+            dictionaries: `eq_params` and `nn_params``, respectively the
+            differential equation parameters and the neural network parameter
+        """
+        nn_params, eq_params = self.set_stop_gradient(params)
+
+        if eq_params["r"].ndim == 1:
+            r = eq_params["r"]
+        else:
+            r = self._eval_heterogeneous_array_parameter(eq_params["r"], x=x)
+
+        du_dt = grad(u, 0)(t, x, nn_params)[0]
+
+        d2u_dx2 = grad(
+            lambda t, x, nn_params, eq_params: grad(u, 1)(t, x, nn_params, eq_params)[
+                0
+            ],
+            1,
+        )(t, x, nn_params, eq_params)[0]
+
+        d2u_dy2 = grad(
+            lambda t, x, nn_params, eq_params: grad(u, 1)(t, x, nn_params, eq_params)[
+                1
+            ],
+            1,
+        )(t, x, nn_params, eq_params)[1]
+
+        return du_dt + self.Tmax * (
+            -eq_params["D"] * (d2u_dx2 + d2u_dy2)
+            - u(t, x, nn_params, eq_params)
+            * (r - eq_params["g"] * u(t, x, nn_params, eq_params))
+        )
+
+
 class Malthus(ODE):
     r"""
     Return a Malthus dynamic loss term following the PINN logic:
