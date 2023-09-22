@@ -1,9 +1,11 @@
 import jax
 import jax.numpy as jnp
-from jax import vmap, hessian
+from jax import vmap, grad
 
 
-def _compute_boundary_loss_statio(boundary_condition_type, f, border_batch, u, params):
+def _compute_boundary_loss_statio(
+    boundary_condition_type, f, border_batch, u, params, facet
+):
     r"""A generic function that will compute the mini-batch MSE of a
     boundary condition in the stationary case, given by:
 
@@ -18,7 +20,8 @@ def _compute_boundary_loss_statio(boundary_condition_type, f, border_batch, u, p
     boundary_condition_type : a string
         a string defining the differential operator :math:`D[\cdot]`.
         Currently implements one of "Dirichlet" (:math:`D = Id`) and Von
-        Neuman (:math:`D[\cdot] = \Delta`)
+        Neuman (:math:`D[\cdot] = \nabla \cdot n`) where :math:`n` is the
+        unitary outgoing vector normal to :math:`\partial\Omega`
     f :
         the function to be matched in the boundary condition. It should have
         one argument only (other are ignored).
@@ -26,11 +29,14 @@ def _compute_boundary_loss_statio(boundary_condition_type, f, border_batch, u, p
         the mini-batch on :math:`\partial \Omega`
     u :
         a PINN
-    params
+    params:
         The dictionary of parameters of the model.
         Typically, it is a dictionary of
         dictionaries: `eq_params` and `nn_params``, respectively the
         differential equation parameters and the neural network parameter
+    facet:
+        An integer which represents the id of the facet which is currently
+        considered (in the order provided wy the DataGenerator which is fixed)
 
     Returns
     -------
@@ -45,12 +51,12 @@ def _compute_boundary_loss_statio(boundary_condition_type, f, border_batch, u, p
             for s in ["von neumann", "vn", "vonneumann"]
         ]
     ):
-        mse = boundary_neumann_statio(f, border_batch, u, params)
+        mse = boundary_neumann_statio(f, border_batch, u, params, facet)
     return mse
 
 
 def _compute_boundary_loss_nonstatio(
-    boundary_condition_type, f, times_batch, border_batch, u, params
+    boundary_condition_type, f, times_batch, border_batch, u, params, facet
 ):
     r"""A generic function that will compute the mini-batch MSE of a
     boundary condition in the non-stationary case, given by:
@@ -67,7 +73,8 @@ def _compute_boundary_loss_nonstatio(
     boundary_condition_type : a string
         a string defining the differential operator :math:`D[\cdot]`.
         Currently implements one of "Dirichlet" (:math:`D = Id`) and Von
-        Neuman (:math:`D[\cdot] = \Delta`)
+        Neuman (:math:`D[\cdot] = \nabla \cdot n`) where :math:`n` is the
+        outgoing unitary vector normal to :math:`\partial\Omega`
     f : a callable
         the function to be matched in the boundary condition. It should have
         one argument only (other are ignored).
@@ -80,6 +87,9 @@ def _compute_boundary_loss_nonstatio(
         Typically, it is a dictionary of
         dictionaries: `eq_params` and `nn_params``, respectively the
         differential equation parameters and the neural network parameter
+    facet:
+        An integer which represents the id of the facet which is currently
+        considered (in the order provided wy the DataGenerator which is fixed)
 
     Returns
     -------
@@ -94,7 +104,7 @@ def _compute_boundary_loss_nonstatio(
             for s in ["von neumann", "vn", "vonneumann"]
         ]
     ):
-        mse = boundary_neumann_nonstatio(f, times_batch, border_batch, u, params)
+        mse = boundary_neumann_nonstatio(f, times_batch, border_batch, u, params, facet)
     return mse
 
 
@@ -128,14 +138,15 @@ def boundary_dirichlet_statio(f, border_batch, u, params):
         0,
     )
 
-    mse_u_boundary = jnp.mean((v_u_boundary(border_batch) - 0) ** 2)
+    mse_u_boundary = jnp.mean((v_u_boundary(border_batch)) ** 2)
     return mse_u_boundary
 
 
-def boundary_neumann_statio(f, border_batch, u, params):
+def boundary_neumann_statio(f, border_batch, u, params, facet):
     r"""
-    This omega boundary condition enforces a solution whose laplacian is equal
-    to f on border_batch
+    This omega boundary condition enforces a solution where :math:`\nabla u\cdot
+    n` is equal to `f` on omega borders. :math:`n` is the unitary
+    outgoing vector normal at border :math:`\partial\Omega`.
 
     Parameters
     ----------
@@ -151,18 +162,32 @@ def boundary_neumann_statio(f, border_batch, u, params):
         Typically, it is a dictionary of
         dictionaries: `eq_params` and `nn_params``, respectively the
         differential equation parameters and the neural network parameter
+    facet:
+        An integer which represents the id of the facet which is currently
+        considered (in the order provided wy the DataGenerator which is fixed)
     """
-    v_d2u_dx2 = vmap(
-        lambda dx: jnp.diagonal(
-            hessian(u, 0)(
+    # We resort to the shape of the border_batch to determine the dimension as
+    # described in the border_batch function
+    if jnp.squeeze(border_batch).ndim == 0:  # case 1D borders (just a scalar)
+        n = jnp.array([1, -1])  # the unit vectors normal to the two borders
+
+    else:  # case 2D borders (because 3D borders are not supported yet)
+        # they are in the order: left, right, bottom, top so we give the normal
+        # outgoing vectors accordingly with shape in concordance with
+        # border_batch shape (batch_size, ndim, nfacets)
+        n = jnp.array([[-1, 1, 0, 0], [0, 0, -1, 1]])
+
+    v_neumann = vmap(
+        lambda dx: jnp.dot(
+            grad(u, 0)(
                 dx, params["nn_params"], jax.lax.stop_gradient(params["eq_params"])
-            )
-        ).sum()
+            ),
+            n[..., facet],
+        )
         - f(dx),
-        (0),
         0,
     )
-    mse_u_boundary = jnp.mean((v_d2u_dx2(border_batch) - 0) ** 2)
+    mse_u_boundary = jnp.mean((v_neumann(border_batch)) ** 2)
     return mse_u_boundary
 
 
@@ -207,20 +232,17 @@ def boundary_dirichlet_nonstatio(f, times_batch, omega_border_batch, u, params):
     )
 
     mse_u_boundary = jnp.mean(
-        (
-            v_u_boundary(
-                rep_times(omega_border_batch.shape[0]), tile_omega_border_batch
-            )
-            - 0
-        )
+        (v_u_boundary(rep_times(omega_border_batch.shape[0]), tile_omega_border_batch))
         ** 2
     )
     return mse_u_boundary
 
 
-def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params):
+def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params, facet):
     r"""
-    This omega boundary condition enforces a solution whose laplacian is equal to f at time_batch x omega borders
+    This omega boundary condition enforces a solution where :math:`\nabla u\cdot
+    n` is equal to `f` at time_batch x omega borders. :math:`n` is the unitary
+    outgoing vector normal at border :math:`\partial\Omega`.
 
     Parameters
     ----------
@@ -237,6 +259,9 @@ def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params):
         Typically, it is a dictionary of
         dictionaries: `eq_params` and `nn_params``, respectively the
         differential equation parameters and the neural network parameter
+    facet:
+        An integer which represents the id of the facet which is currently
+        considered (in the order provided wy the DataGenerator which is fixed)
     """
     tile_omega_border_batch = jnp.tile(
         omega_border_batch, reps=(times_batch.shape[0], 1)
@@ -245,19 +270,31 @@ def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params):
     def rep_times(k):
         return jnp.repeat(times_batch, k, axis=0)
 
-    # d2u_dx2 = grad(lambda t, dx, nn_params: grad(u, 1)(t, dx, nn_params)[0], 1)
-    v_d2u_dx2 = vmap(
-        lambda t, dx: jnp.diagonal(
-            hessian(u, 1)(
+    # We resort to the shape of the border_batch to determine the dimension as
+    # described in the border_batch function
+    if jnp.squeeze(omega_border_batch).ndim == 0:  # case 1D borders (just a scalar)
+        n = jnp.array([1, -1])  # the unit vectors normal to the two borders
+
+    else:  # case 2D borders (because 3D borders are not supported yet)
+        # they are in the order: left, right, bottom, top so we give the normal
+        # outgoing vectors accordingly with shape in concordance with
+        # border_batch shape (batch_size, ndim, nfacets)
+        n = jnp.array([[-1, 1, 0, 0], [0, 0, -1, 1]])
+
+    v_neumann = vmap(
+        lambda t, dx: jnp.dot(
+            grad(u, 1)(
                 t, dx, params["nn_params"], jax.lax.stop_gradient(params["eq_params"])
-            )
-        ).sum()
+            ),
+            n[..., facet],
+        )
         - f(dx),
-        (0, 0),
+        0,
         0,
     )
     mse_u_boundary = jnp.mean(
-        (v_d2u_dx2(rep_times(omega_border_batch.shape[0]), tile_omega_border_batch) - 0)
+        (v_neumann(rep_times(omega_border_batch.shape[0]), tile_omega_border_batch))
         ** 2
     )
+
     return mse_u_boundary

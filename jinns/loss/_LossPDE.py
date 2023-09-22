@@ -442,6 +442,7 @@ class LossPDEStatio(LossPDEAbstract):
                             omega_border_batch[..., idx],
                             self.u,
                             params,
+                            idx,
                         )
             else:
                 mse_boundary_loss = 0
@@ -452,6 +453,7 @@ class LossPDEStatio(LossPDEAbstract):
                         omega_border_batch[..., facet],
                         self.u,
                         params,
+                        facet,
                     )
         else:
             mse_boundary_loss = 0
@@ -743,6 +745,7 @@ class LossPDENonStatio(LossPDEStatio):
                             omega_border_batch[..., idx],
                             self.u,
                             params,
+                            idx,
                         )
             else:
                 mse_boundary_loss = 0
@@ -754,6 +757,7 @@ class LossPDENonStatio(LossPDEStatio):
                         omega_border_batch[..., facet],
                         self.u,
                         params,
+                        facet,
                     )
         else:
             mse_boundary_loss = 0

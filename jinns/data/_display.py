@@ -77,7 +77,7 @@ def plot2d(
             cbar_location="bottom",
             cbar_mode="each",
             cbar_size="7%",
-            cbar_pad=0.3,
+            cbar_pad=0.4,
         )
 
         for idx, (t, ax) in enumerate(zip(times, grid)):
@@ -88,8 +88,6 @@ def plot2d(
             im = ax.pcolormesh(mesh[0], mesh[1], t_slice, cmap=cmap)
             ax.set_title(f"t = {times[idx] * Tmax}")
             ax.cax.colorbar(im)
-
-        plt.show()
 
 
 def _plot_2D_statio(
@@ -161,7 +159,6 @@ def plot1d_slice(
     plt.ylabel(r"$u(t_i, x)$")
     plt.legend()
     plt.title(title)
-    plt.show()
 
 
 def plot1d_image(
@@ -200,4 +197,3 @@ def plot1d_image(
     if colorbar:
         fig.colorbar(im)
     ax.set_title(title)
-    plt.show()

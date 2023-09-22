@@ -46,7 +46,14 @@ def _rar_step_init(sample_size, selected_sample_size):
     """
 
     def rar_step_true(operands):
+        """
+        Note: in all generality, we would need a stop gradient operator around
+        these dynamic_loss evaluations that follow which produce weights for
+        sampling. However, they appear through a argsort and sampling
+        operations which definitly kills gradient flows
+        """
         loss, params, data, i = operands
+        # jax.debug.print("True at {x}, {p}", x=i, p=jnp.count_nonzero(data.p == 0))
 
         if isinstance(data, DataGeneratorODE):
             s = data.sample_in_time_domain(sample_size)
@@ -110,12 +117,12 @@ def _rar_step_init(sample_size, selected_sample_size):
                 return jax.lax.dynamic_update_slice(
                     p,
                     1 / new_proba * jnp.ones((selected_sample_size,)),
-                    ((data.nt_start + (i + 1) * selected_sample_size),),
+                    ((data.nt_start + i * selected_sample_size),),
                 )
 
-            data.p = jax.lax.fori_loop(0, data.rar_iter_nb, update_slices, data.p)
-
             data.rar_iter_nb += 1
+
+            data.p = jax.lax.fori_loop(0, data.rar_iter_nb, update_slices, data.p)
 
             # NOTE must return data to be correctly updated because we cannot
             # have side effects in this function that will be jitted
@@ -189,12 +196,12 @@ def _rar_step_init(sample_size, selected_sample_size):
                 return jax.lax.dynamic_update_slice(
                     p,
                     1 / new_proba * jnp.ones((selected_sample_size,)),
-                    ((data.n_start + (i + 1) * selected_sample_size),),
+                    ((data.n_start + i * selected_sample_size),),
                 )
 
-            data.p = jax.lax.fori_loop(0, data.rar_iter_nb, update_slices, data.p)
-
             data.rar_iter_nb += 1
+
+            data.p = jax.lax.fori_loop(0, data.rar_iter_nb, update_slices, data.p)
 
             # NOTE must return data to be correctly updated because we cannot
             # have side effects in this function that will be jitted
@@ -311,12 +318,14 @@ def _rar_step_init(sample_size, selected_sample_size):
                 return jax.lax.dynamic_update_slice(
                     p,
                     1 / new_proba * jnp.ones((selected_sample_size,)),
-                    ((data.n_start + (i + 1) * selected_sample_size),),
+                    ((data.n_start + i * selected_sample_size),),
                 )
+
+            data.rar_iter_nb += 1
 
             data.p = jax.lax.fori_loop(0, data.rar_iter_nb, update_slices, data.p)
 
-            data.rar_iter_nb += 1
+            # jax.debug.print("True at {x}, {p}", x=i, p=jnp.count_nonzero(data.p == 0))
 
             # NOTE must return data to be correctly updated because we cannot
             # have side effects in this function that will be jitted

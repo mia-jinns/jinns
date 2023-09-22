@@ -129,7 +129,7 @@ class BurgerEquation(PDENonStatio):
 
     .. math::
         \frac{\partial}{\partial t} u(t,x) + u(t,x)\frac{\partial}{\partial x}
-        u(t,x) - \nu \frac{\partial^2}{\partial x^2} u(t,x) = 0
+        u(t,x) - \theta \frac{\partial^2}{\partial x^2} u(t,x) = 0
 
     """
 
@@ -1231,7 +1231,7 @@ class NavierStokes2DStatio(PDEStatio):
     equation which is a 2D vectorial PDE.
 
     .. math::
-       (\mathbf{u}\cdot\nabla)\mathbf{u} + \frac{1}{\rho}\nabla p - \nu
+       (\mathbf{u}\cdot\nabla)\mathbf{u} + \frac{1}{\rho}\nabla p - \theta
        \nabla^2\mathbf{u}=0,
 
 
@@ -1242,13 +1242,13 @@ class NavierStokes2DStatio(PDEStatio):
         \begin{pmatrix}u_x\frac{\partial}{\partial x} u_x + u_y\frac{\partial}{\partial y} u_x \\
         u_x\frac{\partial}{\partial x} u_y + u_y\frac{\partial}{\partial y} u_y  \end{pmatrix} +
         \frac{1}{\rho} \begin{pmatrix} \frac{\partial}{\partial x} p \\ \frac{\partial}{\partial y} p \end{pmatrix}
-        - \nu
+        - \theta
         \begin{pmatrix}
         \frac{\partial^2}{\partial x^2} u_x + \frac{\partial^2}{\partial y^2} u_x \\
         \frac{\partial^2}{\partial x^2} u_y + \frac{\partial^2}{\partial y^2} u_y
         \end{pmatrix} = 0,
 
-    with $\nu$ the viscosity coefficient and $\rho$ the density coefficient.
+    with $\theta$ the viscosity coefficient and $\rho$ the density coefficient.
 
     **Note:** Note that the solution to the Navier Stokes equation is a vector
     field. Hence the MSE must concern all the axes.
