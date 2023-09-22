@@ -79,7 +79,7 @@ class FisherKPP2D(PDENonStatio):
 
     """
 
-    def __init__(self, Tmax=1, derivatives="nn_params"):
+    def __init__(self, Tmax=1, derivatives="nn_params", eq_params_heterogeneity=None):
         """
         Parameters
         ----------
@@ -94,7 +94,7 @@ class FisherKPP2D(PDENonStatio):
             done in solving forward problems, when we only estimate the
             equation solution with as PINN.
         """
-        super().__init__(Tmax, derivatives)
+        super().__init__(Tmax, derivatives, eq_params_heterogeneity)
 
     def evaluate(self, t, x, u, params):
         """
@@ -119,10 +119,14 @@ class FisherKPP2D(PDENonStatio):
         """
         nn_params, eq_params = self.set_stop_gradient(params)
 
-        if eq_params["r"].ndim == 1:
-            r = eq_params["r"]
-        else:
-            r = self._eval_heterogeneous_array_parameter(eq_params["r"], x=x)
+        # if eq_params["r"].ndim == 1:
+        #    r = eq_params["r"]
+        # else:
+        # r = self._eval_heterogeneous_array_parameter(eq_params["r"],
+        #        t, x, heterogeneity='space')
+        eq_params = self._eval_heterogeneous_parameters(
+            eq_params, t, x, self.eq_params_heterogeneity
+        )
 
         du_dt = grad(u, 0)(t, x, nn_params)[0]
 
@@ -143,7 +147,7 @@ class FisherKPP2D(PDENonStatio):
         return du_dt + self.Tmax * (
             -eq_params["D"] * (d2u_dx2 + d2u_dy2)
             - u(t, x, nn_params, eq_params)
-            * (r - eq_params["g"] * u(t, x, nn_params, eq_params))
+            * (eq_params["r"] - eq_params["g"] * u(t, x, nn_params, eq_params))
         )
 
 
