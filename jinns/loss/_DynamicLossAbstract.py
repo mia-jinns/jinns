@@ -27,6 +27,13 @@ class DynamicLoss:
             loss are computed. Default "nn_params", this is what is typically
             done in solving forward problems, when we only estimate the
             equation solution with as PINN.
+        eq_params_heterogeneity
+            Default None. A dict with the keys being the same as in eq_params
+            and the value being `time`, `space`, `both` or None which corresponds to
+            the heterogeneity of a given parameter. A value can be missing, in
+            this case there is no heterogeneity (=None). If
+            eq_params_heterogeneity is None this means there is no
+            heterogeneity for no parameters.
         """
         self.Tmax = Tmax
         if derivatives not in ["nn_params", "eq_params", "both"]:
@@ -62,9 +69,10 @@ class DynamicLoss:
         p
             The parameter
         heterogeneity
-            A string. Either `time`, `space`, `both` to specify which
+            A string. Either `time`, `space`, `both` or None to specify which
             kind of heterogeneity we have. Default is None, is this case we do
             not have heterogeneity.
+
 
         **Note** t is assumed to be normalized in [0, 1] as well as x!
         """
@@ -134,6 +142,13 @@ class ODE(DynamicLoss):
             loss are computed. Default "nn_params", this is what is typically
             done in solving forward problems, when we only estimate the
             equation solution with as PINN.
+        eq_params_heterogeneity
+            Default None. A dict with the keys being the same as in eq_params
+            and the value being `time`, `space`, `both` or None which corresponds to
+            the heterogeneity of a given parameter. A value can be missing, in
+            this case there is no heterogeneity (=None). If
+            eq_params_heterogeneity is None this means there is no
+            heterogeneity for no parameters.
         """
         super().__init__(Tmax, derivatives, eq_params_heterogeneity)
 
@@ -143,24 +158,27 @@ class PDEStatio(DynamicLoss):
     Abstract base class for PDE statio dynamic losses
     """
 
-    def __init__(
-        self, Tmax=None, derivatives="nn_params", eq_params_heterogeneity=None
-    ):
+    def __init__(self, derivatives="nn_params", eq_params_heterogeneity=None):
         """
         Parameters
         ----------
-        Tmax
-            Tmax needs to be given when the PINN time input is normalized in
-            [0, 1], ie. we have performed renormalization of the differential
-            equation
         derivatives
             A string. Either ``nn_params``, ``eq_params``, ``both``. Determines
             with respect to which set of parameters gradients of the dynamic
             loss are computed. Default "nn_params", this is what is typically
             done in solving forward problems, when we only estimate the
             equation solution with as PINN.
+        eq_params_heterogeneity
+            Default None. A dict with the keys being the same as in eq_params
+            and the value being `time`, `space`, `both` or None which corresponds to
+            the heterogeneity of a given parameter. A value can be missing, in
+            this case there is no heterogeneity (=None). If
+            eq_params_heterogeneity is None this means there is no
+            heterogeneity for no parameters.
         """
-        super().__init__(Tmax, derivatives, eq_params_heterogeneity)
+        super().__init__(
+            derivatives=derivatives, eq_params_heterogeneity=eq_params_heterogeneity
+        )
 
 
 class PDENonStatio(DynamicLoss):
@@ -184,5 +202,12 @@ class PDENonStatio(DynamicLoss):
             loss are computed. Default "nn_params", this is what is typically
             done in solving forward problems, when we only estimate the
             equation solution with as PINN.
+        eq_params_heterogeneity
+            Default None. A dict with the keys being the same as in eq_params
+            and the value being `time`, `space`, `both` or None which corresponds to
+            the heterogeneity of a given parameter. A value can be missing, in
+            this case there is no heterogeneity (=None). If
+            eq_params_heterogeneity is None this means there is no
+            heterogeneity for no parameters.
         """
         super().__init__(Tmax, derivatives, eq_params_heterogeneity)
