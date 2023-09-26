@@ -1,7 +1,6 @@
 from ._DynamicLossAbstract import ODE, PDEStatio, PDENonStatio
 from ._DynamicLoss import (
     FisherKPP,
-    FisherKPP2D,
     Malthus,
     BurgerEquation,
     GeneralizedLotkaVolterra,
