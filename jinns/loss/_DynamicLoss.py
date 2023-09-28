@@ -1,20 +1,26 @@
 import jax
-from jax import jit, grad
+from jax import jit, grad, jacrev
 import jax.numpy as jnp
 from jinns.loss._DynamicLossAbstract import ODE, PDEStatio, PDENonStatio
+from jinns.loss._operators import (
+    _laplacian,
+    _div,
+    _vectorial_laplacian,
+    _u_dot_nabla_times_u,
+)
 
 
 class FisherKPP(PDENonStatio):
     r"""
-    Return the Fisher KPP dynamic loss term (in 1 space dimension):
+    Return the Fisher KPP dynamic loss term. Dimension of :math:`x` can be
+    arbitrary
 
     .. math::
-        \frac{\partial}{\partial t} u(t,x)=D\frac{\partial^2}
-        {\partial x^2} u(t,x) + u(t,x)(r(x) - \gamma(x)u(t,x))
+        \frac{\partial}{\partial t} u(t,x)=D\Delta u(t,x) + u(t,x)(r(x) - \gamma(x)u(t,x))
 
     """
 
-    def __init__(self, Tmax=1, derivatives="nn_params"):
+    def __init__(self, Tmax=1, derivatives="nn_params", eq_params_heterogeneity=None):
         """
         Parameters
         ----------
@@ -28,8 +34,15 @@ class FisherKPP(PDENonStatio):
             loss are computed. Default "nn_params", this is what is typically
             done in solving forward problems, when we only estimate the
             equation solution with as PINN.
+        eq_params_heterogeneity
+            Default None. A dict with the keys being the same as in eq_params
+            and the value being `time`, `space`, `both` or None which corresponds to
+            the heterogeneity of a given parameter. A value can be missing, in
+            this case there is no heterogeneity (=None). If
+            eq_params_heterogeneity is None this means there is no
+            heterogeneity for no parameters.
         """
-        super().__init__(Tmax, derivatives)
+        super().__init__(Tmax, derivatives, eq_params_heterogeneity)
 
     def evaluate(self, t, x, u, params):
         """
@@ -54,17 +67,16 @@ class FisherKPP(PDENonStatio):
         """
         nn_params, eq_params = self.set_stop_gradient(params)
 
+        eq_params = self._eval_heterogeneous_parameters(
+            eq_params, t, x, self.eq_params_heterogeneity
+        )
+
         du_dt = grad(u, 0)(t, x, nn_params)[0]
 
-        d2u_dx2 = grad(
-            lambda t, x, nn_params, eq_params: grad(u, 1)(t, x, nn_params, eq_params)[
-                0
-            ],
-            1,
-        )(t, x, nn_params, eq_params)[0]
+        lap = _laplacian(u, nn_params, eq_params, x, t)
 
         return du_dt + self.Tmax * (
-            -eq_params["D"] * d2u_dx2
+            -eq_params["D"] * lap
             - u(t, x, nn_params, eq_params)
             * (eq_params["r"] - eq_params["g"] * u(t, x, nn_params, eq_params))
         )
@@ -79,7 +91,7 @@ class Malthus(ODE):
 
     """
 
-    def __init__(self, Tmax=1, derivatives="nn_params"):
+    def __init__(self, Tmax=1, derivatives="nn_params", eq_params_heterogeneity=None):
         """
         Parameters
         ----------
@@ -93,8 +105,15 @@ class Malthus(ODE):
             loss are computed. Default "nn_params", this is what is typically
             done in solving forward problems, when we only estimate the
             equation solution with as PINN.
+        eq_params_heterogeneity
+            Default None. A dict with the keys being the same as in eq_params
+            and the value being `time`, `space`, `both` or None which corresponds to
+            the heterogeneity of a given parameter. A value can be missing, in
+            this case there is no heterogeneity (=None). If
+            eq_params_heterogeneity is None this means there is no
+            heterogeneity for no parameters.
         """
-        super().__init__(Tmax, derivatives)
+        super().__init__(Tmax, derivatives, eq_params_heterogeneity)
 
     def evaluate(self, t, u, params):
         """
@@ -118,6 +137,10 @@ class Malthus(ODE):
         """
         nn_params, eq_params = self.set_stop_gradient(params)
 
+        eq_params = self._eval_heterogeneous_parameters(
+            eq_params, t, x, self.eq_params_heterogeneity
+        )
+
         # NOTE the log formulation of the loss for stability
         du_dt = grad(lambda t: jnp.log(u(t, nn_params, eq_params)), 0)(t)
         return du_dt - eq_params["growth_rate"]
@@ -133,7 +156,7 @@ class BurgerEquation(PDENonStatio):
 
     """
 
-    def __init__(self, Tmax=1, derivatives="nn_params"):
+    def __init__(self, Tmax=1, derivatives="nn_params", eq_params_heterogeneity=None):
         """
         Parameters
         ----------
@@ -147,8 +170,15 @@ class BurgerEquation(PDENonStatio):
             loss are computed. Default "nn_params", this is what is typically
             done in solving forward problems, when we only estimate the
             equation solution with as PINN.
+        eq_params_heterogeneity
+            Default None. A dict with the keys being the same as in eq_params
+            and the value being `time`, `space`, `both` or None which corresponds to
+            the heterogeneity of a given parameter. A value can be missing, in
+            this case there is no heterogeneity (=None). If
+            eq_params_heterogeneity is None this means there is no
+            heterogeneity for no parameters.
         """
-        super().__init__(Tmax, derivatives)
+        super().__init__(Tmax, derivatives, eq_params_heterogeneity)
 
     def evaluate(self, t, x, u, params):
         """
@@ -172,6 +202,10 @@ class BurgerEquation(PDENonStatio):
             differential equation parameters and the neural network parameter
         """
         nn_params, eq_params = self.set_stop_gradient(params)
+
+        eq_params = self._eval_heterogeneous_parameters(
+            eq_params, t, x, self.eq_params_heterogeneity
+        )
 
         du_dt = grad(u, 0)
         du_dx = grad(u, 1)
@@ -200,7 +234,14 @@ class GeneralizedLotkaVolterra(ODE):
 
     """
 
-    def __init__(self, key_main, keys_other, Tmax=1, derivatives="nn_params"):
+    def __init__(
+        self,
+        key_main,
+        keys_other,
+        Tmax=1,
+        derivatives="nn_params",
+        eq_params_heterogeneity=None,
+    ):
         """
         Parameters
         ----------
@@ -224,8 +265,15 @@ class GeneralizedLotkaVolterra(ODE):
             loss are computed. Default "nn_params", this is what is typically
             done in solving forward problems, when we only estimate the
             equation solution with as PINN.
+        eq_params_heterogeneity
+            Default None. A dict with the keys being the same as in eq_params
+            and the value being `time`, `space`, `both` or None which corresponds to
+            the heterogeneity of a given parameter. A value can be missing, in
+            this case there is no heterogeneity (=None). If
+            eq_params_heterogeneity is None this means there is no
+            heterogeneity for no parameters.
         """
-        super().__init__(Tmax, derivatives)
+        super().__init__(Tmax, derivatives, eq_params_heterogeneity)
         self.key_main = key_main
         self.keys_other = keys_other
 
@@ -297,7 +345,7 @@ class FPEStatioLoss1D(PDEStatio):
     (Ornstein-Uhlenbeck, Cox-Ingersoll-Ross, ...)
     """
 
-    def __init__(self, derivatives="nn_params"):
+    def __init__(self, derivatives="nn_params", eq_params_heterogeneity=None):
         """
         Parameters
         ----------
@@ -307,8 +355,15 @@ class FPEStatioLoss1D(PDEStatio):
             loss are computed. Default "nn_params", this is what is typically
             done in solving forward problems, when we only estimate the
             equation solution with as PINN.
+        eq_params_heterogeneity
+            Default None. A dict with the keys being the same as in eq_params
+            and the value being `time`, `space`, `both` or None which corresponds to
+            the heterogeneity of a given parameter. A value can be missing, in
+            this case there is no heterogeneity (=None). If
+            eq_params_heterogeneity is None this means there is no
+            heterogeneity for no parameters.
         """
-        super().__init__(derivatives)
+        super().__init__(derivatives, eq_params_heterogeneity)
 
     def evaluate(self, x, u, params):
         """
@@ -362,7 +417,7 @@ class OU_FPEStatioLoss1D(FPEStatioLoss1D):
 
     """
 
-    def __init__(self, derivatives="nn_params"):
+    def __init__(self, derivatives="nn_params", eq_params_heterogeneity=None):
         """
         Parameters
         ----------
@@ -372,8 +427,15 @@ class OU_FPEStatioLoss1D(FPEStatioLoss1D):
             loss are computed. Default "nn_params", this is what is typically
             done in solving forward problems, when we only estimate the
             equation solution with as PINN.
+        eq_params_heterogeneity
+            Default None. A dict with the keys being the same as in eq_params
+            and the value being `time`, `space`, `both` or None which corresponds to
+            the heterogeneity of a given parameter. A value can be missing, in
+            this case there is no heterogeneity (=None). If
+            eq_params_heterogeneity is None this means there is no
+            heterogeneity for no parameters.
         """
-        super().__init__(derivatives)
+        super().__init__(derivatives, eq_params_heterogeneity)
 
     def drift(self, x, eq_params):
         r"""
@@ -413,7 +475,7 @@ class CIR_FPEStatioLoss1D(FPEStatioLoss1D):
 
     """
 
-    def __init__(self, derivatives="nn_params"):
+    def __init__(self, derivatives="nn_params", eq_params_heterogeneity=None):
         """
         Parameters
         ----------
@@ -423,8 +485,15 @@ class CIR_FPEStatioLoss1D(FPEStatioLoss1D):
             loss are computed. Default "nn_params", this is what is typically
             done in solving forward problems, when we only estimate the
             equation solution with as PINN.
+        eq_params_heterogeneity
+            Default None. A dict with the keys being the same as in eq_params
+            and the value being `time`, `space`, `both` or None which corresponds to
+            the heterogeneity of a given parameter. A value can be missing, in
+            this case there is no heterogeneity (=None). If
+            eq_params_heterogeneity is None this means there is no
+            heterogeneity for no parameters.
         """
-        super().__init__(derivatives)
+        super().__init__(derivatives, eq_params_heterogeneity)
 
     def drift(self, x, eq_params):
         r"""
@@ -473,7 +542,7 @@ class FPENonStatioLoss1D(PDENonStatio):
     (Ornstein-Uhlenbeck, Cox-Ingersoll-Ross, ...)
     """
 
-    def __init__(self, Tmax=1, derivatives="nn_params"):
+    def __init__(self, Tmax=1, derivatives="nn_params", eq_params_heterogeneity=None):
         """
         Parameters
         ----------
@@ -481,8 +550,15 @@ class FPENonStatioLoss1D(PDENonStatio):
             Tmax needs to be given when the PINN time input is normalized in
             [0, 1], ie. we have performed renormalization of the differential
             equation
+        eq_params_heterogeneity
+            Default None. A dict with the keys being the same as in eq_params
+            and the value being `time`, `space`, `both` or None which corresponds to
+            the heterogeneity of a given parameter. A value can be missing, in
+            this case there is no heterogeneity (=None). If
+            eq_params_heterogeneity is None this means there is no
+            heterogeneity for no parameters.
         """
-        super().__init__(Tmax, derivatives)
+        super().__init__(Tmax, derivatives, eq_params_heterogeneity)
 
     def evaluate(self, t, x, u, params):
         """
@@ -543,7 +619,7 @@ class OU_FPENonStatioLoss1D(FPENonStatioLoss1D):
 
     """
 
-    def __init__(self, Tmax=1, derivatives="nn_params"):
+    def __init__(self, Tmax=1, derivatives="nn_params", eq_params_heterogeneity=None):
         """
         Parameters
         ----------
@@ -557,8 +633,15 @@ class OU_FPENonStatioLoss1D(FPENonStatioLoss1D):
             loss are computed. Default "nn_params", this is what is typically
             done in solving forward problems, when we only estimate the
             equation solution with as PINN.
+        eq_params_heterogeneity
+            Default None. A dict with the keys being the same as in eq_params
+            and the value being `time`, `space`, `both` or None which corresponds to
+            the heterogeneity of a given parameter. A value can be missing, in
+            this case there is no heterogeneity (=None). If
+            eq_params_heterogeneity is None this means there is no
+            heterogeneity for no parameters.
         """
-        super().__init__(Tmax, derivatives)
+        super().__init__(Tmax, derivatives, eq_params_heterogeneity)
 
     def drift(self, t, x, eq_params):
         r"""
@@ -618,7 +701,7 @@ class CIR_FPENonStatioLoss1D(FPENonStatioLoss1D):
             done in solving forward problems, when we only estimate the
             equation solution with as PINN.
         """
-        super().__init__(Tmax, derivatives)
+        super().__init__(Tmax, derivatives, eq_params_heterogeneity)
 
     def drift(self, t, x, eq_params):
         r"""
@@ -663,7 +746,7 @@ class Sinus_FPENonStatioLoss1D(FPENonStatioLoss1D):
 
     """
 
-    def __init__(self, Tmax=1, derivatives="nn_params"):
+    def __init__(self, Tmax=1, derivatives="nn_params", eq_params_heterogeneity=None):
         """
         Parameters
         ----------
@@ -677,8 +760,15 @@ class Sinus_FPENonStatioLoss1D(FPENonStatioLoss1D):
             loss are computed. Default "nn_params", this is what is typically
             done in solving forward problems, when we only estimate the
             equation solution with as PINN.
+        eq_params_heterogeneity
+            Default None. A dict with the keys being the same as in eq_params
+            and the value being `time`, `space`, `both` or None which corresponds to
+            the heterogeneity of a given parameter. A value can be missing, in
+            this case there is no heterogeneity (=None). If
+            eq_params_heterogeneity is None this means there is no
+            heterogeneity for no parameters.
         """
-        super().__init__(Tmax, derivatives)
+        super().__init__(Tmax, derivatives, eq_params_heterogeneity)
 
     def drift(self, t, x, eq_params):
         r"""
@@ -732,7 +822,7 @@ class FPEStatioLoss2D(PDEStatio):
     (Ornstein-Uhlenbeck, Cox-Ingersoll-Ross, ...)
     """
 
-    def __init__(self, derivatives="nn_params"):
+    def __init__(self, derivatives="nn_params", eq_params_heterogeneity=None):
         """
         Parameters
         ----------
@@ -742,8 +832,15 @@ class FPEStatioLoss2D(PDEStatio):
             loss are computed. Default "nn_params", this is what is typically
             done in solving forward problems, when we only estimate the
             equation solution with as PINN.
+        eq_params_heterogeneity
+            Default None. A dict with the keys being the same as in eq_params
+            and the value being `time`, `space`, `both` or None which corresponds to
+            the heterogeneity of a given parameter. A value can be missing, in
+            this case there is no heterogeneity (=None). If
+            eq_params_heterogeneity is None this means there is no
+            heterogeneity for no parameters.
         """
-        super().__init__(derivatives)
+        super().__init__(derivatives, eq_params_heterogeneity)
 
     def evaluate(self, x, u, params):
         """
@@ -830,7 +927,7 @@ class OU_FPEStatioLoss2D(FPEStatioLoss2D):
 
     """
 
-    def __init__(self, derivatives="nn_params"):
+    def __init__(self, derivatives="nn_params", eq_params_heterogeneity=None):
         """
         Parameters
         ----------
@@ -840,8 +937,15 @@ class OU_FPEStatioLoss2D(FPEStatioLoss2D):
             loss are computed. Default "nn_params", this is what is typically
             done in solving forward problems, when we only estimate the
             equation solution with as PINN.
+        eq_params_heterogeneity
+            Default None. A dict with the keys being the same as in eq_params
+            and the value being `time`, `space`, `both` or None which corresponds to
+            the heterogeneity of a given parameter. A value can be missing, in
+            this case there is no heterogeneity (=None). If
+            eq_params_heterogeneity is None this means there is no
+            heterogeneity for no parameters.
         """
-        super().__init__(derivatives)
+        super().__init__(derivatives, eq_params_heterogeneity)
 
     def drift(self, x, eq_params):
         r"""
@@ -912,7 +1016,7 @@ class FPENonStatioLoss2D(PDENonStatio):
     (Ornstein-Uhlenbeck, Cox-Ingersoll-Ross, ...)
     """
 
-    def __init__(self, Tmax, derivatives="nn_params"):
+    def __init__(self, Tmax, derivatives="nn_params", eq_params_heterogeneity=None):
         """
         Parameters
         ----------
@@ -926,8 +1030,15 @@ class FPENonStatioLoss2D(PDENonStatio):
             loss are computed. Default "nn_params", this is what is typically
             done in solving forward problems, when we only estimate the
             equation solution with as PINN.
+        eq_params_heterogeneity
+            Default None. A dict with the keys being the same as in eq_params
+            and the value being `time`, `space`, `both` or None which corresponds to
+            the heterogeneity of a given parameter. A value can be missing, in
+            this case there is no heterogeneity (=None). If
+            eq_params_heterogeneity is None this means there is no
+            heterogeneity for no parameters.
         """
-        super().__init__(Tmax, derivatives)
+        super().__init__(Tmax, derivatives, eq_params_heterogeneity)
 
     def evaluate(self, t, x, u, params):
         """
@@ -1020,7 +1131,7 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
 
     """
 
-    def __init__(self, Tmax=1, derivatives="nn_params"):
+    def __init__(self, Tmax=1, derivatives="nn_params", eq_params_heterogeneity=None):
         """
         Parameters
         ----------
@@ -1034,8 +1145,15 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
             loss are computed. Default "nn_params", this is what is typically
             done in solving forward problems, when we only estimate the
             equation solution with as PINN.
+        eq_params_heterogeneity
+            Default None. A dict with the keys being the same as in eq_params
+            and the value being `time`, `space`, `both` or None which corresponds to
+            the heterogeneity of a given parameter. A value can be missing, in
+            this case there is no heterogeneity (=None). If
+            eq_params_heterogeneity is None this means there is no
+            heterogeneity for no parameters.
         """
-        super().__init__(Tmax, derivatives)
+        super().__init__(Tmax, derivatives, eq_params_heterogeneity)
 
     def drift(self, t, x, eq_params):
         r"""
@@ -1110,7 +1228,7 @@ class ConvectionDiffusionNonStatio(FPENonStatioLoss2D):
     and FPE equations are the same.
     """
 
-    def __init__(self, Tmax=1, derivatives="nn_params"):
+    def __init__(self, Tmax=1, derivatives="nn_params", eq_params_heterogeneity=None):
         """
         Parameters
         ----------
@@ -1124,8 +1242,15 @@ class ConvectionDiffusionNonStatio(FPENonStatioLoss2D):
             loss are computed. Default "nn_params", this is what is typically
             done in solving forward problems, when we only estimate the
             equation solution with as PINN.
+        eq_params_heterogeneity
+            Default None. A dict with the keys being the same as in eq_params
+            and the value being `time`, `space`, `both` or None which corresponds to
+            the heterogeneity of a given parameter. A value can be missing, in
+            this case there is no heterogeneity (=None). If
+            eq_params_heterogeneity is None this means there is no
+            heterogeneity for no parameters.
         """
-        super().__init__(Tmax, derivatives)
+        super().__init__(Tmax, derivatives, eq_params_heterogeneity)
 
     def drift(self, t, x, eq_params):
         r"""
@@ -1172,7 +1297,7 @@ class MassConservation2DStatio(PDEStatio):
     :math:`t`.
     """
 
-    def __init__(self, nn_key, derivatives="nn_params"):
+    def __init__(self, nn_key, derivatives="nn_params", eq_params_heterogeneity=None):
         """
         Parameters
         ----------
@@ -1185,9 +1310,16 @@ class MassConservation2DStatio(PDEStatio):
             loss are computed. Default `"nn_params"`, this is what is typically
             done in solving forward problems, when we only estimate the
             equation solution with as PINN.
+        eq_params_heterogeneity
+            Default None. A dict with the keys being the same as in eq_params
+            and the value being `time`, `space`, `both` or None which corresponds to
+            the heterogeneity of a given parameter. A value can be missing, in
+            this case there is no heterogeneity (=None). If
+            eq_params_heterogeneity is None this means there is no
+            heterogeneity for no parameters.
         """
         self.nn_key = nn_key
-        super().__init__(derivatives)
+        super().__init__(derivatives, eq_params_heterogeneity)
 
     def evaluate(self, x, u_dict, params_dict):
         """
@@ -1216,13 +1348,8 @@ class MassConservation2DStatio(PDEStatio):
         eq_params = eq_params
 
         u = u_dict[self.nn_key]
-        # as u is a vector with two components here we create functions for
-        # each of the components
-        # We also fix the parameters for clarity
-        ux = lambda x: u(x, nn_params, eq_params)[0]
-        uy = lambda x: u(x, nn_params, eq_params)[1]
 
-        return grad(ux, 0)(x)[0] + grad(uy, 0)(x)[1]
+        return _div(u, nn_params, eq_params, x)
 
 
 class NavierStokes2DStatio(PDEStatio):
@@ -1254,7 +1381,9 @@ class NavierStokes2DStatio(PDEStatio):
     field. Hence the MSE must concern all the axes.
     """
 
-    def __init__(self, u_key, p_key, derivatives="nn_params"):
+    def __init__(
+        self, u_key, p_key, derivatives="nn_params", eq_params_heterogeneity=None
+    ):
         """
         Parameters
         ----------
@@ -1276,10 +1405,17 @@ class NavierStokes2DStatio(PDEStatio):
             loss are computed. Default `"nn_params"`, this is what is typically
             done in solving forward problems, when we only estimate the
             equation solution with as PINN.
+        eq_params_heterogeneity
+            Default None. A dict with the keys being the same as in eq_params
+            and the value being `time`, `space`, `both` or None which corresponds to
+            the heterogeneity of a given parameter. A value can be missing, in
+            this case there is no heterogeneity (=None). If
+            eq_params_heterogeneity is None this means there is no
+            heterogeneity for no parameters.
         """
         self.u_key = u_key
         self.p_key = p_key
-        super().__init__(derivatives)
+        super().__init__(derivatives, eq_params_heterogeneity)
 
     def evaluate(self, x, u_dict, params_dict):
         """
@@ -1309,39 +1445,27 @@ class NavierStokes2DStatio(PDEStatio):
         eq_params = eq_params
 
         u = u_dict[self.u_key]
-        # as u is a vector with two components here we create functions for
-        # each of the components
-        # We also fix the parameters for clarity
-        ux = lambda x: u(x, u_nn_params, eq_params)[0]
-        uy = lambda x: u(x, u_nn_params, eq_params)[1]
 
-        dux_dx = lambda x: grad(ux, 0)(x)[0]
-        d2ux_dx2 = lambda x: grad(dux_dx, 0)(x)[0]
-        dux_dy = lambda x: grad(ux, 0)(x)[1]
-        d2ux_dy2 = lambda x: grad(dux_dy, 0)(x)[1]
-
-        duy_dx = lambda x: grad(uy, 0)(x)[0]
-        d2uy_dx2 = lambda x: grad(duy_dx, 0)(x)[0]
-        duy_dy = lambda x: grad(uy, 0)(x)[1]
-        d2uy_dy2 = lambda x: grad(duy_dy, 0)(x)[1]
+        u_dot_nabla_x_u = _u_dot_nabla_times_u(u, u_nn_params, eq_params, x)
 
         p = lambda x: u_dict[self.p_key](x, p_nn_params, eq_params)
-        dp_dx = lambda x: grad(p, 0)(x)[0]
-        dp_dy = lambda x: grad(p, 0)(x)[1]
+        jac_p = jacrev(p, 0)(x)  # compute the gradient
+
+        vec_laplacian_u = _vectorial_laplacian(
+            u, u_nn_params, eq_params, x, u_vec_ndim=2
+        )
 
         # dynamic loss on x axis
         result_x = (
-            ux(x) * dux_dx(x)
-            + uy(x) * dux_dy(x)
-            + 1 / eq_params["rho"] * dp_dx(x)
-            - eq_params["nu"] * (d2ux_dx2(x) + d2ux_dy2(x))
+            u_dot_nabla_x_u[0]
+            + 1 / eq_params["rho"] * jac_p[0]
+            - eq_params["nu"] * vec_laplacian_u[0]
         )
         # dynamic loss on y axis
         result_y = (
-            ux(x) * duy_dx(x)
-            + uy(x) * duy_dy(x)
-            + 1 / eq_params["rho"] * dp_dy(x)
-            - eq_params["nu"] * (d2uy_dx2(x) + d2uy_dy2(x))
+            u_dot_nabla_x_u[1]
+            + 1 / eq_params["rho"] * jac_p[1]
+            - eq_params["nu"] * vec_laplacian_u[1]
         )
 
         # output is 2D

@@ -8,6 +8,14 @@ Welcome to jinn's documentation!
 
 Changelog:
 
+* v0.2.1
+
+    - Introduce non homogeneous equation parameters
+
+    - Improve dynamic losses with generic operators
+
+    - Minor fixes and improvements
+
 * v0.2.0
 
     - Implement a vanilla version of Resisual Adaptative Resampling scheme as proposed in *DeepXDE: A deep learning library for solving differential equations*, Lu Lu et al., SIAM Review, 2021

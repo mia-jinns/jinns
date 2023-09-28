@@ -699,6 +699,14 @@ class LossPDENonStatio(LossPDEStatio):
             omega_batch_ = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
             times_batch_ = rep_times(n)  # it is repeated
             mse_dyn_loss = jnp.mean(v_dyn_loss(times_batch_, omega_batch_, params) ** 2)
+            # OR for Causality is all you need (not yet implemented)
+            #  epsilon = 0.01
+            #  times_batch_ = jnp.sort(times_batch_)
+            #  val_dyn_loss = v_dyn_loss(times_batch_, omega_batch_, params)
+            #  causality_is_all_you_need = jax.lax.stop_gradient(jnp.roll(jnp.exp(-epsilon *
+            #      jnp.cumsum(val_dyn_loss)), shift=1,
+            #      axis=0)) * val_dyn_loss
+            #  mse_dyn_loss = jnp.mean(causality_is_all_you_need ** 2)
         else:
             mse_dyn_loss = 0
 
