@@ -27,25 +27,28 @@ def log_prior(theta):
     r1, r2, r3, r4 = theta["rs"]
     val = jax.lax.cond(
         jnp.all(
-            [
-                1e-2 <= theta["D"],
-                theta["D"] <= 1,
-                0.1 <= theta["gamma"],
-                theta["gamma"] <= 10,
-                -10 <= r1,
-                r1 <= 10,
-                -10 <= r2,
-                r2 <= 10,
-                -10 <= r3,
-                r3 <= 10,
-                -10 <= r4,
-                r4 <= 10,
-            ]
+            jnp.array(
+                [
+                    1e-2 <= theta["D"],
+                    theta["D"] <= 1,
+                    0.1 <= theta["gamma"],
+                    theta["gamma"] <= 10,
+                    -10 <= r1,
+                    r1 <= 10,
+                    -10 <= r2,
+                    r2 <= 10,
+                    -10 <= r3,
+                    r3 <= 10,
+                    -10 <= r4,
+                    r4 <= 10,
+                ]
+            )
         ),
         lambda _: jnp.array(
-            1
+            0.0
         ),  # no need to normalize cause ratio of priors in MHasting
-        lambda _: 0,
+        lambda _: -jnp.inf,
+        None,
     )
     return val
 
@@ -56,10 +59,10 @@ def log_proposal(x, x_cond):
     return (
         jnp.log(gamma.pdf(x["D"], 1e-2, x_cond["D"] / 1e-2))
         + jnp.log(gamma.pdf(x["gamma"], 1e-2, x_cond["gamma"] / 1e-2))
-        + jnp.log(norm.pdf(r1, r1_cond, jnp.squrt(0.05)))
-        + jnp.log(norm.pdf(r2, r2_cond, jnp.squrt(0.05)))
-        + jnp.log(norm.pdf(r3, r3_cond, jnp.squrt(0.05)))
-        + jnp.log(norm.pdf(r4, r4_cond, jnp.squrt(0.05)))
+        + jnp.log(norm.pdf(r1, r1_cond, jnp.sqrt(0.05)))
+        + jnp.log(norm.pdf(r2, r2_cond, jnp.sqrt(0.05)))
+        + jnp.log(norm.pdf(r3, r3_cond, jnp.sqrt(0.05)))
+        + jnp.log(norm.pdf(r4, r4_cond, jnp.sqrt(0.05)))
     )
 
 
@@ -90,7 +93,9 @@ def _integrate_on_omega_at_time_t(u_sol, omega, t):
     mask = (X - center[0]) ** 2 + (Y - center[1]) ** 2 <= radius**2
 
     surface = jnp.pi * (radius**2)
-    return u_sol.ys.vals[u_sol.ts == t, mask].mean() * surface
+    idx_t = jnp.argwhere(u_sol.ts == t, size=1)
+    vals_t = u_sol.ys.vals[idx_t].squeeze()
+    return jnp.where(mask, vals_t, 0).mean() * surface
 
 
 def loglikelihood_func(simu, u_sol):
@@ -117,31 +122,43 @@ def vanilla_MH(
     # ny = pde_control["ny"]
 
     def MH_step(carry, i):
+        jax.debug.print("{i}", i=i)
         key, eq_params = carry
         key, subkey1, subkey2 = jax.random.split(key, 3)
 
         u_sol = diffrax_solver(eq_params, pde_control)
         eq_params_proposal = sample_proposal(subkey1, eq_params)
+
+        jax.debug.print("{x}", x=log_prior(eq_params))
+        jax.debug.print(
+            "{a} {b} {c}",
+            a=log_llkh(simu, u_sol),
+            b=log_prior(eq_params_proposal),
+            c=log_proposal(eq_params, eq_params_proposal),
+        )
         delta = jnp.min(
-            [
-                1,
-                jnp.exp(
-                    (
-                        log_llkh(simu, u_sol)
-                        + log_prior(eq_params_proposal)
-                        + log_proposal(eq_params, eq_params_proposal)
-                    )
-                    + (
-                        log_llkh(simu, u_sol)
-                        + log_prior(eq_params)
-                        + log_proposal(eq_params_proposal, eq_params)
-                    )
-                ),
-            ]
+            jnp.array(
+                [
+                    1,
+                    jnp.exp(
+                        (
+                            log_llkh(simu, u_sol)
+                            + log_prior(eq_params_proposal)
+                            + log_proposal(eq_params, eq_params_proposal)
+                        )
+                        - (
+                            log_llkh(simu, u_sol)
+                            + log_prior(eq_params)
+                            + log_proposal(eq_params_proposal, eq_params)
+                        )
+                    ),
+                ]
+            )
         )
 
         u = jax.random.uniform(subkey2)
 
+        jax.debug.print("{r} {u} {d}", r=u < delta, u=u, d=delta)
         eq_params = jax.lax.cond(
             u < delta,
             lambda operands: operands[0],
@@ -149,12 +166,15 @@ def vanilla_MH(
             (eq_params_proposal, eq_params),
         )
 
-        return (key, eq_params), _
+        return (key, eq_params), jnp.array(
+            jnp.hstack([eq_params["D"], eq_params["gamma"], eq_params["rs"]])
+        )
 
-    carry_final = jax.lax.scan(MH_step, (key, eq_params_init), jnp.arange(n_iter))
-    eq_params_final = carry_final[1]
+    carry_final, list_eq_params = jax.lax.scan(
+        MH_step, (key, eq_params_init), jnp.arange(n_iter)
+    )
 
-    return eq_params_final
+    return list_eq_params
 
 
 if __name__ == "__main__":
