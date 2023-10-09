@@ -107,17 +107,33 @@ def laplacian(y: SpatialDiscretisation) -> SpatialDiscretisation:
 
 def r_func(x, y, rs):
     r1, r2, r3, r4 = rs
-    if x > 6 / 20 and x < 8 / 20:
-        return r4
-    if y > 8 / 20 and y < 10 / 20:
-        return r4
-    if (x - 0.15) ** 2 + (y - 0.15) ** 2 < 0.015:
-        return r1
-    if (x - 0.8) ** 2 + (y - 0.80) ** 2 < 0.03:
-        return r1
-    if y > 0.4:
-        return r3
-    return r2
+    fun_list = [lambda _: r4, lambda _: r1, lambda _: r3, lambda _: r2]
+
+    conditions = jnp.array(
+        [
+            jnp.logical_or(
+                jnp.logical_and(x > 6 / 20, x < 8 / 20),
+                jnp.logical_and(y > 8 / 20, y < 10 / 20),
+            ),
+            jnp.logical_or(
+                ((x - 0.15) ** 2 + (y - 0.15) ** 2 < 0.015),
+                ((x - 0.8) ** 2 + (y - 0.80) ** 2 < 0.03),
+            ),
+            (y > 0.4),
+            (y <= 0.4),
+        ]
+    ).astype(int)
+    index = jnp.nonzero(conditions, size=1)[0][0]
+
+    return jax.lax.switch(index, fun_list, ())
+
+
+#     return r4
+#     return r4
+#     return r1
+#     return r1
+#     return r3
+# return r2
 
 
 def _create_r_mat(rs):
@@ -142,7 +158,7 @@ def diffrax_solver(eq_params, pde_control):
         xv, yv = jnp.meshgrid(
             jnp.linspace(xmin, xmax, nx), jnp.linspace(ymin, ymax, ny), indexing="ij"
         )
-        r_mat = np.vectorize(partial(r_func, rs=rs))(xv, yv)
+        r_mat = jnp.vectorize(partial(r_func, rs=rs))(xv, yv)
         r_mat = jnp.array(r_mat)
         return r_mat
 
