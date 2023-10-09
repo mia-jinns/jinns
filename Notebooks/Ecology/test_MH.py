@@ -6,6 +6,7 @@ from reaction_diffusion_solver import laplacian, SpatialDiscretisation, diffrax_
 import diffrax
 
 alpha = 1e4
+lamb = 1e2
 
 
 def sample_model(rng_key, u_sol, times, omegas):
@@ -57,12 +58,12 @@ def log_proposal(x, x_cond):
     r1, r2, r3, r4 = x["rs"]
     r1_cond, r2_cond, r3_cond, r4_cond = x_cond["rs"]
     return (
-        jnp.log(gamma.pdf(x["D"], 1e-2, x_cond["D"] / 1e-2))
-        + jnp.log(gamma.pdf(x["gamma"], 1e-2, x_cond["gamma"] / 1e-2))
-        + jnp.log(norm.pdf(r1, r1_cond, jnp.sqrt(0.05)))
-        + jnp.log(norm.pdf(r2, r2_cond, jnp.sqrt(0.05)))
-        + jnp.log(norm.pdf(r3, r3_cond, jnp.sqrt(0.05)))
-        + jnp.log(norm.pdf(r4, r4_cond, jnp.sqrt(0.05)))
+        gamma.logpdf(x["D"], lamb, x_cond["D"] / lamb)
+        + gamma.logpdf(x["gamma"], lamb, x_cond["gamma"] / lamb)
+        + norm.logpdf(r1, r1_cond, jnp.sqrt(0.05))
+        + norm.logpdf(r2, r2_cond, jnp.sqrt(0.05))
+        + norm.logpdf(r3, r3_cond, jnp.sqrt(0.05))
+        + norm.logpdf(r4, r4_cond, jnp.sqrt(0.05))
     )
 
 
@@ -74,8 +75,8 @@ def sample_proposal(key, x_cond):
     r3 = jax.random.normal(subkey5) * jnp.sqrt(0.05) + r3_cond
     r4 = jax.random.normal(subkey6) * jnp.sqrt(0.05) + r4_cond
     return {
-        "D": jax.random.gamma(subkey1, 1e-2) * (x_cond["D"] / 1e-2),
-        "gamma": jax.random.gamma(subkey2, 1e-2) * (x_cond["gamma"] / 1e-2),
+        "D": jax.random.gamma(subkey1, lamb) * (x_cond["D"] / lamb),
+        "gamma": jax.random.gamma(subkey2, lamb) * (x_cond["gamma"] / lamb),
         "rs": jnp.hstack([r1, r2, r3, r4]),
     }
 
@@ -128,6 +129,7 @@ def vanilla_MH(
 
         u_sol = diffrax_solver(eq_params, pde_control)
         eq_params_proposal = sample_proposal(subkey1, eq_params)
+        jax.debug.print("{x}", x=eq_params_proposal)
 
         jax.debug.print("{x}", x=log_prior(eq_params))
         jax.debug.print(
