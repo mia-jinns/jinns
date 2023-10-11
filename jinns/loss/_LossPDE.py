@@ -48,6 +48,8 @@ class LossPDEAbstract:
             a dictionary with values used to ponderate each term in the loss
             function. Valid keys are `dyn_loss`, `norm_loss`, `boundary_loss`
             and `observations`
+            Note that we can have jnp.arrays with the same dimension of
+            `u` which then ponderates each output of `u`
         norm_key
             Jax random key to draw samples in for the Monte Carlo computation
             of the normalization constant. Default is None
@@ -153,20 +155,19 @@ class LossPDEAbstract:
             raise RuntimeError("Problem with the value of self.norm_sample_method")
 
     def tree_flatten(self):
-        children = (self.norm_key, self.norm_samples)
+        children = (self.norm_key, self.norm_samples, self.loss_weights)
         aux_data = {
             "norm_borders": self.norm_borders,
-            "loss_weights": self.loss_weights,
             "u": self.u,
         }
         return (children, aux_data)
 
     @classmethod
     def tree_unflatten(self, aux_data, children):
-        (norm_key, norm_samples) = children
+        (norm_key, norm_samples, loss_weights) = children
         pls = self(
             aux_data["u"],
-            aux_data["loss_weights"],
+            loss_weights,
             norm_key,
             aux_data["norm_borders"],
             norm_samples,
@@ -210,7 +211,9 @@ class LossPDEStatio(LossPDEAbstract):
         loss_weights
             a dictionary with values used to ponderate each term in the loss
             function. Valid keys are `dyn_loss`, `norm_loss`, `boundary_loss`
-            and `observations`
+            and `observations`.
+            Note that we can have jnp.arrays with the same dimension of
+            `u` which then ponderates each output of `u`
         dynamic_loss
             the stationary PDE dynamic part of the loss, basically the differential
             operator :math:`\mathcal{N}[u](t)`. Should implement a method
@@ -404,7 +407,10 @@ class LossPDEStatio(LossPDEAbstract):
                 vmap_in_axes_x + vmap_in_axes_params,
                 0,
             )
-            mse_dyn_loss = jnp.mean(v_dyn_loss(omega_batch, params) ** 2)
+            mse_dyn_loss = jnp.mean(
+                self.loss_weights["dyn_loss"]
+                * jnp.mean(v_dyn_loss(omega_batch, params) ** 2, axis=0)
+            )
 
         else:
             mse_dyn_loss = 0
@@ -420,7 +426,7 @@ class LossPDEStatio(LossPDEAbstract):
                 (0),
                 0,
             )
-            mse_norm_loss = (
+            mse_norm_loss = self.loss_weights["norm_loss"] * (
                 jnp.abs(jnp.mean(v_u(self.get_norm_samples())) * self.int_length - 1)
                 ** 2
             )
@@ -436,24 +442,30 @@ class LossPDEStatio(LossPDEAbstract):
                 mse_boundary_loss = 0
                 for idx, facet in enumerate(self.omega_boundary_fun.keys()):
                     if self.omega_boundary_condition[facet] is not None:
-                        mse_boundary_loss += _compute_boundary_loss_statio(
-                            self.omega_boundary_condition[facet],
-                            self.omega_boundary_fun[facet],
-                            omega_border_batch[..., idx],
-                            self.u,
-                            params,
-                            idx,
+                        mse_boundary_loss += jnp.mean(
+                            self.loss_weights["boundary_loss"]
+                            * _compute_boundary_loss_statio(
+                                self.omega_boundary_condition[facet],
+                                self.omega_boundary_fun[facet],
+                                omega_border_batch[..., idx],
+                                self.u,
+                                params,
+                                idx,
+                            )
                         )
             else:
                 mse_boundary_loss = 0
                 for facet in range(omega_border_batch.shape[-1]):
-                    mse_boundary_loss += _compute_boundary_loss_statio(
-                        self.omega_boundary_condition,
-                        self.omega_boundary_fun,
-                        omega_border_batch[..., facet],
-                        self.u,
-                        params,
-                        facet,
+                    mse_boundary_loss += jnp.mean(
+                        self.loss_weights["boundary_loss"]
+                        * _compute_boundary_loss_statio(
+                            self.omega_boundary_condition,
+                            self.omega_boundary_fun,
+                            omega_border_batch[..., facet],
+                            self.u,
+                            params,
+                            facet,
+                        )
                     )
         else:
             mse_boundary_loss = 0
@@ -468,7 +480,10 @@ class LossPDEStatio(LossPDEAbstract):
                 0,
             )
             mse_observation_loss = jnp.mean(
-                (v_u(self.obs_batch[0][:, None]) - self.obs_batch[1]) ** 2
+                self.loss_weights["observations"]
+                * jnp.mean(
+                    (v_u(self.obs_batch[0][:, None]) - self.obs_batch[1]) ** 2, axis=0
+                )
             )
         else:
             mse_observation_loss = 0
@@ -476,10 +491,7 @@ class LossPDEStatio(LossPDEAbstract):
 
         # total loss
         total_loss = (
-            self.loss_weights["dyn_loss"] * mse_dyn_loss
-            + self.loss_weights["norm_loss"] * mse_norm_loss
-            + self.loss_weights["boundary_loss"] * mse_boundary_loss
-            + self.loss_weights["observations"] * mse_observation_loss
+            mse_dyn_loss + mse_norm_loss + mse_boundary_loss + mse_observation_loss
         )
         return total_loss, (
             {
@@ -491,23 +503,22 @@ class LossPDEStatio(LossPDEAbstract):
         )
 
     def tree_flatten(self):
-        children = (self.norm_key, self.norm_samples, self.obs_batch)
+        children = (self.norm_key, self.norm_samples, self.obs_batch, self.loss_weights)
         aux_data = {
             "u": self.u,
             "dynamic_loss": self.dynamic_loss,
             "omega_boundary_fun": self.omega_boundary_fun,
             "omega_boundary_condition": self.omega_boundary_condition,
             "norm_borders": self.norm_borders,
-            "loss_weights": self.loss_weights,
         }
         return (children, aux_data)
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        (norm_key, norm_samples, obs_batch) = children
+        (norm_key, norm_samples, obs_batch, loss_weights) = children
         pls = cls(
             aux_data["u"],
-            aux_data["loss_weights"],
+            loss_weights,
             aux_data["dynamic_loss"],
             aux_data["omega_boundary_fun"],
             aux_data["omega_boundary_condition"],
@@ -558,6 +569,8 @@ class LossPDENonStatio(LossPDEStatio):
             the PINN object
         loss_weights
             dictionary of values for loss term ponderation
+            Note that we can have jnp.arrays with the same dimension of
+            `u` which then ponderates each output of `u`
         dynamic_loss
             A Dynamic loss object whose evaluate method corresponds to the
             dynamic term in the loss
@@ -698,7 +711,10 @@ class LossPDENonStatio(LossPDEStatio):
             )
             omega_batch_ = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
             times_batch_ = rep_times(n)  # it is repeated
-            mse_dyn_loss = jnp.mean(v_dyn_loss(times_batch_, omega_batch_, params) ** 2)
+            mse_dyn_loss = jnp.mean(
+                self.loss_weights["dyn_loss"]
+                * jnp.mean(v_dyn_loss(times_batch_, omega_batch_, params) ** 2, axis=0)
+            )
             # OR for Causality is all you need (not yet implemented)
             #  epsilon = 0.01
             #  times_batch_ = jnp.sort(times_batch_)
@@ -725,7 +741,7 @@ class LossPDENonStatio(LossPDEStatio):
                 in_axes=(0, None),
             )  # Note that it is not faster to have it as a static
             # attribute
-            mse_norm_loss = jnp.sum(
+            mse_norm_loss = self.loss_weights["norm_loss"] * jnp.sum(
                 (1 / nt)
                 * jnp.abs(
                     jnp.mean(v_u(times_batch, self.get_norm_samples()), axis=-1)
@@ -746,26 +762,32 @@ class LossPDENonStatio(LossPDEStatio):
                 mse_boundary_loss = 0
                 for idx, facet in enumerate(self.omega_boundary_fun.keys()):
                     if self.omega_boundary_condition[facet] is not None:
-                        mse_boundary_loss += _compute_boundary_loss_nonstatio(
-                            self.omega_boundary_condition[facet],
-                            self.omega_boundary_fun[facet],
-                            times_batch,
-                            omega_border_batch[..., idx],
-                            self.u,
-                            params,
-                            idx,
+                        mse_boundary_loss += jnp.mean(
+                            self.loss_weights["boundary_loss"]
+                            * _compute_boundary_loss_nonstatio(
+                                self.omega_boundary_condition[facet],
+                                self.omega_boundary_fun[facet],
+                                times_batch,
+                                omega_border_batch[..., idx],
+                                self.u,
+                                params,
+                                idx,
+                            )
                         )
             else:
                 mse_boundary_loss = 0
                 for facet in range(omega_border_batch.shape[-1]):
-                    mse_boundary_loss += _compute_boundary_loss_nonstatio(
-                        self.omega_boundary_condition,
-                        self.omega_boundary_fun,
-                        times_batch,
-                        omega_border_batch[..., facet],
-                        self.u,
-                        params,
-                        facet,
+                    mse_boundary_loss += jnp.mean(
+                        self.loss_weights["boundary_loss"]
+                        * _compute_boundary_loss_nonstatio(
+                            self.omega_boundary_condition,
+                            self.omega_boundary_fun,
+                            times_batch,
+                            omega_border_batch[..., facet],
+                            self.u,
+                            params,
+                            facet,
+                        )
                     )
         else:
             mse_boundary_loss = 0
@@ -783,7 +805,10 @@ class LossPDENonStatio(LossPDEStatio):
                 (0),
                 0,
             )
-            mse_temporal_loss = jnp.mean((v_u_t0(omega_batch)) ** 2)
+            mse_temporal_loss = jnp.mean(
+                self.loss_weights["temporal_loss"]
+                * jnp.mean(v_u_t0(omega_batch) ** 2, axis=0)
+            )
         else:
             mse_temporal_loss = 0
 
@@ -797,8 +822,15 @@ class LossPDENonStatio(LossPDEStatio):
                 0,
             )
             mse_observation_loss = jnp.mean(
-                (v_u(self.obs_batch[0][:, None], self.obs_batch[1]) - self.obs_batch[2])
-                ** 2
+                self.loss_weights["observations"]
+                * jnp.mean(
+                    (
+                        v_u(self.obs_batch[0][:, None], self.obs_batch[1])
+                        - self.obs_batch[2]
+                    )
+                    ** 2,
+                    axis=0,
+                )
             )
         else:
             mse_observation_loss = 0
@@ -806,11 +838,11 @@ class LossPDENonStatio(LossPDEStatio):
 
         # total loss
         total_loss = (
-            self.loss_weights["dyn_loss"] * mse_dyn_loss
-            + self.loss_weights["norm_loss"] * mse_norm_loss
-            + self.loss_weights["boundary_loss"] * mse_boundary_loss
-            + self.loss_weights["temporal_loss"] * mse_temporal_loss
-            + self.loss_weights["observations"] * mse_observation_loss
+            mse_dyn_loss
+            + mse_norm_loss
+            + mse_boundary_loss
+            + mse_temporal_loss
+            + mse_observation_loss
         )
 
         return total_loss, (
@@ -824,7 +856,7 @@ class LossPDENonStatio(LossPDEStatio):
         )
 
     def tree_flatten(self):
-        children = (self.norm_key, self.norm_samples, self.obs_batch)
+        children = (self.norm_key, self.norm_samples, self.obs_batch, self.loss_weights)
         aux_data = {
             "u": self.u,
             "dynamic_loss": self.dynamic_loss,
@@ -832,16 +864,15 @@ class LossPDENonStatio(LossPDEStatio):
             "omega_boundary_condition": self.omega_boundary_condition,
             "temporal_boundary_fun": self.temporal_boundary_fun,
             "norm_borders": self.norm_borders,
-            "loss_weights": self.loss_weights,
         }
         return (children, aux_data)
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        (norm_key, norm_samples, obs_batch) = children
+        (norm_key, norm_samples, obs_batch, loss_weights) = children
         pls = cls(
             aux_data["u"],
-            aux_data["loss_weights"],
+            loss_weights,
             aux_data["dynamic_loss"],
             aux_data["omega_boundary_fun"],
             aux_data["omega_boundary_condition"],
@@ -894,8 +925,12 @@ class SystemLossPDE:
         u_dict
             A dict of PINNs
         loss_weights
-            A dictionary with values used to ponderate each term in the loss
-            function.
+            A dictionary of dictionaries with values used to
+            ponderate each term in the loss
+            function. The keys of the nested
+            dictionaries must share the keys of `u_dict`. Note that the values
+            at the leaf level can have jnp.arrays with the same dimension of
+            `u` which then ponderates each output of `u`
         dynamic_loss_dict
             A dict of dynamic part of the loss, basically the differential
             operator :math:`\mathcal{N}[u](t)`.
@@ -952,37 +987,30 @@ class SystemLossPDE:
         # create a dummy dict with the required keys and all the values to
         # None
         if obs_batch_dict is None:
-            loss_weights["observations"] = 0
             self.obs_batch_dict = {k: None for k in u_dict.keys()}
         else:
             self.obs_batch_dict = obs_batch_dict
         if omega_boundary_fun_dict is None:
-            loss_weights["boundary_loss"] = 0
             self.omega_boundary_fun_dict = {k: None for k in u_dict.keys()}
         else:
             self.omega_boundary_fun_dict = omega_boundary_fun_dict
         if omega_boundary_condition_dict is None:
-            loss_weights["boundary_loss"] = 0
             self.omega_boundary_condition_dict = {k: None for k in u_dict.keys()}
         else:
             self.omega_boundary_condition_dict = omega_boundary_condition_dict
         if temporal_boundary_fun_dict is None:
-            loss_weights["temporal_loss"] = 0
             self.temporal_boundary_fun_dict = {k: None for k in u_dict.keys()}
         else:
             self.temporal_boundary_fun_dict = temporal_boundary_fun_dict
         if norm_key_dict is None:
-            loss_weights["norm_loss"] = 0
             self.norm_key_dict = {k: None for k in u_dict.keys()}
         else:
             self.norm_key_dict = norm_key_dict
         if norm_borders_dict is None:
-            loss_weights["norm_loss"] = 0
             self.norm_borders_dict = {k: None for k in u_dict.keys()}
         else:
             self.norm_borders_dict = norm_borders_dict
         if norm_samples_dict is None:
-            loss_weights["norm_loss"] = 0
             self.norm_samples_dict = {k: None for k in u_dict.keys()}
         else:
             self.norm_samples_dict = norm_samples_dict
@@ -1003,7 +1031,8 @@ class SystemLossPDE:
         self.dynamic_loss_dict = dynamic_loss_dict
         self.u_dict = u_dict
         self.nn_type_dict = nn_type_dict
-        self.loss_weights = loss_weights
+
+        self.loss_weights = loss_weights  # This calls the setter
 
         # Third, in order not to benefit from LossPDEStatio and
         # LossPDENonStatio and in order to factorize code, we create internally
@@ -1015,10 +1044,10 @@ class SystemLossPDE:
                 self.u_constraints_dict[i] = LossPDEStatio(
                     u=u_dict[i],
                     loss_weights={
-                        "dyn_loss": 0,
-                        "norm_loss": self.loss_weights["norm_loss"],
-                        "boundary_loss": self.loss_weights["boundary_loss"],
-                        "observations": self.loss_weights["observations"],
+                        "dyn_loss": 0.0,
+                        "norm_loss": 1.0,
+                        "boundary_loss": 1.0,
+                        "observations": 1.0,
                     },
                     dynamic_loss=None,
                     omega_boundary_fun=self.omega_boundary_fun_dict[i],
@@ -1032,11 +1061,11 @@ class SystemLossPDE:
                 self.u_constraints_dict[i] = LossPDENonStatio(
                     u=u_dict[i],
                     loss_weights={
-                        "dyn_loss": 0,
-                        "norm_loss": self.loss_weights["norm_loss"],
-                        "boundary_loss": self.loss_weights["boundary_loss"],
-                        "observations": self.loss_weights["observations"],
-                        "temporal_loss": self.loss_weights["temporal_loss"],
+                        "dyn_loss": 0.0,
+                        "norm_loss": 1.0,
+                        "boundary_loss": 1.0,
+                        "observations": 1.0,
+                        "temporal_loss": 1.0,
                     },
                     dynamic_loss=None,
                     omega_boundary_fun=self.omega_boundary_fun_dict[i],
@@ -1051,6 +1080,54 @@ class SystemLossPDE:
                 raise ValueError(
                     f"Wrong value for nn_type_dict[i], got " "{nn_type_dict[i]}"
                 )
+
+    @property
+    def loss_weights(self):
+        return self._loss_weights
+
+    @loss_weights.setter
+    def loss_weights(self, value):
+        self._loss_weights = {}
+        for k, v in value.items():
+            if isinstance(v, dict):
+                if k == "dyn_loss":
+                    if v.keys() == self.dynamic_loss_dict.keys():
+                        self._loss_weights[k] = v
+                    else:
+                        raise ValueError(
+                            "Keys in nested dictionary of loss_weights"
+                            " do not match dynamic_loss_dict keys"
+                        )
+                else:
+                    if v.keys() == self.u_dict.keys():
+                        self._loss_weights[k] = v
+                    else:
+                        raise ValueError(
+                            "Keys in nested dictionary of loss_weights"
+                            " do not match u_dict keys"
+                        )
+            else:
+                if k == "dyn_loss":
+                    self._loss_weights[k] = {
+                        kk: v for kk in self.dynamic_loss_dict.keys()
+                    }
+                else:
+                    self._loss_weights[k] = {kk: v for kk in self.u_dict.keys()}
+        # Some special checks below
+        if all(v is None for k, v in self.obs_batch_dict.items()):
+            self._loss_weights["observations"] = {k: 0 for k in self.u_dict.keys()}
+        if all(v is None for k, v in self.omega_boundary_fun_dict.items()) or all(
+            v is None for k, v in self.omega_boundary_condition_dict.items()
+        ):
+            self._loss_weights["boundary_loss"] = {k: 0 for k in self.u_dict.keys()}
+        if (
+            all(v is None for k, v in self.norm_key_dict.items())
+            or all(v is None for k, v in self.norm_borders_dict.items())
+            or all(v is None for k, v in self.norm_samples_dict.items())
+        ):
+            self._loss_weights["norm_loss"] = {k: 0 for k in self.u_dict.keys()}
+        if all(v is None for k, v in self.temporal_boundary_fun_dict.items()):
+            self._loss_weights["temporal_loss"] = {k: 0 for k in self.u_dict.keys()}
 
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
@@ -1131,7 +1208,10 @@ class SystemLossPDE:
                     vmap_in_axes_x + vmap_in_axes_params,
                     0,
                 )
-                mse_dyn_loss += jnp.mean(v_dyn_loss(omega_batch, params_dict) ** 2)
+                mse_dyn_loss += jnp.mean(
+                    self._loss_weights["dyn_loss"][i]
+                    * jnp.mean(v_dyn_loss(omega_batch, params_dict) ** 2, axis=0)
+                )
             else:
                 v_dyn_loss = vmap(
                     lambda t, x, params_dict: self.dynamic_loss_dict[i].evaluate(
@@ -1147,7 +1227,10 @@ class SystemLossPDE:
                 times_batch_ = rep_times(n)  # it is repeated
 
                 mse_dyn_loss += jnp.mean(
-                    v_dyn_loss(times_batch_, omega_batch_, params_dict) ** 2
+                    self._loss_weights["dyn_loss"][i]
+                    * jnp.mean(
+                        v_dyn_loss(times_batch_, omega_batch_, params_dict) ** 2, axis=0
+                    )
                 )
 
         # boundary conditions, normalization conditions, observation_loss,
@@ -1156,25 +1239,32 @@ class SystemLossPDE:
         for i in self.u_dict.keys():
             _, res_dict = self.u_constraints_dict[i].evaluate(
                 {
-                    "nn_params": params_dict["nn_params"][i],
+                    "nn_params": (
+                        params_dict["nn_params"][i]
+                        if isinstance(params_dict["nn_params"], dict)
+                        else params_dict["nn_params"]
+                    ),
                     "eq_params": params_dict["eq_params"],
                 },
                 batch,
             )
             # note that the results have already been scaled internally in the
             # call to evaluate
-            mse_boundary_loss += res_dict["boundary_loss"]
-            mse_norm_loss += res_dict["norm_loss"]
-            mse_observation_loss += res_dict["observations"]
+            mse_boundary_loss += (
+                self._loss_weights["boundary_loss"][i] * res_dict["boundary_loss"]
+            )
+            mse_norm_loss += self._loss_weights["norm_loss"][i] * res_dict["norm_loss"]
+            mse_observation_loss += (
+                self._loss_weights["observations"][i] * res_dict["observations"]
+            )
             if self.nn_type_dict[i] == "nn_nonstatio":
-                mse_temporal_loss += res_dict["temporal_loss"]
+                mse_temporal_loss += (
+                    self._loss_weights["temporal_loss"][i] * res_dict["temporal_loss"]
+                )
 
         # total loss
         total_loss = (
-            self.loss_weights["dyn_loss"] * mse_dyn_loss
-            + self.loss_weights["norm_loss"] * mse_norm_loss
-            + self.loss_weights["boundary_loss"] * mse_boundary_loss
-            + self.loss_weights["observations"] * mse_observation_loss
+            mse_dyn_loss + mse_norm_loss + mse_boundary_loss + mse_observation_loss
         )
         return_dict = {
             "dyn_loss": mse_dyn_loss,
@@ -1183,8 +1273,8 @@ class SystemLossPDE:
             "observations": mse_observation_loss,
         }
 
-        if len(batch) == 3:
-            total_loss += self.loss_weights["temporal_loss"] * mse_temporal_loss
+        if isinstance(batch, PDENonStatioBatch):
+            total_loss += mse_temporal_loss
             return_dict["temporal_loss"] = mse_temporal_loss
 
         return total_loss, return_dict
@@ -1195,9 +1285,9 @@ class SystemLossPDE:
             self.norm_key_dict,
             self.norm_samples_dict,
             self.temporal_boundary_fun_dict,
+            self._loss_weights,
         )
         aux_data = {
-            "loss_weights": self.loss_weights,
             "u_dict": self.u_dict,
             "dynamic_loss_dict": self.dynamic_loss_dict,
             "norm_borders_dict": self.norm_borders_dict,
@@ -1214,8 +1304,10 @@ class SystemLossPDE:
             norm_key_dict,
             norm_samples_dict,
             temporal_boundary_fun_dict,
+            loss_weights,
         ) = children
         loss_ode = cls(
+            loss_weights=loss_weights,
             obs_batch_dict=obs_batch_dict,
             norm_key_dict=norm_key_dict,
             norm_samples_dict=norm_samples_dict,

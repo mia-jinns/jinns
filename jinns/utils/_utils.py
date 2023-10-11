@@ -55,7 +55,15 @@ class _MLP(eqx.Module):
         return t
 
 
-def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=None):
+def create_PINN(
+    key,
+    eqx_list,
+    eq_type,
+    dim_x=0,
+    with_eq_params=None,
+    input_transform=None,
+    output_transform=None,
+):
     """
     Utility function to create a standard PINN neural network with the equinox
     library.
@@ -99,6 +107,12 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=None):
         as given in eqx_list must take into account the number of such provided
         keys (i.e., the input dimension is the addition of the dimension of ``t``
         + the dimension of ``x`` + the number of ``eq_params``)**
+    input_transform
+        A function that will be called before entering the PINN. Its output(s)
+        must mathc the PINN inputs.
+    output_transform
+        A function with arguments the same input(s) as the PINN AND the PINN
+        output that will be called after exiting the PINN
 
 
     Returns
@@ -138,8 +152,11 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=None):
         nb_inputs_declared = eqx_list[1][
             1
         ]  # but we can have, eg, a flatten first layer
-    if dim_t + dim_x + dim_in_params != nb_inputs_declared:
-        raise RuntimeError("Error in the declarations of the number of parameters")
+
+    # NOTE Currently the check below is disabled because we added
+    # input_transform
+    # if dim_t + dim_x + dim_in_params != nb_inputs_declared:
+    #    raise RuntimeError("Error in the declarations of the number of parameters")
 
     def make_mlp(key, eqx_list):
         mlp = _MLP(key, eqx_list)
@@ -156,7 +173,18 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=None):
                     t = t[
                         None
                     ]  # Note that we added a dimension to t which is lacking for the ODE batches
-                    return model(t).squeeze()
+                    if output_transform is None:
+                        if input_transform is not None:
+                            return model(input_transform(t)).squeeze()
+                        else:
+                            return model(t).squeeze()
+                    else:
+                        if input_transform is not None:
+                            return output_transform(
+                                t, model(input_transform(t)).squeeze()
+                            )
+                        else:
+                            return output_transform(t, model(t).squeeze())
 
             else:
 
@@ -169,7 +197,22 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=None):
                         [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
                     )
                     t_eq_params = jnp.concatenate([t, eq_params_flatten], axis=-1)
-                    return model(t_eq_params).squeeze()
+
+                    if output_transform is None:
+                        if input_transform is not None:
+                            return model(input_transform(t_eq_params)).squeeze()
+                        else:
+                            return model(t_eq_params).squeeze()
+                    else:
+                        if input_transform is not None:
+                            return output_transform(
+                                t_eq_params,
+                                model(input_transform(t_eq_params)).squeeze(),
+                            )
+                        else:
+                            return output_transform(
+                                t_eq_params, model(t_eq_params).squeeze()
+                            )
 
         elif eq_type == "statio_PDE":
             # Here we add an argument `x` which can be high dimensional
@@ -177,7 +220,19 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=None):
 
                 def apply_fn(x, u_params, eq_params=None):
                     model = eqx.combine(u_params, static)
-                    return model(x).squeeze()
+
+                    if output_transform is None:
+                        if input_transform is not None:
+                            return model(input_transform(x)).squeeze()
+                        else:
+                            return model(x).squeeze()
+                    else:
+                        if input_transform is not None:
+                            return output_transform(
+                                x, model(input_transform(x)).squeeze()
+                            )
+                        else:
+                            return output_transform(x, model(x).squeeze())
 
             else:
 
@@ -187,7 +242,22 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=None):
                         [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
                     )
                     x_eq_params = jnp.concatenate([x, eq_params_flatten], axis=-1)
-                    return model(x_eq_params).squeeze()
+
+                    if output_transform is None:
+                        if input_transform is not None:
+                            return model(input_transform(x_eq_params)).squeeze()
+                        else:
+                            return model(x_eq_params).squeeze()
+                    else:
+                        if input_transform is not None:
+                            return output_transform(
+                                x_eq_params,
+                                model(input_transform(x_eq_params)).squeeze(),
+                            )
+                        else:
+                            return output_transform(
+                                x_eq_params, model(x_eq_params).squeeze()
+                            )
 
         elif eq_type == "nonstatio_PDE":
             # Here we add an argument `x` which can be high dimensional
@@ -196,7 +266,19 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=None):
                 def apply_fn(t, x, u_params, eq_params=None):
                     model = eqx.combine(u_params, static)
                     t_x = jnp.concatenate([t, x], axis=-1)
-                    return model(t_x).squeeze()
+
+                    if output_transform is None:
+                        if input_transform is not None:
+                            return model(input_transform(t_x)).squeeze()
+                        else:
+                            return model(t_x).squeeze()
+                    else:
+                        if input_transform is not None:
+                            return output_transform(
+                                t_x, model(input_transform(t_x)).squeeze()
+                            )
+                        else:
+                            return output_transform(t_x, model(t_x).squeeze())
 
             else:
 
@@ -207,7 +289,23 @@ def create_PINN(key, eqx_list, eq_type, dim_x=0, with_eq_params=None):
                         [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
                     )
                     t_x_eq_params = jnp.concatenate([t_x, eq_params_flatten], axis=-1)
-                    return model(t_x_eq_params).squeeze()
+
+                    if output_transform is None:
+                        if input_transform is not None:
+                            return model(input_transform(t_x_eq_params)).squeeze()
+                        else:
+                            return model(t_x_eq_params).squeeze()
+                    else:
+                        if input_transform is not None:
+                            return output_transform(
+                                t_x_eq_params,
+                                model(input_transform(t_x_eq_params)).squeeze(),
+                            )
+                        else:
+                            return output_transform(
+                                t_x_eq_params,
+                                model(input_transform(t_x_eq_params)).squeeze(),
+                            )
 
         else:
             raise RuntimeError("Wrong parameter value for eq_type")

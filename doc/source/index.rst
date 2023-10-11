@@ -8,6 +8,14 @@ Welcome to jinn's documentation!
 
 Changelog:
 
+* v0.3.0
+
+    - Optimization now starts with a call to `jinns.solve()` which replaces the class `PinnSolver`. This change is not backward compatible, check out the updated notebooks and documentation!
+
+    - Loss weights are now totally modular (to ponderate vectorial outputs, to comply with SystemLossXXX, etc.)
+
+    - Reimplementation in jinns of *Systems Biology: Identifiability Analysis and Parameter Identification via Systems-Biology-Informed Neural Networks*, Mitchell Daneker  et al., Computational Modeling of Signaling Networks, 2023
+
 * v0.2.1
 
     - Introduce non homogeneous equation parameters

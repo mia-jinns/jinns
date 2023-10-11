@@ -138,7 +138,7 @@ def boundary_dirichlet_statio(f, border_batch, u, params):
         0,
     )
 
-    mse_u_boundary = jnp.mean((v_u_boundary(border_batch)) ** 2)
+    mse_u_boundary = jnp.mean((v_u_boundary(border_batch)) ** 2, axis=0)
     return mse_u_boundary
 
 
@@ -187,7 +187,7 @@ def boundary_neumann_statio(f, border_batch, u, params, facet):
         - f(dx),
         0,
     )
-    mse_u_boundary = jnp.mean((v_neumann(border_batch)) ** 2)
+    mse_u_boundary = jnp.mean((v_neumann(border_batch)) ** 2, axis=0)
     return mse_u_boundary
 
 
@@ -233,7 +233,8 @@ def boundary_dirichlet_nonstatio(f, times_batch, omega_border_batch, u, params):
 
     mse_u_boundary = jnp.mean(
         (v_u_boundary(rep_times(omega_border_batch.shape[0]), tile_omega_border_batch))
-        ** 2
+        ** 2,
+        axis=0,
     )
     return mse_u_boundary
 
@@ -294,7 +295,8 @@ def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params, fa
     )
     mse_u_boundary = jnp.mean(
         (v_neumann(rep_times(omega_border_batch.shape[0]), tile_omega_border_batch))
-        ** 2
+        ** 2,
+        axis=0,
     )
 
     return mse_u_boundary
