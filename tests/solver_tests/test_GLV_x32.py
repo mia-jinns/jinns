@@ -5,7 +5,6 @@ import jax.numpy as jnp
 from jax import random
 import equinox as eqx
 import optax
-from jaxopt import OptaxSolver
 import jinns
 
 
@@ -108,15 +107,11 @@ def train_GLV_10it(train_GLV_init):
     params = init_params
 
     tx = optax.adam(learning_rate=1e-3)
-    solver = OptaxSolver(
-        opt=tx,
-        fun=loss,
-        has_aux=True,  # because the objective has aux output
-        maxiter=500000,
-    )
     n_iter = 10
-    pinn_solver = jinns.solver.PinnSolver(optax_solver=solver, loss=loss, n_iter=n_iter)
-    params, total_loss_list, loss_by_term_dict, data, _, _, _ = pinn_solver.solve(
+    params, total_loss_list, loss_by_term_dict, data, _, _, _ = jinns.solve(
+        n_iter=n_iter,
+        loss=loss,
+        optax_solver=tx,
         init_params=params,
         data=train_data,
     )
@@ -132,4 +127,4 @@ def test_initial_loss_GLV(train_GLV_init):
 
 def test_10it_GLV(train_GLV_10it):
     total_loss_val = train_GLV_10it
-    assert jnp.round(total_loss_val, 5) == jnp.round(4347.3267, 5)
+    assert jnp.round(total_loss_val, 5) == jnp.round(4347.327, 5)

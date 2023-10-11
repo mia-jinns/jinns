@@ -22,11 +22,11 @@ $$
 \tag{PDE}
 & \mathcal{N}_\theta[u](t, x) = 0, \quad \forall  t, x \in I\times \Omega, & \textrm{(Dynamic)}\\
 & u(0, \cdot) = u_0(x), \quad \forall x \in \omega & \textrm{(Initial condition)} \\
-& \mathcal{B}[u](dx) = f(dx), \quad \forall dx \in \partial \Omega & \textrm{(Boundary condition)}
+& \mathcal{B}[u](t, dx) = f(dx), \quad \forall dx \in \partial \Omega, \forall t \in I & \textrm{(Boundary condition)}
 \end{cases}
 \end{equation}
 $$
-The operator $\mathcal{N}_\theta$ is a differential operator involving partial derivatives w.r.t. $t$ and $x$ and depends a set of equation parameters $\theta$. The operator $\mathcal{B}$ acts on $\partial \Omega$, the border of $\Omega$. The PDE is said to be stationnary (in time), if $u$ does not change with $t$.
+The operator $\mathcal{N}_\theta$ is a differential operator involving partial derivatives w.r.t. $t$ and $x$ and depends on a set of equation parameters $\theta$. The operator $\mathcal{B}$ acts on $\partial \Omega$, the border of $\Omega$. The PDE is said to be stationnary (in time), if $u$ does not change with $t$.
 
 
 The **jinns** package allows to tackle two different types of problems:
@@ -45,7 +45,7 @@ $$
 (\hat{\nu}, \hat{\theta})  \in \arg \min_{\nu, \theta}  \left\{ L(\nu, \theta) + w_{obs} \Vert u_{\nu, \theta} - u_{obs}\Vert_{\mathcal{D}}^2 \right\},
 $$
 
-**Please note:** The problem of meta-model learning a function $u_{\nu, \theta}$ giving an approximate solution for any values $\theta$ is not yet tackled by the package, although we plan to add this feature in the near future. In this case, the function is learnt over a grid of values $\{\theta_j\}$.
+**New:** The problem of meta-model learning a function $u_{\nu, \theta}$ giving an approximate solution for any values $\theta$ (within a reasonable range) is not now tackled by the package. In this case, the function is learnt over a grid of values $\{\theta_j\}$.
 
 
 ## Ordinary differential equation

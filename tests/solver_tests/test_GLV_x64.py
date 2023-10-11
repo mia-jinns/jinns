@@ -5,7 +5,6 @@ import jax.numpy as jnp
 from jax import random
 import equinox as eqx
 import optax
-from jaxopt import OptaxSolver
 import jinns
 
 
@@ -108,16 +107,9 @@ def train_GLV_10it(train_GLV_init):
     params = init_params
 
     tx = optax.adam(learning_rate=1e-3)
-    solver = OptaxSolver(
-        opt=tx,
-        fun=loss,
-        has_aux=True,  # because the objective has aux output
-        maxiter=500000,
-    )
     n_iter = 10
-    pinn_solver = jinns.solver.PinnSolver(optax_solver=solver, loss=loss, n_iter=n_iter)
-    params, total_loss_list, loss_by_term_dict, _, _, _, _ = pinn_solver.solve(
-        init_params=params, data=train_data
+    params, total_loss_list, loss_by_term_dict, _, _, _, _ = jinns.solve(
+        init_params=params, data=train_data, optax_solver=tx, loss=loss, n_iter=n_iter
     )
     return total_loss_list[9]
 
