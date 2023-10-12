@@ -10,6 +10,7 @@ from jinns.solver._seq2seq import (
     _update_seq2seq_false,
 )
 from jinns.solver._rar import _rar_step_init, _rar_step_triggerer
+from jinns.utils._utils import _check_nan_in_pytree
 from jinns.data._DataGenerators import (
     DataGeneratorODE,
     CubicMeshPDEStatio,
@@ -80,7 +81,7 @@ def solve(
     Returns
     -------
     params
-        The values of the dictionaries of parameters at then end of the
+        The last non NaN value of the dictionaries of parameters at then end of the
         optimization process
     accu[0, :]
         An array of the total loss term along the gradient steps
@@ -181,14 +182,23 @@ def solve(
         batch = carry["data"].get_batch()
         if carry["param_data"] is not None:
             batch = append_param_batch(batch, carry["param_data"].get_batch())
-        params, opt_state = optax_solver.update(
+        carry["params"], carry["opt_state"] = optax_solver.update(
             params=carry["params"], state=carry["state"], batch=batch
         )
+
+        # check if any of the parameters is NaN
+        carry["last_non_nan_params"] = jax.lax.cond(
+            _check_nan_in_pytree(carry["params"]),
+            lambda _: carry["last_non_nan_params"],
+            lambda _: carry["params"],
+            None,
+        )
+
         total_loss_val, loss_terms = loss(carry["params"], batch)
 
         if seq2seq is not None:
             carry = _seq2seq_triggerer(
-                carry, seq2seq, i, _update_seq2seq_true, _update_seq2seq_false
+                carry, i, _update_seq2seq_true, _update_seq2seq_false
             )
         else:
             carry["curr_seq"] = -1
@@ -202,7 +212,7 @@ def solve(
             carry["stored_values"]["-".join(map(str, params_leaf_path))] = (
                 carry["stored_values"]["-".join(map(str, params_leaf_path))]
                 .at[i]
-                .set(nested_get(params, params_leaf_path).squeeze())
+                .set(nested_get(carry["params"], params_leaf_path).squeeze())
             )
 
         # saving values of each loss term
@@ -211,22 +221,13 @@ def solve(
                 carry["stored_loss_terms"][loss_name].at[i].set(loss_value)
             )
 
-        return {
-            "params": params,
-            "state": opt_state,
-            "data": carry["data"],
-            "curr_seq": carry["curr_seq"],
-            "seq2seq": seq2seq,
-            "stored_values": carry["stored_values"],
-            "stored_loss_terms": carry["stored_loss_terms"],
-            "loss": carry["loss"],
-            "param_data": carry["param_data"],
-        }, accu
+        return carry, accu
 
     res, accu = jax.lax.scan(
         scan_func_solve_one_iter,
         {
             "params": init_params,
+            "last_non_nan_params": init_params.copy(),
             "state": opt_state,
             "data": data,
             "curr_seq": curr_seq,
@@ -235,11 +236,13 @@ def solve(
             "stored_loss_terms": stored_loss_terms,
             "loss": loss,
             "param_data": param_data,
+            "opt_state": opt_state,
         },
         jnp.arange(n_iter),
     )
 
     params = res["params"]
+    last_non_nan_params = res["last_non_nan_params"]
     opt_state = res["state"]
     data = res["data"]
     loss = res["loss"]
@@ -247,7 +250,7 @@ def solve(
     accu = jnp.array(accu)
 
     return (
-        params,
+        last_non_nan_params,
         accu[0, :],
         res["stored_loss_terms"],
         data,

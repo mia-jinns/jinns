@@ -9,7 +9,7 @@ from jinns.loss._LossPDE import LossPDENonStatio, LossPDEStatio, SystemLossPDE
 import jax.numpy as jnp
 
 
-def _seq2seq_triggerer(carry, seq2seq, i, _update_seq2seq_true, _update_seq2seq_false):
+def _seq2seq_triggerer(carry, i, _update_seq2seq_true, _update_seq2seq_false):
     carry["curr_seq"], carry["loss"], carry["data"], carry["state"] = jax.lax.cond(
         carry["curr_seq"] + 1
         < jnp.sum(
@@ -19,7 +19,7 @@ def _seq2seq_triggerer(carry, seq2seq, i, _update_seq2seq_true, _update_seq2seq_
         _update_seq2seq_false,
         (
             carry["loss"],
-            seq2seq,
+            carry["seq2seq"],
             carry["data"],
             carry["params"],
             carry["curr_seq"],
