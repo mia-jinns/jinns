@@ -181,7 +181,7 @@ def solve(
         batch = carry["data"].get_batch()
         if carry["param_data"] is not None:
             batch = append_param_batch(batch, carry["param_data"].get_batch())
-        params, opt_state = optax_solver.update(
+        carry["params"], carry["opt_state"] = optax_solver.update(
             params=carry["params"], state=carry["state"], batch=batch
         )
 
@@ -192,14 +192,14 @@ def solve(
                         value
                         for value in jax.tree_util.tree_leaves(
                             jax.tree_util.tree_map(
-                                lambda x: jnp.any(jnp.isnan(x)), params
+                                lambda x: jnp.any(jnp.isnan(x)), carry["params"]
                             )
                         )
                     ]
                 )
             ),
             lambda _: carry["last_non_nan_params"],
-            lambda _: params,
+            lambda _: carry["params"],
             None,
         )
 
@@ -207,7 +207,7 @@ def solve(
 
         if seq2seq is not None:
             carry = _seq2seq_triggerer(
-                carry, seq2seq, i, _update_seq2seq_true, _update_seq2seq_false
+                carry, i, _update_seq2seq_true, _update_seq2seq_false
             )
         else:
             carry["curr_seq"] = -1
@@ -221,7 +221,7 @@ def solve(
             carry["stored_values"]["-".join(map(str, params_leaf_path))] = (
                 carry["stored_values"]["-".join(map(str, params_leaf_path))]
                 .at[i]
-                .set(nested_get(params, params_leaf_path).squeeze())
+                .set(nested_get(carry["params"], params_leaf_path).squeeze())
             )
 
         # saving values of each loss term
@@ -230,18 +230,7 @@ def solve(
                 carry["stored_loss_terms"][loss_name].at[i].set(loss_value)
             )
 
-        return {
-            "params": params,
-            "last_non_nan_params": carry["last_non_nan_params"],
-            "state": opt_state,
-            "data": carry["data"],
-            "curr_seq": carry["curr_seq"],
-            "seq2seq": seq2seq,
-            "stored_values": carry["stored_values"],
-            "stored_loss_terms": carry["stored_loss_terms"],
-            "loss": carry["loss"],
-            "param_data": carry["param_data"],
-        }, accu
+        return carry, accu
 
     res, accu = jax.lax.scan(
         scan_func_solve_one_iter,
@@ -256,6 +245,7 @@ def solve(
             "stored_loss_terms": stored_loss_terms,
             "loss": loss,
             "param_data": param_data,
+            "opt_state": opt_state,
         },
         jnp.arange(n_iter),
     )
