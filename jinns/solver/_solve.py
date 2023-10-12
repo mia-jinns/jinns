@@ -80,7 +80,7 @@ def solve(
     Returns
     -------
     params
-        The values of the dictionaries of parameters at then end of the
+        The last non NaN value of the dictionaries of parameters at then end of the
         optimization process
     accu[0, :]
         An array of the total loss term along the gradient steps
@@ -184,6 +184,25 @@ def solve(
         params, opt_state = optax_solver.update(
             params=carry["params"], state=carry["state"], batch=batch
         )
+
+        carry["last_non_nan_params"] = jax.lax.cond(
+            jnp.any(
+                jnp.array(
+                    [
+                        value
+                        for value in jax.tree_util.tree_leaves(
+                            jax.tree_util.tree_map(
+                                lambda x: jnp.any(jnp.isnan(x)), params
+                            )
+                        )
+                    ]
+                )
+            ),
+            lambda _: carry["last_non_nan_params"],
+            lambda _: params,
+            None,
+        )
+
         total_loss_val, loss_terms = loss(carry["params"], batch)
 
         if seq2seq is not None:
@@ -213,6 +232,7 @@ def solve(
 
         return {
             "params": params,
+            "last_non_nan_params": carry["last_non_nan_params"],
             "state": opt_state,
             "data": carry["data"],
             "curr_seq": carry["curr_seq"],
@@ -227,6 +247,7 @@ def solve(
         scan_func_solve_one_iter,
         {
             "params": init_params,
+            "last_non_nan_params": init_params.copy(),
             "state": opt_state,
             "data": data,
             "curr_seq": curr_seq,
@@ -240,6 +261,7 @@ def solve(
     )
 
     params = res["params"]
+    last_non_nan_params = res["last_non_nan_params"]
     opt_state = res["state"]
     data = res["data"]
     loss = res["loss"]
@@ -247,7 +269,7 @@ def solve(
     accu = jnp.array(accu)
 
     return (
-        params,
+        last_non_nan_params,
         accu[0, :],
         res["stored_loss_terms"],
         data,
