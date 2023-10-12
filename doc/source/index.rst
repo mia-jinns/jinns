@@ -8,6 +8,12 @@ Welcome to jinn's documentation!
 
 Changelog:
 
+* v0.3.1
+
+    - Check is NaN parameter after a gradient step to be able to return the last valid parameters for debugging
+
+    - Clean the main optimization loop. Correction: loss evaluation was performed with the parameters from the previous iteration and not the current one!
+
 * v0.3.0
 
     - Optimization now starts with a call to `jinns.solve()` which replaces the class `PinnSolver`. This change is not backward compatible, check out the updated notebooks and documentation!
