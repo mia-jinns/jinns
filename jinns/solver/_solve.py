@@ -10,6 +10,7 @@ from jinns.solver._seq2seq import (
     _update_seq2seq_false,
 )
 from jinns.solver._rar import _rar_step_init, _rar_step_triggerer
+from jinns.utils._utils import _check_nan_in_pytree
 from jinns.data._DataGenerators import (
     DataGeneratorODE,
     CubicMeshPDEStatio,
@@ -185,19 +186,9 @@ def solve(
             params=carry["params"], state=carry["state"], batch=batch
         )
 
+        # check if any of the parameters is NaN
         carry["last_non_nan_params"] = jax.lax.cond(
-            jnp.any(
-                jnp.array(
-                    [
-                        value
-                        for value in jax.tree_util.tree_leaves(
-                            jax.tree_util.tree_map(
-                                lambda x: jnp.any(jnp.isnan(x)), carry["params"]
-                            )
-                        )
-                    ]
-                )
-            ),
+            _check_nan_in_pytree(carry["params"]),
             lambda _: carry["last_non_nan_params"],
             lambda _: carry["params"],
             None,

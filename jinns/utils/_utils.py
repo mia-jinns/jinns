@@ -5,6 +5,32 @@ import optax
 import equinox as eqx
 
 
+def _check_nan_in_pytree(pytree):
+    """
+    Check if there is a NaN value anywhere is the pytree
+
+    Parameters
+    ----------
+    pytree
+        A pytree
+
+    Returns
+    -------
+    res
+        A boolean. True if any of the pytree content is NaN
+    """
+    return jnp.any(
+        jnp.array(
+            [
+                value
+                for value in jax.tree_util.tree_leaves(
+                    jax.tree_util.tree_map(lambda x: jnp.any(jnp.isnan(x)), pytree)
+                )
+            ]
+        )
+    )
+
+
 class _MLP(eqx.Module):
     """
     Class to construct an equinox module from a key and a eqx_list. To be used
