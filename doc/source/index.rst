@@ -8,9 +8,13 @@ Welcome to jinn's documentation!
 
 Changelog:
 
+* master branch
+
+    - Minor fixes
+
 * v0.3.1
 
-    - Check is NaN parameter after a gradient step to be able to return the last valid parameters for debugging
+    - Check if any NaN parameter after a gradient step to be able to return the last valid parameters for debugging
 
     - Clean the main optimization loop. Correction: loss evaluation was performed with the parameters from the previous iteration and not the current one!
 
