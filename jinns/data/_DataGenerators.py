@@ -195,6 +195,8 @@ class DataGeneratorODE:
             self.times = jnp.arange(self.tmin, self.tmax, self.partial_times)
         elif self.method == "uniform":
             self.times = self.sample_in_time_domain(self.nt)
+        else:
+            raise ValueError("Method " + self.method + " is not implemented.")
 
     def temporal_batch(self):
         """
@@ -925,6 +927,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.times = jnp.arange(self.tmin, self.tmax, self.partial_times)
         elif self.method == "uniform":
             self.times = self.sample_in_time_domain(self.nt)
+        else:
+            raise ValueError("Method " + self.method + " is not implemented.")
 
     def temporal_batch(self):
         """
@@ -1141,6 +1145,8 @@ class DataGeneratorParameter:
                 self.param_n_samples[k] = random.uniform(
                     subkey, shape=(self.n, 1), minval=xmin, maxval=xmax
                 )
+            else:
+                raise ValueError("Method " + self.method + " is not implemented.")
 
     def param_batch(self):
         """
