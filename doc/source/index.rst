@@ -8,7 +8,11 @@ Welcome to jinn's documentation!
 
 Changelog:
 
-* master branch
+* v0.3.2
+
+    - Improve `solve()` for storing loss values and parameters
+
+    - Clean inverse problem notebooks. Add the updated notebook for joint estimation of viscosity and PINN in Burger equation
 
     - Minor fixes
 
@@ -16,7 +20,7 @@ Changelog:
 
     - Check if any NaN parameter after a gradient step to be able to return the last valid parameters for debugging
 
-    - Clean the main optimization loop. Correction: loss evaluation was performed with the parameters from the previous iteration and not the current one!
+    - Clean the main optimization loop. Correction: loss evaluation was performed with the parameters from the previous iteration and not the current one
 
 * v0.3.0
 
