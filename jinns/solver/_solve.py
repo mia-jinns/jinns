@@ -10,7 +10,7 @@ from jinns.solver._seq2seq import (
     _update_seq2seq_false,
 )
 from jinns.solver._rar import _rar_step_init, _rar_step_triggerer
-from jinns.utils._utils import _check_nan_in_pytree
+from jinns.utils._utils import _check_nan_in_pytree, _tracked_parameters
 from jinns.data._DataGenerators import (
     DataGeneratorODE,
     CubicMeshPDEStatio,
@@ -27,7 +27,7 @@ def solve(
     optax_solver,
     opt_state=None,
     seq2seq=None,
-    accu_vars=[],
+    tracked_params_key_list=None,
     param_data=None,
 ):
     """
@@ -68,11 +68,10 @@ def solve(
         The seq2seq approach we reimplements is defined in
         "Characterizing possible failure modes in physics-informed neural
         networks", A. S. Krishnapriyan, NeurIPS 2021
-    accu_vars
-        Default []. Otherwise it is a list of list of (integers, strings)
-        to access a leaf in init_params (and later on params). Each
-        selected leaf will be tracked and stored at each iteration and
-        returned by the solve function
+    tracked_params_key_list
+        Default None. Otherwise it is a list of list of strings
+        to access a leaf in params. Each selected leaf will be tracked
+        and stored at each iteration and returned by the solve function
     param_data
         Default None. A DataGeneratorParameter object which can be used to
         sample equation parameters.
@@ -94,9 +93,9 @@ def solve(
         The input loss object
     opt_state
         The final optimized state
-    res["stored_values"]
+    res["stored_params"]
         A dictionary. At each key an array of the values of the parameters
-        given in accu_vars is stored
+        given in tracked_params_key_list is stored
     """
     params = init_params
 
@@ -154,25 +153,27 @@ def solve(
         )
         data.rar_parameters["iter_from_last_sampling"] = 0
 
-    # initialize the dict for stored parameter values
-    stored_values = {}
-    for params_leaf_path in accu_vars:
-        stored_values["-".join(map(str, params_leaf_path))] = jnp.zeros((n_iter,))
-
-    # initialize the dict for stored loss values
-    stored_loss_terms = {}
     batch = data.get_batch()
     if param_data is not None:
         batch = append_param_batch(batch, param_data.get_batch())
-
     _, loss_terms = loss(params, batch)
-    for loss_name, _ in loss_terms.items():
-        stored_loss_terms[loss_name] = jnp.zeros((n_iter,))
 
-    def nested_get(dic, keys):
-        for k in keys:
-            dic = dic[k]
-        return dic
+    # initialize the dict for stored parameter values
+    if tracked_params_key_list is None:
+        tracked_params_key_list = []
+    tracked_params = _tracked_parameters(params, tracked_params_key_list)
+    stored_params = jax.tree_util.tree_map(
+        lambda tracked_param, param: jnp.zeros((n_iter,) + param.shape)
+        if tracked_param
+        else None,
+        tracked_params,
+        params,
+    )
+
+    # initialize the dict for stored loss values
+    stored_loss_terms = jax.tree_util.tree_map(
+        lambda x: jnp.zeros((n_iter)), loss_terms
+    )
 
     @scan_tqdm(n_iter)
     def scan_func_solve_one_iter(carry, i):
@@ -196,6 +197,7 @@ def solve(
 
         total_loss_val, loss_terms = loss(carry["params"], batch)
 
+        # optionnal seq2seq
         if seq2seq is not None:
             carry = _seq2seq_triggerer(
                 carry, i, _update_seq2seq_true, _update_seq2seq_false
@@ -203,25 +205,31 @@ def solve(
         else:
             carry["curr_seq"] = -1
 
+        # optional residual adaptative refinement
         if carry["data"].rar_parameters is not None:
             carry = _rar_step_triggerer(carry, i, _rar_step_true, _rar_step_false)
 
-        # saving selected parameters values with accumulator
-        accu = [total_loss_val]
-        for params_leaf_path in accu_vars:
-            carry["stored_values"]["-".join(map(str, params_leaf_path))] = (
-                carry["stored_values"]["-".join(map(str, params_leaf_path))]
-                .at[i]
-                .set(nested_get(carry["params"], params_leaf_path).squeeze())
-            )
+        # saving selected parameters values
+        carry["stored_params"] = jax.tree_util.tree_map(
+            lambda stored_value, param, tracked_param: jax.lax.cond(
+                tracked_param,
+                lambda ope: ope[0].at[i].set(ope[1]),
+                lambda ope: ope[0],
+                (stored_value, param),
+            ),
+            carry["stored_params"],
+            carry["params"],
+            tracked_params,
+        )
 
         # saving values of each loss term
-        for loss_name, loss_value in loss_terms.items():
-            carry["stored_loss_terms"][loss_name] = (
-                carry["stored_loss_terms"][loss_name].at[i].set(loss_value)
-            )
+        carry["stored_loss_terms"] = jax.tree_util.tree_map(
+            lambda stored_term, loss_term: stored_term.at[i].set(loss_term),
+            carry["stored_loss_terms"],
+            loss_terms,
+        )
 
-        return carry, accu
+        return carry, [total_loss_val]
 
     res, accu = jax.lax.scan(
         scan_func_solve_one_iter,
@@ -232,7 +240,7 @@ def solve(
             "data": data,
             "curr_seq": curr_seq,
             "seq2seq": seq2seq,
-            "stored_values": stored_values,
+            "stored_params": stored_params,
             "stored_loss_terms": stored_loss_terms,
             "loss": loss,
             "param_data": param_data,
@@ -256,5 +264,5 @@ def solve(
         data,
         loss,
         opt_state,
-        res["stored_values"],
+        res["stored_params"],
     )
