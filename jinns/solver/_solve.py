@@ -1,8 +1,8 @@
 from functools import partial
-from jaxopt import OptaxSolver
+from jaxopt import OptaxSolver, LBFGS
+from optax import GradientTransformation
 from jax_tqdm import scan_tqdm
 import jax
-from jax import jit
 import jax.numpy as jnp
 from jinns.solver._seq2seq import (
     _initialize_seq2seq,
@@ -24,7 +24,8 @@ def solve(
     init_params,
     data,
     loss,
-    optax_solver,
+    optimizer,
+    print_loss_every=1000,
     opt_state=None,
     seq2seq=None,
     tracked_params_key_list=None,
@@ -54,11 +55,19 @@ def solve(
         A loss object (e.g. a LossODE, SystemLossODE, LossPDEStatio [...]
         object). It must be jittable (e.g. implements via a pytree
         registration)
-    optax_solver
-        An optax solver (e.g. adam with a given step-size)
+    optimizer
+        Can be an `optax` optimizer (e.g. `optax.adam`).
+        In such case, it is wrapped in the `jaxopt.OptaxSolver` wrapper.
+        Can be a `jaxopt` optimizer (e.g. `jaxopt.BFGS`) which supports the
+        methods `init_state` and `update`.
+        Can be a string (currently only `bfgs`), in such case a `jaxopt`
+        optimizer is created with default parameters.
+    print_loss_every
+        Integer. Default 100. The rate at which we print the loss value in the
+        gradient step loop.
     opt_state
         Default None. Provide an optional initial optional state to the
-        optimizer
+        optimizer. Not valid for all optimizers.
     seq2seq
         Default None. A dictionary with keys 'times_steps'
         and 'iter_steps' which mush have same length. The first represents
@@ -99,13 +108,16 @@ def solve(
     """
     params = init_params
 
-    # Wrap the optax solver with jaxopt
-    optax_solver = OptaxSolver(
-        opt=optax_solver,
-        fun=loss,
-        has_aux=True,  # because the objective has aux output
-        maxiter=n_iter,
-    )
+    if isinstance(optimizer, GradientTransformation):
+        optimizer = OptaxSolver(
+            opt=optimizer,
+            fun=loss,
+            has_aux=True,
+            maxiter=n_iter,
+        )
+    elif optimizer == "lbfgs":
+        optimizer = LBFGS(fun=loss, has_aux=True, maxiter=n_iter)
+    # else, we trust that the user has given a valid jaxopt optimizer
 
     if param_data is not None:
         if (
@@ -134,7 +146,7 @@ def solve(
         batch = data.get_batch()
         if param_data is not None:
             batch = append_param_batch(batch, param_data.get_batch())
-        opt_state = optax_solver.init_state(params, batch=batch)
+        opt_state = optimizer.init_state(params, batch=batch)
 
     curr_seq = 0
     if seq2seq is not None:
@@ -183,7 +195,7 @@ def solve(
         batch = carry["data"].get_batch()
         if carry["param_data"] is not None:
             batch = append_param_batch(batch, carry["param_data"].get_batch())
-        carry["params"], carry["opt_state"] = optax_solver.update(
+        carry["params"], carry["opt_state"] = optimizer.update(
             params=carry["params"], state=carry["state"], batch=batch
         )
 
@@ -196,6 +208,18 @@ def solve(
         )
 
         total_loss_val, loss_terms = loss(carry["params"], batch)
+
+        # Print loss during optimization
+        _ = jax.lax.cond(
+            i % print_loss_every == 0,
+            lambda _: jax.debug.print(
+                "Iteration {i}: loss value = " "{total_loss_val}",
+                i=i,
+                total_loss_val=total_loss_val,
+            ),
+            lambda _: None,
+            (None,),
+        )
 
         # optionnal seq2seq
         if seq2seq is not None:
@@ -247,6 +271,12 @@ def solve(
             "opt_state": opt_state,
         },
         jnp.arange(n_iter),
+    )
+
+    jax.debug.print(
+        "Iteration {i}: loss value = " "{total_loss_val}",
+        i=n_iter,
+        total_loss_val=accu[-1][-1],
     )
 
     params = res["params"]
