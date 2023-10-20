@@ -111,7 +111,7 @@ def train_GLV_10it(train_GLV_init):
     params, total_loss_list, loss_by_term_dict, data, _, _, _ = jinns.solve(
         n_iter=n_iter,
         loss=loss,
-        optax_solver=tx,
+        optimizer=tx,
         init_params=params,
         data=train_data,
     )
