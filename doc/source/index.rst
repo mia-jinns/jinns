@@ -8,6 +8,14 @@ Welcome to jinn's documentation!
 
 Changelog:
 
+* v0.3.3
+
+    - Support other `jaxopt` optimizers than just the stochastic gradient descent from `jaxopt.OptaxSolver`. E.g. LBFGS can now be used. The argument `optax_solver` from `solve()` is now renamed `optimizer`, this can cause some scripts to break
+
+    - Add printing of loss value along the optimization process
+
+    - Updated notebook: inverse problem in Burger equation
+
 * v0.3.2
 
     - Improve `solve()` for storing loss values and parameters
