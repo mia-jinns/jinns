@@ -8,6 +8,10 @@ Welcome to jinn's documentation!
 
 Changelog:
 
+* v0.3.4
+
+    - Correct bug of 1D omega boundary batch being shuffled
+
 * v0.3.3
 
     - Support other `jaxopt` optimizers than just the stochastic gradient descent from `jaxopt.OptaxSolver`. E.g. LBFGS can now be used. The argument `optax_solver` from `solve()` is now renamed `optimizer`, this can cause some scripts to break
