@@ -474,7 +474,7 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             self._key, self.omega, _ = _reset_batch_idx_and_permute(
                 (self._key, self.omega, self.curr_omega_idx, None, self.p)
             )
-            if self.omega_border is not None:
+            if self.omega_border is not None and self.dim > 1:
                 self._key, self.omega_border, _ = _reset_batch_idx_and_permute(
                     (
                         self._key,
