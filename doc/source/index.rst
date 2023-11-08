@@ -8,6 +8,11 @@ Welcome to jinn's documentation!
 
 Changelog:
 
+* on master:
+
+    - Introduce Sobolev regularization as defined in *Convergence and error analysis of PINNs*, Doumèche et al., 2023 with a new notebook reproducing the example from the paper.
+    - Minor corrections and code improvements
+
 * v0.3.4
 
     - Correct bug of 1D omega boundary batch being shuffled

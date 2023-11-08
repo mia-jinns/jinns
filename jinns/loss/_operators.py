@@ -1,6 +1,7 @@
 import jax
 import jax.numpy as jnp
 from jax import grad
+from functools import partial
 
 
 def _div(u, nn_params, eq_params, x, t=None):
@@ -124,3 +125,38 @@ def _u_dot_nabla_times_u(u, nn_params, eq_params, x, t=None):
             )
     else:
         raise NotImplementedError("x.ndim must be 2")
+
+
+def _sobolev(u, m, statio=True):
+    r"""
+    Compute the Sobolev regularization of order m
+    of a scalar field u (from :math:`\mathbb{R}^d1` to :math:`\mathbb{R}`)
+    for x of arbitrary dimension i.e.
+    :math:`\frac{1}{n_l}\sum_{l=1}^{n_l}\sum_{|\alpha|=1}^{m+1} ||\partial^{\alpha} u(x_l)||_2^2` where
+    :math:`m\geq\max(d_1 // 2, K)` with `K` the order of the differential
+    operator.
+
+    This regularization is proposed in _Convergence and error analysis of
+    PINNs_, Doumeche et al., 2023, https://arxiv.org/pdf/2305.01240.pdf
+    """
+
+    def jac_recursive(u, order, start):
+        # Compute the derivative of order `start`
+        if order == 0:
+            return u
+        elif start == 0:
+            return jac_recursive(jax.jacrev(u), order - 1, start + 1)
+        else:
+            return jac_recursive(jax.jacfwd(u), order - 1, start + 1)
+
+    if statio:
+        return lambda x, nn_params, eq_params: jnp.sum(
+            jac_recursive(lambda x: u(x, nn_params, eq_params), m + 1, 0)(x) ** 2
+        )
+    else:
+        return lambda t, x, nn_params, eq_params: jnp.sum(
+            jac_recursive(
+                lambda tx: u(tx[0:1], tx[1:], nn_params, eq_params), m + 1, 0
+            )(jnp.concatenate([t, x], axis=0))
+            ** 2
+        )
