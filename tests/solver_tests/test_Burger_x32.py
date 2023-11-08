@@ -66,7 +66,7 @@ def train_Burger_init():
 
     be_loss = jinns.loss.BurgerEquation(Tmax=Tmax)
 
-    loss_weights = {"dyn_loss": 1, "temporal_loss": 5, "boundary_loss": 1}
+    loss_weights = {"dyn_loss": 1, "initial_condition": 5, "boundary_loss": 1}
 
     loss = jinns.loss.LossPDENonStatio(
         u=u,
@@ -74,7 +74,7 @@ def train_Burger_init():
         dynamic_loss=be_loss,
         omega_boundary_fun=lambda t, dx: 0,
         omega_boundary_condition="dirichlet",
-        temporal_boundary_fun=u0,
+        initial_condition_fun=u0,
     )
 
     return init_params, loss, train_data

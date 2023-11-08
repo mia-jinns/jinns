@@ -582,7 +582,7 @@ class LossPDENonStatio(LossPDEStatio):
     where :math:`\mathcal{N}[\cdot]` is a differential operator.
     The boundary condition is :math:`u(t, x)=u_b(t, x),\forall
     x\in\delta\Omega, \forall t`.
-    The temporal boundary condition is :math:`u(0, x)=u_0(x), \forall x\in\Omega`
+    The initial condition is :math:`u(0, x)=u_0(x), \forall x\in\Omega`
     The additional condition of
     integrating to 1 can be included, i.e., :math:`\int u(t, x)\mathrm{d}x=1`.
 
@@ -598,7 +598,7 @@ class LossPDENonStatio(LossPDEStatio):
         dynamic_loss,
         omega_boundary_fun=None,
         omega_boundary_condition=None,
-        temporal_boundary_fun=None,
+        initial_condition_fun=None,
         norm_key=None,
         norm_borders=None,
         norm_samples=None,
@@ -640,9 +640,9 @@ class LossPDENonStatio(LossPDEStatio):
             enforce a particular boundary condition on this facet.
             The facet called "xmin", resp. "xmax" etc., in 2D,
             refers to the set of 2D points with fixed "xmin", resp. "xmax", etc.
-        temporal_boundary_fun
+        initial_condition_fun
             A function representing the temporal initial condition. If None
-            (default) then no temporal boundary condition is applied
+            (default) then no initial condition is applied
         norm_key
             Jax random key to draw samples in for the Monte Carlo computation
             of the normalization constant. Default is None
@@ -702,7 +702,7 @@ class LossPDENonStatio(LossPDEStatio):
             # in the super class does not match
             sobolev_m=sobolev_m,
         )
-        self.temporal_boundary_fun = temporal_boundary_fun
+        self.initial_condition_fun = initial_condition_fun
         self.obs_batch = obs_batch  # Set after call to super()
 
         self.sobolev_m = sobolev_m
@@ -861,9 +861,9 @@ class LossPDENonStatio(LossPDEStatio):
             mse_boundary_loss = 0
 
         # temporal part
-        if self.temporal_boundary_fun is not None:
+        if self.initial_condition_fun is not None:
             v_u_t0 = vmap(
-                lambda x: self.temporal_boundary_fun(x)
+                lambda x: self.initial_condition_fun(x)
                 - self.u(
                     t=jnp.zeros((1,)),
                     x=x,
@@ -873,12 +873,12 @@ class LossPDENonStatio(LossPDEStatio):
                 (0),
                 0,
             )
-            mse_temporal_loss = jnp.mean(
-                self.loss_weights["temporal_loss"]
+            mse_initial_condition = jnp.mean(
+                self.loss_weights["initial_condition"]
                 * jnp.mean(v_u_t0(omega_batch) ** 2, axis=0)
             )
         else:
-            mse_temporal_loss = 0
+            mse_initial_condition = 0
 
         # Observation MSE (if obs_batch provided)
         # NOTE that it does not use jax.lax.stop_gradient on "eq_params" here
@@ -928,7 +928,7 @@ class LossPDENonStatio(LossPDEStatio):
             mse_dyn_loss
             + mse_norm_loss
             + mse_boundary_loss
-            + mse_temporal_loss
+            + mse_initial_condition
             + mse_observation_loss
             + mse_sobolev_loss
         )
@@ -938,7 +938,7 @@ class LossPDENonStatio(LossPDEStatio):
                 "dyn_loss": mse_dyn_loss,
                 "norm_loss": mse_norm_loss,
                 "boundary_loss": mse_boundary_loss,
-                "temporal_loss": mse_temporal_loss,
+                "initial_condition": mse_initial_condition,
                 "observations": mse_observation_loss,
                 "sobolev": mse_sobolev_loss,
             }
@@ -951,7 +951,7 @@ class LossPDENonStatio(LossPDEStatio):
             "dynamic_loss": self.dynamic_loss,
             "omega_boundary_fun": self.omega_boundary_fun,
             "omega_boundary_condition": self.omega_boundary_condition,
-            "temporal_boundary_fun": self.temporal_boundary_fun,
+            "initial_condition_fun": self.initial_condition_fun,
             "norm_borders": self.norm_borders,
             "sobolev_m": self.sobolev_m,
         }
@@ -966,7 +966,7 @@ class LossPDENonStatio(LossPDEStatio):
             aux_data["dynamic_loss"],
             aux_data["omega_boundary_fun"],
             aux_data["omega_boundary_condition"],
-            aux_data["temporal_boundary_fun"],
+            aux_data["initial_condition_fun"],
             norm_key,
             aux_data["norm_borders"],
             norm_samples,
@@ -1004,7 +1004,7 @@ class SystemLossPDE:
         nn_type_dict,
         omega_boundary_fun_dict=None,
         omega_boundary_condition_dict=None,
-        temporal_boundary_fun_dict=None,
+        initial_condition_fun_dict=None,
         norm_key_dict=None,
         norm_borders_dict=None,
         norm_samples_dict=None,
@@ -1041,7 +1041,7 @@ class SystemLossPDE:
             strings (see doc for `omega_boundary_fun` in
             LossPDEStatio or LossPDENonStatio).
             Must share the keys of `u_dict`
-        temporal_boundary_fun_dict
+        initial_condition_fun_dict
             A dict of functions representing the temporal initial condition. If None
             (default) then no temporal boundary condition is applied
             Must share the keys of `u_dict`
@@ -1097,10 +1097,10 @@ class SystemLossPDE:
             self.omega_boundary_condition_dict = {k: None for k in u_dict.keys()}
         else:
             self.omega_boundary_condition_dict = omega_boundary_condition_dict
-        if temporal_boundary_fun_dict is None:
-            self.temporal_boundary_fun_dict = {k: None for k in u_dict.keys()}
+        if initial_condition_fun_dict is None:
+            self.initial_condition_fun_dict = {k: None for k in u_dict.keys()}
         else:
-            self.temporal_boundary_fun_dict = temporal_boundary_fun_dict
+            self.initial_condition_fun_dict = initial_condition_fun_dict
         if norm_key_dict is None:
             self.norm_key_dict = {k: None for k in u_dict.keys()}
         else:
@@ -1124,7 +1124,7 @@ class SystemLossPDE:
             or u_dict.keys() != self.obs_batch_dict.keys()
             or u_dict.keys() != self.omega_boundary_fun_dict.keys()
             or u_dict.keys() != self.omega_boundary_condition_dict.keys()
-            or u_dict.keys() != self.temporal_boundary_fun_dict.keys()
+            or u_dict.keys() != self.initial_condition_fun_dict.keys()
             or u_dict.keys() != self.norm_key_dict.keys()
             or u_dict.keys() != self.norm_borders_dict.keys()
             or u_dict.keys() != self.norm_samples_dict.keys()
@@ -1171,13 +1171,13 @@ class SystemLossPDE:
                         "norm_loss": 1.0,
                         "boundary_loss": 1.0,
                         "observations": 1.0,
-                        "temporal_loss": 1.0,
+                        "initial_condition": 1.0,
                         "sobolev": 1.0,
                     },
                     dynamic_loss=None,
                     omega_boundary_fun=self.omega_boundary_fun_dict[i],
                     omega_boundary_condition=self.omega_boundary_condition_dict[i],
-                    temporal_boundary_fun=self.temporal_boundary_fun[i],
+                    initial_condition_fun=self.initial_condition_fun[i],
                     norm_key=self.norm_key_dict[i],
                     norm_borders=self.norm_borders_dict[i],
                     norm_samples=self.norm_samples_dict[i],
@@ -1236,8 +1236,8 @@ class SystemLossPDE:
             or all(v is None for k, v in self.norm_samples_dict.items())
         ):
             self._loss_weights["norm_loss"] = {k: 0 for k in self.u_dict.keys()}
-        if all(v is None for k, v in self.temporal_boundary_fun_dict.items()):
-            self._loss_weights["temporal_loss"] = {k: 0 for k in self.u_dict.keys()}
+        if all(v is None for k, v in self.initial_condition_fun_dict.items()):
+            self._loss_weights["initial_condition"] = {k: 0 for k in self.u_dict.keys()}
 
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
@@ -1303,7 +1303,7 @@ class SystemLossPDE:
         mse_dyn_loss = 0
         mse_boundary_loss = 0
         mse_norm_loss = 0
-        mse_temporal_loss = 0
+        mse_initial_condition = 0
         mse_observation_loss = 0
         mse_sobolev_loss = 0
 
@@ -1345,7 +1345,7 @@ class SystemLossPDE:
                 )
 
         # boundary conditions, normalization conditions, observation_loss,
-        # temporal boundary condition... loss this is done via the internal
+        # initial condition... loss this is done via the internal
         # LossPDEStatio and NonStatio
         for i in self.u_dict.keys():
             _, res_dict = self.u_constraints_dict[i].evaluate(
@@ -1370,8 +1370,9 @@ class SystemLossPDE:
             )
             mse_sobolev_loss += self._loss_weights["sobolev"][i] * res_dict["sobolev"]
             if self.nn_type_dict[i] == "nn_nonstatio":
-                mse_temporal_loss += (
-                    self._loss_weights["temporal_loss"][i] * res_dict["temporal_loss"]
+                mse_initial_condition += (
+                    self._loss_weights["initial_condition"][i]
+                    * res_dict["initial_condition"]
                 )
 
         # total loss
@@ -1391,8 +1392,8 @@ class SystemLossPDE:
         }
 
         if isinstance(batch, PDENonStatioBatch):
-            total_loss += mse_temporal_loss
-            return_dict["temporal_loss"] = mse_temporal_loss
+            total_loss += mse_initial_condition
+            return_dict["initial_condition"] = mse_initial_condition
 
         return total_loss, return_dict
 
@@ -1401,7 +1402,7 @@ class SystemLossPDE:
             self.obs_batch_dict,
             self.norm_key_dict,
             self.norm_samples_dict,
-            self.temporal_boundary_fun_dict,
+            self.initial_condition_fun_dict,
             self._loss_weights,
         )
         aux_data = {
@@ -1421,7 +1422,7 @@ class SystemLossPDE:
             obs_batch_dict,
             norm_key_dict,
             norm_samples_dict,
-            temporal_boundary_fun_dict,
+            initial_condition_fun_dict,
             loss_weights,
         ) = children
         loss_ode = cls(
@@ -1429,7 +1430,7 @@ class SystemLossPDE:
             obs_batch_dict=obs_batch_dict,
             norm_key_dict=norm_key_dict,
             norm_samples_dict=norm_samples_dict,
-            temporal_boundary_fun_dict=temporal_boundary_fun_dict,
+            initial_condition_fun_dict=initial_condition_fun_dict,
             **aux_data,
         )
 

@@ -8,10 +8,10 @@ Welcome to jinn's documentation!
 
 Changelog:
 
-* on master:
+* v0.4.0:
 
     - Introduce Sobolev regularization as defined in *Convergence and error analysis of PINNs*, Doumèche et al., 2023 with a new notebook reproducing the example from the paper.
-    - Minor corrections and code improvements
+    - Minor corrections and code improvements (clarification of variables names and dictionnary entries)
 
 * v0.3.4
 
