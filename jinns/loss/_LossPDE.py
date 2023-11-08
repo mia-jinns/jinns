@@ -11,6 +11,7 @@ from jinns.loss._boundary_conditions import (
 from jinns.loss._DynamicLoss import ODE, PDEStatio, PDENonStatio
 from jinns.data._DataGenerators import PDEStatioBatch, PDENonStatioBatch
 from jinns.utils._utils import _get_vmap_in_axes_params
+from jinns.loss._operators import _sobolev
 
 _IMPLEMENTED_BOUNDARY_CONDITIONS = [
     "dirichlet",
@@ -202,6 +203,7 @@ class LossPDEStatio(LossPDEAbstract):
         norm_borders=None,
         norm_samples=None,
         obs_batch=None,
+        sobolev_m=None,
     ):
         """
         Parameters
@@ -255,6 +257,11 @@ class LossPDEStatio(LossPDEAbstract):
             A list containing 2 jnp.array of the same size (on their first
             axis) encoding for observations [:math:`x_i, u(x_i)`] for
             computing a MSE. Default is None.
+        sobolev_m
+            An integer. Default is None.
+            It corresponds to the Sobolev regularization order as proposed in
+            _Convergence and error analysis of PINNs_,
+            Doumeche et al., 2023, https://arxiv.org/pdf/2305.01240.pdf
 
 
         Raises
@@ -341,11 +348,23 @@ class LossPDEStatio(LossPDEAbstract):
         self.dynamic_loss = dynamic_loss
         self.obs_batch = obs_batch
 
+        if sobolev_m is not None:
+            self.sobolev_reg = _sobolev(
+                self.u, sobolev_m
+            )  # we return a function, that way
+            # the order of sobolev_m is static and the conditional in the recursive
+            # function is properly set
+        else:
+            self.sobolev_reg = None
+
         if self.normalization_loss is None:
             self.loss_weights["norm_loss"] = 0
 
         if self.omega_boundary_fun is None:
             self.loss_weights["boundary_loss"] = 0
+
+        if self.sobolev_reg is None:
+            self.loss_weights["sobolev"] = 0
 
         if (
             type(self.omega_boundary_fun) is dict
@@ -489,9 +508,29 @@ class LossPDEStatio(LossPDEAbstract):
             mse_observation_loss = 0
             self.loss_weights["observations"] = 0
 
+        # Sobolev regularization
+        if self.sobolev_reg is not None:
+            v_sob_reg = vmap(
+                lambda x: self.sobolev_reg(
+                    x, params["nn_params"], jax.lax.stop_gradient(params["eq_params"])
+                ),
+                (0, 0),
+                0,
+            )
+            mse_sobolev_loss = self.loss_weights["sobolev"] * jnp.mean(
+                v_sob_reg(omega_batch)
+            )
+        else:
+            mse_sobolev_loss = 0
+            self.loss_weights["sobolev"] = 0
+
         # total loss
         total_loss = (
-            mse_dyn_loss + mse_norm_loss + mse_boundary_loss + mse_observation_loss
+            mse_dyn_loss
+            + mse_norm_loss
+            + mse_boundary_loss
+            + mse_observation_loss
+            + mse_sobolev_loss
         )
         return total_loss, (
             {
@@ -499,6 +538,7 @@ class LossPDEStatio(LossPDEAbstract):
                 "norm_loss": mse_norm_loss,
                 "boundary_loss": mse_boundary_loss,
                 "observations": mse_observation_loss,
+                "sobolev": mse_sobolev_loss,
             }
         )
 
@@ -510,6 +550,7 @@ class LossPDEStatio(LossPDEAbstract):
             "omega_boundary_fun": self.omega_boundary_fun,
             "omega_boundary_condition": self.omega_boundary_condition,
             "norm_borders": self.norm_borders,
+            "sobolev_m": self.sobolev_m,
         }
         return (children, aux_data)
 
@@ -526,6 +567,7 @@ class LossPDEStatio(LossPDEAbstract):
             aux_data["norm_borders"],
             norm_samples,
             obs_batch,
+            aux_data["sobolev_m"],
         )
         return pls
 
@@ -561,6 +603,7 @@ class LossPDENonStatio(LossPDEStatio):
         norm_borders=None,
         norm_samples=None,
         obs_batch=None,
+        sobolev_m=None,
     ):
         """
         Parameters
@@ -610,10 +653,15 @@ class LossPDENonStatio(LossPDEStatio):
         norm_samples
             Fixed sample point in the space over which to compute the
             normalization constant. Default is None
-        obs_batch:
+        obs_batch
             A list of 3 jnp.array of the same size (on their 1st axis) encoding
             for observations [:math:`t_i, x_i, u(t_i, x_i)`] for computing a
             MSE. Default is None: no MSE term in the global loss.
+        sobolev_m
+            An integer. Default is None.
+            It corresponds to the Sobolev regularization order as proposed in
+            _Convergence and error analysis of PINNs_,
+            Doumeche et al., 2023, https://arxiv.org/pdf/2305.01240.pdf
 
 
         Raises
@@ -639,6 +687,7 @@ class LossPDENonStatio(LossPDEStatio):
                 # if omega domain is unidimensional make sure that the x
                 # obs_batch is (nb_obs, 1)
                 obs_batch[1] = obs_batch[1][:, None]
+
         super().__init__(
             u,
             loss_weights,
@@ -648,9 +697,27 @@ class LossPDENonStatio(LossPDEStatio):
             norm_key,
             norm_borders,
             norm_samples,
+            obs_batch=None,
+            # must be set to None because the set up performed
+            # in the super class does not match
+            sobolev_m=sobolev_m,
         )
         self.temporal_boundary_fun = temporal_boundary_fun
         self.obs_batch = obs_batch  # Set after call to super()
+
+        self.sobolev_m = sobolev_m
+        if self.sobolev_m is not None:
+            # This overwrite the wrongly initialized self.sobolev_reg with
+            # statio=True in the LossPDEStatio init
+            self.sobolev_reg = _sobolev(self.u, self.sobolev_m, statio=False)
+            # we return a function, that way
+            # the order of sobolev_m is static and the conditional in the recursive
+            # function is properly set
+        else:
+            self.sobolev_reg = None
+
+        if self.sobolev_reg is None:
+            self.loss_weights["sobolev"] = 0
 
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
@@ -702,6 +769,9 @@ class LossPDENonStatio(LossPDEStatio):
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
+        omega_batch_ = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
+        times_batch_ = rep_times(n)  # it is repeated
+
         # dynamic part
         if self.dynamic_loss is not None:
             v_dyn_loss = vmap(
@@ -709,8 +779,6 @@ class LossPDENonStatio(LossPDEStatio):
                 vmap_in_axes_x_t + vmap_in_axes_params,
                 0,
             )
-            omega_batch_ = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
-            times_batch_ = rep_times(n)  # it is repeated
             mse_dyn_loss = jnp.mean(
                 self.loss_weights["dyn_loss"]
                 * jnp.mean(v_dyn_loss(times_batch_, omega_batch_, params) ** 2, axis=0)
@@ -836,6 +904,25 @@ class LossPDENonStatio(LossPDEStatio):
             mse_observation_loss = 0
             self.loss_weights["observations"] = 0
 
+        # Sobolev regularization
+        if self.sobolev_reg is not None:
+            v_sob_reg = vmap(
+                lambda t, x: self.sobolev_reg(
+                    t,
+                    x,
+                    params["nn_params"],
+                    jax.lax.stop_gradient(params["eq_params"]),
+                ),
+                (0, 0),
+                0,
+            )
+            mse_sobolev_loss = self.loss_weights["sobolev"] * jnp.mean(
+                v_sob_reg(omega_batch_, times_batch_)
+            )
+        else:
+            mse_sobolev_loss = 0
+            self.loss_weights["sobolev"] = 0
+
         # total loss
         total_loss = (
             mse_dyn_loss
@@ -843,6 +930,7 @@ class LossPDENonStatio(LossPDEStatio):
             + mse_boundary_loss
             + mse_temporal_loss
             + mse_observation_loss
+            + mse_sobolev_loss
         )
 
         return total_loss, (
@@ -852,6 +940,7 @@ class LossPDENonStatio(LossPDEStatio):
                 "boundary_loss": mse_boundary_loss,
                 "temporal_loss": mse_temporal_loss,
                 "observations": mse_observation_loss,
+                "sobolev": mse_sobolev_loss,
             }
         )
 
@@ -864,6 +953,7 @@ class LossPDENonStatio(LossPDEStatio):
             "omega_boundary_condition": self.omega_boundary_condition,
             "temporal_boundary_fun": self.temporal_boundary_fun,
             "norm_borders": self.norm_borders,
+            "sobolev_m": self.sobolev_m,
         }
         return (children, aux_data)
 
@@ -881,6 +971,7 @@ class LossPDENonStatio(LossPDEStatio):
             aux_data["norm_borders"],
             norm_samples,
             obs_batch,
+            aux_data["sobolev_m"],
         )
         return pls
 
@@ -918,6 +1009,7 @@ class SystemLossPDE:
         norm_borders_dict=None,
         norm_samples_dict=None,
         obs_batch_dict=None,
+        sobolev_m_dict=None,
     ):
         r"""
         Parameters
@@ -973,6 +1065,13 @@ class SystemLossPDE:
             axis) encoding the timestep and the observations [:math:`x_i, u(x_i)`].
             A particular key can be None.
             Must share the keys of `u_dict`
+        sobolev_m
+            Default is None. A dictionary of integers, one per key which must
+            match `u_dict`.
+            It corresponds to the Sobolev regularization order as proposed in
+            _Convergence and error analysis of PINNs_,
+            Doumeche et al., 2023, https://arxiv.org/pdf/2305.01240.pdf
+
 
         Raises
         ------
@@ -1014,6 +1113,10 @@ class SystemLossPDE:
             self.norm_samples_dict = {k: None for k in u_dict.keys()}
         else:
             self.norm_samples_dict = norm_samples_dict
+        if sobolev_m_dict is None:
+            self.sobolev_m_dict = {k: None for k in u_dict.keys()}
+        else:
+            self.sobolev_m_dict = sobolev_m_dict
 
         # Second we make sure that all the dicts (except dynamic_loss_dict) have the same keys
         if (
@@ -1025,6 +1128,7 @@ class SystemLossPDE:
             or u_dict.keys() != self.norm_key_dict.keys()
             or u_dict.keys() != self.norm_borders_dict.keys()
             or u_dict.keys() != self.norm_samples_dict.keys()
+            or u_dict.keys() != self.sobolev_m_dict.keys()
         ):
             raise ValueError("All the dicts concerning the PINNs should have same keys")
 
@@ -1048,6 +1152,7 @@ class SystemLossPDE:
                         "norm_loss": 1.0,
                         "boundary_loss": 1.0,
                         "observations": 1.0,
+                        "sobolev": 1.0,
                     },
                     dynamic_loss=None,
                     omega_boundary_fun=self.omega_boundary_fun_dict[i],
@@ -1056,6 +1161,7 @@ class SystemLossPDE:
                     norm_borders=self.norm_borders_dict[i],
                     norm_samples=self.norm_samples_dict[i],
                     obs_batch=self.obs_batch_dict[i],
+                    sobolev_m=self.sobolev_m_dict[i],
                 )
             elif self.nn_type_dict[i] == "nn_nonstatio":
                 self.u_constraints_dict[i] = LossPDENonStatio(
@@ -1066,6 +1172,7 @@ class SystemLossPDE:
                         "boundary_loss": 1.0,
                         "observations": 1.0,
                         "temporal_loss": 1.0,
+                        "sobolev": 1.0,
                     },
                     dynamic_loss=None,
                     omega_boundary_fun=self.omega_boundary_fun_dict[i],
@@ -1075,6 +1182,7 @@ class SystemLossPDE:
                     norm_borders=self.norm_borders_dict[i],
                     norm_samples=self.norm_samples_dict[i],
                     obs_batch=self.obs_batch_dict[i],
+                    sobolev_m=self.sobolev_m_dict[i],
                 )
             else:
                 raise ValueError(
@@ -1114,6 +1222,8 @@ class SystemLossPDE:
                 else:
                     self._loss_weights[k] = {kk: v for kk in self.u_dict.keys()}
         # Some special checks below
+        if all(v is None for k, v in self.sobolev_m_dict.items()):
+            self._loss_weights["sobolev"] = {k: 0 for k in self.u_dict.keys()}
         if all(v is None for k, v in self.obs_batch_dict.items()):
             self._loss_weights["observations"] = {k: 0 for k in self.u_dict.keys()}
         if all(v is None for k, v in self.omega_boundary_fun_dict.items()) or all(
@@ -1195,6 +1305,7 @@ class SystemLossPDE:
         mse_norm_loss = 0
         mse_temporal_loss = 0
         mse_observation_loss = 0
+        mse_sobolev_loss = 0
 
         for i in self.dynamic_loss_dict.keys():
             # dynamic part
@@ -1257,6 +1368,7 @@ class SystemLossPDE:
             mse_observation_loss += (
                 self._loss_weights["observations"][i] * res_dict["observations"]
             )
+            mse_sobolev_loss += self._loss_weights["sobolev"][i] * res_dict["sobolev"]
             if self.nn_type_dict[i] == "nn_nonstatio":
                 mse_temporal_loss += (
                     self._loss_weights["temporal_loss"][i] * res_dict["temporal_loss"]
@@ -1264,13 +1376,18 @@ class SystemLossPDE:
 
         # total loss
         total_loss = (
-            mse_dyn_loss + mse_norm_loss + mse_boundary_loss + mse_observation_loss
+            mse_dyn_loss
+            + mse_norm_loss
+            + mse_boundary_loss
+            + mse_observation_loss
+            + mse_sobolev_loss
         )
         return_dict = {
             "dyn_loss": mse_dyn_loss,
             "norm_loss": mse_norm_loss,
             "boundary_loss": mse_boundary_loss,
             "observations": mse_observation_loss,
+            "sobolev": mse_sobolev_loss,
         }
 
         if isinstance(batch, PDENonStatioBatch):
@@ -1294,6 +1411,7 @@ class SystemLossPDE:
             "omega_boundary_fun_dict": self.omega_boundary_fun_dict,
             "omega_boundary_condition_dict": self.omega_boundary_condition_dict,
             "nn_type_dict": self.nn_type_dict,
+            "sobolev_m_dict": self.sobolev_m_dict,
         }
         return (children, aux_data)
 

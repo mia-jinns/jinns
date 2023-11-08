@@ -226,7 +226,7 @@ def boundary_dirichlet_nonstatio(f, times_batch, omega_border_batch, u, params):
             u_params=params["nn_params"],
             eq_params=jax.lax.stop_gradient(params["eq_params"]),
         )
-        - f(dx),
+        - f(t, dx),
         (0, 0),
         0,
     )
@@ -289,7 +289,7 @@ def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params, fa
             ),
             n[..., facet],
         )
-        - f(dx),
+        - f(t, dx),
         0,
         0,
     )

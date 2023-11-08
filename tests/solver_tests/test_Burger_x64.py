@@ -72,7 +72,7 @@ def train_Burger_init():
         u=u,
         loss_weights=loss_weights,
         dynamic_loss=be_loss,
-        omega_boundary_fun=lambda dx: 0,
+        omega_boundary_fun=lambda t, dx: 0,
         omega_boundary_condition="dirichlet",
         temporal_boundary_fun=u0,
     )
@@ -105,9 +105,9 @@ def test_initial_loss_Burger(train_Burger_init):
     init_params, loss, train_data = train_Burger_init
     assert jnp.round(
         loss.evaluate(init_params, train_data.get_batch())[0], 5
-    ) == jnp.round(2.998737815612251, 5)
+    ) == jnp.round(2.98864, 5)
 
 
 def test_10it_Burger(train_Burger_10it):
     total_loss_val = train_Burger_10it
-    assert jnp.round(total_loss_val, 5) == jnp.round(2.78202, 5)
+    assert jnp.round(total_loss_val, 5) == jnp.round(2.77797, 5)

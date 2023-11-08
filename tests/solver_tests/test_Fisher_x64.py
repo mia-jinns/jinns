@@ -79,10 +79,10 @@ def train_Fisher_init():
     boundary_condition = "dirichlet"
 
     if boundary_condition == "dirichlet":
-        omega_boundary_fun = lambda dx: 0  # cte func returning 0
+        omega_boundary_fun = lambda t, dx: 0  # cte func returning 0
 
     elif boundary_condition == "neumann":
-        omega_boundary_fun = lambda dx: 0  # cte func returning 0
+        omega_boundary_fun = lambda t, dx: 0  # cte func returning 0
 
     init_params = {
         "nn_params": init_nn_params,
@@ -137,9 +137,9 @@ def test_initial_loss_Fisher(train_Fisher_init):
     init_params, loss, train_data = train_Fisher_init
     assert jnp.round(
         loss.evaluate(init_params, train_data.get_batch())[0], 5
-    ) == jnp.round(12.155556509238087, 5)
+    ) == jnp.round(12.15913, 5)
 
 
 def test_10it_Fisher(train_Fisher_10it):
     total_loss_val = train_Fisher_10it
-    assert jnp.round(total_loss_val, 5) == jnp.round(10.8604, 5)
+    assert jnp.round(total_loss_val, 5) == jnp.round(10.87023, 5)
