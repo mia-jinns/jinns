@@ -93,7 +93,7 @@ def train_Fisher_init():
 
     loss_weights = {
         "dyn_loss": 1,
-        "temporal_loss": 1 * Tmax,
+        "initial_condition": 1 * Tmax,
         "boundary_loss": 3 / 4 * Tmax,
     }
 
@@ -103,7 +103,7 @@ def train_Fisher_init():
         dynamic_loss=fisher_dynamic_loss,
         omega_boundary_fun=omega_boundary_fun,
         omega_boundary_condition=boundary_condition,
-        temporal_boundary_fun=u0,
+        initial_condition_fun=u0,
         norm_key=None,
         norm_borders=None,
         norm_samples=None,
