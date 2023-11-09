@@ -29,10 +29,9 @@ class DynamicLoss:
             equation solution with as PINN.
         eq_params_heterogeneity
             Default None. A dict with the keys being the same as in eq_params
-            and the value being `time`, `space`, `both` or None which corresponds to
-            the heterogeneity of a given parameter. A value can be missing, in
-            this case there is no heterogeneity (=None). If
-            eq_params_heterogeneity is None this means there is no
+            and the value being either None (no heterogeneity) or a function which encodes for the spatio-temporal heterogeneity of the parameter. Such a function must be jittable and take three arguments `t`, `x` and `params["eq_params"]` even if one is not used. Therefore, one can introduce spatio-temporal covariates upon which a particular parameter can depend, e.g. in a GLM fashion. The effect of these covariables can themselves be estimated by being in `eq_params` too.
+            A value can be missing, in this case there is no heterogeneity (=None).
+            If eq_params_heterogeneity is None this means there is no
             heterogeneity for no parameters.
         """
         self.Tmax = Tmax
@@ -49,47 +48,17 @@ class DynamicLoss:
             return eq_params
         for k, p in eq_params.items():
             try:
-                eq_params_[k] = self._eval_heterogeneous_array_parameter(
-                    p, t, x, heterogeneity=eq_params_heterogeneity[k]
-                )
+                if eq_params_heterogeneity[k] is None:
+                    eq_params_[k] = p
+                else:
+                    eq_params_[k] = eq_params_heterogeneity[k](
+                        t, x, eq_params  # heterogeneity encoded through a function
+                    )
             except KeyError:
                 # we authorize missing eq_params_heterogeneity key
                 # is its heterogeneity is None anyway
                 eq_params_[k] = p
         return eq_params_
-
-    def _eval_heterogeneous_array_parameter(self, p, t, x, heterogeneity=None):
-        """
-        For time and/or space heterogeneous params defined by an n-dimensional
-        array `p` we return the value `p[t, x]` with discretization of the
-        collocation point
-
-        Parameters
-        ----------
-        p
-            The parameter
-        heterogeneity
-            A string. Either `time`, `space`, `both` or None to specify which
-            kind of heterogeneity we have. Default is None, is this case we do
-            not have heterogeneity.
-
-
-        **Note** t is assumed to be normalized in [0, 1] as well as x!
-        """
-        if heterogeneity is None:
-            return p
-        elif heterogeneity == "time":
-            return p[(t * len(p)).astype(int)]
-        elif heterogeneity == "space":
-            coords = (x * jnp.array(p.shape)).astype(int)
-            return jnp.take(p, jnp.ravel_multi_index(coords, p.shape, mode="clip"))
-        elif heterogeneity == "both":
-            coords = jnp.concatenate(
-                [(t * len(p))[:, None], x * jnp.array(p.shape)], axis=1
-            ).astype(int)
-            return jnp.take(p, jnp.ravel_multi_index(coords, p.shape, mode="clip"))
-        else:
-            raise ValueError("Wrong paramater value for parameter `heterogeneity`")
 
     def set_stop_gradient(self, params_dict):
         """
