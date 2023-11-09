@@ -8,6 +8,10 @@ Welcome to jinn's documentation!
 
 Changelog:
 
+* v0.4.1:
+
+    - Generalize heterogeneity for the equation parameters. It can now be an arbitrary function provided by the user and thus depend on covariables. Update the corresponding notebook.
+
 * v0.4.0:
 
     - Introduce Sobolev regularization as defined in *Convergence and error analysis of PINNs*, Doumèche et al., 2023 with a new notebook reproducing the example from the paper.
