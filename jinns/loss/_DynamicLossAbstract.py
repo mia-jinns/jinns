@@ -29,13 +29,7 @@ class DynamicLoss:
             equation solution with as PINN.
         eq_params_heterogeneity
             Default None. A dict with the keys being the same as in eq_params
-            and the value being None (no heterogeneity) or a function which
-            encodes the heterogeneity of the parameter. Such a function must be
-            jittable and takes three arguments `t`, `x` and
-            `params["eq_params"]` even if one is not used. Therefore, one can
-            here introduced covariables upon which a particular parameter can
-            depend. The effect of these covariables can themselves be estimated
-            by being in `eq_params` too.
+            and the value being either None (no heterogeneity) or a function which encodes for the spatio-temporal heterogeneity of the parameter. Such a function must be jittable and take three arguments `t`, `x` and `params["eq_params"]` even if one is not used. Therefore, one can introduce spatio-temporal covariates upon which a particular parameter can depend, e.g. in a GLM fashion. The effect of these covariables can themselves be estimated by being in `eq_params` too.
             A value can be missing, in this case there is no heterogeneity (=None).
             If eq_params_heterogeneity is None this means there is no
             heterogeneity for no parameters.
