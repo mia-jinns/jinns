@@ -575,6 +575,11 @@ def create_SPINN(
 
         def apply_fn(self, t, x, u_params, eq_params=None):
             spinn = eqx.combine(u_params, self.static)
+            # NOTE we tried the nested vmap to get the outer product
+            # differently and enable different batch sizes for different
+            # dimensions (see eg
+            # https://stackoverflow.com/questions/73212780/struggling-to-understand-nested-vmaps-in-jax),
+            # but it is much slower than the following...
             v_model = jax.vmap(spinn, ((0, 0)))
             res = v_model(t, x)
             a = ", ".join([f"{chr(97 + d)}z" for d in range(res.shape[1])])
