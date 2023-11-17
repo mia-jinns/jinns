@@ -13,6 +13,7 @@ def plot2d(
     title="",
     figsize=(7, 7),
     cmap="inferno",
+    spinn=False,
 ):
     """Generic function for plotting functions over rectangular 2-D domains
     :math:`\Omega`. It treats both the stationary case :math:`u(x)` or the
@@ -56,8 +57,16 @@ def plot2d(
 
     if times is None:
         # Statio case : expect a function of one argument fun(x)
-        v_fun = vmap(fun, 0, 0)
-        _plot_2D_statio(v_fun, mesh, plot=True, colorbar=True, cmap=cmap)
+        if not spinn:
+            v_fun = vmap(fun, 0, 0)
+            _plot_2D_statio(v_fun, mesh, plot=True, colorbar=True, cmap=cmap)
+        elif spinn:
+            values_grid = fun(
+                jnp.stack([xy_data[0][..., None], xy_data[1][..., None]], axis=1)
+            )
+            _plot_2D_statio(
+                values_grid, mesh, plot=True, colorbar=True, cmap=cmap, spinn=True
+            )
         plt.title(title)
 
     else:
@@ -81,17 +90,26 @@ def plot2d(
         )
 
         for idx, (t, ax) in enumerate(zip(times, grid)):
-            v_fun_at_t = vmap(lambda x: fun(t=jnp.array([t]), x=x), 0, 0)
-            t_slice, _ = _plot_2D_statio(
-                v_fun_at_t, mesh, plot=False, colorbar=False, cmap=None
-            )
+            if not spinn:
+                v_fun_at_t = vmap(lambda x: fun(t=jnp.array([t]), x=x), 0, 0)
+                t_slice, _ = _plot_2D_statio(
+                    v_fun_at_t, mesh, plot=False, colorbar=False, cmap=None
+                )
+            elif spinn:
+                values_grid = fun(
+                    t * jnp.ones((xy_data[0].shape[0], 1)),
+                    jnp.stack([xy_data[0][..., None], xy_data[1][..., None]], axis=1),
+                )[0]
+                t_slice, _ = _plot_2D_statio(
+                    values_grid, mesh, plot=False, colorbar=True, spinn=True
+                )
             im = ax.pcolormesh(mesh[0], mesh[1], t_slice, cmap=cmap)
             ax.set_title(f"t = {times[idx] * Tmax}")
             ax.cax.colorbar(im)
 
 
 def _plot_2D_statio(
-    v_fun, mesh, plot=True, colorbar=True, cmap="inferno", figsize=(7, 7)
+    v_fun, mesh, plot=True, colorbar=True, cmap="inferno", figsize=(7, 7), spinn=False
 ):
     """Function that plot the function u(x) with 2-D input x using pcolormesh()
 
@@ -114,8 +132,12 @@ def _plot_2D_statio(
     """
 
     x_grid, y_grid = mesh
-    values = v_fun(jnp.vstack([x_grid.flatten(), y_grid.flatten()]).T)
-    values_grid = values.reshape(x_grid.shape)
+    if not spinn:
+        values = v_fun(jnp.vstack([x_grid.flatten(), y_grid.flatten()]).T)
+        values_grid = values.reshape(x_grid.shape)
+    elif spinn:
+        # in this case v_fun is directly the values :)
+        values_grid = v_fun
 
     if plot:
         fig = plt.figure(figsize=figsize)
