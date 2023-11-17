@@ -425,10 +425,13 @@ class _SPINN(eqx.Module):
             self.separated_mlp.append(self.layers)
 
     def __call__(self, t, x):
-        t = jnp.concatenate([t, x], axis=0)
+        if t is not None:
+            dimensions = jnp.concatenate([t, x.flatten()], axis=0)
+        else:
+            dimensions = jnp.concatenate([x.flatten()], axis=0)
         outputs = []
         for d in range(self.d):
-            t_ = t[..., d][None]
+            t_ = dimensions[d][None]
             for layer in self.separated_mlp[d]:
                 t_ = layer(t_)
             outputs += [t_]
@@ -549,14 +552,35 @@ def create_SPINN(
     if nb_outputs_declared != r:
         raise ValueError("Output dim must be set to r in SPINN!")
 
-    if eq_type == "nonstatio_PDE":
+    if d > 24:
+        raise ValueError(
+            "Too many dimensions, not enough letters" " available in jnp.einsum"
+        )
+
+    if eq_type == "statio_PDE":
+
+        def apply_fn(self, x, u_params, eq_params=None):
+            spinn = eqx.combine(u_params, self.static)
+            v_model = jax.vmap(spinn, ((0, 0)))
+            res = v_model(t=None, x=x)
+            # We prepare an outer product for an arbitrary nb of 2D arrays
+            # (outer product on first dim and summation on second (embedding)
+            # dim)
+            a = ", ".join([f"{chr(97 + d)}z" for d in range(res.shape[1])])
+            b = "".join([f"{chr(97 + d)}" for d in range(res.shape[1])])
+            res = jnp.einsum(f"{a} -> {b}", *(res[:, d] for d in range(res.shape[1])))
+            return res
+
+    elif eq_type == "nonstatio_PDE":
 
         def apply_fn(self, t, x, u_params, eq_params=None):
             spinn = eqx.combine(u_params, self.static)
             v_model = jax.vmap(spinn, ((0, 0)))
-            r = v_model(t, x)
-            r = jnp.einsum("ik, jk -> ij", r[:, 0], r[:, 1])
-            return r
+            res = v_model(t, x)
+            a = ", ".join([f"{chr(97 + d)}z" for d in range(res.shape[1])])
+            b = "".join([f"{chr(97 + d)}" for d in range(res.shape[1])])
+            res = jnp.einsum(f"{a} -> {b}", *(res[:, d] for d in range(res.shape[1])))
+            return res
 
     else:
         raise RuntimeError("Wrong parameter value for eq_type")
