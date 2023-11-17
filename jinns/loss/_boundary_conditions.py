@@ -1,6 +1,7 @@
 import jax
 import jax.numpy as jnp
 from jax import vmap, grad
+from jinns.utils._utils import PINN, SPINN
 
 
 def _compute_boundary_loss_statio(
@@ -219,21 +220,34 @@ def boundary_dirichlet_nonstatio(f, times_batch, omega_border_batch, u, params):
     def rep_times(k):
         return jnp.repeat(times_batch, k, axis=0)
 
-    v_u_boundary = vmap(
-        lambda t, dx: u(
-            t,
-            dx,
-            u_params=params["nn_params"],
-            eq_params=jax.lax.stop_gradient(params["eq_params"]),
+    if isinstance(u, PINN):
+        v_u_boundary = vmap(
+            lambda t, dx: u(
+                t,
+                dx,
+                u_params=params["nn_params"],
+                eq_params=jax.lax.stop_gradient(params["eq_params"]),
+            )
+            - f(t, dx),
+            (0, 0),
+            0,
         )
-        - f(t, dx),
-        (0, 0),
-        0,
-    )
-
+        res = v_u_boundary(
+            rep_times(omega_border_batch.shape[0]), tile_omega_border_batch
+        )
+    elif isinstance(u, SPINN):
+        values = u(
+            times_batch,
+            tile_omega_border_batch,
+            params["nn_params"],
+            params["eq_params"],
+        )
+        v_f = vmap(f, (0, 0))
+        res = v_f(times_batch, tile_omega_border_batch)
+        res = jnp.einsum("i, j->ij", res, res)
+        res = values - res
     mse_u_boundary = jnp.mean(
-        (v_u_boundary(rep_times(omega_border_batch.shape[0]), tile_omega_border_batch))
-        ** 2,
+        res**2,  # TODO check vectorial case
         axis=0,
     )
     return mse_u_boundary

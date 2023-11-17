@@ -10,7 +10,7 @@ from jinns.loss._boundary_conditions import (
 )
 from jinns.loss._DynamicLoss import ODE, PDEStatio, PDENonStatio
 from jinns.data._DataGenerators import PDEStatioBatch, PDENonStatioBatch
-from jinns.utils._utils import _get_vmap_in_axes_params
+from jinns.utils._utils import _get_vmap_in_axes_params, PINN, SPINN
 from jinns.loss._operators import _sobolev
 
 _IMPLEMENTED_BOUNDARY_CONDITIONS = [
@@ -769,21 +769,30 @@ class LossPDENonStatio(LossPDEStatio):
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
-        omega_batch_ = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
-        times_batch_ = rep_times(n)  # it is repeated
+        if isinstance(self.u, PINN):
+            omega_batch_ = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
+            times_batch_ = rep_times(n)  # it is repeated
 
         # dynamic part
         if self.dynamic_loss is not None:
-            v_dyn_loss = vmap(
-                lambda t, x, params: self.dynamic_loss.evaluate(t, x, self.u, params),
-                vmap_in_axes_x_t + vmap_in_axes_params,
-                0,
-            )
+            if isinstance(self.u, PINN):
+                v_dyn_loss = vmap(
+                    lambda t, x, params: self.dynamic_loss.evaluate(
+                        t, x, self.u, params
+                    ),
+                    vmap_in_axes_x_t + vmap_in_axes_params,
+                    0,
+                )
+                residuals = v_dyn_loss(times_batch_, omega_batch_, params)
+            elif isinstance(self.u, SPINN):
+                residuals = self.dynamic_loss.evaluate(
+                    times_batch, omega_batch, self.u, params
+                )
             mse_dyn_loss = jnp.mean(
                 self.loss_weights["dyn_loss"]
-                * jnp.mean(v_dyn_loss(times_batch_, omega_batch_, params) ** 2, axis=0)
+                * jnp.mean(residuals**2, axis=0)  # TODO check for the vectorial case
             )
-            # OR for Causality is all you need (not yet implemented)
+            # TODO implement Causality is all you need (not yet implemented)
             #  epsilon = 0.01
             #  times_batch_ = jnp.sort(times_batch_)
             #  val_dyn_loss = v_dyn_loss(times_batch_, omega_batch_, params)
@@ -796,27 +805,32 @@ class LossPDENonStatio(LossPDEStatio):
 
         # normalization part
         if self.normalization_loss is not None:
-            v_u = vmap(
-                vmap(
-                    lambda t, x: self.u(
-                        t,
-                        x,
-                        params["nn_params"],
-                        jax.lax.stop_gradient(params["eq_params"]),
+            if isinstance(self.u, PINN):
+                v_u = vmap(
+                    vmap(
+                        lambda t, x: self.u(
+                            t,
+                            x,
+                            params["nn_params"],
+                            jax.lax.stop_gradient(params["eq_params"]),
+                        ),
+                        in_axes=(None, 0),
                     ),
-                    in_axes=(None, 0),
-                ),
-                in_axes=(0, None),
-            )  # Note that it is not faster to have it as a static
-            # attribute
-            mse_norm_loss = self.loss_weights["norm_loss"] * jnp.sum(
-                (1 / nt)
-                * jnp.abs(
-                    jnp.mean(v_u(times_batch, self.get_norm_samples()), axis=-1)
-                    * self.int_length
-                    - 1
+                    in_axes=(0, None),
                 )
-                ** 2
+                res = v_u(times_batch, self.get_norm_samples())
+            elif isinstance(self.u, SPINN):
+                norm_samples = self.get_norm_samples()
+                assert norm_samples.shape[0] % times_batch.shape[0] == 0
+                rep_t = norm_samples.shape[0] // times_batch.shape[0]
+                res = self.u(
+                    jnp.repeat(times_batch, rep_t, axis=0),
+                    norm_samples,
+                    params["nn_params"],
+                    jax.lax.stop_gradient(params["eq_params"]),
+                )
+            mse_norm_loss = self.loss_weights["norm_loss"] * jnp.sum(
+                (1 / nt) * jnp.abs(jnp.mean(res, axis=-1) * self.int_length - 1) ** 2
             )
 
         else:
@@ -860,22 +874,44 @@ class LossPDENonStatio(LossPDEStatio):
         else:
             mse_boundary_loss = 0
 
-        # temporal part
+        # initial condition
         if self.initial_condition_fun is not None:
-            v_u_t0 = vmap(
-                lambda x: self.initial_condition_fun(x)
-                - self.u(
-                    t=jnp.zeros((1,)),
-                    x=x,
-                    u_params=params["nn_params"],
-                    eq_params=jax.lax.stop_gradient(params["eq_params"]),
-                ),
-                (0),
-                0,
-            )
+            if isinstance(self.u, PINN):
+                v_u_t0 = vmap(
+                    lambda x: self.initial_condition_fun(x)
+                    - self.u(
+                        t=jnp.zeros((1,)),
+                        x=x,
+                        u_params=params["nn_params"],
+                        eq_params=jax.lax.stop_gradient(params["eq_params"]),
+                    ),
+                    (0),
+                    0,
+                )
+                res = v_u_t0(omega_batch)
+            elif isinstance(self.u, SPINN):
+                values = lambda t, x: self.u(
+                    t,
+                    x,
+                    params["nn_params"],
+                    jax.lax.stop_gradient(params["eq_params"]),
+                )
+                t_rep = jnp.repeat(jnp.zeros((1, 1)), omega_batch.shape[0], axis=0)
+
+                # We prepare an outer product of an array dimension (but an
+                # arbitrary number)
+                # a = ", ".join([f"{chr(97 + d)}" for d in range(omega_batch.shape[1])])
+                # b = "".join([f"{chr(97 + d)}" for d in range(omega_batch.shape[1])])
+                # res = jnp.einsum(f"{a} -> {b}", *(omega_batch[:, d] for d in
+                #    range(omega_batch.shape[1])))
+                ini = self.initial_condition_fun(omega_batch)
+                ini = jnp.outer(ini[0], ini[1])
+                res = jnp.repeat(
+                    ini.squeeze()[None], times_batch.shape[0], axis=0
+                ) - values(t_rep, omega_batch)
             mse_initial_condition = jnp.mean(
                 self.loss_weights["initial_condition"]
-                * jnp.mean(v_u_t0(omega_batch) ** 2, axis=0)
+                * jnp.mean(res**2, axis=0)  # TODO check vectorial case
             )
         else:
             mse_initial_condition = 0
@@ -884,6 +920,7 @@ class LossPDENonStatio(LossPDEStatio):
         # NOTE that it does not use jax.lax.stop_gradient on "eq_params" here
         # since we may wish to optimize on it.
         if self.obs_batch is not None:
+            # TODO implement for SPINN
             v_u = vmap(
                 lambda t, x: self.u(t, x, params["nn_params"], params["eq_params"]),
                 (0, 0),
@@ -906,6 +943,7 @@ class LossPDENonStatio(LossPDEStatio):
 
         # Sobolev regularization
         if self.sobolev_reg is not None:
+            # TODO implement for SPINN
             v_sob_reg = vmap(
                 lambda t, x: self.sobolev_reg(
                     t,

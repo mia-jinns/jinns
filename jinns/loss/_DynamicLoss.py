@@ -1094,57 +1094,122 @@ class FPENonStatioLoss2D(PDENonStatio):
         """
         nn_params, eq_params = self.set_stop_gradient(params)
 
-        order_1 = (
-            grad(
-                lambda t, x: self.drift(t, x, eq_params)[0]
-                * u(t, x, nn_params, eq_params),
-                1,
-            )(t, x)[0]
-            + grad(
-                lambda t, x: self.drift(t, x, eq_params)[1]
-                * u(t, x, nn_params, eq_params),
-                1,
-            )(t, x)[1]
-        )
+        if isinstance(u, PINN):
+            order_1 = (
+                grad(
+                    lambda t, x: self.drift(t, x, eq_params)[0]
+                    * u(t, x, nn_params, eq_params),
+                    1,
+                )(t, x)[0]
+                + grad(
+                    lambda t, x: self.drift(t, x, eq_params)[1]
+                    * u(t, x, nn_params, eq_params),
+                    1,
+                )(t, x)[1]
+            )
 
-        order_2 = (
-            grad(
-                lambda t, x: grad(
-                    lambda t, x: u(t, x, nn_params, eq_params)
-                    * self.diffusion(t, x, eq_params)[0, 0],
+            order_2 = (
+                grad(
+                    lambda t, x: grad(
+                        lambda t, x: u(t, x, nn_params, eq_params)
+                        * self.diffusion(t, x, eq_params)[0, 0],
+                        1,
+                    )(t, x)[0],
                     1,
-                )(t, x)[0],
-                1,
-            )(t, x)[0]
-            + grad(
-                lambda t, x: grad(
-                    lambda t, x: u(t, x, nn_params, eq_params)
-                    * self.diffusion(t, x, eq_params)[1, 0],
+                )(t, x)[0]
+                + grad(
+                    lambda t, x: grad(
+                        lambda t, x: u(t, x, nn_params, eq_params)
+                        * self.diffusion(t, x, eq_params)[1, 0],
+                        1,
+                    )(t, x)[1],
                     1,
-                )(t, x)[1],
-                1,
-            )(t, x)[0]
-            + grad(
-                lambda t, x: grad(
-                    lambda t, x: u(t, x, nn_params, eq_params)
-                    * self.diffusion(t, x, eq_params)[0, 1],
+                )(t, x)[0]
+                + grad(
+                    lambda t, x: grad(
+                        lambda t, x: u(t, x, nn_params, eq_params)
+                        * self.diffusion(t, x, eq_params)[0, 1],
+                        1,
+                    )(t, x)[0],
                     1,
-                )(t, x)[0],
-                1,
-            )(t, x)[1]
-            + grad(
-                lambda t, x: grad(
-                    lambda t, x: u(t, x, nn_params, eq_params)
-                    * self.diffusion(t, x, eq_params)[1, 1],
+                )(t, x)[1]
+                + grad(
+                    lambda t, x: grad(
+                        lambda t, x: u(t, x, nn_params, eq_params)
+                        * self.diffusion(t, x, eq_params)[1, 1],
+                        1,
+                    )(t, x)[1],
                     1,
-                )(t, x)[1],
-                1,
-            )(t, x)[1]
-        )
+                )(t, x)[1]
+            )
 
-        du_dt = grad(u, 0)(t, x, nn_params, eq_params)
+            du_dt = grad(u, 0)(t, x, nn_params, eq_params)
 
-        return -du_dt + self.Tmax * (-order_1 + order_2)
+            return -du_dt + self.Tmax * (-order_1 + order_2)
+
+        elif isinstance(u, SPINN):
+            _, du_dt = jax.jvp(
+                lambda t: u(t, x, nn_params, eq_params), (t,), (jnp.ones_like(t),)
+            )
+
+            # We need to get the good shape with the drift and diff
+            # coefficients
+            # TODO : do it with pytrees
+            batched_eq_params = {
+                "mu": jnp.repeat(eq_params["mu"][None], x.shape[0], axis=0),
+                "alpha": jnp.repeat(eq_params["alpha"][None], x.shape[0], axis=0),
+                "sigma": jnp.repeat(eq_params["sigma"][None], x.shape[0], axis=0),
+            }
+            outer_eq_params = {
+                "mu": jnp.outer(
+                    batched_eq_params["mu"][:, 0], batched_eq_params["mu"][:, 1]
+                ),
+                "alpha": jnp.outer(
+                    batched_eq_params["alpha"][:, 0], batched_eq_params["alpha"][:, 1]
+                ),
+                "sigma": jnp.outer(
+                    batched_eq_params["sigma"][:, 0], batched_eq_params["sigma"][:, 1]
+                ),
+            }
+
+            drift_good_shape = self.drift(
+                t, jnp.outer(x[:, 0], x[:, 1]), outer_eq_params
+            )[None]
+            tangent_vec_0 = jnp.repeat(jnp.array([1.0, 0.0])[None], x.shape[0], axis=0)
+            tangent_vec_1 = jnp.repeat(jnp.array([0.0, 1.0])[None], x.shape[0], axis=0)
+            _, dau_dx1 = jax.jvp(
+                lambda x: drift_good_shape * u(t, x, nn_params, eq_params),
+                (x,),
+                (tangent_vec_0,),
+            )
+            _, dau_dx2 = jax.jvp(
+                lambda x: drift_good_shape * u(t, x, nn_params, eq_params),
+                (x,),
+                (tangent_vec_1,),
+            )
+
+            diff_good_shape = self.diffusion(
+                t, jnp.outer(x[:, 0], x[:, 1]), outer_eq_params
+            )[None]
+            dsu_dx1_fun = lambda x: jax.jvp(
+                lambda x: diff_good_shape * u(t, x, nn_params, eq_params),
+                (x,),
+                (tangent_vec_0,),
+            )[1]
+            dsu_dx2_fun = lambda x: jax.jvp(
+                lambda x: diff_good_shape * u(t, x, nn_params, eq_params),
+                (x,),
+                (tangent_vec_1,),
+            )[1]
+            _, d2su_dx12 = jax.jvp(dsu_dx1_fun, (x,), (tangent_vec_0,))
+            _, d2su_dx1dx2 = jax.jvp(dsu_dx1_fun, (x,), (tangent_vec_1,))
+            _, d2su_dx22 = jax.jvp(dsu_dx2_fun, (x,), (tangent_vec_1,))
+            _, d2su_dx2dx1 = jax.jvp(dsu_dx2_fun, (x,), (tangent_vec_0,))
+
+            return -du_dt + self.Tmax * (
+                -(dau_dx1 + dau_dx2)
+                + (d2su_dx12 + d2su_dx22 + d2su_dx1dx2 + d2su_dx2dx1)
+            )
 
 
 class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
