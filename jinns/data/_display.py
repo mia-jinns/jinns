@@ -128,7 +128,13 @@ def _plot_2D_statio(
 
 
 def plot1d_slice(
-    fun, xdata, time_slices=jnp.array([0]), Tmax=1, title="", figsize=(10, 10)
+    fun,
+    xdata,
+    time_slices=jnp.array([0]),
+    Tmax=1,
+    title="",
+    figsize=(10, 10),
+    spinn=False,
 ):
     """Function for plotting time slices of a function :math:`f(t_i, x)` where
     `t` is time (1-D) and x is 1-D
@@ -151,10 +157,14 @@ def plot1d_slice(
     """
     plt.figure(figsize=figsize)
     for t in time_slices:
-        # fix t with partial : shape is (1,)
-        v_u_tfixed = vmap(partial(fun, t=t * jnp.ones((1,))), 0, 0)
-        # add an axis to xdata for the concatenate function in the neural net
-        plt.plot(xdata, v_u_tfixed(x=xdata[:, None]), label=f"$t_i={t * Tmax}$")
+        if not spinn:
+            # fix t with partial : shape is (1,)
+            v_u_tfixed = vmap(partial(fun, t=t * jnp.ones((1,))), 0, 0)
+            # add an axis to xdata for the concatenate function in the neural net
+            values = v_u_tfixed(x=xdata[:, None])
+        elif spinn:
+            values = fun(t * jnp.ones((xdata.shape[0], 1)), xdata[..., None])[0]
+        plt.plot(xdata, values, label=f"$t_i={t * Tmax}$")
     plt.xlabel("x")
     plt.ylabel(r"$u(t_i, x)$")
     plt.legend()
@@ -162,7 +172,15 @@ def plot1d_slice(
 
 
 def plot1d_image(
-    fun, xdata, times, Tmax=1, title="", figsize=(10, 10), colorbar=True, cmap="inferno"
+    fun,
+    xdata,
+    times,
+    Tmax=1,
+    title="",
+    figsize=(10, 10),
+    colorbar=True,
+    cmap="inferno",
+    spinn=False,
 ):
     """Function for plotting the 2-D image of a function :math:`f(t, x)` where
     `t` is time (1-D) and x is space (1-D).
@@ -186,12 +204,15 @@ def plot1d_image(
     """
 
     mesh = jnp.meshgrid(times, xdata)  # cartesian product
-    # the trick is to use _plot2Dstatio
-    v_fun = vmap(lambda tx: fun(t=tx[0, None], x=tx[1, None]), 0, 0)
-    t_grid, x_grid = mesh
-    values_grid = v_fun(jnp.vstack([t_grid.flatten(), x_grid.flatten()]).T).reshape(
-        t_grid.shape
-    )
+    if not spinn:
+        # the trick is to use _plot2Dstatio
+        v_fun = vmap(lambda tx: fun(t=tx[0, None], x=tx[1, None]), 0, 0)
+        t_grid, x_grid = mesh
+        values_grid = v_fun(jnp.vstack([t_grid.flatten(), x_grid.flatten()]).T).reshape(
+            t_grid.shape
+        )
+    elif spinn:
+        values_grid = fun((times[..., None]), xdata[..., None])
     fig, ax = plt.subplots(1, 1, figsize=figsize)
     im = ax.pcolormesh(mesh[0] * Tmax, mesh[1], values_grid, cmap=cmap)
     if colorbar:
