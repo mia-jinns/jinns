@@ -26,11 +26,13 @@ def _div(u, nn_params, eq_params, x, t=None):
     return jnp.sum(accu)
 
 
-def _laplacian(u, nn_params, eq_params, x, t=None):
+def _laplacian_bwd(u, nn_params, eq_params, x, t=None):
     r"""
     Compute the Laplacian of a scalar field u (from :math:`\mathbb{R}^n`
     to :math:`\mathbb{R}`) for x of arbitrary dimension ie
     :math:`\Delta u(x)=\nabla\cdot\nabla u(x)`
+
+    The computation is done using backward AD
     For computational reason we do not compute the trace of the Hessian but
     we explicitly call the gradient twice
     """
@@ -52,6 +54,40 @@ def _laplacian(u, nn_params, eq_params, x, t=None):
 
     _, trace_hessian = jax.lax.scan(scan_fun, {}, jnp.arange(x.shape[0]))
     return jnp.sum(trace_hessian)
+
+
+def _laplacian_fwd(u, nn_params, eq_params, x, t=None):
+    r"""
+    Compute the Laplacian of a **batched** scalar field u
+    (from :math:`\mathbb{R}^{b\times n}` to :math:`\mathbb{R}^{b\times d}`)
+    for x of arbitrary dimension :math:`n` **but including a
+    batch dimension** :math:`b`
+
+    In this case because of batch dimensions, the computation is very efficient
+    using forward AD. This is the idea behind Separable PINNs.
+
+    ** Note ** To be used in the context of SPINNs
+    """
+
+    def scan_fun(_, i):
+        tangent_vec = jnp.repeat(
+            jax.nn.one_hot(i, x.shape[1])[None], x.shape[0], axis=0
+        )
+        if t is None:
+            du_dxi_fun = lambda x: jax.jvp(
+                lambda x: u(x, nn_params, eq_params), (x,), (tangent_vec,)
+            )[1]
+            __, d2u_dxi2 = jax.jvp(du_dxi_fun, (x,), (tangent_vec,))
+        else:
+            du_dxi_fun = lambda x: jax.jvp(
+                lambda x: u(t, x, nn_params, eq_params), (x,), (tangent_vec,)
+            )[1]
+            __, d2u_dxi2 = jax.jvp(du_dxi_fun, (x,), (tangent_vec,))
+        return _, d2u_dxi2
+
+    _, trace_hessian = jax.lax.scan(scan_fun, {}, jnp.arange(x.shape[1]))
+    return jnp.sum(trace_hessian, axis=0)  # Sum over axis 0 only, we get one
+    # Laplacian by position (b\times d)
 
 
 def _vectorial_laplacian(u, nn_params, eq_params, x, t=None, u_vec_ndim=None):
