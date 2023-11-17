@@ -1,9 +1,11 @@
 import jax
 from jax import jit, grad, jacrev
 import jax.numpy as jnp
+from jinns.utils._utils import PINN, SPINN
 from jinns.loss._DynamicLossAbstract import ODE, PDEStatio, PDENonStatio
 from jinns.loss._operators import (
-    _laplacian,
+    _laplacian_bwd,
+    _laplacian_fwd,
     _div,
     _vectorial_laplacian,
     _u_dot_nabla_times_u,
@@ -71,15 +73,24 @@ class FisherKPP(PDENonStatio):
             eq_params, t, x, self.eq_params_heterogeneity
         )
 
-        du_dt = grad(u, 0)(t, x, nn_params)[0]
+        if isinstance(u, PINN):
+            du_dt = grad(u, 0)(t, x, nn_params)[0]
 
-        lap = _laplacian(u, nn_params, eq_params, x, t)
+            lap = _laplacian_bwd(u, nn_params, eq_params, x, t)
 
-        return du_dt + self.Tmax * (
-            -eq_params["D"] * lap
-            - u(t, x, nn_params, eq_params)
-            * (eq_params["r"] - eq_params["g"] * u(t, x, nn_params, eq_params))
-        )
+            return du_dt + self.Tmax * (
+                -eq_params["D"] * lap
+                - u(t, x, nn_params, eq_params)
+                * (eq_params["r"] - eq_params["g"] * u(t, x, nn_params, eq_params))
+            )
+        elif isinstance(u, SPINN):
+            u_tx, du_dt = jax.jvp(
+                lambda t: u(t, x, nn_params, eq_params), (t,), (jnp.ones_like(t),)
+            )
+            lap = _laplacian_fwd(u, nn_params, eq_params, x, t)
+            return du_dt + self.Tmax * (
+                -eq_params["D"] * lap - u_tx * (eq_params["r"] - eq_params["g"] * u_tx)
+            )
 
 
 class Malthus(ODE):
@@ -156,7 +167,12 @@ class BurgerEquation(PDENonStatio):
 
     """
 
-    def __init__(self, Tmax=1, derivatives="nn_params", eq_params_heterogeneity=None):
+    def __init__(
+        self,
+        Tmax=1,
+        derivatives="nn_params",
+        eq_params_heterogeneity=None,
+    ):
         """
         Parameters
         ----------
@@ -207,17 +223,32 @@ class BurgerEquation(PDENonStatio):
             eq_params, t, x, self.eq_params_heterogeneity
         )
 
-        du_dt = grad(u, 0)
-        du_dx = grad(u, 1)
-        du2_dx2 = grad(
-            lambda t, x, nn_params, eq_params: du_dx(t, x, nn_params, eq_params)[0],
-            1,
-        )
+        if isinstance(u, PINN):
+            du_dt = grad(u, 0)
+            du_dx = grad(u, 1)
+            d2u_dx2 = grad(
+                lambda t, x, nn_params, eq_params: du_dx(t, x, nn_params, eq_params)[0],
+                1,
+            )
 
-        return du_dt(t, x, nn_params, eq_params)[0] + self.Tmax * (
-            u(t, x, nn_params, eq_params) * du_dx(t, x, nn_params, eq_params)[0]
-            - eq_params["nu"] * du2_dx2(t, x, nn_params, eq_params)[0]
-        )
+            return du_dt(t, x, nn_params, eq_params)[0] + self.Tmax * (
+                u(t, x, nn_params, eq_params) * du_dx(t, x, nn_params, eq_params)[0]
+                - eq_params["nu"] * d2u_dx2(t, x, nn_params, eq_params)[0]
+            )
+
+        elif isinstance(u, SPINN):
+            # d=2 JVP calls are expected since we have time and x
+            # then with a batch of size B, we then have Bd JVP calls
+            u_tx, du_dt = jax.jvp(
+                lambda t: u(t, x, nn_params, eq_params), (t,), (jnp.ones_like(t),)
+            )
+            du_dx_fun = lambda x: jax.jvp(
+                lambda x: u(t, x, nn_params, eq_params), (x,), (jnp.ones_like(x),)
+            )[1]
+            du_dx, d2u_dx2 = jax.jvp(du_dx_fun, (x,), (jnp.ones_like(x),))
+            # Note that ones_like(x) works because x is Bx1 !
+
+            return du_dt + self.Tmax * (u_tx * du_dx - eq_params["nu"] * d2u_dx2)
 
 
 class GeneralizedLotkaVolterra(ODE):
