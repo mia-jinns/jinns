@@ -11,8 +11,6 @@ import jinns
 @pytest.fixture
 def train_NSPipeFlow_init():
     jax.config.update("jax_enable_x64", False)
-    print(jax.config.FLAGS.jax_enable_x64)
-    print(jax.devices())
     key = random.PRNGKey(2)
 
     eqx_list = [
@@ -25,7 +23,7 @@ def train_NSPipeFlow_init():
         [eqx.nn.Linear, 50, 2],
     ]
     key, subkey = random.split(key)
-    u_init_param_fn, u_raw = jinns.utils.create_PINN(subkey, eqx_list, "statio_PDE", 2)
+    u_raw = jinns.utils.create_PINN(subkey, eqx_list, "statio_PDE", 2)
 
     eqx_list = [
         [eqx.nn.Linear, 2, 50],
@@ -37,10 +35,10 @@ def train_NSPipeFlow_init():
         [eqx.nn.Linear, 50, 1],
     ]
     key, subkey = random.split(key)
-    p_init_param_fn, p_raw = jinns.utils.create_PINN(subkey, eqx_list, "statio_PDE", 2)
+    p_raw = jinns.utils.create_PINN(subkey, eqx_list, "statio_PDE", 2)
 
-    u_init_nn_params = u_init_param_fn()
-    p_init_nn_params = p_init_param_fn()
+    u_init_nn_params = u_raw.init_params()
+    p_init_nn_params = p_raw.init_params()
 
     L = 1
     R = 0.05

@@ -11,8 +11,6 @@ import jinns
 @pytest.fixture
 def train_Burger_init():
     jax.config.update("jax_enable_x64", True)
-    print(jax.config.FLAGS.jax_enable_x64)
-    print(jax.devices())
     key = random.PRNGKey(2)
     eqx_list = [
         [eqx.nn.Linear, 2, 20],
@@ -24,9 +22,9 @@ def train_Burger_init():
         [eqx.nn.Linear, 20, 1],
     ]
     key, subkey = random.split(key)
-    init_param_fn, u = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
+    u = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
 
-    init_nn_params = init_param_fn()
+    init_nn_params = u.init_params()
 
     n = 1000
     nt = 1000

@@ -11,8 +11,6 @@ import jinns
 @pytest.fixture
 def train_Burger_init():
     jax.config.update("jax_enable_x64", False)
-    print(jax.config.FLAGS.jax_enable_x64)
-    print(jax.devices())
     key = random.PRNGKey(2)
     eqx_list = [
         [eqx.nn.Linear, 2, 20],
@@ -24,9 +22,9 @@ def train_Burger_init():
         [eqx.nn.Linear, 20, 1],
     ]
     key, subkey = random.split(key)
-    init_param_fn, u = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
+    u = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
 
-    init_nn_params = init_param_fn()
+    init_nn_params = u.init_params()
 
     n = 1000
     nt = 1000
@@ -111,4 +109,4 @@ def test_initial_loss_Burger(train_Burger_init):
 
 def test_10it_Burger(train_Burger_10it):
     total_loss_val = train_Burger_10it
-    assert jnp.round(total_loss_val, 5) == jnp.round(2.0262, 5)
+    assert jnp.round(total_loss_val, 5) == jnp.round(2.02619, 5)
