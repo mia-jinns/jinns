@@ -4,4 +4,5 @@ from ._utils import (
     log_euler_maruyama_density,
     alternate_optax_solver,
     create_PINN,
+    create_SPINN,
 )
