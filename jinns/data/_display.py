@@ -137,7 +137,7 @@ def _plot_2D_statio(
         values_grid = values.reshape(x_grid.shape)
     elif spinn:
         # in this case v_fun is directly the values :)
-        values_grid = v_fun
+        values_grid = v_fun.T
 
     if plot:
         fig = plt.figure(figsize=figsize)
@@ -234,7 +234,7 @@ def plot1d_image(
             t_grid.shape
         )
     elif spinn:
-        values_grid = fun((times[..., None]), xdata[..., None])
+        values_grid = fun((times[..., None]), xdata[..., None]).T
     fig, ax = plt.subplots(1, 1, figsize=figsize)
     im = ax.pcolormesh(mesh[0] * Tmax, mesh[1], values_grid, cmap=cmap)
     if colorbar:
