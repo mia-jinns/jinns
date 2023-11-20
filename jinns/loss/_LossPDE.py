@@ -900,12 +900,13 @@ class LossPDENonStatio(LossPDEStatio):
 
                 # We prepare an outer product of an array dimension (but an
                 # arbitrary number)
-                # a = ", ".join([f"{chr(97 + d)}" for d in range(omega_batch.shape[1])])
-                # b = "".join([f"{chr(97 + d)}" for d in range(omega_batch.shape[1])])
-                # res = jnp.einsum(f"{a} -> {b}", *(omega_batch[:, d] for d in
-                #    range(omega_batch.shape[1])))
+                a = ", ".join([f"{chr(97 + d)}" for d in range(omega_batch.shape[1])])
+                b = "".join([f"{chr(97 + d)}" for d in range(omega_batch.shape[1])])
+                res = jnp.einsum(
+                    f"{a} -> {b}",
+                    *(omega_batch[:, d] for d in range(omega_batch.shape[1])),
+                )
                 ini = self.initial_condition_fun(omega_batch)
-                ini = jnp.outer(ini[0], ini[1])
                 res = jnp.repeat(
                     ini.squeeze()[None], times_batch.shape[0], axis=0
                 ) - values(t_rep, omega_batch)
