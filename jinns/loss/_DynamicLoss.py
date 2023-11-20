@@ -1,7 +1,7 @@
 import jax
 from jax import jit, grad, jacrev
 import jax.numpy as jnp
-from jinns.utils._utils import PINN, SPINN
+from jinns.utils._utils import PINN, SPINN, _get_grid
 from jinns.loss._DynamicLossAbstract import ODE, PDEStatio, PDENonStatio
 from jinns.loss._operators import (
     _laplacian_bwd,
@@ -67,13 +67,13 @@ class FisherKPP(PDENonStatio):
             dictionaries: `eq_params` and `nn_params``, respectively the
             differential equation parameters and the neural network parameter
         """
-        nn_params, eq_params = self.set_stop_gradient(params)
-
-        eq_params = self._eval_heterogeneous_parameters(
-            eq_params, t, x, self.eq_params_heterogeneity
-        )
-
         if isinstance(u, PINN):
+            nn_params, eq_params = self.set_stop_gradient(params)
+
+            eq_params = self._eval_heterogeneous_parameters(
+                eq_params, t, x, self.eq_params_heterogeneity
+            )
+
             du_dt = grad(u, 0)(t, x, nn_params)[0]
 
             lap = _laplacian_bwd(u, nn_params, eq_params, x, t)
@@ -84,6 +84,13 @@ class FisherKPP(PDENonStatio):
                 * (eq_params["r"] - eq_params["g"] * u(t, x, nn_params, eq_params))
             )
         elif isinstance(u, SPINN):
+            nn_params, eq_params = self.set_stop_gradient(params)
+
+            x_grid = _get_grid(x)
+            eq_params = self._eval_heterogeneous_parameters(
+                eq_params, t, x_grid, self.eq_params_heterogeneity
+            )
+
             u_tx, du_dt = jax.jvp(
                 lambda t: u(t, x, nn_params, eq_params), (t,), (jnp.ones_like(t),)
             )
@@ -1152,59 +1159,46 @@ class FPENonStatioLoss2D(PDENonStatio):
                 lambda t: u(t, x, nn_params, eq_params), (t,), (jnp.ones_like(t),)
             )
 
-            # We need to get the good shape with the drift and diff
-            # coefficients
-            # TODO : do it with pytrees
-            batched_eq_params = {
-                "mu": jnp.repeat(eq_params["mu"][None], x.shape[0], axis=0),
-                "alpha": jnp.repeat(eq_params["alpha"][None], x.shape[0], axis=0),
-                "sigma": jnp.repeat(eq_params["sigma"][None], x.shape[0], axis=0),
-            }
-            outer_eq_params = {
-                "mu": jnp.outer(
-                    batched_eq_params["mu"][:, 0], batched_eq_params["mu"][:, 1]
-                ),
-                "alpha": jnp.outer(
-                    batched_eq_params["alpha"][:, 0], batched_eq_params["alpha"][:, 1]
-                ),
-                "sigma": jnp.outer(
-                    batched_eq_params["sigma"][:, 0], batched_eq_params["sigma"][:, 1]
-                ),
-            }
-
-            drift_good_shape = self.drift(
-                t, jnp.outer(x[:, 0], x[:, 1]), outer_eq_params
-            )[None]
+            x_grid = _get_grid(x)
+            drift = self.drift(t, x_grid, eq_params)
             tangent_vec_0 = jnp.repeat(jnp.array([1.0, 0.0])[None], x.shape[0], axis=0)
             tangent_vec_1 = jnp.repeat(jnp.array([0.0, 1.0])[None], x.shape[0], axis=0)
             _, dau_dx1 = jax.jvp(
-                lambda x: drift_good_shape * u(t, x, nn_params, eq_params),
+                lambda x: drift[None, ..., 0] * u(t, x, nn_params, eq_params),
                 (x,),
                 (tangent_vec_0,),
             )
             _, dau_dx2 = jax.jvp(
-                lambda x: drift_good_shape * u(t, x, nn_params, eq_params),
+                lambda x: drift[None, ..., 1] * u(t, x, nn_params, eq_params),
                 (x,),
                 (tangent_vec_1,),
             )
 
-            diff_good_shape = self.diffusion(
-                t, jnp.outer(x[:, 0], x[:, 1]), outer_eq_params
-            )[None]
-            dsu_dx1_fun = lambda x: jax.jvp(
-                lambda x: diff_good_shape * u(t, x, nn_params, eq_params),
+            diff_ij = lambda i, j: self.diffusion(t, x_grid, eq_params, i, j)
+            dsu_dx1_fun = lambda x, i, j: jax.jvp(
+                lambda x: diff_ij(i, j)[None, None, None]
+                * u(t, x, nn_params, eq_params),
                 (x,),
                 (tangent_vec_0,),
             )[1]
-            dsu_dx2_fun = lambda x: jax.jvp(
-                lambda x: diff_good_shape * u(t, x, nn_params, eq_params),
+            dsu_dx2_fun = lambda x, i, j: jax.jvp(
+                lambda x: diff_ij(i, j)[None, None, None]
+                * u(t, x, nn_params, eq_params),
                 (x,),
                 (tangent_vec_1,),
             )[1]
-            _, d2su_dx12 = jax.jvp(dsu_dx1_fun, (x,), (tangent_vec_0,))
-            _, d2su_dx1dx2 = jax.jvp(dsu_dx1_fun, (x,), (tangent_vec_1,))
-            _, d2su_dx22 = jax.jvp(dsu_dx2_fun, (x,), (tangent_vec_1,))
-            _, d2su_dx2dx1 = jax.jvp(dsu_dx2_fun, (x,), (tangent_vec_0,))
+            _, d2su_dx12 = jax.jvp(
+                lambda x: dsu_dx1_fun(x, 0, 0), (x,), (tangent_vec_0,)
+            )
+            _, d2su_dx1dx2 = jax.jvp(
+                lambda x: dsu_dx1_fun(x, 0, 1), (x,), (tangent_vec_1,)
+            )
+            _, d2su_dx22 = jax.jvp(
+                lambda x: dsu_dx2_fun(x, 1, 1), (x,), (tangent_vec_1,)
+            )
+            _, d2su_dx2dx1 = jax.jvp(
+                lambda x: dsu_dx2_fun(x, 1, 0), (x,), (tangent_vec_0,)
+            )
 
             return -du_dt + self.Tmax * (
                 -(dau_dx1 + dau_dx2)
@@ -1280,9 +1274,10 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
         eq_params
             A dictionary containing the equation parameters
         """
+
         return jnp.diag(eq_params["sigma"])
 
-    def diffusion(self, t, x, eq_params):
+    def diffusion(self, t, x, eq_params, i=None, j=None):
         r"""
         Return the computation of the diffusion tensor term in 2D (or
         higher)
@@ -1296,12 +1291,20 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
         eq_params
             A dictionary containing the equation parameters
         """
-        return 0.5 * (
-            jnp.matmul(
-                self.sigma_mat(t, x, eq_params),
-                jnp.transpose(self.sigma_mat(t, x, eq_params)),
+        if i is None or j is None:
+            return 0.5 * (
+                jnp.matmul(
+                    self.sigma_mat(t, x, eq_params),
+                    jnp.transpose(self.sigma_mat(t, x, eq_params)),
+                )
             )
-        )
+        else:
+            return 0.5 * (
+                jnp.matmul(
+                    self.sigma_mat(t, x, eq_params),
+                    jnp.transpose(self.sigma_mat(t, x, eq_params)),
+                )[i, j]
+            )
 
 
 class ConvectionDiffusionNonStatio(FPENonStatioLoss2D):

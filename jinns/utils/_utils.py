@@ -615,6 +615,21 @@ def create_SPINN(
     # return make_spinn(key, d, r, eqx_list)
 
 
+def _get_grid(in_array):
+    """
+    From an array of shape (B, D), D > 1, get the grid array, i.e., an array of
+    shape (B, B, ...(D times)..., B, D): along the last axis we have the array
+    of values
+    """
+    if in_array.shape[-1] > 1 or in_array.ndim > 1:
+        return jnp.stack(
+            jnp.meshgrid(*(in_array[..., d] for d in range(in_array.shape[-1]))),
+            axis=-1,
+        )
+    else:
+        return in_array
+
+
 def _get_vmap_in_axes_params(eq_params_batch_dict, params):
     """
     Return the input vmap axes when there is batch(es) of parameters to vmap

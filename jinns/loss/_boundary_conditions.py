@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 from jax import vmap, grad
-from jinns.utils._utils import PINN, SPINN
+from jinns.utils._utils import PINN, SPINN, _get_grid
 
 
 def _compute_boundary_loss_statio(
@@ -213,14 +213,14 @@ def boundary_dirichlet_nonstatio(f, times_batch, omega_border_batch, u, params):
         dictionaries: `eq_params` and `nn_params``, respectively the
         differential equation parameters and the neural network parameter
     """
-    tile_omega_border_batch = jnp.tile(
-        omega_border_batch, reps=(times_batch.shape[0], 1)
-    )
-
-    def rep_times(k):
-        return jnp.repeat(times_batch, k, axis=0)
-
     if isinstance(u, PINN):
+        tile_omega_border_batch = jnp.tile(
+            omega_border_batch, reps=(times_batch.shape[0], 1)
+        )
+
+        def rep_times(k):
+            return jnp.repeat(times_batch, k, axis=0)
+
         v_u_boundary = vmap(
             lambda t, dx: u(
                 t,
@@ -234,22 +234,31 @@ def boundary_dirichlet_nonstatio(f, times_batch, omega_border_batch, u, params):
         )
         res = v_u_boundary(
             rep_times(omega_border_batch.shape[0]), tile_omega_border_batch
+        )  # TODO check if this cartesian product is always relevant
+        mse_u_boundary = jnp.mean(
+            res**2,
+            axis=0,
         )
     elif isinstance(u, SPINN):
+        if omega_border_batch.shape[0] == 1:
+            omega_border_batch = jnp.tile(
+                omega_border_batch, reps=(times_batch.shape[0], 1)
+            )
+        # otherwise we require batches to have same shape and we do not need
+        # this operation
+
         values = u(
             times_batch,
             tile_omega_border_batch,
             params["nn_params"],
             params["eq_params"],
         )
-        v_f = vmap(f, (0, 0))
-        res = v_f(times_batch, tile_omega_border_batch)
-        res = jnp.einsum("i, j->ij", res, res)
-        res = values - res
-    mse_u_boundary = jnp.mean(
-        res**2,  # TODO check vectorial case
-        axis=0,
-    )
+        tx_grid = _get_grid(jnp.concatenate([times_batch, omega_border_batch], axis=-1))
+        res = values - f(tx_grid[..., 0:1], tx_grid[..., 1:])
+        mse_u_boundary = jnp.mean(
+            res**2,  # TODO check vectorial case
+            axis=0,
+        )
     return mse_u_boundary
 
 
@@ -278,13 +287,6 @@ def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params, fa
         An integer which represents the id of the facet which is currently
         considered (in the order provided wy the DataGenerator which is fixed)
     """
-    tile_omega_border_batch = jnp.tile(
-        omega_border_batch, reps=(times_batch.shape[0], 1)
-    )
-
-    def rep_times(k):
-        return jnp.repeat(times_batch, k, axis=0)
-
     # We resort to the shape of the border_batch to determine the dimension as
     # described in the border_batch function
     if jnp.squeeze(omega_border_batch).ndim == 0:  # case 1D borders (just a scalar)
@@ -296,21 +298,81 @@ def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params, fa
         # border_batch shape (batch_size, ndim, nfacets)
         n = jnp.array([[-1, 1, 0, 0], [0, 0, -1, 1]])
 
-    v_neumann = vmap(
-        lambda t, dx: jnp.dot(
-            grad(u, 1)(
-                t, dx, params["nn_params"], jax.lax.stop_gradient(params["eq_params"])
-            ),
-            n[..., facet],
+    if isinstance(u, PINN):
+        tile_omega_border_batch = jnp.tile(
+            omega_border_batch, reps=(times_batch.shape[0], 1)
         )
-        - f(t, dx),
-        0,
-        0,
-    )
-    mse_u_boundary = jnp.mean(
-        (v_neumann(rep_times(omega_border_batch.shape[0]), tile_omega_border_batch))
-        ** 2,
-        axis=0,
-    )
 
+        def rep_times(k):
+            return jnp.repeat(times_batch, k, axis=0)
+
+        v_neumann = vmap(
+            lambda t, dx: jnp.dot(
+                grad(u, 1)(
+                    t,
+                    dx,
+                    params["nn_params"],
+                    jax.lax.stop_gradient(params["eq_params"]),
+                ),
+                n[..., facet],
+            )
+            - f(t, dx),
+            0,
+            0,
+        )
+        mse_u_boundary = jnp.mean(
+            (v_neumann(rep_times(omega_border_batch.shape[0]), tile_omega_border_batch))
+            ** 2,
+            axis=0,
+        )  # TODO check if this cartesian product is always relevant
+
+    elif isinstance(u, SPINN):
+        if omega_border_batch.shape[0] == 1:
+            omega_border_batch = jnp.tile(
+                omega_border_batch, reps=(times_batch.shape[0], 1)
+            )
+            # ie case 1D
+        # otherwise we require batches to have same shape and we do not need
+        # this operation
+
+        # the gradient we see in the PINN case can get gradients wrt to x
+        # dimensions at once. But it would be very inefficient in SPINN because
+        # of the high dim output of u. So we do 2 explicit forward AD, handling all the
+        # high dim output at once
+        if omega_border_batch.shape[0] == 1:  # i.e. case 1D
+            _, du_dx = jax.jvp(
+                lambda x: u(times_batch, x, params["nn_params"], params["eq_params"]),
+                (omega_border_batch,),
+                (jnp.ones_like(x),),
+            )
+            values = du_dx * n[facet]
+        elif omega_border_batch.shape[-1] == 2:
+            tangent_vec_0 = jnp.repeat(
+                jnp.array([1.0, 0.0])[None], omega_border_batch.shape[0], axis=0
+            )
+            tangent_vec_1 = jnp.repeat(
+                jnp.array([0.0, 1.0])[None], omega_border_batch.shape[0], axis=0
+            )
+            _, du_dx1 = jax.jvp(
+                lambda x: u(times_batch, x, params["nn_params"], params["eq_params"]),
+                (omega_border_batch,),
+                (tangent_vec_0,),
+            )
+            _, du_dx2 = jax.jvp(
+                lambda x: u(times_batch, x, params["nn_params"], params["eq_params"]),
+                (omega_border_batch,),
+                (tangent_vec_1,),
+            )
+            values = du_dx1 * n[0, facet] + du_dx2 * n[1, facet]  # dot product
+            # explicitly written
+            values = values[None]
+        else:
+            raise ValueError("Not implemented, we'll do that with a loop")
+
+        tx_grid = _get_grid(jnp.concatenate([times_batch, omega_border_batch], axis=-1))
+        res = values - f(tx_grid[..., 0:1], tx_grid[..., 1:])
+        mse_u_boundary = jnp.mean(
+            res**2,  # TODO check vectorial case
+            axis=0,
+        )
     return mse_u_boundary
