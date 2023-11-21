@@ -59,13 +59,21 @@ def plot2d(
         # Statio case : expect a function of one argument fun(x)
         if not spinn:
             v_fun = vmap(fun, 0, 0)
-            _plot_2D_statio(v_fun, mesh, plot=True, colorbar=True, cmap=cmap)
+            _plot_2D_statio(
+                v_fun, mesh, plot=True, colorbar=True, cmap=cmap, figsize=figsize
+            )
         elif spinn:
             values_grid = fun(
                 jnp.stack([xy_data[0][..., None], xy_data[1][..., None]], axis=1)
             )
             _plot_2D_statio(
-                values_grid, mesh, plot=True, colorbar=True, cmap=cmap, spinn=True
+                values_grid,
+                mesh,
+                plot=True,
+                colorbar=True,
+                cmap=cmap,
+                spinn=True,
+                figsize=figsize,
             )
         plt.title(title)
 
@@ -134,7 +142,7 @@ def _plot_2D_statio(
     x_grid, y_grid = mesh
     if not spinn:
         values = v_fun(jnp.vstack([x_grid.flatten(), y_grid.flatten()]).T)
-        values_grid = values.reshape(x_grid.shape)
+        values_grid = values.reshape(x_grid.shape).T
     elif spinn:
         # in this case v_fun is directly the values :)
         values_grid = v_fun.T
