@@ -921,18 +921,9 @@ class LossPDENonStatio(LossPDEStatio):
                     params["nn_params"],
                     jax.lax.stop_gradient(params["eq_params"]),
                 )[0]
-                # NOTE this looks like it NEEDS to be sorted?! but why?
-                # omega_batch_sorted = jnp.stack(
-                #    [omega_batch[..., 0].sort(), omega_batch[..., 1].sort()], axis=-1
-                # )
-                omega_batch_grid = _get_grid(omega_batch)  # _sorted)
-                # print(omega_batch_grid[:5, :5, 0])
-                # print(omega_batch_grid[:5, :5, 1])
+                omega_batch_grid = _get_grid(omega_batch)
                 ini = self.initial_condition_fun(omega_batch_grid)
-                # import matplotlib.pyplot as plt
-                # plt.imshow(ini)
-                # plt.show()
-                res = ini.squeeze() - values(omega_batch)  # _sorted)
+                res = ini - values(omega_batch)
                 mse_initial_condition = jnp.mean(
                     self.loss_weights["initial_condition"]
                     * res**2  # TODO check vectorial case
