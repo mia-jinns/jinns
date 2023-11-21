@@ -752,13 +752,6 @@ class LossPDENonStatio(LossPDEStatio):
         nt = times_batch.shape[0]
         times_batch = times_batch.reshape(nt, 1)
 
-        omega_batch = jnp.stack(
-            [omega_batch[..., 0].sort(), omega_batch[..., 1].sort()], axis=-1
-        )
-        omega_batch_sorted = jnp.stack(
-            [omega_batch[..., 0].sort(), omega_batch[..., 1].sort()], axis=-1
-        )
-
         def rep_times(k):
             return jnp.repeat(times_batch, k, axis=0)
 
@@ -794,6 +787,14 @@ class LossPDENonStatio(LossPDEStatio):
                 mse_dyn_loss = jnp.mean(
                     self.loss_weights["dyn_loss"] * jnp.mean(residuals**2, axis=0)
                 )
+            # TODO implement Causality is all you need (not yet implemented)
+            #  epsilon = 0.01
+            #  times_batch_ = jnp.sort(times_batch_)
+            #  val_dyn_loss = v_dyn_loss(times_batch_, omega_batch_, params)
+            #  causality_is_all_you_need = jax.lax.stop_gradient(jnp.roll(jnp.exp(-epsilon *
+            #      jnp.cumsum(val_dyn_loss)), shift=1,
+            #      axis=0)) * val_dyn_loss
+            #  mse_dyn_loss = jnp.mean(causality_is_all_you_need ** 2)
             elif isinstance(self.u, SPINN):
                 residuals = self.dynamic_loss.evaluate(
                     times_batch, omega_batch, self.u, params
@@ -803,13 +804,12 @@ class LossPDENonStatio(LossPDEStatio):
                     * residuals**2  # TODO check for the vectorial case
                 )
             # TODO implement Causality is all you need (not yet implemented)
-            #  epsilon = 0.01
-            #  times_batch_ = jnp.sort(times_batch_)
-            #  val_dyn_loss = v_dyn_loss(times_batch_, omega_batch_, params)
-            #  causality_is_all_you_need = jax.lax.stop_gradient(jnp.roll(jnp.exp(-epsilon *
-            #      jnp.cumsum(val_dyn_loss)), shift=1,
-            #      axis=0)) * val_dyn_loss
-            #  mse_dyn_loss = jnp.mean(causality_is_all_you_need ** 2)
+            #    epsilon = 0.01
+            #    times_batch = jnp.sort(times_batch)
+            #    residuals = jax.lax.stop_gradient(jnp.roll(jnp.exp(-epsilon *
+            #        jnp.cumsum(jnp.cumsum(residuals, axis=-2), axis=-1)
+            #        ),
+            #        shift=1, axis=0)) * residuals
         else:
             mse_dyn_loss = 0
 
