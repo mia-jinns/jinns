@@ -240,6 +240,10 @@ def boundary_dirichlet_nonstatio(f, times_batch, omega_border_batch, u, params):
             axis=0,
         )
     elif isinstance(u, SPINN):
+        tile_omega_border_batch = jnp.tile(
+            omega_border_batch, reps=(times_batch.shape[0], 1)
+        )
+
         if omega_border_batch.shape[0] == 1:
             omega_border_batch = jnp.tile(
                 omega_border_batch, reps=(times_batch.shape[0], 1)
@@ -251,7 +255,7 @@ def boundary_dirichlet_nonstatio(f, times_batch, omega_border_batch, u, params):
             times_batch,
             tile_omega_border_batch,
             params["nn_params"],
-            params["eq_params"],
+            jax.lax.stop_gradient(params["eq_params"]),
         )
         tx_grid = _get_grid(jnp.concatenate([times_batch, omega_border_batch], axis=-1))
         res = values - f(tx_grid[..., 0:1], tx_grid[..., 1:])
@@ -341,7 +345,12 @@ def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params, fa
         # high dim output at once
         if omega_border_batch.shape[0] == 1:  # i.e. case 1D
             _, du_dx = jax.jvp(
-                lambda x: u(times_batch, x, params["nn_params"], params["eq_params"]),
+                lambda x: u(
+                    times_batch,
+                    x,
+                    params["nn_params"],
+                    jax.lax.stop_gradient(params["eq_params"]),
+                ),
                 (omega_border_batch,),
                 (jnp.ones_like(x),),
             )
@@ -354,12 +363,22 @@ def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params, fa
                 jnp.array([0.0, 1.0])[None], omega_border_batch.shape[0], axis=0
             )
             _, du_dx1 = jax.jvp(
-                lambda x: u(times_batch, x, params["nn_params"], params["eq_params"]),
+                lambda x: u(
+                    times_batch,
+                    x,
+                    params["nn_params"],
+                    jax.lax.stop_gradient(params["eq_params"]),
+                ),
                 (omega_border_batch,),
                 (tangent_vec_0,),
             )
             _, du_dx2 = jax.jvp(
-                lambda x: u(times_batch, x, params["nn_params"], params["eq_params"]),
+                lambda x: u(
+                    times_batch,
+                    x,
+                    params["nn_params"],
+                    jax.lax.stop_gradient(params["eq_params"]),
+                ),
                 (omega_border_batch,),
                 (tangent_vec_1,),
             )
