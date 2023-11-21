@@ -1171,6 +1171,9 @@ class FPENonStatioLoss2D(PDENonStatio):
 
             x_grid = _get_grid(x)
             drift = self.drift(t, x_grid, eq_params)
+            # in forward AD we do not have the results for all the input
+            # dimension at once (as it is the case with grad), we then write
+            # two jvp calls
             tangent_vec_0 = jnp.repeat(jnp.array([1.0, 0.0])[None], x.shape[0], axis=0)
             tangent_vec_1 = jnp.repeat(jnp.array([0.0, 1.0])[None], x.shape[0], axis=0)
             _, dau_dx1 = jax.jvp(
