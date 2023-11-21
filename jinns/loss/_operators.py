@@ -109,7 +109,7 @@ def _vectorial_laplacian(u, nn_params, eq_params, x, t=None, u_vec_ndim=None):
             uj = lambda x, nn_params, eq_params: u(x, nn_params, eq_params)[j]
         else:
             uj = lambda t, x, nn_params, eq_params: u(t, x, nn_params, eq_params)[j]
-        lap_on_j = _laplacian(uj, nn_params, eq_params, x, t)
+        lap_on_j = _laplacian_bwd(uj, nn_params, eq_params, x, t)
         return _, lap_on_j
 
     _, vec_lap = jax.lax.scan(scan_fun, {}, jnp.arange(u_vec_ndim))
