@@ -69,7 +69,6 @@ class FisherKPP(PDENonStatio):
         """
         if isinstance(u, PINN):
             nn_params, eq_params = self.set_stop_gradient(params)
-
             eq_params = self._eval_heterogeneous_parameters(
                 eq_params, t, x, self.eq_params_heterogeneity
             )
@@ -85,7 +84,6 @@ class FisherKPP(PDENonStatio):
             )
         elif isinstance(u, SPINN):
             nn_params, eq_params = self.set_stop_gradient(params)
-
             x_grid = _get_grid(x)
             eq_params = self._eval_heterogeneous_parameters(
                 eq_params, t, x_grid, self.eq_params_heterogeneity
@@ -224,13 +222,12 @@ class BurgerEquation(PDENonStatio):
             dictionaries: `eq_params` and `nn_params``, respectively the
             differential equation parameters and the neural network parameter
         """
-        nn_params, eq_params = self.set_stop_gradient(params)
-
-        eq_params = self._eval_heterogeneous_parameters(
-            eq_params, t, x, self.eq_params_heterogeneity
-        )
-
         if isinstance(u, PINN):
+            nn_params, eq_params = self.set_stop_gradient(params)
+            eq_params = self._eval_heterogeneous_parameters(
+                eq_params, t, x, self.eq_params_heterogeneity
+            )
+
             du_dt = grad(u, 0)
             du_dx = grad(u, 1)
             d2u_dx2 = grad(
@@ -244,6 +241,11 @@ class BurgerEquation(PDENonStatio):
             )
 
         elif isinstance(u, SPINN):
+            nn_params, eq_params = self.set_stop_gradient(params)
+            x_grid = _get_grid(x)
+            eq_params = self._eval_heterogeneous_parameters(
+                eq_params, t, x_grid, self.eq_params_heterogeneity
+            )
             # d=2 JVP calls are expected since we have time and x
             # then with a batch of size B, we then have Bd JVP calls
             u_tx, du_dt = jax.jvp(
@@ -1099,9 +1101,11 @@ class FPENonStatioLoss2D(PDENonStatio):
             dictionaries: `eq_params` and `nn_params``, respectively the
             differential equation parameters and the neural network parameter
         """
-        nn_params, eq_params = self.set_stop_gradient(params)
-
         if isinstance(u, PINN):
+            nn_params, eq_params = self.set_stop_gradient(params)
+            eq_params = self._eval_heterogeneous_parameters(
+                eq_params, t, x, self.eq_params_heterogeneity
+            )
             order_1 = (
                 grad(
                     lambda t, x: self.drift(t, x, eq_params)[0]
@@ -1155,6 +1159,12 @@ class FPENonStatioLoss2D(PDENonStatio):
             return -du_dt + self.Tmax * (-order_1 + order_2)
 
         elif isinstance(u, SPINN):
+            nn_params, eq_params = self.set_stop_gradient(params)
+            x_grid = _get_grid(x)
+            eq_params = self._eval_heterogeneous_parameters(
+                eq_params, t, x_grid, self.eq_params_heterogeneity
+            )
+
             _, du_dt = jax.jvp(
                 lambda t: u(t, x, nn_params, eq_params), (t,), (jnp.ones_like(t),)
             )
