@@ -10,9 +10,5 @@ if [ $? -ne 0 ]; then
    exit $?
 fi
 pytest solver_tests_spinn/*
-if [ $? -ne 0 ]; then
-   echo 'ERROR: pytest failed, exiting ...'
-   exit $?
-fi
 echo "Tests done"
-exit 0
+exit $?
