@@ -922,7 +922,7 @@ class LossPDENonStatio(LossPDEStatio):
                 )[0]
                 omega_batch_grid = _get_grid(omega_batch)
                 ini = self.initial_condition_fun(omega_batch_grid)
-                res = ini - values(omega_batch)
+                res = ini.squeeze() - values(omega_batch)
                 mse_initial_condition = jnp.mean(
                     self.loss_weights["initial_condition"]
                     * res**2  # TODO check vectorial case
