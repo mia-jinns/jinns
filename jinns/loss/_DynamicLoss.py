@@ -1169,33 +1169,36 @@ class FPENonStatioLoss2D(PDENonStatio):
                 lambda t: u(t, x, nn_params, eq_params), (t,), (jnp.ones_like(t),)
             )
 
-            x_grid = _get_grid(x)
-            drift = self.drift(t, x_grid, eq_params)
             # in forward AD we do not have the results for all the input
             # dimension at once (as it is the case with grad), we then write
             # two jvp calls
             tangent_vec_0 = jnp.repeat(jnp.array([1.0, 0.0])[None], x.shape[0], axis=0)
             tangent_vec_1 = jnp.repeat(jnp.array([0.0, 1.0])[None], x.shape[0], axis=0)
             _, dau_dx1 = jax.jvp(
-                lambda x: drift[None, ..., 0] * u(t, x, nn_params, eq_params),
+                lambda x: self.drift(t, _get_grid(x), eq_params)[None, ..., 0]
+                * u(t, x, nn_params, eq_params),
                 (x,),
                 (tangent_vec_0,),
             )
             _, dau_dx2 = jax.jvp(
-                lambda x: drift[None, ..., 1] * u(t, x, nn_params, eq_params),
+                lambda x: self.drift(t, _get_grid(x), eq_params)[None, ..., 1]
+                * u(t, x, nn_params, eq_params),
                 (x,),
                 (tangent_vec_1,),
             )
 
-            diff_ij = lambda i, j: self.diffusion(t, x_grid, eq_params, i, j)
             dsu_dx1_fun = lambda x, i, j: jax.jvp(
-                lambda x: diff_ij(i, j)[None, None, None]
+                lambda x: self.diffusion(t, _get_grid(x), eq_params, i, j)[
+                    None, None, None
+                ]
                 * u(t, x, nn_params, eq_params),
                 (x,),
                 (tangent_vec_0,),
             )[1]
             dsu_dx2_fun = lambda x, i, j: jax.jvp(
-                lambda x: diff_ij(i, j)[None, None, None]
+                lambda x: self.diffusion(t, _get_grid(x), eq_params, i, j)[
+                    None, None, None
+                ]
                 * u(t, x, nn_params, eq_params),
                 (x,),
                 (tangent_vec_1,),
