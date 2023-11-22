@@ -624,7 +624,7 @@ def _get_grid(in_array):
     if in_array.shape[-1] > 1 or in_array.ndim > 1:
         return jnp.stack(
             jnp.meshgrid(
-                *(in_array[..., d] for d in reversed(range(in_array.shape[-1])))
+                *(in_array[..., d] for d in range(in_array.shape[-1])), indexing="ij"
             ),
             axis=-1,
         )
