@@ -63,8 +63,8 @@ def plot2d(
                 v_fun, mesh, plot=True, colorbar=True, cmap=cmap, figsize=figsize
             )
         elif spinn:
-            values_grid = fun(
-                jnp.stack([xy_data[0][..., None], xy_data[1][..., None]], axis=1)
+            values_grid = jnp.squeeze(
+                fun(jnp.stack([xy_data[0][..., None], xy_data[1][..., None]], axis=1))
             )
             _plot_2D_statio(
                 values_grid,
@@ -104,10 +104,14 @@ def plot2d(
                     v_fun_at_t, mesh, plot=False, colorbar=False, cmap=None
                 )
             elif spinn:
-                values_grid = fun(
-                    t * jnp.ones((xy_data[0].shape[0], 1)),
-                    jnp.stack([xy_data[0][..., None], xy_data[1][..., None]], axis=1),
-                )[0]
+                values_grid = jnp.squeeze(
+                    fun(
+                        t * jnp.ones((xy_data[0].shape[0], 1)),
+                        jnp.stack(
+                            [xy_data[0][..., None], xy_data[1][..., None]], axis=1
+                        ),
+                    )[0]
+                )
                 t_slice, _ = _plot_2D_statio(
                     values_grid, mesh, plot=False, colorbar=True, spinn=True
                 )
@@ -193,7 +197,9 @@ def plot1d_slice(
             # add an axis to xdata for the concatenate function in the neural net
             values = v_u_tfixed(x=xdata[:, None])
         elif spinn:
-            values = fun(t * jnp.ones((xdata.shape[0], 1)), xdata[..., None])[0]
+            values = jnp.squeeze(
+                fun(t * jnp.ones((xdata.shape[0], 1)), xdata[..., None])[0]
+            )
         plt.plot(xdata, values, label=f"$t_i={t * Tmax}$")
     plt.xlabel("x")
     plt.ylabel(r"$u(t_i, x)$")
@@ -242,7 +248,7 @@ def plot1d_image(
             t_grid.shape
         )
     elif spinn:
-        values_grid = fun((times[..., None]), xdata[..., None]).T
+        values_grid = jnp.squeeze(fun((times[..., None]), xdata[..., None]).T)
     fig, ax = plt.subplots(1, 1, figsize=figsize)
     im = ax.pcolormesh(mesh[0] * Tmax, mesh[1], values_grid, cmap=cmap)
     if colorbar:

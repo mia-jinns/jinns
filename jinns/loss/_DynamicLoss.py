@@ -89,8 +89,11 @@ class FisherKPP(PDENonStatio):
                 eq_params, t, x_grid, self.eq_params_heterogeneity
             )
 
+            print(u(t, x, nn_params, eq_params).shape)
             u_tx, du_dt = jax.jvp(
-                lambda t: u(t, x, nn_params, eq_params), (t,), (jnp.ones_like(t),)
+                lambda t: u(t, x, nn_params, eq_params)[..., 0],
+                (t,),
+                (jnp.ones_like(t),),
             )
             lap = _laplacian_fwd(u, nn_params, eq_params, x, t)
             return du_dt + self.Tmax * (
@@ -249,10 +252,14 @@ class BurgerEquation(PDENonStatio):
             # d=2 JVP calls are expected since we have time and x
             # then with a batch of size B, we then have Bd JVP calls
             u_tx, du_dt = jax.jvp(
-                lambda t: u(t, x, nn_params, eq_params), (t,), (jnp.ones_like(t),)
+                lambda t: u(t, x, nn_params, eq_params)[..., 0],
+                (t,),
+                (jnp.ones_like(t),),
             )
             du_dx_fun = lambda x: jax.jvp(
-                lambda x: u(t, x, nn_params, eq_params), (x,), (jnp.ones_like(x),)
+                lambda x: u(t, x, nn_params, eq_params)[..., 0],
+                (x,),
+                (jnp.ones_like(x),),
             )[1]
             du_dx, d2u_dx2 = jax.jvp(du_dx_fun, (x,), (jnp.ones_like(x),))
             # Note that ones_like(x) works because x is Bx1 !
@@ -1166,7 +1173,9 @@ class FPENonStatioLoss2D(PDENonStatio):
             )
 
             _, du_dt = jax.jvp(
-                lambda t: u(t, x, nn_params, eq_params), (t,), (jnp.ones_like(t),)
+                lambda t: u(t, x, nn_params, eq_params)[..., 0],
+                (t,),
+                (jnp.ones_like(t),),
             )
 
             # in forward AD we do not have the results for all the input
@@ -1176,13 +1185,13 @@ class FPENonStatioLoss2D(PDENonStatio):
             tangent_vec_1 = jnp.repeat(jnp.array([0.0, 1.0])[None], x.shape[0], axis=0)
             _, dau_dx1 = jax.jvp(
                 lambda x: self.drift(t, _get_grid(x), eq_params)[None, ..., 0]
-                * u(t, x, nn_params, eq_params),
+                * u(t, x, nn_params, eq_params)[..., 0],
                 (x,),
                 (tangent_vec_0,),
             )
             _, dau_dx2 = jax.jvp(
                 lambda x: self.drift(t, _get_grid(x), eq_params)[None, ..., 1]
-                * u(t, x, nn_params, eq_params),
+                * u(t, x, nn_params, eq_params)[..., 0],
                 (x,),
                 (tangent_vec_1,),
             )
@@ -1191,7 +1200,7 @@ class FPENonStatioLoss2D(PDENonStatio):
                 lambda x: self.diffusion(t, _get_grid(x), eq_params, i, j)[
                     None, None, None
                 ]
-                * u(t, x, nn_params, eq_params),
+                * u(t, x, nn_params, eq_params)[..., 0],
                 (x,),
                 (tangent_vec_0,),
             )[1]
@@ -1199,7 +1208,7 @@ class FPENonStatioLoss2D(PDENonStatio):
                 lambda x: self.diffusion(t, _get_grid(x), eq_params, i, j)[
                     None, None, None
                 ]
-                * u(t, x, nn_params, eq_params),
+                * u(t, x, nn_params, eq_params)[..., 0],
                 (x,),
                 (tangent_vec_1,),
             )[1]

@@ -380,8 +380,9 @@ class _SPINN(eqx.Module):
     separated_mlp: list
     d: int
     r: int
+    m: int
 
-    def __init__(self, key, d, r, eqx_list):
+    def __init__(self, key, d, r, eqx_list, m=1):
         """
         Parameters
         ----------
@@ -399,19 +400,20 @@ class _SPINN(eqx.Module):
             that could be required (eg. the size of the layer).
             __Note:__ the `key` argument need not be given.
             Thus typical example is `eqx_list=
-            [[eqx.nn.Linear, 2, 20],
+            [[eqx.nn.Linear, d, 20],
                 [jax.nn.tanh],
                 [eqx.nn.Linear, 20, 20],
                 [jax.nn.tanh],
                 [eqx.nn.Linear, 20, 20],
                 [jax.nn.tanh],
-                [eqx.nn.Linear, 20, 1]
+                [eqx.nn.Linear, 20, r]
             ]`
         """
         keys = jax.random.split(key, 8)
 
         self.d = d
         self.r = r
+        self.m = m
 
         self.separated_mlp = []
         for d in range(self.d):
@@ -445,8 +447,9 @@ class SPINN:
     The function create_SPINN has the role to population the `__call__` function
     """
 
-    def __init__(self, key, d, r, eqx_list):
-        _spinn = _SPINN(key, d, r, eqx_list)
+    def __init__(self, key, d, r, eqx_list, m=1):
+        self.d, self.r, self.m = d, r, m
+        _spinn = _SPINN(key, d, r, eqx_list, m)
         self.params, self.static = eqx.partition(_spinn, eqx.is_inexact_array)
 
     def init_params(self):
@@ -459,6 +462,7 @@ def create_SPINN(
     r,
     eqx_list,
     eq_type,
+    m=1,
     with_eq_params=None,
     input_transform=None,
     output_transform=None,
@@ -487,13 +491,13 @@ def create_SPINN(
         that could be required (eg. the size of the layer).
         __Note:__ the `key` argument need not be given.
         Thus typical example is `eqx_list=
-        [[eqx.nn.Linear, 2, 20],
+        [[eqx.nn.Linear, d, 20],
         [jax.nn.tanh],
         [eqx.nn.Linear, 20, 20],
         [jax.nn.tanh],
         [eqx.nn.Linear, 20, 20],
         [jax.nn.tanh],
-        [eqx.nn.Linear, 20, 1]
+        [eqx.nn.Linear, 20, r]
         ]`
     eq_type
         A string with three possibilities.
@@ -505,6 +509,11 @@ def create_SPINN(
         **Note: the input dimension as given in eqx_list has to match the sum
         of the dimension of `t` + the dimension of `x` + the number of
         parameters in `eq_params` if with_eq_params is `True` (see below)**
+    m
+        An integer. The output dimension of the neural network. According to
+        the SPINN article, a total embedding dimension of `r*m` is defined. We
+        then sum groups of `r` embedding dimensions to compute each output.
+        Default is 1.
     with_eq_params
         TODO
     input_transform
@@ -552,6 +561,14 @@ def create_SPINN(
     if nb_outputs_declared != r:
         raise ValueError("Output dim must be set to r in SPINN!")
 
+    # Then we modify the real hidden of embedding dimensions if m > 1
+    # (hidden to the user)
+    if m > 1:
+        try:
+            eqx_list[-1][2] *= m
+        except IndexError:
+            eqx_list[-2][2] *= m
+
     if d > 24:
         raise ValueError(
             "Too many dimensions, not enough letters" " available in jnp.einsum"
@@ -568,7 +585,19 @@ def create_SPINN(
             # dim)
             a = ", ".join([f"{chr(97 + d)}z" for d in range(res.shape[1])])
             b = "".join([f"{chr(97 + d)}" for d in range(res.shape[1])])
-            res = jnp.einsum(f"{a} -> {b}", *(res[:, d] for d in range(res.shape[1])))
+            res = jnp.stack(
+                [
+                    jnp.einsum(
+                        f"{a} -> {b}",
+                        *(
+                            res[:, d, m * self.r : (m + 1) * self.r]
+                            for d in range(res.shape[1])
+                        ),
+                    )
+                    for m in range(self.m)
+                ],
+                axis=-1,
+            )  # compute each output dimension
             return res
 
     elif eq_type == "nonstatio_PDE":
@@ -584,7 +613,21 @@ def create_SPINN(
             res = v_model(t, x)
             a = ", ".join([f"{chr(97 + d)}z" for d in range(res.shape[1])])
             b = "".join([f"{chr(97 + d)}" for d in range(res.shape[1])])
-            res = jnp.einsum(f"{a} -> {b}", *(res[:, d] for d in range(res.shape[1])))
+            # print([[res[:, d, m * self.r:(m + 1) * self.r] for d in
+            #    range(res.shape[1])][0].shape for m in range(self.m)])
+            res = jnp.stack(
+                [
+                    jnp.einsum(
+                        f"{a} -> {b}",
+                        *(
+                            res[:, d, m * self.r : (m + 1) * self.r]
+                            for d in range(res.shape[1])
+                        ),
+                    )
+                    for m in range(self.m)
+                ],
+                axis=-1,
+            )  # compute each output dimension
             return res
 
     else:
@@ -592,27 +635,7 @@ def create_SPINN(
 
     SPINN.__call__ = apply_fn
 
-    return SPINN(key, d, r, eqx_list)
-
-    # def make_spinn(key, d, r, eqx_list):
-    #    spinn = _SPINN(key, d, r, eqx_list)
-    #    params, static = eqx.partition(spinn, eqx.is_inexact_array)
-
-    #    def init_fn():
-    #        return params
-
-    #    if eq_type == "nonstatio_PDE":
-
-    #        def apply_fn(t, x, u_params, eq_params=None):
-    #            model = eqx.combine(u_params, static)
-    #            v_model = jax.vmap(model, ((0, 0)))
-    #            r = v_model(t, x)
-    #            r = jnp.einsum('ik, jk -> ij', r[:, 0], r[:, 1])
-    #            return r
-
-    #    return init_fn, apply_fn
-
-    # return make_spinn(key, d, r, eqx_list)
+    return SPINN(key, d, r, eqx_list, m)
 
 
 def _get_grid(in_array):

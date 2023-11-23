@@ -843,10 +843,12 @@ class LossPDENonStatio(LossPDEStatio):
                     params["nn_params"],
                     jax.lax.stop_gradient(params["eq_params"]),
                 )
+                print("norm", res.shape)
                 mse_norm_loss = jnp.mean(
                     jnp.abs(
                         jnp.mean(
-                            res, axis=(d + 1 for d in range(norm_samples.shape[-1]))
+                            jnp.mean(res, axis=-1),
+                            axis=(d + 1 for d in range(norm_samples.shape[-1])),
                         )
                         * self.int_length
                         - 1
@@ -922,7 +924,9 @@ class LossPDENonStatio(LossPDEStatio):
                 )[0]
                 omega_batch_grid = _get_grid(omega_batch)
                 ini = self.initial_condition_fun(omega_batch_grid)
-                res = ini.squeeze() - values(omega_batch)
+                res = jnp.squeeze(ini) - jnp.squeeze(values(omega_batch))
+                # squeeze all to avoid bad surprise in case of broadcast when dim=1
+                # because user can code the initial function in many ways...
                 mse_initial_condition = jnp.mean(
                     self.loss_weights["initial_condition"]
                     * res**2  # TODO check vectorial case
@@ -935,22 +939,27 @@ class LossPDENonStatio(LossPDEStatio):
         # since we may wish to optimize on it.
         if self.obs_batch is not None:
             # TODO implement for SPINN
-            v_u = vmap(
-                lambda t, x: self.u(t, x, params["nn_params"], params["eq_params"]),
-                (0, 0),
-                0,
-            )
-            mse_observation_loss = jnp.mean(
-                self.loss_weights["observations"]
-                * jnp.mean(
-                    (
-                        v_u(self.obs_batch[0][:, None], self.obs_batch[1])
-                        - self.obs_batch[2]
-                    )
-                    ** 2,
-                    axis=0,
+            if isinstance(self.u, PINN):
+                v_u = vmap(
+                    lambda t, x: self.u(t, x, params["nn_params"], params["eq_params"]),
+                    (0, 0),
+                    0,
                 )
-            )
+                mse_observation_loss = jnp.mean(
+                    self.loss_weights["observations"]
+                    * jnp.mean(
+                        (
+                            v_u(self.obs_batch[0][:, None], self.obs_batch[1])
+                            - self.obs_batch[2]
+                        )
+                        ** 2,
+                        axis=0,
+                    )
+                )
+            elif isinstance(self.u, SPINN):
+                raise RuntimeError(
+                    "observation loss term not yet implemented for SPINNs"
+                )
         else:
             mse_observation_loss = 0
             self.loss_weights["observations"] = 0
@@ -958,19 +967,22 @@ class LossPDENonStatio(LossPDEStatio):
         # Sobolev regularization
         if self.sobolev_reg is not None:
             # TODO implement for SPINN
-            v_sob_reg = vmap(
-                lambda t, x: self.sobolev_reg(
-                    t,
-                    x,
-                    params["nn_params"],
-                    jax.lax.stop_gradient(params["eq_params"]),
-                ),
-                (0, 0),
-                0,
-            )
-            mse_sobolev_loss = self.loss_weights["sobolev"] * jnp.mean(
-                v_sob_reg(omega_batch_, times_batch_)
-            )
+            if isinstance(self.u, PINN):
+                v_sob_reg = vmap(
+                    lambda t, x: self.sobolev_reg(
+                        t,
+                        x,
+                        params["nn_params"],
+                        jax.lax.stop_gradient(params["eq_params"]),
+                    ),
+                    (0, 0),
+                    0,
+                )
+                mse_sobolev_loss = self.loss_weights["sobolev"] * jnp.mean(
+                    v_sob_reg(omega_batch_, times_batch_)
+                )
+            elif isinstance(self.u, SPINN):
+                raise RuntimeError("Sobolev loss term not yet implemented for SPINNs")
         else:
             mse_sobolev_loss = 0
             self.loss_weights["sobolev"] = 0

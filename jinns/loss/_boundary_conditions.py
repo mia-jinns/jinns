@@ -258,7 +258,9 @@ def boundary_dirichlet_nonstatio(f, times_batch, omega_border_batch, u, params):
             jax.lax.stop_gradient(params["eq_params"]),
         )
         tx_grid = _get_grid(jnp.concatenate([times_batch, omega_border_batch], axis=-1))
-        res = values - f(tx_grid[..., 0:1], tx_grid[..., 1:])
+        res = jnp.squeeze(values) - jnp.squeeze(f(tx_grid[..., 0:1], tx_grid[..., 1:]))
+        # squeeze all to avoid bad surprise in case of broadcast when dim=1
+        # because user can code the initial function in many ways...
         mse_u_boundary = jnp.mean(
             res**2,  # TODO check vectorial case
             axis=0,
@@ -389,7 +391,9 @@ def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params, fa
             raise ValueError("Not implemented, we'll do that with a loop")
 
         tx_grid = _get_grid(jnp.concatenate([times_batch, omega_border_batch], axis=-1))
-        res = values - f(tx_grid[..., 0:1], tx_grid[..., 1:])
+        res = jnp.squeeze(values) - jnp.squeeze(f(tx_grid[..., 0:1], tx_grid[..., 1:]))
+        # squeeze all to avoid bad surprise in case of broadcast when dim=1
+        # because user can code the initial function in many ways...
         mse_u_boundary = jnp.mean(
             res**2,  # TODO check vectorial case
             axis=0,

@@ -75,13 +75,17 @@ def _laplacian_fwd(u, nn_params, eq_params, x, t=None):
         )
         if t is None:
             du_dxi_fun = lambda x: jax.jvp(
-                lambda x: u(x, nn_params, eq_params), (x,), (tangent_vec,)
-            )[1]
+                lambda x: u(x, nn_params, eq_params)[..., 0], (x,), (tangent_vec,)
+            )[
+                1
+            ]  # Note the indexing of u: ok because here u is necesary scalar
             __, d2u_dxi2 = jax.jvp(du_dxi_fun, (x,), (tangent_vec,))
         else:
             du_dxi_fun = lambda x: jax.jvp(
-                lambda x: u(t, x, nn_params, eq_params), (x,), (tangent_vec,)
-            )[1]
+                lambda x: u(t, x, nn_params, eq_params)[..., 0], (x,), (tangent_vec,)
+            )[
+                1
+            ]  # Note the indexing of u: ok because here u is necesary scalar
             __, d2u_dxi2 = jax.jvp(du_dxi_fun, (x,), (tangent_vec,))
         return _, d2u_dxi2
 
