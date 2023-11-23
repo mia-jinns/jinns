@@ -262,8 +262,8 @@ def boundary_dirichlet_nonstatio(f, times_batch, omega_border_batch, u, params):
         # squeeze all to avoid bad surprise in case of broadcast when dim=1
         # because user can code the initial function in many ways...
         mse_u_boundary = jnp.mean(
-            res**2,  # TODO check vectorial case
-            axis=0,
+            res**2,
+            axis=(d for d in range(values.ndim - 1)),
         )
     return mse_u_boundary
 
@@ -395,7 +395,7 @@ def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params, fa
         # squeeze all to avoid bad surprise in case of broadcast when dim=1
         # because user can code the initial function in many ways...
         mse_u_boundary = jnp.mean(
-            res**2,  # TODO check vectorial case
-            axis=0,
+            res**2,
+            axis=(d for d in range(values.ndim - 1)),
         )
     return mse_u_boundary

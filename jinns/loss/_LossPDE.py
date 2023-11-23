@@ -772,6 +772,8 @@ class LossPDENonStatio(LossPDEStatio):
         if isinstance(self.u, PINN):
             omega_batch_ = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
             times_batch_ = rep_times(n)  # it is repeated
+        elif isinstance(self.u, SPINN):
+            spinn_batch_dim = 1 + omega_batch.shape[-1]
 
         # dynamic part
         if self.dynamic_loss is not None:
@@ -801,7 +803,7 @@ class LossPDENonStatio(LossPDEStatio):
                 )
                 mse_dyn_loss = jnp.mean(
                     self.loss_weights["dyn_loss"]
-                    * residuals**2  # TODO check for the vectorial case
+                    * jnp.mean(residuals**2, axis=(d for d in range(spinn_batch_dim)))
                 )
             # TODO implement Causality is all you need (not yet implemented)
             #    epsilon = 0.01
@@ -843,7 +845,6 @@ class LossPDENonStatio(LossPDEStatio):
                     params["nn_params"],
                     jax.lax.stop_gradient(params["eq_params"]),
                 )
-                print("norm", res.shape)
                 mse_norm_loss = jnp.mean(
                     jnp.abs(
                         jnp.mean(
@@ -929,7 +930,7 @@ class LossPDENonStatio(LossPDEStatio):
                 # because user can code the initial function in many ways...
                 mse_initial_condition = jnp.mean(
                     self.loss_weights["initial_condition"]
-                    * res**2  # TODO check vectorial case
+                    * jnp.mean(res**2, axis=(d for d in range(spinn_batch_dim - 1)))
                 )
         else:
             mse_initial_condition = 0

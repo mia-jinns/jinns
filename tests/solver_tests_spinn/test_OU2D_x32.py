@@ -136,7 +136,7 @@ def test_initial_loss_OU(train_OU_init):
 
     assert jnp.round(
         loss.evaluate(init_params, train_data.get_batch())[0], 5
-    ) == jnp.round(1.14989, 5)
+    ) == jnp.round(1.1498799, 5)
 
 
 def test_10it_OU(train_OU_10it):
