@@ -558,16 +558,8 @@ def create_SPINN(
     except IndexError:
         nb_outputs_declared = eqx_list[-2][2]
         # but we can have, eg, a `jnp.exp` last layer
-    if nb_outputs_declared != r:
-        raise ValueError("Output dim must be set to r in SPINN!")
-
-    # Then we modify the real hidden of embedding dimensions if m > 1
-    # (hidden to the user)
-    if m > 1:
-        try:
-            eqx_list[-1][2] *= m
-        except IndexError:
-            eqx_list[-2][2] *= m
+    if nb_outputs_declared != r * m:
+        raise ValueError("Output dim must be set to r * m in SPINN!")
 
     if d > 24:
         raise ValueError(
@@ -578,7 +570,7 @@ def create_SPINN(
 
         def apply_fn(self, x, u_params, eq_params=None):
             spinn = eqx.combine(u_params, self.static)
-            v_model = jax.vmap(spinn, ((0, 0)))
+            v_model = jax.vmap(spinn, (0))
             res = v_model(t=None, x=x)
             # We prepare an outer product for an arbitrary nb of 2D arrays
             # (outer product on first dim and summation on second (embedding)
