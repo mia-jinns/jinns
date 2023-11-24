@@ -50,9 +50,6 @@ class FisherKPP(PDENonStatio):
         """
         Evaluate the dynamic loss at :math:`(t,x)`.
 
-        **Note:** In practice this `u` is vectorized and `t` and `x` have a
-        batch dimension.
-
         Parameters
         ---------
         t
@@ -139,9 +136,6 @@ class Malthus(ODE):
         Evaluate the dynamic loss at `t`.
         For stability we implement the dynamic loss in log space.
 
-        **Note:** In practice this `u` is vectorized and `t` has a
-        batch dimension.
-
         Parameters
         ---------
         t
@@ -207,9 +201,6 @@ class BurgerEquation(PDENonStatio):
     def evaluate(self, t, x, u, params):
         """
         Evaluate the dynamic loss at :math:`(t,x)`.
-
-        **Note:** In practice this `u` is vectorized and `t` and `x` have a
-        batch dimension.
 
         Parameters
         ---------
@@ -329,9 +320,6 @@ class GeneralizedLotkaVolterra(ODE):
         Evaluate the dynamic loss at `t`.
         For stability we implement the dynamic loss in log space.
 
-        **Note:** In practice each `u` from `u_dict` is vectorized and `t` has a
-        batch dimension.
-
         Parameters
         ---------
         t
@@ -415,9 +403,6 @@ class FPEStatioLoss1D(PDEStatio):
     def evaluate(self, x, u, params):
         """
         Evaluate the dynamic loss at `x`.
-
-        **Note:** In practice this `u` is vectorized and `x` has a
-        batch dimension.
 
         Parameters
         ---------
@@ -610,9 +595,6 @@ class FPENonStatioLoss1D(PDENonStatio):
     def evaluate(self, t, x, u, params):
         """
         Evaluate the dynamic loss at :math:`(t,x)`.
-
-        **Note:** In practice this `u` is vectorized and `t` and `x` have a
-        batch dimension.
 
         Parameters
         ---------
@@ -896,9 +878,6 @@ class FPEStatioLoss2D(PDEStatio):
         **Note:** For computational purpose we use compositions of calls to
         `jax.grad` instead of a call to `jax.hessian`
 
-        **Note:** In practice this `u` is vectorized and :math:`\mathbf{x}` has a
-        batch dimension.
-
         Parameters
         ---------
         x
@@ -1090,9 +1069,6 @@ class FPENonStatioLoss2D(PDENonStatio):
     def evaluate(self, t, x, u, params):
         """
         Evaluate the dynamic loss at :math:`(t,\mathbf{x})`.
-
-        **Note:** In practice this `u` is vectorized and `t` and
-        :math:`\mathbf{x}` have a batch dimension.
 
         Parameters
         ---------
@@ -1450,9 +1426,6 @@ class MassConservation2DStatio(PDEStatio):
         Evaluate the dynamic loss at `\mathbf{x}`.
         For stability we implement the dynamic loss in log space.
 
-        **Note:** In practice each `u` from `u_dict` is vectorized and
-        `\mathbf{x}` has a batch dimension.
-
         Parameters
         ---------
         x
@@ -1545,9 +1518,6 @@ class NavierStokes2DStatio(PDEStatio):
         """
         Evaluate the dynamic loss at `\mathbf{x}`.
         For stability we implement the dynamic loss in log space.
-
-        **Note:** In practice each `u` from `u_dict` is vectorized and
-        `\mathbf{x}` has a batch dimension.
 
         Parameters
         ---------
