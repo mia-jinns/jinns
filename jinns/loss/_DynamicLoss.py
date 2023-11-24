@@ -1441,7 +1441,7 @@ class MassConservation2DStatio(PDEStatio):
             differential equation parameters and the neural network parameter.
             Must have the same keys as `u_dict`
         """
-        if isinstance(u, PINN):
+        if isinstance(u_dict[self.nn_key], PINN):
             nn_params, eq_params = self.set_stop_gradient(params_dict)
 
             nn_params = nn_params[self.nn_key]
@@ -1451,7 +1451,7 @@ class MassConservation2DStatio(PDEStatio):
 
             return _div_bwd(u, nn_params, eq_params, x)
 
-        elif isinstance(u, SPINN):
+        elif isinstance(u_dict[self.nn_key], SPINN):
             nn_params, eq_params = self.set_stop_gradient(params_dict)
 
             nn_params = nn_params[self.nn_key]
@@ -1545,7 +1545,7 @@ class NavierStokes2DStatio(PDEStatio):
             differential equation parameters and the neural network parameter.
             Must have the same keys as `u_dict`
         """
-        if isinstance(u, PINN):
+        if isinstance(u_dict[self.u_key], PINN):
             nn_params, eq_params = self.set_stop_gradient(params_dict)
 
             u_nn_params = nn_params[self.u_key]
@@ -1579,7 +1579,7 @@ class NavierStokes2DStatio(PDEStatio):
             # output is 2D
             return jnp.stack([result_x, result_y], axis=-1)
 
-        elif isinstance(u, SPINN):
+        elif isinstance(u_dict[self.u_key], SPINN):
             nn_params, eq_params = self.set_stop_gradient(params_dict)
 
             u_nn_params = nn_params[self.u_key]
