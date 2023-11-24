@@ -128,18 +128,33 @@ def boundary_dirichlet_statio(f, border_batch, u, params):
         dictionaries: `eq_params` and `nn_params``, respectively the
         differential equation parameters and the neural network parameter
     """
-    v_u_boundary = vmap(
-        lambda dx: u(
-            dx,
-            u_params=params["nn_params"],
-            eq_params=jax.lax.stop_gradient(params["eq_params"]),
+    if isinstance(u, PINN):
+        v_u_boundary = vmap(
+            lambda dx: u(
+                dx,
+                u_params=params["nn_params"],
+                eq_params=jax.lax.stop_gradient(params["eq_params"]),
+            )
+            - f(dx),
+            (0),
+            0,
         )
-        - f(dx),
-        (0),
-        0,
-    )
 
-    mse_u_boundary = jnp.mean((v_u_boundary(border_batch)) ** 2, axis=0)
+        mse_u_boundary = jnp.mean((v_u_boundary(border_batch)) ** 2, axis=0)
+    elif isinstance(u, SPINN):
+        values = u(
+            border_batch,
+            params["nn_params"],
+            jax.lax.stop_gradient(params["eq_params"]),
+        )
+        x_grid = _get_grid(border_batch)
+        res = jnp.squeeze(values) - jnp.squeeze(f(x_grid))
+        # squeeze all to avoid bad surprise in case of broadcast when dim=1
+        # because user can code the initial function in many ways...
+        mse_u_boundary = jnp.mean(
+            res**2,
+            axis=(d for d in range(values.ndim - 1)),
+        )
     return mse_u_boundary
 
 
@@ -178,17 +193,73 @@ def boundary_neumann_statio(f, border_batch, u, params, facet):
         # border_batch shape (batch_size, ndim, nfacets)
         n = jnp.array([[-1, 1, 0, 0], [0, 0, -1, 1]])
 
-    v_neumann = vmap(
-        lambda dx: jnp.dot(
-            grad(u, 0)(
-                dx, params["nn_params"], jax.lax.stop_gradient(params["eq_params"])
-            ),
-            n[..., facet],
+    if isinstance(u, PINN):
+        v_neumann = vmap(
+            lambda dx: jnp.dot(
+                grad(u, 0)(
+                    dx, params["nn_params"], jax.lax.stop_gradient(params["eq_params"])
+                ),
+                n[..., facet],
+            )
+            - f(dx),
+            0,
         )
-        - f(dx),
-        0,
-    )
-    mse_u_boundary = jnp.mean((v_neumann(border_batch)) ** 2, axis=0)
+        mse_u_boundary = jnp.mean((v_neumann(border_batch)) ** 2, axis=0)
+    elif isinstance(u, SPINN):
+        # the gradient we see in the PINN case can get gradients wrt to x
+        # dimensions at once. But it would be very inefficient in SPINN because
+        # of the high dim output of u. So we do 2 explicit forward AD, handling all the
+        # high dim output at once
+        if border_batch.shape[0] == 1:  # i.e. case 1D
+            _, du_dx = jax.jvp(
+                lambda x: u(
+                    x,
+                    params["nn_params"],
+                    jax.lax.stop_gradient(params["eq_params"]),
+                ),
+                (omega_border_batch,),
+                (jnp.ones_like(x),),
+            )
+            values = du_dx * n[facet]
+        elif omega_border_batch.shape[-1] == 2:
+            tangent_vec_0 = jnp.repeat(
+                jnp.array([1.0, 0.0])[None], omega_border_batch.shape[0], axis=0
+            )
+            tangent_vec_1 = jnp.repeat(
+                jnp.array([0.0, 1.0])[None], omega_border_batch.shape[0], axis=0
+            )
+            _, du_dx1 = jax.jvp(
+                lambda x: u(
+                    x,
+                    params["nn_params"],
+                    jax.lax.stop_gradient(params["eq_params"]),
+                ),
+                (omega_border_batch,),
+                (tangent_vec_0,),
+            )
+            _, du_dx2 = jax.jvp(
+                lambda x: u(
+                    x,
+                    params["nn_params"],
+                    jax.lax.stop_gradient(params["eq_params"]),
+                ),
+                (omega_border_batch,),
+                (tangent_vec_1,),
+            )
+            values = du_dx1 * n[0, facet] + du_dx2 * n[1, facet]  # dot product
+            # explicitly written
+            values = values[None]
+        else:
+            raise ValueError("Not implemented, we'll do that with a loop")
+
+        x_grid = _get_grid(border_batch)
+        res = jnp.squeeze(values) - jnp.squeeze(f(x_grid))
+        # squeeze all to avoid bad surprise in case of broadcast when dim=1
+        # because user can code the initial function in many ways...
+        mse_u_boundary = jnp.mean(
+            res**2,
+            axis=(d for d in range(values.ndim - 1)),
+        )
     return mse_u_boundary
 
 

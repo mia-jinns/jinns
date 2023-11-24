@@ -1,14 +1,16 @@
 import jax
-from jax import jit, grad, jacrev
+from jax import jit, grad, jacrev, jacfwd
 import jax.numpy as jnp
 from jinns.utils._utils import PINN, SPINN, _get_grid
 from jinns.loss._DynamicLossAbstract import ODE, PDEStatio, PDENonStatio
 from jinns.loss._operators import (
     _laplacian_bwd,
     _laplacian_fwd,
-    _div,
+    _div_bwd,
+    _div_fwd,
     _vectorial_laplacian,
-    _u_dot_nabla_times_u,
+    _u_dot_nabla_times_u_bwd,
+    _u_dot_nabla_times_u_fwd,
 )
 
 
@@ -1439,14 +1441,25 @@ class MassConservation2DStatio(PDEStatio):
             differential equation parameters and the neural network parameter.
             Must have the same keys as `u_dict`
         """
-        nn_params, eq_params = self.set_stop_gradient(params_dict)
+        if isinstance(u, PINN):
+            nn_params, eq_params = self.set_stop_gradient(params_dict)
 
-        nn_params = nn_params[self.nn_key]
-        eq_params = eq_params
+            nn_params = nn_params[self.nn_key]
+            eq_params = eq_params
 
-        u = u_dict[self.nn_key]
+            u = u_dict[self.nn_key]
 
-        return _div(u, nn_params, eq_params, x)
+            return _div_bwd(u, nn_params, eq_params, x)
+
+        elif isinstance(u, SPINN):
+            nn_params, eq_params = self.set_stop_gradient(params_dict)
+
+            nn_params = nn_params[self.nn_key]
+            eq_params = eq_params
+
+            u = u_dict[self.nn_key]
+
+            return _div_fwd(u, nn_params, eq_params, x)
 
 
 class NavierStokes2DStatio(PDEStatio):
@@ -1532,35 +1545,70 @@ class NavierStokes2DStatio(PDEStatio):
             differential equation parameters and the neural network parameter.
             Must have the same keys as `u_dict`
         """
-        nn_params, eq_params = self.set_stop_gradient(params_dict)
+        if isinstance(u, PINN):
+            nn_params, eq_params = self.set_stop_gradient(params_dict)
 
-        u_nn_params = nn_params[self.u_key]
-        p_nn_params = nn_params[self.p_key]
-        eq_params = eq_params
+            u_nn_params = nn_params[self.u_key]
+            p_nn_params = nn_params[self.p_key]
+            eq_params = eq_params
 
-        u = u_dict[self.u_key]
+            u = u_dict[self.u_key]
 
-        u_dot_nabla_x_u = _u_dot_nabla_times_u(u, u_nn_params, eq_params, x)
+            u_dot_nabla_x_u = _u_dot_nabla_times_u_bwd(u, u_nn_params, eq_params, x)
 
-        p = lambda x: u_dict[self.p_key](x, p_nn_params, eq_params)
-        jac_p = jacrev(p, 0)(x)  # compute the gradient
+            p = lambda x: u_dict[self.p_key](x, p_nn_params, eq_params)
+            jac_p = jacrev(p, 0)(x)  # compute the gradient
 
-        vec_laplacian_u = _vectorial_laplacian(
-            u, u_nn_params, eq_params, x, u_vec_ndim=2
-        )
+            vec_laplacian_u = _vectorial_laplacian(
+                u, u_nn_params, eq_params, x, u_vec_ndim=2
+            )
 
-        # dynamic loss on x axis
-        result_x = (
-            u_dot_nabla_x_u[0]
-            + 1 / eq_params["rho"] * jac_p[0]
-            - eq_params["nu"] * vec_laplacian_u[0]
-        )
-        # dynamic loss on y axis
-        result_y = (
-            u_dot_nabla_x_u[1]
-            + 1 / eq_params["rho"] * jac_p[1]
-            - eq_params["nu"] * vec_laplacian_u[1]
-        )
+            # dynamic loss on x axis
+            result_x = (
+                u_dot_nabla_x_u[0]
+                + 1 / eq_params["rho"] * jac_p[0]
+                - eq_params["nu"] * vec_laplacian_u[0]
+            )
+            # dynamic loss on y axis
+            result_y = (
+                u_dot_nabla_x_u[1]
+                + 1 / eq_params["rho"] * jac_p[1]
+                - eq_params["nu"] * vec_laplacian_u[1]
+            )
 
-        # output is 2D
-        return jnp.stack([result_x, result_y], axis=-1)
+            # output is 2D
+            return jnp.stack([result_x, result_y], axis=-1)
+
+        elif isinstance(u, SPINN):
+            nn_params, eq_params = self.set_stop_gradient(params_dict)
+
+            u_nn_params = nn_params[self.u_key]
+            p_nn_params = nn_params[self.p_key]
+            eq_params = eq_params
+
+            u = u_dict[self.u_key]
+
+            u_dot_nabla_x_u = _u_dot_nabla_times_u_fwd(u, u_nn_params, eq_params, x)
+
+            p = lambda x: u_dict[self.p_key](x, p_nn_params, eq_params)
+            jac_p = jacfwd(p, 0)(x)
+
+            vec_laplacian_u = _vectorial_laplacian(
+                u, u_nn_params, eq_params, x, backward=False, u_vec_ndim=2
+            )
+
+            # dynamic loss on x axis
+            result_x = (
+                u_dot_nabla_x_u[..., 0]
+                + 1 / eq_params["rho"] * jac_p[..., 0]
+                - eq_params["nu"] * vec_laplacian_u[..., 0]
+            )
+            # dynamic loss on y axis
+            result_y = (
+                u_dot_nabla_x_u[..., 1]
+                + 1 / eq_params["rho"] * jac_p[..., 1]
+                - eq_params["nu"] * vec_laplacian_u[..., 1]
+            )
+
+            # output is 2D
+            return jnp.stack([result_x, result_y], axis=-1)

@@ -415,40 +415,71 @@ class LossPDEStatio(LossPDEAbstract):
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
+        if isinstance(self.u, SPINN):
+            spinn_batch_dim = omega_batch.shape[-1]
+
         # dynamic part
         if self.dynamic_loss is not None:
-            v_dyn_loss = vmap(
-                lambda x, params: self.dynamic_loss.evaluate(
-                    x,
-                    self.u,
-                    params,
-                ),
-                vmap_in_axes_x + vmap_in_axes_params,
-                0,
-            )
-            mse_dyn_loss = jnp.mean(
-                self.loss_weights["dyn_loss"]
-                * jnp.mean(v_dyn_loss(omega_batch, params) ** 2, axis=0)
-            )
+            if isinstance(self.u, PINN):
+                v_dyn_loss = vmap(
+                    lambda x, params: self.dynamic_loss.evaluate(
+                        x,
+                        self.u,
+                        params,
+                    ),
+                    vmap_in_axes_x + vmap_in_axes_params,
+                    0,
+                )
+                mse_dyn_loss = jnp.mean(
+                    self.loss_weights["dyn_loss"]
+                    * jnp.mean(v_dyn_loss(omega_batch, params) ** 2, axis=0)
+                )
+            elif isinstance(self.u, SPINN):
+                residuals = self.dynamic_loss.evaluate(omega_batch, self.u, params)
+                mse_dyn_loss = jnp.mean(
+                    self.loss_weights["dyn_loss"]
+                    * jnp.mean(residuals**2, axis=(d for d in range(spinn_batch_dim)))
+                )
 
         else:
             mse_dyn_loss = 0
 
         # normalization part
         if self.normalization_loss is not None:
-            v_u = vmap(
-                partial(
-                    self.u,
-                    u_params=params["nn_params"],
-                    eq_params=jax.lax.stop_gradient(params["eq_params"]),
-                ),
-                (0),
-                0,
-            )
-            mse_norm_loss = self.loss_weights["norm_loss"] * (
-                jnp.abs(jnp.mean(v_u(self.get_norm_samples())) * self.int_length - 1)
-                ** 2
-            )
+            if isinstance(self.u, PINN):
+                v_u = vmap(
+                    partial(
+                        self.u,
+                        u_params=params["nn_params"],
+                        eq_params=jax.lax.stop_gradient(params["eq_params"]),
+                    ),
+                    (0),
+                    0,
+                )
+                mse_norm_loss = self.loss_weights["norm_loss"] * (
+                    jnp.abs(
+                        jnp.mean(v_u(self.get_norm_samples())) * self.int_length - 1
+                    )
+                    ** 2
+                )
+            elif isinstance(self.u, SPINN):
+                norm_samples = self.get_norm_samples()
+                res = self.u(
+                    norm_samples,
+                    params["nn_params"],
+                    jax.lax.stop_gradient(params["eq_params"]),
+                )
+                mse_norm_loss = self.loss_weights["norm_loss"] * (
+                    jnp.abs(
+                        jnp.mean(
+                            jnp.mean(res, axis=-1),
+                            axis=(d + 1 for d in range(norm_samples.shape[-1])),
+                        )
+                        * self.int_length
+                        - 1
+                    )
+                    ** 2
+                )
         else:
             mse_norm_loss = 0
             self.loss_weights["norm_loss"] = 0
@@ -493,33 +524,54 @@ class LossPDEStatio(LossPDEAbstract):
         # NOTE that it does not use jax.lax.stop_gradient on "eq_params" here
         # since we may wish to optimize on it.
         if self.obs_batch is not None:
-            v_u = vmap(
-                lambda x: self.u(x, params["nn_params"], params["eq_params"]),
-                0,
-                0,
-            )
-            mse_observation_loss = jnp.mean(
-                self.loss_weights["observations"]
-                * jnp.mean(
-                    (v_u(self.obs_batch[0][:, None]) - self.obs_batch[1]) ** 2, axis=0
+            if isinstance(self.u, PINN):
+                v_u = vmap(
+                    lambda x: self.u(x, params["nn_params"], params["eq_params"]),
+                    0,
+                    0,
                 )
-            )
+                mse_observation_loss = jnp.mean(
+                    self.loss_weights["observations"]
+                    * jnp.mean(
+                        (v_u(self.obs_batch[0][:, None]) - self.obs_batch[1]) ** 2,
+                        axis=0,
+                    )
+                )
+            elif isinstance(self.u, SPINN):
+                values = lambda x: self.u(
+                    x,
+                    params["nn_params"],
+                    jax.lax.stop_gradient(params["eq_params"]),
+                )
+                omega_batch_grid = _get_grid(omega_batch)
+                ini = self.initial_condition_fun(omega_batch_grid)
+                res = jnp.squeeze(ini) - jnp.squeeze(values(omega_batch))
+                # squeeze all to avoid bad surprise in case of broadcast when dim=1
+                # because user can code the initial function in many ways...
+                mse_initial_condition = jnp.mean(
+                    self.loss_weights["initial_condition"]
+                    * jnp.mean(res**2, axis=(d for d in range(spinn_batch_dim)))
+                )
         else:
             mse_observation_loss = 0
             self.loss_weights["observations"] = 0
 
         # Sobolev regularization
         if self.sobolev_reg is not None:
-            v_sob_reg = vmap(
-                lambda x: self.sobolev_reg(
-                    x, params["nn_params"], jax.lax.stop_gradient(params["eq_params"])
-                ),
-                (0, 0),
-                0,
-            )
-            mse_sobolev_loss = self.loss_weights["sobolev"] * jnp.mean(
-                v_sob_reg(omega_batch)
-            )
+            # TODO implement for SPINN
+            if isinstance(self.u, PINN):
+                v_sob_reg = vmap(
+                    lambda x: self.sobolev_reg(
+                        x,
+                        params["nn_params"],
+                        jax.lax.stop_gradient(params["eq_params"]),
+                    ),
+                    (0, 0),
+                    0,
+                )
+                mse_sobolev_loss = self.loss_weights["sobolev"] * jnp.mean(
+                    v_sob_reg(omega_batch)
+                )
         else:
             mse_sobolev_loss = 0
             self.loss_weights["sobolev"] = 0
