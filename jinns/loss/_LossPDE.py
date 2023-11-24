@@ -845,7 +845,7 @@ class LossPDENonStatio(LossPDEStatio):
                     params["nn_params"],
                     jax.lax.stop_gradient(params["eq_params"]),
                 )
-                mse_norm_loss = jnp.mean(
+                mse_norm_loss = self.loss_weights["norm_loss"] * jnp.mean(
                     jnp.abs(
                         jnp.mean(
                             jnp.mean(res, axis=-1),
