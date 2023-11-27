@@ -146,7 +146,7 @@ def _plot_2D_statio(
     x_grid, y_grid = mesh
     if not spinn:
         values = v_fun(jnp.vstack([x_grid.flatten(), y_grid.flatten()]).T)
-        values_grid = values.reshape(x_grid.shape).T
+        values_grid = values.reshape(x_grid.shape)
     elif spinn:
         # in this case v_fun is directly the values :)
         values_grid = v_fun
