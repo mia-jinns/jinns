@@ -401,9 +401,15 @@ def create_PINN(
 
     if shared_pinn_outputs is not None:
         pinns = []
+        static = None
         for output_slice in shared_pinn_outputs:
             pinn = PINN(key, eqx_list, output_slice)
             pinn.apply_fn = apply_fn
+            # all the pinns are in fact the same so we share the same static
+            if static is None:
+                static = pinn.static
+            else:
+                pinn.static = static
             pinns.append(pinn)
         return pinns
     else:
