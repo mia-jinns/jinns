@@ -114,12 +114,16 @@ class PINN:
     The function create_PINN has the role to population the `__call__` function
     """
 
-    def __init__(self, key, eqx_list):
+    def __init__(self, key, eqx_list, output_slice=None):
         _pinn = _MLP(key, eqx_list)
         self.params, self.static = eqx.partition(_pinn, eqx.is_inexact_array)
+        self.output_slice = output_slice
 
     def init_params(self):
         return self.params
+
+    def __call__(self, *args, **kwargs):
+        return self.apply_fn(self, *args, **kwargs)
 
 
 def create_PINN(
@@ -130,6 +134,7 @@ def create_PINN(
     with_eq_params=None,
     input_transform=None,
     output_transform=None,
+    shared_pinn_outputs=None,
 ):
     """
     Utility function to create a standard PINN neural network with the equinox
@@ -180,6 +185,11 @@ def create_PINN(
     output_transform
         A function with arguments the same input(s) as the PINN AND the PINN
         output that will be called after exiting the PINN
+    shared_pinn_outputs
+        A tuple of jnp.s_[] (slices) to determine the different output for each
+        network. In this case we return a list of PINNs, one for each output in
+        shared_pinn_outputs. The PINNs share the same network and same
+        parameters. Default is None, we only return one PINN.
 
 
     Returns
@@ -234,14 +244,18 @@ def create_PINN(
                 ]  # Note that we added a dimension to t which is lacking for the ODE batches
                 if output_transform is None:
                     if input_transform is not None:
-                        return model(input_transform(t)).squeeze()
+                        res = model(input_transform(t)).squeeze()
                     else:
-                        return model(t).squeeze()
+                        res = model(t).squeeze()
                 else:
                     if input_transform is not None:
-                        return output_transform(t, model(input_transform(t)).squeeze())
+                        res = output_transform(t, model(input_transform(t)).squeeze())
                     else:
-                        return output_transform(t, model(t).squeeze())
+                        res = output_transform(t, model(t).squeeze())
+                if self.output_slice is not None:
+                    return res[self.output_slice]
+                else:
+                    return res
 
         else:
 
@@ -257,19 +271,23 @@ def create_PINN(
 
                 if output_transform is None:
                     if input_transform is not None:
-                        return model(input_transform(t_eq_params)).squeeze()
+                        res = model(input_transform(t_eq_params)).squeeze()
                     else:
-                        return model(t_eq_params).squeeze()
+                        res = model(t_eq_params).squeeze()
                 else:
                     if input_transform is not None:
-                        return output_transform(
+                        res = output_transform(
                             t_eq_params,
                             model(input_transform(t_eq_params)).squeeze(),
                         )
                     else:
-                        return output_transform(
+                        res = output_transform(
                             t_eq_params, model(t_eq_params).squeeze()
                         )
+                if self.output_slice is not None:
+                    return res[self.output_slice]
+                else:
+                    return res
 
     elif eq_type == "statio_PDE":
         # Here we add an argument `x` which can be high dimensional
@@ -280,14 +298,18 @@ def create_PINN(
 
                 if output_transform is None:
                     if input_transform is not None:
-                        return model(input_transform(x)).squeeze()
+                        res = model(input_transform(x)).squeeze()
                     else:
-                        return model(x).squeeze()
+                        res = model(x).squeeze()
                 else:
                     if input_transform is not None:
-                        return output_transform(x, model(input_transform(x)).squeeze())
+                        res = output_transform(x, model(input_transform(x)).squeeze())
                     else:
-                        return output_transform(x, model(x).squeeze())
+                        res = output_transform(x, model(x).squeeze()).squeeze()
+                if self.output_slice is not None:
+                    return res[self.output_slice]
+                else:
+                    return res
 
         else:
 
@@ -300,19 +322,23 @@ def create_PINN(
 
                 if output_transform is None:
                     if input_transform is not None:
-                        return model(input_transform(x_eq_params)).squeeze()
+                        res = model(input_transform(x_eq_params)).squeeze()
                     else:
-                        return model(x_eq_params).squeeze()
+                        res = model(x_eq_params).squeeze()
                 else:
                     if input_transform is not None:
-                        return output_transform(
+                        res = output_transform(
                             x_eq_params,
                             model(input_transform(x_eq_params)).squeeze(),
                         )
                     else:
-                        return output_transform(
+                        res = output_transform(
                             x_eq_params, model(x_eq_params).squeeze()
                         )
+                if self.output_slice is not None:
+                    return res[self.output_slice]
+                else:
+                    return res
 
     elif eq_type == "nonstatio_PDE":
         # Here we add an argument `x` which can be high dimensional
@@ -324,16 +350,20 @@ def create_PINN(
 
                 if output_transform is None:
                     if input_transform is not None:
-                        return model(input_transform(t_x)).squeeze()
+                        res = model(input_transform(t_x)).squeeze()
                     else:
-                        return model(t_x).squeeze()
+                        res = model(t_x).squeeze()
                 else:
                     if input_transform is not None:
-                        return output_transform(
+                        res = output_transform(
                             t_x, model(input_transform(t_x)).squeeze()
                         )
                     else:
-                        return output_transform(t_x, model(t_x).squeeze())
+                        res = output_transform(t_x, model(t_x).squeeze())
+                if self.output_slice is not None:
+                    return res[self.output_slice]
+                else:
+                    return res
 
         else:
 
@@ -347,27 +377,39 @@ def create_PINN(
 
                 if output_transform is None:
                     if input_transform is not None:
-                        return model(input_transform(t_x_eq_params)).squeeze()
+                        res = model(input_transform(t_x_eq_params)).squeeze()
                     else:
-                        return model(t_x_eq_params).squeeze()
+                        res = model(t_x_eq_params).squeeze()
                 else:
                     if input_transform is not None:
-                        return output_transform(
+                        res = output_transform(
                             t_x_eq_params,
                             model(input_transform(t_x_eq_params)).squeeze(),
                         )
                     else:
-                        return output_transform(
+                        res = output_transform(
                             t_x_eq_params,
                             model(input_transform(t_x_eq_params)).squeeze(),
                         )
+                if self.output_slice is not None:
+                    return res[self.output_slice]
+                else:
+                    return res
 
     else:
         raise RuntimeError("Wrong parameter value for eq_type")
 
-    PINN.__call__ = apply_fn
-
-    return PINN(key, eqx_list)
+    if shared_pinn_outputs is not None:
+        pinns = []
+        for output_slice in shared_pinn_outputs:
+            pinn = PINN(key, eqx_list, output_slice)
+            pinn.apply_fn = apply_fn
+            pinns.append(pinn)
+        return pinns
+    else:
+        pinn = PINN(key, eqx_list)
+        pinn.apply_fn = apply_fn
+        return pinn
 
 
 class _SPINN(eqx.Module):
@@ -454,6 +496,9 @@ class SPINN:
 
     def init_params(self):
         return self.params
+
+    def __call__(self, *args, **kwargs):
+        return self.apply_fn(self, *args, **kwargs)
 
 
 def create_SPINN(
@@ -625,9 +670,10 @@ def create_SPINN(
     else:
         raise RuntimeError("Wrong parameter value for eq_type")
 
-    SPINN.__call__ = apply_fn
+    spinn = SPINN(key, d, r, eqx_list)
+    spinn.apply_fn = apply_fn
 
-    return SPINN(key, d, r, eqx_list, m)
+    return spinn
 
 
 def _get_grid(in_array):
