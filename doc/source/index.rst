@@ -8,6 +8,10 @@ Welcome to jinn's documentation!
 
 Changelog:
 
+* v0.4.2:
+
+    - Critical bug correction concerning the manipulation of the optimizer's `opt_state` which caused weird failures in the optimization process
+
 * v0.4.1:
 
     - Generalize heterogeneity for the equation parameters. It can now be an arbitrary function provided by the user and thus depend on covariables. Update the corresponding notebook.
