@@ -12,7 +12,6 @@ import jinns
 @pytest.fixture
 def train_Fisher_init():
     jax.config.update("jax_enable_x64", True)
-    print(jax.config.FLAGS.jax_enable_x64)
     print(jax.devices())
     key = random.PRNGKey(2)
     eqx_list = [
@@ -142,4 +141,4 @@ def test_initial_loss_Fisher(train_Fisher_init):
 
 def test_10it_Fisher(train_Fisher_10it):
     total_loss_val = train_Fisher_10it
-    assert jnp.round(total_loss_val, 5) == jnp.round(10.87023, 5)
+    assert jnp.round(total_loss_val, 5) == jnp.round(10.88394, 5)

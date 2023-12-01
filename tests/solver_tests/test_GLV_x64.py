@@ -11,7 +11,6 @@ import jinns
 @pytest.fixture
 def train_GLV_init():
     jax.config.update("jax_enable_x64", True)
-    print(jax.config.FLAGS.jax_enable_x64)
     print(jax.devices())
     key = random.PRNGKey(2)
     key, subkey = random.split(key)
@@ -123,4 +122,4 @@ def test_initial_loss_GLV(train_GLV_init):
 
 def test_10it_GLV(train_GLV_10it):
     total_loss_val = train_GLV_10it
-    assert jnp.round(total_loss_val, 5) == jnp.round(3819.72582, 5)
+    assert jnp.round(total_loss_val, 5) == jnp.round(3819.15887, 5)

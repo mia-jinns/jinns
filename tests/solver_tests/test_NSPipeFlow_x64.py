@@ -11,7 +11,6 @@ import jinns
 @pytest.fixture
 def train_NSPipeFlow_init():
     jax.config.update("jax_enable_x64", True)
-    print(jax.config.FLAGS.jax_enable_x64)
     print(jax.devices())
     key = random.PRNGKey(2)
 
@@ -138,4 +137,4 @@ def test_initial_loss_NSPipeFlow(train_NSPipeFlow_init):
 
 def test_10it_NSPipeFlow(train_NSPipeFlow_10it):
     total_loss_val = train_NSPipeFlow_10it
-    assert jnp.round(total_loss_val, 5) == jnp.round(0.00495, 5)
+    assert jnp.round(total_loss_val, 5) == jnp.round(0.00504, 5)

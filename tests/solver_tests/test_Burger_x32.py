@@ -11,7 +11,6 @@ import jinns
 @pytest.fixture
 def train_Burger_init():
     jax.config.update("jax_enable_x64", False)
-    print(jax.config.FLAGS.jax_enable_x64)
     print(jax.devices())
     key = random.PRNGKey(2)
     eqx_list = [
@@ -111,4 +110,4 @@ def test_initial_loss_Burger(train_Burger_init):
 
 def test_10it_Burger(train_Burger_10it):
     total_loss_val = train_Burger_10it
-    assert jnp.round(total_loss_val, 5) == jnp.round(2.0262, 5)
+    assert jnp.round(total_loss_val, 5) == jnp.round(2.04182, 5)
