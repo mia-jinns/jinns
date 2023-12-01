@@ -88,7 +88,6 @@ class FisherKPP(PDENonStatio):
                 eq_params, t, x_grid, self.eq_params_heterogeneity
             )
 
-            print(u(t, x, nn_params, eq_params).shape)
             u_tx, du_dt = jax.jvp(
                 lambda t: u(t, x, nn_params, eq_params)[..., 0],
                 (t,),
@@ -1459,6 +1458,7 @@ class MassConservation2DStatio(PDEStatio):
 
             u = u_dict[self.nn_key]
 
+            x = _get_grid(x)
             return _div_fwd(u, nn_params, eq_params, x)
 
 
@@ -1589,13 +1589,17 @@ class NavierStokes2DStatio(PDEStatio):
             u = u_dict[self.u_key]
 
             u_dot_nabla_x_u = _u_dot_nabla_times_u_fwd(u, u_nn_params, eq_params, x)
+            print(u_dot_nabla_x_u.shape)
 
             p = lambda x: u_dict[self.p_key](x, p_nn_params, eq_params)
+            # on doit construire cette matrix avec des jvp !
             jac_p = jacfwd(p, 0)(x)
+            print(jac_p.shape)
 
             vec_laplacian_u = _vectorial_laplacian(
-                u, u_nn_params, eq_params, x, backward=False, u_vec_ndim=2
+                u, u_nn_params, eq_params, _get_grid(x), backward=False, u_vec_ndim=2
             )
+            print(vec_laplacian_u.shape)
 
             # dynamic loss on x axis
             result_x = (

@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 from jax import grad
 from functools import partial
+from jinns.utils._utils import PINN, SPINN
 
 
 def _div_bwd(u, nn_params, eq_params, x, t=None):
@@ -41,21 +42,24 @@ def _div_fwd(u, nn_params, eq_params, x, t=None):
     """
 
     def scan_fun(_, i):
-        tangent_vec = jnp.repeat(
-            jax.nn.one_hot(i, x.shape[1])[None], x.shape[0], axis=0
+        tangent_vec = (
+            jnp.ones(([x.shape[0] for d in range(x.shape[-1])]))[..., None]
+            * jax.nn.one_hot(i, x.shape[-1])[None]
         )
+        # broadcasting is used to create a correctly shaped array even when x
+        # is multidimensional in space
         if t is None:
-            _, du_dxi = jax.jvp(
+            __, du_dxi = jax.jvp(
                 lambda x: u(x, nn_params, eq_params)[..., i], (x,), (tangent_vec,)
             )
         else:
-            _, du_dxi = jax.jvp(
+            __, du_dxi = jax.jvp(
                 lambda x: u(t, x, nn_params, eq_params)[..., i], (x,), (tangent_vec,)
             )
         return _, du_dxi
 
     _, accu = jax.lax.scan(scan_fun, {}, jnp.arange(x.shape[1]))
-    return jnp.sum(accu)
+    return jnp.sum(accu, axis=-1)
 
 
 def _laplacian_bwd(u, nn_params, eq_params, x, t=None):
@@ -102,9 +106,12 @@ def _laplacian_fwd(u, nn_params, eq_params, x, t=None):
     """
 
     def scan_fun(_, i):
-        tangent_vec = jnp.repeat(
-            jax.nn.one_hot(i, x.shape[1])[None], x.shape[0], axis=0
+        tangent_vec = (
+            jnp.ones(([x.shape[0] for d in range(x.shape[-1])]))[..., None]
+            * jax.nn.one_hot(i, x.shape[-1])[None]
         )
+        # broadcasting is used to create a correctly shaped array even when x
+        # is multidimensional in space
         if t is None:
             du_dxi_fun = lambda x: jax.jvp(
                 lambda x: u(x, nn_params, eq_params)[..., 0], (x,), (tangent_vec,)
@@ -143,10 +150,18 @@ def _vectorial_laplacian(
     def scan_fun(_, j):
         # The loop over the components of u(x). We compute one Laplacian for
         # each of these components
-        if t is None:
-            uj = lambda x, nn_params, eq_params: u(x, nn_params, eq_params)[j]
-        else:
-            uj = lambda t, x, nn_params, eq_params: u(t, x, nn_params, eq_params)[j]
+        if isinstance(u, PINN):
+            if t is None:
+                uj = lambda x, nn_params, eq_params: u(x, nn_params, eq_params)[j]
+            else:
+                uj = lambda t, x, nn_params, eq_params: u(t, x, nn_params, eq_params)[j]
+        elif isinstance(u, SPINN):
+            if t is None:
+                uj = lambda x, nn_params, eq_params: u(x, nn_params, eq_params)[..., j]
+            else:
+                uj = lambda t, x, nn_params, eq_params: u(t, x, nn_params, eq_params)[
+                    ..., j
+                ]
         if backward:
             lap_on_j = _laplacian_bwd(uj, nn_params, eq_params, x, t)
         else:
@@ -227,21 +242,21 @@ def _u_dot_nabla_times_u_fwd(u, nn_params, eq_params, x, t=None):
         tangent_vec_1 = jnp.repeat(jnp.array([0.0, 1.0])[None], x.shape[0], axis=0)
         if t is None:
             u_at_x, du_dx = jax.jvp(
-                lambda x: u(x, nn_params, eq_params), (x,), (tangent_vec_0)
+                lambda x: u(x, nn_params, eq_params), (x,), (tangent_vec_0,)
             )  # thanks to forward AD this gets dux_dx and duy_dx in a vector
             # ie the derivatives of both components of u wrt x
             # this also gets the vector of u evaluated at x
             u_at_x, du_dy = jax.jvp(
-                lambda x: u(x, nn_params, eq_params), (x,), (tangent_vec_1)
+                lambda x: u(x, nn_params, eq_params), (x,), (tangent_vec_1,)
             )  # thanks to forward AD this gets dux_dy and duy_dy in a vector
             # ie the derivatives of both components of u wrt y
 
         else:
             u_at_x, du_dx = jax.jvp(
-                lambda x: u(t, x, nn_params, eq_params), (x,), (tangent_vec_0)
+                lambda x: u(t, x, nn_params, eq_params), (x,), (tangent_vec_0,)
             )
             u_at_x, du_dy = jax.jvp(
-                lambda x: u(t, x, nn_params, eq_params), (x,), (tangent_vec_1)
+                lambda x: u(t, x, nn_params, eq_params), (x,), (tangent_vec_1,)
             )
 
         return jnp.stack(

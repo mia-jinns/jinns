@@ -1146,7 +1146,7 @@ class SystemLossPDE:
         nn_type_dict
             A dict whose keys are that of u_dict whose value is either
             `nn_statio` or `nn_nonstatio` which signifies either the PINN has a
-            time component in input or not
+            time component in input or not.
         omega_boundary_fun_dict
             A dict of functions to be matched in the border condition, or a
             dict of dict of functions (see doc for `omega_boundary_fun` in
@@ -1251,6 +1251,8 @@ class SystemLossPDE:
 
         self.dynamic_loss_dict = dynamic_loss_dict
         self.u_dict = u_dict
+        # TODO nn_type should become a class attribute now that we have PINN
+        # class and SPINNs class
         self.nn_type_dict = nn_type_dict
 
         self.loss_weights = loss_weights  # This calls the setter
@@ -1305,6 +1307,15 @@ class SystemLossPDE:
                 raise ValueError(
                     f"Wrong value for nn_type_dict[i], got " "{nn_type_dict[i]}"
                 )
+
+        # also make sure we only have PINNs or SPINNs
+        if not (
+            all(type(value) == PINN for value in u_dict.values())
+            or all(type(value) == SPINN for value in u_dict.values())
+        ):
+            raise ValueError(
+                "We only accept dictionary of PINNs or dictionary" " of SPINNs"
+            )
 
     @property
     def loss_weights(self):
@@ -1427,39 +1438,66 @@ class SystemLossPDE:
         for i in self.dynamic_loss_dict.keys():
             # dynamic part
             if isinstance(self.dynamic_loss_dict[i], PDEStatio):
-                v_dyn_loss = vmap(
-                    lambda x, params_dict: self.dynamic_loss_dict[i].evaluate(
-                        x,
-                        self.u_dict,
-                        params_dict,
-                    ),
-                    vmap_in_axes_x + vmap_in_axes_params,
-                    0,
-                )
-                mse_dyn_loss += jnp.mean(
-                    self._loss_weights["dyn_loss"][i]
-                    * jnp.mean(v_dyn_loss(omega_batch, params_dict) ** 2, axis=0)
-                )
-            else:
-                v_dyn_loss = vmap(
-                    lambda t, x, params_dict: self.dynamic_loss_dict[i].evaluate(
-                        t, x, self.u_dict, params_dict
-                    ),
-                    vmap_in_axes_x_t + vmap_in_axes_params,
-                    0,
-                )
-
-                tile_omega_batch = jnp.tile(omega_batch, reps=(nt, 1))
-
-                omega_batch_ = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
-                times_batch_ = rep_times(n)  # it is repeated
-
-                mse_dyn_loss += jnp.mean(
-                    self._loss_weights["dyn_loss"][i]
-                    * jnp.mean(
-                        v_dyn_loss(times_batch_, omega_batch_, params_dict) ** 2, axis=0
+                # Below we just look at the first element because we suppose we
+                # must only have SPINNs or only PINNs
+                if isinstance(list(self.u_dict.values())[0], PINN):
+                    v_dyn_loss = vmap(
+                        lambda x, params_dict: self.dynamic_loss_dict[i].evaluate(
+                            x,
+                            self.u_dict,
+                            params_dict,
+                        ),
+                        vmap_in_axes_x + vmap_in_axes_params,
+                        0,
                     )
-                )
+                    mse_dyn_loss += jnp.mean(
+                        self._loss_weights["dyn_loss"][i]
+                        * jnp.mean(v_dyn_loss(omega_batch, params_dict) ** 2, axis=0)
+                    )
+                elif isinstance(list(self.u_dict.values())[0], SPINN):
+                    residuals = self.dynamic_loss_dict[i].evaluate(
+                        omega_batch, self.u_dict, params_dict
+                    )
+                    mse_dyn_loss = jnp.mean(
+                        self._loss_weights["dyn_loss"][i]
+                        * jnp.mean(
+                            residuals**2,
+                            axis=(d for d in range(omega_batch.shape[-1])),
+                        )
+                    )
+            else:
+                if isinstance(list(self.u_dict.values())[0], PINN):
+                    v_dyn_loss = vmap(
+                        lambda t, x, params_dict: self.dynamic_loss_dict[i].evaluate(
+                            t, x, self.u_dict, params_dict
+                        ),
+                        vmap_in_axes_x_t + vmap_in_axes_params,
+                        0,
+                    )
+
+                    tile_omega_batch = jnp.tile(omega_batch, reps=(nt, 1))
+
+                    omega_batch_ = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
+                    times_batch_ = rep_times(n)  # it is repeated
+
+                    mse_dyn_loss += jnp.mean(
+                        self._loss_weights["dyn_loss"][i]
+                        * jnp.mean(
+                            v_dyn_loss(times_batch_, omega_batch_, params_dict) ** 2,
+                            axis=0,
+                        )
+                    )
+                elif isinstance(list(self.u_dict.values())[0], SPINN):
+                    residuals = self.dynamic_loss_dict[i].evaluate(
+                        times_batch, omega_batch, self.u_dict, params_dict
+                    )
+                    mse_dyn_loss = jnp.mean(
+                        self._loss_weights["dyn_loss"][i]
+                        * jnp.mean(
+                            residuals**2,
+                            axis=(d for d in range(1 + omega_batch.shape[-1])),
+                        )
+                    )
 
         # boundary conditions, normalization conditions, observation_loss,
         # initial condition... loss this is done via the internal

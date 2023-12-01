@@ -656,8 +656,6 @@ def create_SPINN(
             res = v_model(t, x)
             a = ", ".join([f"{chr(97 + d)}z" for d in range(res.shape[1])])
             b = "".join([f"{chr(97 + d)}" for d in range(res.shape[1])])
-            # print([[res[:, d, m * self.r:(m + 1) * self.r] for d in
-            #    range(res.shape[1])][0].shape for m in range(self.m)])
             res = jnp.stack(
                 [
                     jnp.einsum(
@@ -676,7 +674,7 @@ def create_SPINN(
     else:
         raise RuntimeError("Wrong parameter value for eq_type")
 
-    spinn = SPINN(key, d, r, eqx_list)
+    spinn = SPINN(key, d, r, eqx_list, m)
     spinn.apply_fn = apply_fn
 
     return spinn
