@@ -196,7 +196,7 @@ def solve(
         if carry["param_data"] is not None:
             batch = append_param_batch(batch, carry["param_data"].get_batch())
         carry["params"], carry["opt_state"] = optimizer.update(
-            params=carry["params"], state=carry["state"], batch=batch
+            params=carry["params"], state=carry["opt_state"], batch=batch
         )
 
         # check if any of the parameters is NaN
@@ -260,7 +260,6 @@ def solve(
         {
             "params": init_params,
             "last_non_nan_params": init_params.copy(),
-            "state": opt_state,
             "data": data,
             "curr_seq": curr_seq,
             "seq2seq": seq2seq,
@@ -281,7 +280,7 @@ def solve(
 
     params = res["params"]
     last_non_nan_params = res["last_non_nan_params"]
-    opt_state = res["state"]
+    opt_state = res["opt_state"]
     data = res["data"]
     loss = res["loss"]
 
