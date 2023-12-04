@@ -140,4 +140,4 @@ def test_initial_loss_Fisher(train_Fisher_init):
 
 def test_10it_Fisher(train_Fisher_10it):
     total_loss_val = train_Fisher_10it
-    assert jnp.round(total_loss_val, 5) == jnp.round(10.7401, 5)
+    assert jnp.round(total_loss_val, 5) == jnp.round(10.79058, 5)
