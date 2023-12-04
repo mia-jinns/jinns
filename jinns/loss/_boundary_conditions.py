@@ -457,7 +457,6 @@ def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params, fa
             )
             values = du_dx1 * n[0, facet] + du_dx2 * n[1, facet]  # dot product
             # explicitly written
-            values = values[None]
         else:
             raise ValueError("Not implemented, we'll do that with a loop")
 

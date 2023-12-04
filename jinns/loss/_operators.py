@@ -106,12 +106,18 @@ def _laplacian_fwd(u, nn_params, eq_params, x, t=None):
     """
 
     def scan_fun(_, i):
-        tangent_vec = (
-            jnp.ones(([x.shape[0] for d in range(x.shape[-1])]))[..., None]
-            * jax.nn.one_hot(i, x.shape[-1])[None]
+        tangent_vec = jnp.repeat(
+            jax.nn.one_hot(i, x.shape[-1])[None], x.shape[0], axis=0
         )
-        # broadcasting is used to create a correctly shaped array even when x
-        # is multidimensional in space
+
+        # print(x.shape)
+        # tangent_vec = (
+        #    jnp.ones(([x.shape[0] for d in range(x.shape[-1])]))[..., None]
+        #    * jax.nn.one_hot(i, x.shape[-1])[None]
+        # )
+        # print(tangent_vec.shape)
+        ## broadcasting is used to create a correctly shaped array even when x
+        ## is multidimensional in space
         if t is None:
             du_dxi_fun = lambda x: jax.jvp(
                 lambda x: u(x, nn_params, eq_params)[..., 0], (x,), (tangent_vec,)
