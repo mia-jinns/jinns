@@ -12,6 +12,8 @@ Physics Informed Neural Networks with JAX. **jinns** has been developed to estim
 
 - [Separable PINN](https://openreview.net/pdf?id=dEySGIcDnI) are implemented
 
+- Check out our various notebooks to get started with `jinns`
+
 For more information, open an issue or contact us!
 
 # Installation
