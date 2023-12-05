@@ -10,7 +10,7 @@ import jinns
 
 
 @pytest.fixture
-def train_Fisher_init():
+def train_ReacDiff_init():
     jax.config.update("jax_enable_x64", False)
     key = random.PRNGKey(2)
     d = 3
@@ -141,11 +141,11 @@ def train_Fisher_init():
 
 
 @pytest.fixture
-def train_Fisher_10it(train_Fisher_init):
+def train_ReacDiff_10it(train_ReacDiff_init):
     """
     Fixture that requests a fixture
     """
-    init_params, loss, train_data = train_Fisher_init
+    init_params, loss, train_data = train_ReacDiff_init
 
     # NOTE we need to waste one get_batch() here to stay synchronized with the
     # notebook
@@ -161,13 +161,13 @@ def train_Fisher_10it(train_Fisher_init):
     return total_loss_list[9]
 
 
-def test_initial_loss_Fisher(train_Fisher_init):
-    init_params, loss, train_data = train_Fisher_init
+def test_initial_loss_ReacDiff(train_ReacDiff_init):
+    init_params, loss, train_data = train_ReacDiff_init
     assert jnp.round(
         loss.evaluate(init_params, train_data.get_batch())[0], 5
     ) == jnp.round(8.27437, 5)
 
 
-def test_10it_Fisher(train_Fisher_10it):
-    total_loss_val = train_Fisher_10it
-    assert jnp.round(total_loss_val, 5) == jnp.round(2.31674, 5)
+def test_10it_ReacDiff(train_ReacDiff_10it):
+    total_loss_val = train_ReacDiff_10it
+    assert jnp.round(total_loss_val, 5) == jnp.round(2.31638, 5)
