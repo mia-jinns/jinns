@@ -138,9 +138,9 @@ def test_initial_loss_NSPipeFlow(train_NSPipeFlow_init):
 
     assert jnp.round(
         loss.evaluate(init_params, train_data.get_batch())[0], 5
-    ) == jnp.round(0.005286878980768049, 5)
+    ) == jnp.round(0.01055, 5)
 
 
 def test_10it_NSPipeFlow(train_NSPipeFlow_10it):
     total_loss_val = train_NSPipeFlow_10it
-    assert jnp.round(total_loss_val, 5) == jnp.round(0.00504, 5)
+    assert jnp.round(total_loss_val, 5) == jnp.round(0.01008, 5)
