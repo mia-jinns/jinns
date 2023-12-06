@@ -10,7 +10,13 @@ from jinns.loss._boundary_conditions import (
 )
 from jinns.loss._DynamicLoss import ODE, PDEStatio, PDENonStatio
 from jinns.data._DataGenerators import PDEStatioBatch, PDENonStatioBatch
-from jinns.utils._utils import _get_vmap_in_axes_params, PINN, SPINN, _get_grid
+from jinns.utils._utils import (
+    _get_vmap_in_axes_params,
+    PINN,
+    SPINN,
+    _get_grid,
+    _check_user_func_return,
+)
 from jinns.loss._operators import _sobolev
 
 _IMPLEMENTED_BOUNDARY_CONDITIONS = [
@@ -415,9 +421,6 @@ class LossPDEStatio(LossPDEAbstract):
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
-        if isinstance(self.u, SPINN):
-            spinn_batch_dim = omega_batch.shape[-1]
-
         # dynamic part
         if self.dynamic_loss is not None:
             if isinstance(self.u, PINN):
@@ -432,13 +435,12 @@ class LossPDEStatio(LossPDEAbstract):
                 )
                 mse_dyn_loss = jnp.mean(
                     self.loss_weights["dyn_loss"]
-                    * jnp.mean(v_dyn_loss(omega_batch, params) ** 2, axis=0)
+                    * jnp.sum(v_dyn_loss(omega_batch, params) ** 2, axis=-1)
                 )
             elif isinstance(self.u, SPINN):
                 residuals = self.dynamic_loss.evaluate(omega_batch, self.u, params)
                 mse_dyn_loss = jnp.mean(
-                    self.loss_weights["dyn_loss"]
-                    * jnp.mean(residuals**2, axis=(d for d in range(spinn_batch_dim)))
+                    self.loss_weights["dyn_loss"] * jnp.sum(residuals**2, axis=-1)
                 )
 
         else:
@@ -456,9 +458,11 @@ class LossPDEStatio(LossPDEAbstract):
                     (0),
                     0,
                 )
-                mse_norm_loss = self.loss_weights["norm_loss"] * (
+                mse_norm_loss = self.loss_weights["norm_loss"] * jnp.mean(
                     jnp.abs(
-                        jnp.mean(v_u(self.get_norm_samples())) * self.int_length - 1
+                        jnp.mean(v_u(self.get_norm_samples()), axis=-1)
+                        * self.int_length
+                        - 1
                     )
                     ** 2
                 )
@@ -473,7 +477,7 @@ class LossPDEStatio(LossPDEAbstract):
                     jnp.abs(
                         jnp.mean(
                             jnp.mean(res, axis=-1),
-                            axis=(d + 1 for d in range(norm_samples.shape[-1])),
+                            axis=tuple(range(res.ndim - 1)),
                         )
                         * self.int_length
                         - 1
@@ -524,6 +528,7 @@ class LossPDEStatio(LossPDEAbstract):
         # NOTE that it does not use jax.lax.stop_gradient on "eq_params" here
         # since we may wish to optimize on it.
         if self.obs_batch is not None:
+            # TODO implement for SPINN
             if isinstance(self.u, PINN):
                 v_u = vmap(
                     lambda x: self.u(x, params["nn_params"], params["eq_params"]),
@@ -532,25 +537,14 @@ class LossPDEStatio(LossPDEAbstract):
                 )
                 mse_observation_loss = jnp.mean(
                     self.loss_weights["observations"]
-                    * jnp.mean(
+                    * jnp.sum(
                         (v_u(self.obs_batch[0][:, None]) - self.obs_batch[1]) ** 2,
-                        axis=0,
+                        axis=-1,
                     )
                 )
             elif isinstance(self.u, SPINN):
-                values = lambda x: self.u(
-                    x,
-                    params["nn_params"],
-                    jax.lax.stop_gradient(params["eq_params"]),
-                )
-                omega_batch_grid = _get_grid(omega_batch)
-                ini = self.initial_condition_fun(omega_batch_grid)
-                res = jnp.squeeze(ini) - jnp.squeeze(values(omega_batch))
-                # squeeze all to avoid bad surprise in case of broadcast when dim=1
-                # because user can code the initial function in many ways...
-                mse_initial_condition = jnp.mean(
-                    self.loss_weights["initial_condition"]
-                    * jnp.mean(res**2, axis=(d for d in range(spinn_batch_dim)))
+                raise RuntimeError(
+                    "observation loss term not yet implemented for SPINNs"
                 )
         else:
             mse_observation_loss = 0
@@ -572,6 +566,8 @@ class LossPDEStatio(LossPDEAbstract):
                 mse_sobolev_loss = self.loss_weights["sobolev"] * jnp.mean(
                     v_sob_reg(omega_batch)
                 )
+            elif isinstance(self.u, SPINN):
+                raise RuntimeError("Sobolev loss term not yet implemented for SPINNs")
         else:
             mse_sobolev_loss = 0
             self.loss_weights["sobolev"] = 0
@@ -824,8 +820,6 @@ class LossPDENonStatio(LossPDEStatio):
         if isinstance(self.u, PINN):
             omega_batch_ = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
             times_batch_ = rep_times(n)  # it is repeated
-        elif isinstance(self.u, SPINN):
-            spinn_batch_dim = 1 + omega_batch.shape[-1]
 
         # dynamic part
         if self.dynamic_loss is not None:
@@ -839,7 +833,7 @@ class LossPDENonStatio(LossPDEStatio):
                 )
                 residuals = v_dyn_loss(times_batch_, omega_batch_, params)
                 mse_dyn_loss = jnp.mean(
-                    self.loss_weights["dyn_loss"] * jnp.mean(residuals**2, axis=0)
+                    self.loss_weights["dyn_loss"] * jnp.sum(residuals**2, axis=-1)
                 )
             # TODO implement Causality is all you need (not yet implemented)
             #  epsilon = 0.01
@@ -854,8 +848,7 @@ class LossPDENonStatio(LossPDEStatio):
                     times_batch, omega_batch, self.u, params
                 )
                 mse_dyn_loss = jnp.mean(
-                    self.loss_weights["dyn_loss"]
-                    * jnp.mean(residuals**2, axis=(d for d in range(spinn_batch_dim)))
+                    self.loss_weights["dyn_loss"] * jnp.sum(residuals**2, axis=-1)
                 )
             # TODO implement Causality is all you need (not yet implemented)
             #    epsilon = 0.01
@@ -883,9 +876,9 @@ class LossPDENonStatio(LossPDEStatio):
                     in_axes=(0, None),
                 )
                 res = v_u(times_batch, self.get_norm_samples())
-                mse_norm_loss = self.loss_weights["norm_loss"] * jnp.sum(
-                    (1 / nt)
-                    * jnp.abs(jnp.mean(res, axis=-1) * self.int_length - 1) ** 2
+                # the outer mean() below is for the times stamps
+                mse_norm_loss = self.loss_weights["norm_loss"] * jnp.mean(
+                    jnp.abs(jnp.mean(res, axis=(-2, -1)) * self.int_length - 1) ** 2
                 )
             elif isinstance(self.u, SPINN):
                 norm_samples = self.get_norm_samples()
@@ -897,11 +890,12 @@ class LossPDENonStatio(LossPDEStatio):
                     params["nn_params"],
                     jax.lax.stop_gradient(params["eq_params"]),
                 )
+                # the outer mean() below is for the times stamps
                 mse_norm_loss = self.loss_weights["norm_loss"] * jnp.mean(
                     jnp.abs(
                         jnp.mean(
                             jnp.mean(res, axis=-1),
-                            axis=(d + 1 for d in range(norm_samples.shape[-1])),
+                            axis=(d + 1 for d in range(res.ndim - 2)),
                         )
                         * self.int_length
                         - 1
@@ -966,7 +960,7 @@ class LossPDENonStatio(LossPDEStatio):
                 )
                 res = v_u_t0(omega_batch)
                 mse_initial_condition = jnp.mean(
-                    self.loss_weights["initial_condition"] * jnp.mean(res**2, axis=0)
+                    self.loss_weights["initial_condition"] * jnp.sum(res**2, axis=-1)
                 )
             elif isinstance(self.u, SPINN):
                 values = lambda x: self.u(
@@ -976,13 +970,13 @@ class LossPDENonStatio(LossPDEStatio):
                     jax.lax.stop_gradient(params["eq_params"]),
                 )[0]
                 omega_batch_grid = _get_grid(omega_batch)
-                ini = self.initial_condition_fun(omega_batch_grid)
-                res = jnp.squeeze(ini) - jnp.squeeze(values(omega_batch))
-                # squeeze all to avoid bad surprise in case of broadcast when dim=1
-                # because user can code the initial function in many ways...
+                v_ini = values(omega_batch)
+                ini = _check_user_func_return(
+                    self.initial_condition_fun(omega_batch_grid), v_ini.shape
+                )
+                res = ini - v_ini
                 mse_initial_condition = jnp.mean(
-                    self.loss_weights["initial_condition"]
-                    * jnp.mean(res**2, axis=(d for d in range(spinn_batch_dim - 1)))
+                    self.loss_weights["initial_condition"] * jnp.sum(res**2, axis=-1)
                 )
         else:
             mse_initial_condition = 0
@@ -1006,7 +1000,7 @@ class LossPDENonStatio(LossPDEStatio):
                             - self.obs_batch[2]
                         )
                         ** 2,
-                        axis=0,
+                        axis=-1,
                     )
                 )
             elif isinstance(self.u, SPINN):
@@ -1452,17 +1446,17 @@ class SystemLossPDE:
                     )
                     mse_dyn_loss += jnp.mean(
                         self._loss_weights["dyn_loss"][i]
-                        * jnp.mean(v_dyn_loss(omega_batch, params_dict) ** 2, axis=0)
+                        * jnp.sum(v_dyn_loss(omega_batch, params_dict) ** 2, axis=-1)
                     )
                 elif isinstance(list(self.u_dict.values())[0], SPINN):
                     residuals = self.dynamic_loss_dict[i].evaluate(
                         omega_batch, self.u_dict, params_dict
                     )
-                    mse_dyn_loss = jnp.mean(
+                    mse_dyn_loss += jnp.mean(
                         self._loss_weights["dyn_loss"][i]
-                        * jnp.mean(
+                        * jnp.sum(
                             residuals**2,
-                            axis=(d for d in range(omega_batch.shape[-1])),
+                            axis=-1,
                         )
                     )
             else:
@@ -1482,20 +1476,20 @@ class SystemLossPDE:
 
                     mse_dyn_loss += jnp.mean(
                         self._loss_weights["dyn_loss"][i]
-                        * jnp.mean(
+                        * jnp.sum(
                             v_dyn_loss(times_batch_, omega_batch_, params_dict) ** 2,
-                            axis=0,
+                            axis=-1,
                         )
                     )
                 elif isinstance(list(self.u_dict.values())[0], SPINN):
                     residuals = self.dynamic_loss_dict[i].evaluate(
                         times_batch, omega_batch, self.u_dict, params_dict
                     )
-                    mse_dyn_loss = jnp.mean(
+                    mse_dyn_loss += jnp.mean(
                         self._loss_weights["dyn_loss"][i]
-                        * jnp.mean(
+                        * jnp.sum(
                             residuals**2,
-                            axis=(d for d in range(1 + omega_batch.shape[-1])),
+                            axis=-1,
                         )
                     )
 

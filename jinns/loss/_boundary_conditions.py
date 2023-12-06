@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 from jax import vmap, grad
-from jinns.utils._utils import PINN, SPINN, _get_grid
+from jinns.utils._utils import PINN, SPINN, _get_grid, _check_user_func_return
 
 
 def _compute_boundary_loss_statio(
@@ -140,7 +140,7 @@ def boundary_dirichlet_statio(f, border_batch, u, params):
             0,
         )
 
-        mse_u_boundary = jnp.mean((v_u_boundary(border_batch)) ** 2, axis=0)
+        mse_u_boundary = jnp.sum((v_u_boundary(border_batch)) ** 2, axis=-1)
     elif isinstance(u, SPINN):
         values = u(
             border_batch,
@@ -148,12 +148,11 @@ def boundary_dirichlet_statio(f, border_batch, u, params):
             jax.lax.stop_gradient(params["eq_params"]),
         )
         x_grid = _get_grid(border_batch)
-        res = jnp.squeeze(values) - jnp.squeeze(f(x_grid))
-        # squeeze all to avoid bad surprise in case of broadcast when dim=1
-        # because user can code the initial function in many ways...
-        mse_u_boundary = jnp.mean(
+        boundaries = _check_user_func_return(f(x_grid), values.shape)
+        res = values - boundaries
+        mse_u_boundary = jnp.sum(
             res**2,
-            axis=(d for d in range(values.ndim - 1)),
+            axis=-1,
         )
     return mse_u_boundary
 
@@ -194,9 +193,10 @@ def boundary_neumann_statio(f, border_batch, u, params, facet):
         n = jnp.array([[-1, 1, 0, 0], [0, 0, -1, 1]])
 
     if isinstance(u, PINN):
+        u_ = lambda x, nn, eq: u(t, x, nn, eq)[0]
         v_neumann = vmap(
             lambda dx: jnp.dot(
-                grad(u, 0)(
+                grad(u_, 0)(
                     dx, params["nn_params"], jax.lax.stop_gradient(params["eq_params"])
                 ),
                 n[..., facet],
@@ -204,7 +204,7 @@ def boundary_neumann_statio(f, border_batch, u, params, facet):
             - f(dx),
             0,
         )
-        mse_u_boundary = jnp.mean((v_neumann(border_batch)) ** 2, axis=0)
+        mse_u_boundary = jnp.sum((v_neumann(border_batch)) ** 2, axis=-1)
     elif isinstance(u, SPINN):
         # the gradient we see in the PINN case can get gradients wrt to x
         # dimensions at once. But it would be very inefficient in SPINN because
@@ -248,18 +248,13 @@ def boundary_neumann_statio(f, border_batch, u, params, facet):
             )
             values = du_dx1 * n[0, facet] + du_dx2 * n[1, facet]  # dot product
             # explicitly written
-            values = values[None]
         else:
             raise ValueError("Not implemented, we'll do that with a loop")
 
         x_grid = _get_grid(border_batch)
-        res = jnp.squeeze(values) - jnp.squeeze(f(x_grid))
-        # squeeze all to avoid bad surprise in case of broadcast when dim=1
-        # because user can code the initial function in many ways...
-        mse_u_boundary = jnp.mean(
-            res**2,
-            axis=(d for d in range(values.ndim - 1)),
-        )
+        boundaries = _check_user_func_return(f(x_grid), values.shape)
+        res = values - boundaries
+        mse_u_boundary = jnp.sum(res**2, axis=-1)
     return mse_u_boundary
 
 
@@ -306,9 +301,9 @@ def boundary_dirichlet_nonstatio(f, times_batch, omega_border_batch, u, params):
         res = v_u_boundary(
             rep_times(omega_border_batch.shape[0]), tile_omega_border_batch
         )  # TODO check if this cartesian product is always relevant
-        mse_u_boundary = jnp.mean(
+        mse_u_boundary = jnp.sum(
             res**2,
-            axis=0,
+            axis=-1,
         )
     elif isinstance(u, SPINN):
         tile_omega_border_batch = jnp.tile(
@@ -329,13 +324,11 @@ def boundary_dirichlet_nonstatio(f, times_batch, omega_border_batch, u, params):
             jax.lax.stop_gradient(params["eq_params"]),
         )
         tx_grid = _get_grid(jnp.concatenate([times_batch, omega_border_batch], axis=-1))
-        res = jnp.squeeze(values) - jnp.squeeze(f(tx_grid[..., 0:1], tx_grid[..., 1:]))
-        # squeeze all to avoid bad surprise in case of broadcast when dim=1
-        # because user can code the initial function in many ways...
-        mse_u_boundary = jnp.mean(
-            res**2,
-            axis=(d for d in range(values.ndim - 1)),
+        boundaries = _check_user_func_return(
+            f(tx_grid[..., 0:1], tx_grid[..., 1:]), values.shape
         )
+        res = values - boundaries
+        mse_u_boundary = jnp.sum(res**2, axis=-1)
     return mse_u_boundary
 
 
@@ -383,9 +376,10 @@ def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params, fa
         def rep_times(k):
             return jnp.repeat(times_batch, k, axis=0)
 
+        u_ = lambda t, x, nn, eq: u(t, x, nn, eq)[0]
         v_neumann = vmap(
             lambda t, dx: jnp.dot(
-                grad(u, 1)(
+                grad(u_, 1)(
                     t,
                     dx,
                     params["nn_params"],
@@ -397,10 +391,10 @@ def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params, fa
             0,
             0,
         )
-        mse_u_boundary = jnp.mean(
+        mse_u_boundary = jnp.sum(
             (v_neumann(rep_times(omega_border_batch.shape[0]), tile_omega_border_batch))
             ** 2,
-            axis=0,
+            axis=-1,
         )  # TODO check if this cartesian product is always relevant
 
     elif isinstance(u, SPINN):
@@ -461,11 +455,12 @@ def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params, fa
             raise ValueError("Not implemented, we'll do that with a loop")
 
         tx_grid = _get_grid(jnp.concatenate([times_batch, omega_border_batch], axis=-1))
-        res = jnp.squeeze(values) - jnp.squeeze(f(tx_grid[..., 0:1], tx_grid[..., 1:]))
-        # squeeze all to avoid bad surprise in case of broadcast when dim=1
-        # because user can code the initial function in many ways...
-        mse_u_boundary = jnp.mean(
+        boundaries = _check_user_func_return(
+            f(tx_grid[..., 0:1], tx_grid[..., 1:]), values.shape
+        )
+        res = values - boundaries
+        mse_u_boundary = jnp.sum(
             res**2,
-            axis=(d for d in range(values.ndim - 1)),
+            axis=-1,
         )
     return mse_u_boundary

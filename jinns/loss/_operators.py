@@ -42,12 +42,9 @@ def _div_fwd(u, nn_params, eq_params, x, t=None):
     """
 
     def scan_fun(_, i):
-        tangent_vec = (
-            jnp.ones(([x.shape[0] for d in range(x.shape[-1])]))[..., None]
-            * jax.nn.one_hot(i, x.shape[-1])[None]
+        tangent_vec = jnp.repeat(
+            jax.nn.one_hot(i, x.shape[-1])[None], x.shape[0], axis=0
         )
-        # broadcasting is used to create a correctly shaped array even when x
-        # is multidimensional in space
         if t is None:
             __, du_dxi = jax.jvp(
                 lambda x: u(x, nn_params, eq_params)[..., i], (x,), (tangent_vec,)
@@ -59,7 +56,7 @@ def _div_fwd(u, nn_params, eq_params, x, t=None):
         return _, du_dxi
 
     _, accu = jax.lax.scan(scan_fun, {}, jnp.arange(x.shape[1]))
-    return jnp.sum(accu, axis=-1)
+    return jnp.sum(accu, axis=0)
 
 
 def _laplacian_bwd(u, nn_params, eq_params, x, t=None):
@@ -73,19 +70,27 @@ def _laplacian_bwd(u, nn_params, eq_params, x, t=None):
     we explicitly call the gradient twice
     """
 
+    # Note that the last dim of u is nec. 1
+    if t is None:
+        u_ = lambda x: u(x, nn_params, eq_params)[0]
+    else:
+        u_ = lambda t, x: u(t, x, nn_params, eq_params)[0]
+
     def scan_fun(_, i):
         if t is None:
             d2u_dxi2 = grad(
-                lambda x, nn_params, eq_params: grad(u, 0)(x, nn_params, eq_params)[i],
+                lambda x: grad(u_, 0)(x)[i],
                 0,
-            )(x, nn_params, eq_params)[i]
+            )(
+                x
+            )[i]
         else:
             d2u_dxi2 = grad(
-                lambda t, x, nn_params, eq_params: grad(u, 1)(
-                    t, x, nn_params, eq_params
-                )[i],
+                lambda t, x: grad(u_, 1)(t, x)[i],
                 1,
-            )(t, x, nn_params, eq_params)[i]
+            )(
+                t, x
+            )[i]
         return _, d2u_dxi2
 
     _, trace_hessian = jax.lax.scan(scan_fun, {}, jnp.arange(x.shape[0]))
@@ -110,14 +115,13 @@ def _laplacian_fwd(u, nn_params, eq_params, x, t=None):
             jax.nn.one_hot(i, x.shape[-1])[None], x.shape[0], axis=0
         )
 
-        # print(x.shape)
         # tangent_vec = (
         #    jnp.ones(([x.shape[0] for d in range(x.shape[-1])]))[..., None]
         #    * jax.nn.one_hot(i, x.shape[-1])[None]
         # )
-        # print(tangent_vec.shape)
         ## broadcasting is used to create a correctly shaped array even when x
         ## is multidimensional in space
+
         if t is None:
             du_dxi_fun = lambda x: jax.jvp(
                 lambda x: u(x, nn_params, eq_params)[..., 0], (x,), (tangent_vec,)
@@ -139,9 +143,7 @@ def _laplacian_fwd(u, nn_params, eq_params, x, t=None):
     # Laplacian by position (b\times d)
 
 
-def _vectorial_laplacian(
-    u, nn_params, eq_params, x, backward=True, t=None, u_vec_ndim=None
-):
+def _vectorial_laplacian(u, nn_params, eq_params, x, t=None, u_vec_ndim=None):
     r"""
     Compute the vectorial Laplacian of a vector field u (from :math:`\mathbb{R}^m`
     to :math:`\mathbb{R}^n`) for x of arbitrary dimension ie
@@ -149,6 +151,9 @@ def _vectorial_laplacian(
 
     **Note:** We need to provide in u_vec_ndim the dimension of the vector
     :math:`\mathbf{u}(x)` if it is different than that of x
+
+    **Note:** Forward mode is used in the context of SPINNs with batched `x`.
+    The return is then of dimension (u_vec_ndim x batch_size x batch_size)
     """
     if u_vec_ndim is None:
         u_vec_ndim = x.shape[0]
@@ -156,22 +161,28 @@ def _vectorial_laplacian(
     def scan_fun(_, j):
         # The loop over the components of u(x). We compute one Laplacian for
         # each of these components
+        # Note the expand_dims
         if isinstance(u, PINN):
             if t is None:
-                uj = lambda x, nn_params, eq_params: u(x, nn_params, eq_params)[j]
+                uj = lambda x, nn_params, eq_params: jnp.expand_dims(
+                    u(x, nn_params, eq_params)[j], axis=-1
+                )
             else:
-                uj = lambda t, x, nn_params, eq_params: u(t, x, nn_params, eq_params)[j]
+                uj = lambda t, x, nn_params, eq_params: jnp.expand_dims(
+                    u(t, x, nn_params, eq_params)[j], axis=-1
+                )
+            lap_on_j = _laplacian_bwd(uj, nn_params, eq_params, x, t)
         elif isinstance(u, SPINN):
             if t is None:
-                uj = lambda x, nn_params, eq_params: u(x, nn_params, eq_params)[..., j]
+                uj = lambda x, nn_params, eq_params: jnp.expand_dims(
+                    u(x, nn_params, eq_params)[..., j], axis=-1
+                )
             else:
-                uj = lambda t, x, nn_params, eq_params: u(t, x, nn_params, eq_params)[
-                    ..., j
-                ]
-        if backward:
-            lap_on_j = _laplacian_bwd(uj, nn_params, eq_params, x, t)
-        else:
+                uj = lambda t, x, nn_params, eq_params: jnp.expand_dims(
+                    u(t, x, nn_params, eq_params)[..., j], axis=-1
+                )
             lap_on_j = _laplacian_fwd(uj, nn_params, eq_params, x, t)
+
         return _, lap_on_j
 
     _, vec_lap = jax.lax.scan(scan_fun, {}, jnp.arange(u_vec_ndim))

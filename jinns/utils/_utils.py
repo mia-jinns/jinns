@@ -188,8 +188,8 @@ def create_PINN(
     shared_pinn_outputs
         A tuple of jnp.s_[] (slices) to determine the different output for each
         network. In this case we return a list of PINNs, one for each output in
-        shared_pinn_outputs. The PINNs share the same network and same
-        parameters. Default is None, we only return one PINN.
+        shared_pinn_outputs. This is useful to create PINNs that share the
+        same network and same parameters. Default is None, we only return one PINN.
 
 
     Returns
@@ -228,6 +228,13 @@ def create_PINN(
     except IndexError:
         nb_inputs_declared = eqx_list[1][1]
         # but we can have, eg, a flatten first layer
+
+    try:
+        nb_outputs_declared = eqx_list[-1][2]  # normally we look for 3rd ele of
+        # last layer
+    except IndexError:
+        nb_outputs_declared = eqx_list[-2][2]
+        # but we can have, eg, a `jnp.exp` last layer
 
     # NOTE Currently the check below is disabled because we added
     # input_transform
@@ -284,6 +291,7 @@ def create_PINN(
                         res = output_transform(
                             t_eq_params, model(t_eq_params).squeeze()
                         )
+
                 if self.output_slice is not None:
                     return res[self.output_slice]
                 else:
@@ -306,8 +314,13 @@ def create_PINN(
                         res = output_transform(x, model(input_transform(x)).squeeze())
                     else:
                         res = output_transform(x, model(x).squeeze()).squeeze()
+
                 if self.output_slice is not None:
-                    return res[self.output_slice]
+                    res = res[self.output_slice]
+
+                # force (1,) output for non vectorial solution (consistency)
+                if not res.shape:
+                    return jnp.expand_dims(res, axis=-1)
                 else:
                     return res
 
@@ -335,8 +348,13 @@ def create_PINN(
                         res = output_transform(
                             x_eq_params, model(x_eq_params).squeeze()
                         )
+
                 if self.output_slice is not None:
-                    return res[self.output_slice]
+                    res = res[self.output_slice]
+
+                # force (1,) output for non vectorial solution (consistency)
+                if not res.shape:
+                    return jnp.expand_dims(res, axis=-1)
                 else:
                     return res
 
@@ -360,8 +378,13 @@ def create_PINN(
                         )
                     else:
                         res = output_transform(t_x, model(t_x).squeeze())
+
                 if self.output_slice is not None:
-                    return res[self.output_slice]
+                    res = res[self.output_slice]
+
+                ## force (1,) output for non vectorial solution (consistency)
+                if not res.shape:
+                    return jnp.expand_dims(res, axis=-1)
                 else:
                     return res
 
@@ -391,8 +414,13 @@ def create_PINN(
                             t_x_eq_params,
                             model(input_transform(t_x_eq_params)).squeeze(),
                         )
+
                 if self.output_slice is not None:
-                    return res[self.output_slice]
+                    res = res[self.output_slice]
+
+                # force (1,) output for non vectorial solution (consistency)
+                if not res.shape:
+                    return jnp.expand_dims(res, axis=-1)
                 else:
                     return res
 
@@ -641,7 +669,12 @@ def create_SPINN(
                 ],
                 axis=-1,
             )  # compute each output dimension
-            return res
+
+            # force (1,) output for non vectorial solution (consistency)
+            if len(res.shape) == d:
+                return jnp.expand_dims(res, axis=-1)
+            else:
+                return res
 
     elif eq_type == "nonstatio_PDE":
 
@@ -669,7 +702,12 @@ def create_SPINN(
                 ],
                 axis=-1,
             )  # compute each output dimension
-            return res
+
+            # force (1,) output for non vectorial solution (consistency)
+            if len(res.shape) == d:
+                return jnp.expand_dims(res, axis=-1)
+            else:
+                return res
 
     else:
         raise RuntimeError("Wrong parameter value for eq_type")
@@ -720,6 +758,25 @@ def _get_vmap_in_axes_params(eq_params_batch_dict, params):
             },
         )
         return vmap_in_axes_params
+
+
+def _check_user_func_return(r, shape):
+    """
+    Correctly handles the result from a user defined function (eg a boundary
+    condition) to get the correct broadcast
+    """
+    if isinstance(r, int) or isinstance(r, float):
+        # if we have a scalar cast it to float
+        return float(r)
+    if r.shape == () or len(r.shape) == 1:
+        # if we have a scalar (or a vector, but no batch dim) inside an array
+        return r.astype(float)
+    else:
+        # if we have an array of the shape of the batch dimension(s) check that
+        # we have the correct broadcast
+        # the reshape below avoids a missing (1,) ending dimension
+        # depending on how the user has coded the inital function
+        return r.reshape(shape)
 
 
 def alternate_optax_solver(
