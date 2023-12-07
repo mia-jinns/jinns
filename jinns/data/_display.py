@@ -149,7 +149,7 @@ def _plot_2D_statio(
         values_grid = values.reshape(x_grid.shape)
     elif spinn:
         # in this case v_fun is directly the values :)
-        values_grid = v_fun
+        values_grid = v_fun.T
 
     if plot:
         fig = plt.figure(figsize=figsize)
