@@ -2,7 +2,8 @@ import jax
 import jax.numpy as jnp
 from jax import grad
 from functools import partial
-from jinns.utils._utils import PINN, SPINN
+from jinns.utils._pinn import PINN
+from jinns.utils._spinn import SPINN
 
 
 def _div_rev(u, nn_params, eq_params, x, t=None):

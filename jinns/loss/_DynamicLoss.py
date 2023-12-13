@@ -1,15 +1,17 @@
 import jax
 from jax import jit, grad, jacrev, jacfwd
 import jax.numpy as jnp
-from jinns.utils._utils import PINN, SPINN, _get_grid
+from jinns.utils._utils import _get_grid
+from jinns.utils._pinn import PINN
+from jinns.utils._spinn import SPINN
 from jinns.loss._DynamicLossAbstract import ODE, PDEStatio, PDENonStatio
 from jinns.loss._operators import (
-    _laplacian_bwd,
+    _laplacian_rev,
     _laplacian_fwd,
-    _div_bwd,
+    _div_rev,
     _div_fwd,
     _vectorial_laplacian,
-    _u_dot_nabla_times_u_bwd,
+    _u_dot_nabla_times_u_rev,
     _u_dot_nabla_times_u_fwd,
 )
 
@@ -77,7 +79,7 @@ class FisherKPP(PDENonStatio):
 
             du_dt = grad(u_, 0)(t, x)
 
-            lap = _laplacian_bwd(u, nn_params, eq_params, x, t)[..., None]
+            lap = _laplacian_rev(u, nn_params, eq_params, x, t)[..., None]
 
             return du_dt + self.Tmax * (
                 -eq_params["D"] * lap
@@ -1455,7 +1457,7 @@ class MassConservation2DStatio(PDEStatio):
 
             u = u_dict[self.nn_key]
 
-            return _div_bwd(u, nn_params, eq_params, x)[..., None]
+            return _div_rev(u, nn_params, eq_params, x)[..., None]
 
         elif isinstance(u_dict[self.nn_key], SPINN):
             nn_params, eq_params = self.set_stop_gradient(params_dict)
@@ -1560,7 +1562,7 @@ class NavierStokes2DStatio(PDEStatio):
 
             u = u_dict[self.u_key]
 
-            u_dot_nabla_x_u = _u_dot_nabla_times_u_bwd(u, u_nn_params, eq_params, x)
+            u_dot_nabla_x_u = _u_dot_nabla_times_u_rev(u, u_nn_params, eq_params, x)
 
             p = lambda x: u_dict[self.p_key](x, p_nn_params, eq_params)
             jac_p = jacrev(p, 0)(x)  # compute the gradient

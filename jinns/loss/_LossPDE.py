@@ -12,11 +12,11 @@ from jinns.loss._DynamicLoss import ODE, PDEStatio, PDENonStatio
 from jinns.data._DataGenerators import PDEStatioBatch, PDENonStatioBatch
 from jinns.utils._utils import (
     _get_vmap_in_axes_params,
-    PINN,
-    SPINN,
     _get_grid,
     _check_user_func_return,
 )
+from jinns.utils._pinn import PINN
+from jinns.utils._spinn import SPINN
 from jinns.loss._operators import _sobolev
 
 _IMPLEMENTED_BOUNDARY_CONDITIONS = [

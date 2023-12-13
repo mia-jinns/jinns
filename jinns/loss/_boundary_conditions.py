@@ -1,7 +1,9 @@
 import jax
 import jax.numpy as jnp
 from jax import vmap, grad
-from jinns.utils._utils import PINN, SPINN, _get_grid, _check_user_func_return
+from jinns.utils._utils import _get_grid, _check_user_func_return
+from jinns.utils._pinn import PINN
+from jinns.utils._spinn import SPINN
 
 
 def _compute_boundary_loss_statio(
