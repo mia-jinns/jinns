@@ -71,6 +71,23 @@ class PINN:
     def __call__(self, *args, **kwargs):
         return self.apply_fn(self, *args, **kwargs)
 
+    def _eval_nn(self, inputs, u_params, eq_params, input_transform, output_transform):
+        """
+        inner function to factorize code. apply_fn (which takes varying forms)
+        call _eval_nn which always have the same content.
+        """
+        model = eqx.combine(u_params, self.static)
+        res = output_transform(inputs, model(input_transform(inputs)).squeeze())
+
+        if self.output_slice is not None:
+            res = res[self.output_slice]
+
+        ## force (1,) output for non vectorial solution (consistency)
+        if not res.shape:
+            return jnp.expand_dims(res, axis=-1)
+        else:
+            return res
+
 
 def create_PINN(
     key,
@@ -127,10 +144,11 @@ def create_PINN(
         + the dimension of ``x`` + the number of ``eq_params``)**
     input_transform
         A function that will be called before entering the PINN. Its output(s)
-        must mathc the PINN inputs.
+        must match the PINN inputs. Default is the No operation
     output_transform
         A function with arguments the same input(s) as the PINN AND the PINN
-        output that will be called after exiting the PINN
+        output that will be called after exiting the PINN. Default is the No
+        operation
     shared_pinn_outputs
         A tuple of jnp.s_[] (slices) to determine the different output for each
         network. In this case we return a list of PINNs, one for each output in
@@ -187,33 +205,37 @@ def create_PINN(
     # if dim_t + dim_x + dim_in_params != nb_inputs_declared:
     #    raise RuntimeError("Error in the declarations of the number of parameters")
 
+    if input_transform is None:
+        if eq_type == "nonstatio_PDE":
+
+            def input_transform(_in1):  # , _in2):
+                print(_in1)
+                return _in1  # , _in2
+
+        else:  # "statio_PDE" or "ODE":
+
+            def input_transform(_in):
+                return _in
+
+    if output_transform is None:
+
+        def output_transform(_in_pinn, _out_pinn):
+            return _out_pinn
+
     if eq_type == "ODE":
         if with_eq_params is None:
 
             def apply_fn(self, t, u_params, eq_params=None):
-                model = eqx.combine(u_params, self.static)
                 t = t[
                     None
                 ]  # Note that we added a dimension to t which is lacking for the ODE batches
-                if output_transform is None:
-                    if input_transform is not None:
-                        res = model(input_transform(t)).squeeze()
-                    else:
-                        res = model(t).squeeze()
-                else:
-                    if input_transform is not None:
-                        res = output_transform(t, model(input_transform(t)).squeeze())
-                    else:
-                        res = output_transform(t, model(t).squeeze())
-                if self.output_slice is not None:
-                    return res[self.output_slice]
-                else:
-                    return res
+                return self._eval_nn(
+                    t, u_params, eq_params, input_transform, output_transform
+                ).squeeze()
 
         else:
 
             def apply_fn(self, t, u_params, eq_params):
-                model = eqx.combine(u_params, self.static)
                 t = t[
                     None
                 ]  # We added a dimension to t which is lacking for the ODE batches
@@ -221,154 +243,55 @@ def create_PINN(
                     [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
                 )
                 t_eq_params = jnp.concatenate([t, eq_params_flatten], axis=-1)
-
-                if output_transform is None:
-                    if input_transform is not None:
-                        res = model(input_transform(t_eq_params)).squeeze()
-                    else:
-                        res = model(t_eq_params).squeeze()
-                else:
-                    if input_transform is not None:
-                        res = output_transform(
-                            t_eq_params,
-                            model(input_transform(t_eq_params)).squeeze(),
-                        )
-                    else:
-                        res = output_transform(
-                            t_eq_params, model(t_eq_params).squeeze()
-                        )
-
-                if self.output_slice is not None:
-                    return res[self.output_slice]
-                else:
-                    return res
+                return self._eval_nn(
+                    t_eq_params, u_params, eq_params, input_transform, output_transform
+                )
 
     elif eq_type == "statio_PDE":
         # Here we add an argument `x` which can be high dimensional
         if with_eq_params is None:
 
             def apply_fn(self, x, u_params, eq_params=None):
-                model = eqx.combine(u_params, self.static)
-
-                if output_transform is None:
-                    if input_transform is not None:
-                        res = model(input_transform(x)).squeeze()
-                    else:
-                        res = model(x).squeeze()
-                else:
-                    if input_transform is not None:
-                        res = output_transform(x, model(input_transform(x)).squeeze())
-                    else:
-                        res = output_transform(x, model(x).squeeze()).squeeze()
-
-                if self.output_slice is not None:
-                    res = res[self.output_slice]
-
-                # force (1,) output for non vectorial solution (consistency)
-                if not res.shape:
-                    return jnp.expand_dims(res, axis=-1)
-                else:
-                    return res
+                return self._eval_nn(
+                    x, u_params, eq_params, input_transform, output_transform
+                )
 
         else:
 
             def apply_fn(self, x, u_params, eq_params):
-                model = eqx.combine(u_params, self.static)
                 eq_params_flatten = jnp.concatenate(
                     [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
                 )
                 x_eq_params = jnp.concatenate([x, eq_params_flatten], axis=-1)
-
-                if output_transform is None:
-                    if input_transform is not None:
-                        res = model(input_transform(x_eq_params)).squeeze()
-                    else:
-                        res = model(x_eq_params).squeeze()
-                else:
-                    if input_transform is not None:
-                        res = output_transform(
-                            x_eq_params,
-                            model(input_transform(x_eq_params)).squeeze(),
-                        )
-                    else:
-                        res = output_transform(
-                            x_eq_params, model(x_eq_params).squeeze()
-                        )
-
-                if self.output_slice is not None:
-                    res = res[self.output_slice]
-
-                # force (1,) output for non vectorial solution (consistency)
-                if not res.shape:
-                    return jnp.expand_dims(res, axis=-1)
-                else:
-                    return res
+                return self._eval_nn(
+                    x_eq_params, u_params, eq_params, input_transform, output_transform
+                )
 
     elif eq_type == "nonstatio_PDE":
         # Here we add an argument `x` which can be high dimensional
         if with_eq_params is None:
 
             def apply_fn(self, t, x, u_params, eq_params=None):
-                model = eqx.combine(u_params, self.static)
                 t_x = jnp.concatenate([t, x], axis=-1)
-
-                if output_transform is None:
-                    if input_transform is not None:
-                        res = model(input_transform(t_x)).squeeze()
-                    else:
-                        res = model(t_x).squeeze()
-                else:
-                    if input_transform is not None:
-                        res = output_transform(
-                            t_x, model(input_transform(t_x)).squeeze()
-                        )
-                    else:
-                        res = output_transform(t_x, model(t_x).squeeze())
-
-                if self.output_slice is not None:
-                    res = res[self.output_slice]
-
-                ## force (1,) output for non vectorial solution (consistency)
-                if not res.shape:
-                    return jnp.expand_dims(res, axis=-1)
-                else:
-                    return res
+                return self._eval_nn(
+                    t_x, u_params, eq_params, input_transform, output_transform
+                )
 
         else:
 
             def apply_fn(self, t, x, u_params, eq_params):
-                model = eqx.combine(u_params, self.static)
                 t_x = jnp.concatenate([t, x], axis=-1)
                 eq_params_flatten = jnp.concatenate(
                     [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
                 )
                 t_x_eq_params = jnp.concatenate([t_x, eq_params_flatten], axis=-1)
-
-                if output_transform is None:
-                    if input_transform is not None:
-                        res = model(input_transform(t_x_eq_params)).squeeze()
-                    else:
-                        res = model(t_x_eq_params).squeeze()
-                else:
-                    if input_transform is not None:
-                        res = output_transform(
-                            t_x_eq_params,
-                            model(input_transform(t_x_eq_params)).squeeze(),
-                        )
-                    else:
-                        res = output_transform(
-                            t_x_eq_params,
-                            model(input_transform(t_x_eq_params)).squeeze(),
-                        )
-
-                if self.output_slice is not None:
-                    res = res[self.output_slice]
-
-                # force (1,) output for non vectorial solution (consistency)
-                if not res.shape:
-                    return jnp.expand_dims(res, axis=-1)
-                else:
-                    return res
+                return self._eval_nn(
+                    t_x_eq_params,
+                    u_params,
+                    eq_params,
+                    input_transform,
+                    output_transform,
+                )
 
     else:
         raise RuntimeError("Wrong parameter value for eq_type")

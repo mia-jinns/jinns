@@ -91,18 +91,34 @@ class SPINN:
     def __call__(self, *args, **kwargs):
         return self.apply_fn(self, *args, **kwargs)
 
+    def _eval_nn(self, res):
+        """
+        common content of apply_fn put here in order to factorize code
+        """
+        a = ", ".join([f"{chr(97 + d)}z" for d in range(res.shape[1])])
+        b = "".join([f"{chr(97 + d)}" for d in range(res.shape[1])])
+        res = jnp.stack(
+            [
+                jnp.einsum(
+                    f"{a} -> {b}",
+                    *(
+                        res[:, d, m * self.r : (m + 1) * self.r]
+                        for d in range(res.shape[1])
+                    ),
+                )
+                for m in range(self.m)
+            ],
+            axis=-1,
+        )  # compute each output dimension
 
-def create_SPINN(
-    key,
-    d,
-    r,
-    eqx_list,
-    eq_type,
-    m=1,
-    with_eq_params=None,
-    input_transform=None,
-    output_transform=None,
-):
+        # force (1,) output for non vectorial solution (consistency)
+        if len(res.shape) == self.d:
+            return jnp.expand_dims(res, axis=-1)
+        else:
+            return res
+
+
+def create_SPINN(key, d, r, eqx_list, eq_type, m=1):
     """
     Utility function to create a SPINN neural network with the equinox
     library.
@@ -150,12 +166,6 @@ def create_SPINN(
         the SPINN article, a total embedding dimension of `r*m` is defined. We
         then sum groups of `r` embedding dimensions to compute each output.
         Default is 1.
-    with_eq_params
-        TODO
-    input_transform
-        TODO
-    output_transform
-        TODO
 
 
     Returns
@@ -208,63 +218,15 @@ def create_SPINN(
             spinn = eqx.combine(u_params, self.static)
             v_model = jax.vmap(spinn, (0))
             res = v_model(t=None, x=x)
-            # We prepare an outer product for an arbitrary nb of 2D arrays
-            # (outer product on first dim and summation on second (embedding)
-            # dim)
-            a = ", ".join([f"{chr(97 + d)}z" for d in range(res.shape[1])])
-            b = "".join([f"{chr(97 + d)}" for d in range(res.shape[1])])
-            res = jnp.stack(
-                [
-                    jnp.einsum(
-                        f"{a} -> {b}",
-                        *(
-                            res[:, d, m * self.r : (m + 1) * self.r]
-                            for d in range(res.shape[1])
-                        ),
-                    )
-                    for m in range(self.m)
-                ],
-                axis=-1,
-            )  # compute each output dimension
-
-            # force (1,) output for non vectorial solution (consistency)
-            if len(res.shape) == d:
-                return jnp.expand_dims(res, axis=-1)
-            else:
-                return res
+            return self._eval_nn(res)
 
     elif eq_type == "nonstatio_PDE":
 
         def apply_fn(self, t, x, u_params, eq_params=None):
             spinn = eqx.combine(u_params, self.static)
-            # NOTE we tried the nested vmap to get the outer product
-            # differently and enable different batch sizes for different
-            # dimensions (see eg
-            # https://stackoverflow.com/questions/73212780/struggling-to-understand-nested-vmaps-in-jax),
-            # but it is much slower than the following...
             v_model = jax.vmap(spinn, ((0, 0)))
             res = v_model(t, x)
-            a = ", ".join([f"{chr(97 + d)}z" for d in range(res.shape[1])])
-            b = "".join([f"{chr(97 + d)}" for d in range(res.shape[1])])
-            res = jnp.stack(
-                [
-                    jnp.einsum(
-                        f"{a} -> {b}",
-                        *(
-                            res[:, d, m * self.r : (m + 1) * self.r]
-                            for d in range(res.shape[1])
-                        ),
-                    )
-                    for m in range(self.m)
-                ],
-                axis=-1,
-            )  # compute each output dimension
-
-            # force (1,) output for non vectorial solution (consistency)
-            if len(res.shape) == d:
-                return jnp.expand_dims(res, axis=-1)
-            else:
-                return res
+            return self._eval_nn(res)
 
     else:
         raise RuntimeError("Wrong parameter value for eq_type")
