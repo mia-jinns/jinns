@@ -12,7 +12,6 @@ import jinns
 @pytest.fixture
 def train_Fisher_init():
     jax.config.update("jax_enable_x64", True)
-    print(jax.devices())
     key = random.PRNGKey(2)
     eqx_list = [
         [eqx.nn.Linear, 2, 50],
@@ -29,9 +28,9 @@ def train_Fisher_init():
         [jnp.exp],
     ]
     key, subkey = random.split(key)
-    init_param_fn, u = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
+    u = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
 
-    init_nn_params = init_param_fn()
+    init_nn_params = u.init_params()
 
     n = 1000
     nb = 2

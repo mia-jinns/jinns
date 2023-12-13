@@ -13,30 +13,27 @@ import jinns
 def train_Fisher_init():
     jax.config.update("jax_enable_x64", False)
     key = random.PRNGKey(2)
+    d = 2
+    r = 256
     eqx_list = [
-        [eqx.nn.Linear, 2, 50],
+        [eqx.nn.Linear, 1, 128],
         [jax.nn.tanh],
-        [eqx.nn.Linear, 50, 50],
+        [eqx.nn.Linear, 128, 128],
         [jax.nn.tanh],
-        [eqx.nn.Linear, 50, 50],
+        [eqx.nn.Linear, 128, 128],
         [jax.nn.tanh],
-        [eqx.nn.Linear, 50, 50],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 50, 50],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 50, 1],
-        [jnp.exp],
+        [eqx.nn.Linear, 128, r],
     ]
     key, subkey = random.split(key)
-    u = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
+    u = jinns.utils.create_SPINN(subkey, d, r, eqx_list, "nonstatio_PDE")
 
     init_nn_params = u.init_params()
 
     n = 1000
     nb = 2
     nt = 1000
-    omega_batch_size = 32
-    temporal_batch_size = 20
+    omega_batch_size = 100
+    temporal_batch_size = 100
     omega_border_batch_size = 2
     dim = 1
     xmin = -1
@@ -123,7 +120,7 @@ def train_Fisher_10it(train_Fisher_init):
 
     params = init_params
 
-    tx = optax.adam(learning_rate=1e-4)
+    tx = optax.adamw(learning_rate=1e-4)
     n_iter = 10
     params, total_loss_list, loss_by_term_dict, _, _, _, _ = jinns.solve(
         init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
@@ -135,9 +132,9 @@ def test_initial_loss_Fisher(train_Fisher_init):
     init_params, loss, train_data = train_Fisher_init
     assert jnp.round(
         loss.evaluate(init_params, train_data.get_batch())[0], 5
-    ) == jnp.round(10.86845, 5)
+    ) == jnp.round(3.1407099, 5)
 
 
 def test_10it_Fisher(train_Fisher_10it):
     total_loss_val = train_Fisher_10it
-    assert jnp.round(total_loss_val, 5) == jnp.round(10.79058, 5)
+    assert jnp.round(total_loss_val, 5) == jnp.round(1.66081, 5)

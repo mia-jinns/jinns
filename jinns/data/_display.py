@@ -13,6 +13,7 @@ def plot2d(
     title="",
     figsize=(7, 7),
     cmap="inferno",
+    spinn=False,
 ):
     """Generic function for plotting functions over rectangular 2-D domains
     :math:`\Omega`. It treats both the stationary case :math:`u(x)` or the
@@ -56,8 +57,24 @@ def plot2d(
 
     if times is None:
         # Statio case : expect a function of one argument fun(x)
-        v_fun = vmap(fun, 0, 0)
-        _plot_2D_statio(v_fun, mesh, plot=True, colorbar=True, cmap=cmap)
+        if not spinn:
+            v_fun = vmap(fun, 0, 0)
+            _plot_2D_statio(
+                v_fun, mesh, plot=True, colorbar=True, cmap=cmap, figsize=figsize
+            )
+        elif spinn:
+            values_grid = jnp.squeeze(
+                fun(jnp.stack([xy_data[0][..., None], xy_data[1][..., None]], axis=1))
+            )
+            _plot_2D_statio(
+                values_grid,
+                mesh,
+                plot=True,
+                colorbar=True,
+                cmap=cmap,
+                spinn=True,
+                figsize=figsize,
+            )
         plt.title(title)
 
     else:
@@ -81,17 +98,30 @@ def plot2d(
         )
 
         for idx, (t, ax) in enumerate(zip(times, grid)):
-            v_fun_at_t = vmap(lambda x: fun(t=jnp.array([t]), x=x), 0, 0)
-            t_slice, _ = _plot_2D_statio(
-                v_fun_at_t, mesh, plot=False, colorbar=False, cmap=None
-            )
+            if not spinn:
+                v_fun_at_t = vmap(lambda x: fun(t=jnp.array([t]), x=x), 0, 0)
+                t_slice, _ = _plot_2D_statio(
+                    v_fun_at_t, mesh, plot=False, colorbar=False, cmap=None
+                )
+            elif spinn:
+                values_grid = jnp.squeeze(
+                    fun(
+                        t * jnp.ones((xy_data[0].shape[0], 1)),
+                        jnp.stack(
+                            [xy_data[0][..., None], xy_data[1][..., None]], axis=1
+                        ),
+                    )[0]
+                )
+                t_slice, _ = _plot_2D_statio(
+                    values_grid, mesh, plot=False, colorbar=True, spinn=True
+                )
             im = ax.pcolormesh(mesh[0], mesh[1], t_slice, cmap=cmap)
             ax.set_title(f"t = {times[idx] * Tmax}")
             ax.cax.colorbar(im)
 
 
 def _plot_2D_statio(
-    v_fun, mesh, plot=True, colorbar=True, cmap="inferno", figsize=(7, 7)
+    v_fun, mesh, plot=True, colorbar=True, cmap="inferno", figsize=(7, 7), spinn=False
 ):
     """Function that plot the function u(x) with 2-D input x using pcolormesh()
 
@@ -114,8 +144,12 @@ def _plot_2D_statio(
     """
 
     x_grid, y_grid = mesh
-    values = v_fun(jnp.vstack([x_grid.flatten(), y_grid.flatten()]).T)
-    values_grid = values.reshape(x_grid.shape)
+    if not spinn:
+        values = v_fun(jnp.vstack([x_grid.flatten(), y_grid.flatten()]).T)
+        values_grid = values.reshape(x_grid.shape)
+    elif spinn:
+        # in this case v_fun is directly the values :)
+        values_grid = v_fun.T
 
     if plot:
         fig = plt.figure(figsize=figsize)
@@ -128,7 +162,13 @@ def _plot_2D_statio(
 
 
 def plot1d_slice(
-    fun, xdata, time_slices=jnp.array([0]), Tmax=1, title="", figsize=(10, 10)
+    fun,
+    xdata,
+    time_slices=jnp.array([0]),
+    Tmax=1,
+    title="",
+    figsize=(10, 10),
+    spinn=False,
 ):
     """Function for plotting time slices of a function :math:`f(t_i, x)` where
     `t` is time (1-D) and x is 1-D
@@ -151,10 +191,16 @@ def plot1d_slice(
     """
     plt.figure(figsize=figsize)
     for t in time_slices:
-        # fix t with partial : shape is (1,)
-        v_u_tfixed = vmap(partial(fun, t=t * jnp.ones((1,))), 0, 0)
-        # add an axis to xdata for the concatenate function in the neural net
-        plt.plot(xdata, v_u_tfixed(x=xdata[:, None]), label=f"$t_i={t * Tmax}$")
+        if not spinn:
+            # fix t with partial : shape is (1,)
+            v_u_tfixed = vmap(partial(fun, t=t * jnp.ones((1,))), 0, 0)
+            # add an axis to xdata for the concatenate function in the neural net
+            values = v_u_tfixed(x=xdata[:, None])
+        elif spinn:
+            values = jnp.squeeze(
+                fun(t * jnp.ones((xdata.shape[0], 1)), xdata[..., None])[0]
+            )
+        plt.plot(xdata, values, label=f"$t_i={t * Tmax}$")
     plt.xlabel("x")
     plt.ylabel(r"$u(t_i, x)$")
     plt.legend()
@@ -162,7 +208,15 @@ def plot1d_slice(
 
 
 def plot1d_image(
-    fun, xdata, times, Tmax=1, title="", figsize=(10, 10), colorbar=True, cmap="inferno"
+    fun,
+    xdata,
+    times,
+    Tmax=1,
+    title="",
+    figsize=(10, 10),
+    colorbar=True,
+    cmap="inferno",
+    spinn=False,
 ):
     """Function for plotting the 2-D image of a function :math:`f(t, x)` where
     `t` is time (1-D) and x is space (1-D).
@@ -186,12 +240,15 @@ def plot1d_image(
     """
 
     mesh = jnp.meshgrid(times, xdata)  # cartesian product
-    # the trick is to use _plot2Dstatio
-    v_fun = vmap(lambda tx: fun(t=tx[0, None], x=tx[1, None]), 0, 0)
-    t_grid, x_grid = mesh
-    values_grid = v_fun(jnp.vstack([t_grid.flatten(), x_grid.flatten()]).T).reshape(
-        t_grid.shape
-    )
+    if not spinn:
+        # the trick is to use _plot2Dstatio
+        v_fun = vmap(lambda tx: fun(t=tx[0, None], x=tx[1, None]), 0, 0)
+        t_grid, x_grid = mesh
+        values_grid = v_fun(jnp.vstack([t_grid.flatten(), x_grid.flatten()]).T).reshape(
+            t_grid.shape
+        )
+    elif spinn:
+        values_grid = jnp.squeeze(fun((times[..., None]), xdata[..., None]).T)
     fig, ax = plt.subplots(1, 1, figsize=figsize)
     im = ax.pcolormesh(mesh[0] * Tmax, mesh[1], values_grid, cmap=cmap)
     if colorbar:

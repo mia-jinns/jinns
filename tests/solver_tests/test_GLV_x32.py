@@ -11,7 +11,6 @@ import jinns
 @pytest.fixture
 def train_GLV_init():
     jax.config.update("jax_enable_x64", False)
-    print(jax.devices())
     key = random.PRNGKey(2)
     key, subkey = random.split(key)
     eqx_list = [
@@ -25,9 +24,9 @@ def train_GLV_init():
         [jnp.exp],
     ]
     key, subkey = random.split(key)
-    init_param_fn, u = jinns.utils.create_PINN(subkey, eqx_list, "ODE")
+    u = jinns.utils.create_PINN(subkey, eqx_list, "ODE")
 
-    init_nn_params = init_param_fn()
+    init_nn_params = u.init_params()
 
     n = 320
     batch_size = 32
@@ -42,8 +41,8 @@ def train_GLV_init():
     init_nn_params_list = []
     for _ in range(3):
         key, subkey = random.split(key)
-        init_param_fn, _ = jinns.utils.create_PINN(subkey, eqx_list, "ODE", 0)
-        init_nn_params = init_param_fn()
+        nn = jinns.utils.create_PINN(subkey, eqx_list, "ODE", 0)
+        init_nn_params = nn.init_params()
         init_nn_params_list.append(init_nn_params)
 
     N_0 = jnp.array([10.0, 7.0, 4.0])

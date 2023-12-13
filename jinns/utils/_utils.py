@@ -57,314 +57,21 @@ def _tracked_parameters(params, tracked_params_key_list):
     return tracked_params
 
 
-class _MLP(eqx.Module):
+def _get_grid(in_array):
     """
-    Class to construct an equinox module from a key and a eqx_list. To be used
-    in pair with the function `create_PINN`
+    From an array of shape (B, D), D > 1, get the grid array, i.e., an array of
+    shape (B, B, ...(D times)..., B, D): along the last axis we have the array
+    of values
     """
-
-    layers: list
-
-    def __init__(self, key, eqx_list):
-        """
-        Parameters
-        ----------
-        key
-            A jax random key
-        eqx_list
-            A list of list of successive equinox modules and activation functions to
-            describe the PINN architecture. The inner lists have the eqx module or
-            axtivation function as first item, other items represents arguments
-            that could be required (eg. the size of the layer).
-            __Note:__ the `key` argument need not be given.
-            Thus typical example is `eqx_list=
-            [[eqx.nn.Linear, 2, 20],
-                [jax.nn.tanh],
-                [eqx.nn.Linear, 20, 20],
-                [jax.nn.tanh],
-                [eqx.nn.Linear, 20, 20],
-                [jax.nn.tanh],
-                [eqx.nn.Linear, 20, 1]
-            ]`
-        """
-
-        self.layers = []
-        # TODO we are limited currently in the number of layer type we can
-        # parse and we lack some safety checks
-        for l in eqx_list:
-            if len(l) == 1:
-                self.layers.append(l[0])
-            else:
-                # By default we append a random key at the end of the
-                # arguments fed into a layer module call
-                key, subkey = jax.random.split(key, 2)
-                # the argument key is keyword only
-                self.layers.append(l[0](*l[1:], key=subkey))
-
-    def __call__(self, t):
-        for layer in self.layers:
-            t = layer(t)
-        return t
-
-
-def create_PINN(
-    key,
-    eqx_list,
-    eq_type,
-    dim_x=0,
-    with_eq_params=None,
-    input_transform=None,
-    output_transform=None,
-):
-    """
-    Utility function to create a standard PINN neural network with the equinox
-    library.
-
-    Parameters
-    ----------
-    key
-        A jax random key that will be used to initialize the network parameters
-    eqx_list
-        A list of list of successive equinox modules and activation functions to
-        describe the PINN architecture. The inner lists have the eqx module or
-        axtivation function as first item, other items represents arguments
-        that could be required (eg. the size of the layer).
-        __Note:__ the `key` argument need not be given.
-        Thus typical example is `eqx_list=
-        [[eqx.nn.Linear, 2, 20],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 20, 20],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 20, 20],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 20, 1]
-        ]`
-    eq_type
-        A string with three possibilities.
-        "ODE": the PINN is called with one input `t`.
-        "statio_PDE": the PINN is called with one input `x`, `x`
-        can be high dimensional.
-        "nonstatio_PDE": the PINN is called with two inputs `t` and `x`, `x`
-        can be high dimensional.
-        **Note: the input dimension as given in eqx_list has to match the sum
-        of the dimension of `t` + the dimension of `x` + the number of
-        parameters in `eq_params` if with_eq_params is `True` (see below)**
-    dim_x
-        An integer. The dimension of `x`. Default `0`
-    with_eq_params
-        Default is None. Otherwise a list of keys from the dict `eq_params`
-        that  the network also takes as inputs.
-        the equation parameters (`eq_params`).
-        **If some keys are provided, the input dimension
-        as given in eqx_list must take into account the number of such provided
-        keys (i.e., the input dimension is the addition of the dimension of ``t``
-        + the dimension of ``x`` + the number of ``eq_params``)**
-    input_transform
-        A function that will be called before entering the PINN. Its output(s)
-        must mathc the PINN inputs.
-    output_transform
-        A function with arguments the same input(s) as the PINN AND the PINN
-        output that will be called after exiting the PINN
-
-
-    Returns
-    -------
-    init_fn
-        A function which (re-)initializes the PINN parameters with the provided
-        jax random key
-    apply_fn
-        A function to apply the neural network on given inputs for given
-        parameters. A typical call will be of the form `u(t, nn_params)` for
-        ODE or `u(t, x, nn_params)` for nD PDEs (`x` being multidimensional)
-        or even `u(t, x, nn_params, eq_params)` if with_eq_params is `True`
-
-    Raises
-    ------
-    RuntimeError
-        If the parameter value for eq_type is not in `["ODE", "statio_PDE",
-        "nonstatio_PDE"]`
-    RuntimeError
-        If we have a `dim_x > 0` and `eq_type == "ODE"`
-        or if we have a `dim_x = 0` and `eq_type != "ODE"`
-    """
-    if eq_type not in ["ODE", "statio_PDE", "nonstatio_PDE"]:
-        raise RuntimeError("Wrong parameter value for eq_type")
-
-    if eq_type == "ODE" and dim_x != 0:
-        raise RuntimeError("Wrong parameter combination eq_type and dim_x")
-
-    if eq_type != "ODE" and dim_x == 0:
-        raise RuntimeError("Wrong parameter combination eq_type and dim_x")
-
-    dim_t = 0 if eq_type == "statio_PDE" else 1
-    dim_in_params = len(with_eq_params) if with_eq_params is not None else 0
-    try:
-        nb_inputs_declared = eqx_list[0][1]  # normally we look for 2nd ele of 1st layer
-    except IndexError:
-        nb_inputs_declared = eqx_list[1][
-            1
-        ]  # but we can have, eg, a flatten first layer
-
-    # NOTE Currently the check below is disabled because we added
-    # input_transform
-    # if dim_t + dim_x + dim_in_params != nb_inputs_declared:
-    #    raise RuntimeError("Error in the declarations of the number of parameters")
-
-    def make_mlp(key, eqx_list):
-        mlp = _MLP(key, eqx_list)
-        params, static = eqx.partition(mlp, eqx.is_inexact_array)
-
-        def init_fn():
-            return params
-
-        if eq_type == "ODE":
-            if with_eq_params is None:
-
-                def apply_fn(t, u_params, eq_params=None):
-                    model = eqx.combine(u_params, static)
-                    t = t[
-                        None
-                    ]  # Note that we added a dimension to t which is lacking for the ODE batches
-                    if output_transform is None:
-                        if input_transform is not None:
-                            return model(input_transform(t)).squeeze()
-                        else:
-                            return model(t).squeeze()
-                    else:
-                        if input_transform is not None:
-                            return output_transform(
-                                t, model(input_transform(t)).squeeze()
-                            )
-                        else:
-                            return output_transform(t, model(t).squeeze())
-
-            else:
-
-                def apply_fn(t, u_params, eq_params):
-                    model = eqx.combine(u_params, static)
-                    t = t[
-                        None
-                    ]  # We added a dimension to t which is lacking for the ODE batches
-                    eq_params_flatten = jnp.concatenate(
-                        [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
-                    )
-                    t_eq_params = jnp.concatenate([t, eq_params_flatten], axis=-1)
-
-                    if output_transform is None:
-                        if input_transform is not None:
-                            return model(input_transform(t_eq_params)).squeeze()
-                        else:
-                            return model(t_eq_params).squeeze()
-                    else:
-                        if input_transform is not None:
-                            return output_transform(
-                                t_eq_params,
-                                model(input_transform(t_eq_params)).squeeze(),
-                            )
-                        else:
-                            return output_transform(
-                                t_eq_params, model(t_eq_params).squeeze()
-                            )
-
-        elif eq_type == "statio_PDE":
-            # Here we add an argument `x` which can be high dimensional
-            if with_eq_params is None:
-
-                def apply_fn(x, u_params, eq_params=None):
-                    model = eqx.combine(u_params, static)
-
-                    if output_transform is None:
-                        if input_transform is not None:
-                            return model(input_transform(x)).squeeze()
-                        else:
-                            return model(x).squeeze()
-                    else:
-                        if input_transform is not None:
-                            return output_transform(
-                                x, model(input_transform(x)).squeeze()
-                            )
-                        else:
-                            return output_transform(x, model(x).squeeze())
-
-            else:
-
-                def apply_fn(x, u_params, eq_params):
-                    model = eqx.combine(u_params, static)
-                    eq_params_flatten = jnp.concatenate(
-                        [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
-                    )
-                    x_eq_params = jnp.concatenate([x, eq_params_flatten], axis=-1)
-
-                    if output_transform is None:
-                        if input_transform is not None:
-                            return model(input_transform(x_eq_params)).squeeze()
-                        else:
-                            return model(x_eq_params).squeeze()
-                    else:
-                        if input_transform is not None:
-                            return output_transform(
-                                x_eq_params,
-                                model(input_transform(x_eq_params)).squeeze(),
-                            )
-                        else:
-                            return output_transform(
-                                x_eq_params, model(x_eq_params).squeeze()
-                            )
-
-        elif eq_type == "nonstatio_PDE":
-            # Here we add an argument `x` which can be high dimensional
-            if with_eq_params is None:
-
-                def apply_fn(t, x, u_params, eq_params=None):
-                    model = eqx.combine(u_params, static)
-                    t_x = jnp.concatenate([t, x], axis=-1)
-
-                    if output_transform is None:
-                        if input_transform is not None:
-                            return model(input_transform(t_x)).squeeze()
-                        else:
-                            return model(t_x).squeeze()
-                    else:
-                        if input_transform is not None:
-                            return output_transform(
-                                t_x, model(input_transform(t_x)).squeeze()
-                            )
-                        else:
-                            return output_transform(t_x, model(t_x).squeeze())
-
-            else:
-
-                def apply_fn(t, x, u_params, eq_params):
-                    model = eqx.combine(u_params, static)
-                    t_x = jnp.concatenate([t, x], axis=-1)
-                    eq_params_flatten = jnp.concatenate(
-                        [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
-                    )
-                    t_x_eq_params = jnp.concatenate([t_x, eq_params_flatten], axis=-1)
-
-                    if output_transform is None:
-                        if input_transform is not None:
-                            return model(input_transform(t_x_eq_params)).squeeze()
-                        else:
-                            return model(t_x_eq_params).squeeze()
-                    else:
-                        if input_transform is not None:
-                            return output_transform(
-                                t_x_eq_params,
-                                model(input_transform(t_x_eq_params)).squeeze(),
-                            )
-                        else:
-                            return output_transform(
-                                t_x_eq_params,
-                                model(input_transform(t_x_eq_params)).squeeze(),
-                            )
-
-        else:
-            raise RuntimeError("Wrong parameter value for eq_type")
-
-        return init_fn, apply_fn
-
-    return make_mlp(key, eqx_list)
+    if in_array.shape[-1] > 1 or in_array.ndim > 1:
+        return jnp.stack(
+            jnp.meshgrid(
+                *(in_array[..., d] for d in range(in_array.shape[-1])), indexing="ij"
+            ),
+            axis=-1,
+        )
+    else:
+        return in_array
 
 
 def _get_vmap_in_axes_params(eq_params_batch_dict, params):
@@ -390,6 +97,25 @@ def _get_vmap_in_axes_params(eq_params_batch_dict, params):
             },
         )
         return vmap_in_axes_params
+
+
+def _check_user_func_return(r, shape):
+    """
+    Correctly handles the result from a user defined function (eg a boundary
+    condition) to get the correct broadcast
+    """
+    if isinstance(r, int) or isinstance(r, float):
+        # if we have a scalar cast it to float
+        return float(r)
+    if r.shape == () or len(r.shape) == 1:
+        # if we have a scalar (or a vector, but no batch dim) inside an array
+        return r.astype(float)
+    else:
+        # if we have an array of the shape of the batch dimension(s) check that
+        # we have the correct broadcast
+        # the reshape below avoids a missing (1,) ending dimension
+        # depending on how the user has coded the inital function
+        return r.reshape(shape)
 
 
 def alternate_optax_solver(

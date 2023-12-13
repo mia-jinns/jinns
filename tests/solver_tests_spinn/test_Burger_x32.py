@@ -12,25 +12,27 @@ import jinns
 def train_Burger_init():
     jax.config.update("jax_enable_x64", False)
     key = random.PRNGKey(2)
+    d = 2
+    r = 256
     eqx_list = [
-        [eqx.nn.Linear, 2, 20],
+        [eqx.nn.Linear, 1, 128],
         [jax.nn.tanh],
-        [eqx.nn.Linear, 20, 20],
+        [eqx.nn.Linear, 128, 128],
         [jax.nn.tanh],
-        [eqx.nn.Linear, 20, 20],
+        [eqx.nn.Linear, 128, 128],
         [jax.nn.tanh],
-        [eqx.nn.Linear, 20, 1],
+        [eqx.nn.Linear, 128, r],
     ]
     key, subkey = random.split(key)
-    u = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
+    u = jinns.utils.create_SPINN(subkey, d, r, eqx_list, "nonstatio_PDE")
 
     init_nn_params = u.init_params()
 
     n = 1000
     nt = 1000
     nb = 2
-    omega_batch_size = 32
-    temporal_batch_size = 20
+    omega_batch_size = 100
+    temporal_batch_size = 100
     omega_border_batch_size = 1
     dim = 1
     xmin = -1
@@ -64,7 +66,7 @@ def train_Burger_init():
 
     be_loss = jinns.loss.BurgerEquation(Tmax=Tmax)
 
-    loss_weights = {"dyn_loss": 1, "initial_condition": 5, "boundary_loss": 1}
+    loss_weights = {"dyn_loss": 1, "initial_condition": 10, "boundary_loss": 1}
 
     loss = jinns.loss.LossPDENonStatio(
         u=u,
@@ -91,7 +93,7 @@ def train_Burger_10it(train_Burger_init):
 
     params = init_params
 
-    tx = optax.adam(learning_rate=1e-3)
+    tx = optax.adamw(learning_rate=1e-3)
     n_iter = 10
     params, total_loss_list, loss_by_term_dict, _, _, _, _ = jinns.solve(
         init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
@@ -104,9 +106,9 @@ def test_initial_loss_Burger(train_Burger_init):
 
     assert jnp.round(
         loss.evaluate(init_params, train_data.get_batch())[0], 5
-    ) == jnp.round(2.6066298, 5)
+    ) == jnp.round(3.72924, 5)
 
 
 def test_10it_Burger(train_Burger_10it):
     total_loss_val = train_Burger_10it
-    assert jnp.round(total_loss_val, 5) == jnp.round(2.04182, 5)
+    assert jnp.round(total_loss_val, 5) == jnp.round(2.64112, 5)

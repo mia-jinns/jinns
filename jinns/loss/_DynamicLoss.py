@@ -1,12 +1,18 @@
 import jax
-from jax import jit, grad, jacrev
+from jax import jit, grad, jacrev, jacfwd
 import jax.numpy as jnp
+from jinns.utils._utils import _get_grid
+from jinns.utils._pinn import PINN
+from jinns.utils._spinn import SPINN
 from jinns.loss._DynamicLossAbstract import ODE, PDEStatio, PDENonStatio
 from jinns.loss._operators import (
-    _laplacian,
-    _div,
+    _laplacian_rev,
+    _laplacian_fwd,
+    _div_rev,
+    _div_fwd,
     _vectorial_laplacian,
-    _u_dot_nabla_times_u,
+    _u_dot_nabla_times_u_rev,
+    _u_dot_nabla_times_u_fwd,
 )
 
 
@@ -48,9 +54,6 @@ class FisherKPP(PDENonStatio):
         """
         Evaluate the dynamic loss at :math:`(t,x)`.
 
-        **Note:** In practice this `u` is vectorized and `t` and `x` have a
-        batch dimension.
-
         Parameters
         ---------
         t
@@ -65,21 +68,41 @@ class FisherKPP(PDENonStatio):
             dictionaries: `eq_params` and `nn_params``, respectively the
             differential equation parameters and the neural network parameter
         """
-        nn_params, eq_params = self.set_stop_gradient(params)
+        if isinstance(u, PINN):
+            nn_params, eq_params = self.set_stop_gradient(params)
+            eq_params = self._eval_heterogeneous_parameters(
+                eq_params, t, x, self.eq_params_heterogeneity
+            )
 
-        eq_params = self._eval_heterogeneous_parameters(
-            eq_params, t, x, self.eq_params_heterogeneity
-        )
+            # Note that the last dim of u is nec. 1
+            u_ = lambda t, x: u(t, x, nn_params, eq_params)[0]
 
-        du_dt = grad(u, 0)(t, x, nn_params)[0]
+            du_dt = grad(u_, 0)(t, x)
 
-        lap = _laplacian(u, nn_params, eq_params, x, t)
+            lap = _laplacian_rev(u, nn_params, eq_params, x, t)[..., None]
 
-        return du_dt + self.Tmax * (
-            -eq_params["D"] * lap
-            - u(t, x, nn_params, eq_params)
-            * (eq_params["r"] - eq_params["g"] * u(t, x, nn_params, eq_params))
-        )
+            return du_dt + self.Tmax * (
+                -eq_params["D"] * lap
+                - u(t, x, nn_params, eq_params)
+                * (eq_params["r"] - eq_params["g"] * u(t, x, nn_params, eq_params))
+            )
+        elif isinstance(u, SPINN):
+            nn_params, eq_params = self.set_stop_gradient(params)
+            x_grid = _get_grid(x)
+            eq_params = self._eval_heterogeneous_parameters(
+                eq_params, t, x_grid, self.eq_params_heterogeneity
+            )
+
+            u_tx, du_dt = jax.jvp(
+                lambda t: u(t, x, nn_params, eq_params),
+                (t,),
+                (jnp.ones_like(t),),
+            )
+            lap = _laplacian_fwd(u, nn_params, eq_params, x, t)[..., None]
+            return du_dt + self.Tmax * (
+                -eq_params["D"] * lap
+                - u_tx * (eq_params["r"][..., None] - eq_params["g"] * u_tx)
+            )
 
 
 class Malthus(ODE):
@@ -120,9 +143,6 @@ class Malthus(ODE):
         Evaluate the dynamic loss at `t`.
         For stability we implement the dynamic loss in log space.
 
-        **Note:** In practice this `u` is vectorized and `t` has a
-        batch dimension.
-
         Parameters
         ---------
         t
@@ -156,7 +176,12 @@ class BurgerEquation(PDENonStatio):
 
     """
 
-    def __init__(self, Tmax=1, derivatives="nn_params", eq_params_heterogeneity=None):
+    def __init__(
+        self,
+        Tmax=1,
+        derivatives="nn_params",
+        eq_params_heterogeneity=None,
+    ):
         """
         Parameters
         ----------
@@ -184,9 +209,6 @@ class BurgerEquation(PDENonStatio):
         """
         Evaluate the dynamic loss at :math:`(t,x)`.
 
-        **Note:** In practice this `u` is vectorized and `t` and `x` have a
-        batch dimension.
-
         Parameters
         ---------
         t
@@ -201,23 +223,47 @@ class BurgerEquation(PDENonStatio):
             dictionaries: `eq_params` and `nn_params``, respectively the
             differential equation parameters and the neural network parameter
         """
-        nn_params, eq_params = self.set_stop_gradient(params)
+        if isinstance(u, PINN):
+            nn_params, eq_params = self.set_stop_gradient(params)
+            eq_params = self._eval_heterogeneous_parameters(
+                eq_params, t, x, self.eq_params_heterogeneity
+            )
 
-        eq_params = self._eval_heterogeneous_parameters(
-            eq_params, t, x, self.eq_params_heterogeneity
-        )
+            # Note that the last dim of u is nec. 1
+            u_ = lambda t, x: u(t, x, nn_params, eq_params)[0]
+            du_dt = grad(u_, 0)
+            du_dx = grad(u_, 1)
+            d2u_dx2 = grad(
+                lambda t, x: du_dx(t, x)[0],
+                1,
+            )
 
-        du_dt = grad(u, 0)
-        du_dx = grad(u, 1)
-        du2_dx2 = grad(
-            lambda t, x, nn_params, eq_params: du_dx(t, x, nn_params, eq_params)[0],
-            1,
-        )
+            return du_dt(t, x) + self.Tmax * (
+                u(t, x, nn_params, eq_params) * du_dx(t, x)
+                - eq_params["nu"] * d2u_dx2(t, x)
+            )
 
-        return du_dt(t, x, nn_params, eq_params)[0] + self.Tmax * (
-            u(t, x, nn_params, eq_params) * du_dx(t, x, nn_params, eq_params)[0]
-            - eq_params["nu"] * du2_dx2(t, x, nn_params, eq_params)[0]
-        )
+        elif isinstance(u, SPINN):
+            nn_params, eq_params = self.set_stop_gradient(params)
+            x_grid = _get_grid(x)
+            eq_params = self._eval_heterogeneous_parameters(
+                eq_params, t, x_grid, self.eq_params_heterogeneity
+            )
+            # d=2 JVP calls are expected since we have time and x
+            # then with a batch of size B, we then have Bd JVP calls
+            u_tx, du_dt = jax.jvp(
+                lambda t: u(t, x, nn_params, eq_params),
+                (t,),
+                (jnp.ones_like(t),),
+            )
+            du_dx_fun = lambda x: jax.jvp(
+                lambda x: u(t, x, nn_params, eq_params),
+                (x,),
+                (jnp.ones_like(x),),
+            )[1]
+            du_dx, d2u_dx2 = jax.jvp(du_dx_fun, (x,), (jnp.ones_like(x),))
+            # Note that ones_like(x) works because x is Bx1 !
+            return du_dt + self.Tmax * (u_tx * du_dx - eq_params["nu"] * d2u_dx2)
 
 
 class GeneralizedLotkaVolterra(ODE):
@@ -282,9 +328,6 @@ class GeneralizedLotkaVolterra(ODE):
         Evaluate the dynamic loss at `t`.
         For stability we implement the dynamic loss in log space.
 
-        **Note:** In practice each `u` from `u_dict` is vectorized and `t` has a
-        batch dimension.
-
         Parameters
         ---------
         t
@@ -323,674 +366,6 @@ class GeneralizedLotkaVolterra(ODE):
 
         return du_dt + self.Tmax * (
             -u_eq_params["growth_rate"] - interaction_terms + carrying_term
-        )
-
-
-class FPEStatioLoss1D(PDEStatio):
-    r"""
-    Return the dynamic loss for a stationary Fokker Planck Equation in one
-    dimension:
-
-    .. math::
-        -\frac{\partial}{\partial x}\left[\mu(x)u(x)\right] +
-        \frac{\partial^2}{\partial x^2}\left[D(x)u(x)\right]=0
-
-    where :math:`\mu(x)` is the drift term and :math:`D(x)` is the diffusion
-    term.
-
-    The drift and diffusion terms are not specified here, hence this class
-    is `abstract`.
-    Other classes inherit from FPEStatioLoss1D and define the drift and
-    diffusion terms, which then defines several other dynamic losses
-    (Ornstein-Uhlenbeck, Cox-Ingersoll-Ross, ...)
-    """
-
-    def __init__(self, derivatives="nn_params", eq_params_heterogeneity=None):
-        """
-        Parameters
-        ----------
-        derivatives
-            A string. Either ``nn_params``, ``eq_params``, ``both``. Determines
-            with respect to which set of parameters gradients of the dynamic
-            loss are computed. Default "nn_params", this is what is typically
-            done in solving forward problems, when we only estimate the
-            equation solution with as PINN.
-        eq_params_heterogeneity
-            Default None. A dict with the keys being the same as in eq_params
-            and the value being `time`, `space`, `both` or None which corresponds to
-            the heterogeneity of a given parameter. A value can be missing, in
-            this case there is no heterogeneity (=None). If
-            eq_params_heterogeneity is None this means there is no
-            heterogeneity for no parameters.
-        """
-        super().__init__(derivatives, eq_params_heterogeneity)
-
-    def evaluate(self, x, u, params):
-        """
-        Evaluate the dynamic loss at `x`.
-
-        **Note:** In practice this `u` is vectorized and `x` has a
-        batch dimension.
-
-        Parameters
-        ---------
-        x
-            A point in :math:`\Omega`
-        u
-            The PINN
-        params
-            The dictionary of parameters of the model.
-            Typically, it is a dictionary of
-            dictionaries: `eq_params` and `nn_params``, respectively the
-            differential equation parameters and the neural network parameter
-        """
-        nn_params, eq_params = self.set_stop_gradient(params)
-
-        # (drift * u)'
-        order_1 = grad(
-            lambda x: (self.drift(x, eq_params) * u(x, nn_params, eq_params))[0],
-            0,
-        )(x)
-
-        # (diffusion * u)''
-        order_2 = grad(
-            lambda x: grad(
-                lambda x: (self.diffusion(x, eq_params) * u(x, nn_params, eq_params))[
-                    0
-                ],
-                0,
-            )(x)[0],
-            0,
-        )(x)
-
-        return -order_1 + order_2
-
-
-class OU_FPEStatioLoss1D(FPEStatioLoss1D):
-    r"""
-    Return the dynamic loss whose solution is the probability density
-    function of a stationary Ornstein-Uhlenbeck process in one dimension:
-
-    .. math::
-        -\frac{\partial}{\partial x}\left[(\alpha(\mu - x))u(x)\right] +
-        \frac{\partial^2}{\partial x^2}\left[\frac{\sigma^2}{2}u(x)\right]=0
-
-    """
-
-    def __init__(self, derivatives="nn_params", eq_params_heterogeneity=None):
-        """
-        Parameters
-        ----------
-        derivatives
-            A string. Either ``nn_params``, ``eq_params``, ``both``. Determines
-            with respect to which set of parameters gradients of the dynamic
-            loss are computed. Default "nn_params", this is what is typically
-            done in solving forward problems, when we only estimate the
-            equation solution with as PINN.
-        eq_params_heterogeneity
-            Default None. A dict with the keys being the same as in eq_params
-            and the value being `time`, `space`, `both` or None which corresponds to
-            the heterogeneity of a given parameter. A value can be missing, in
-            this case there is no heterogeneity (=None). If
-            eq_params_heterogeneity is None this means there is no
-            heterogeneity for no parameters.
-        """
-        super().__init__(derivatives, eq_params_heterogeneity)
-
-    def drift(self, x, eq_params):
-        r"""
-        Return the drift term
-
-        Parameters
-        ----------
-        x
-            A point in :math:`\Omega`
-        eq_params
-            A dictionary containing the equation parameters
-        """
-        return eq_params["alpha"] * (eq_params["mu"] - x)
-
-    def diffusion(self, x, eq_params):
-        r"""
-        Return the computation of the diffusion tensor term in 1D
-
-        Parameters
-        ----------
-        x
-            A point in :math:`\Omega`
-        eq_params
-            A dictionary containing the equation parameters
-        """
-        return 0.5 * eq_params["sigma"] ** 2
-
-
-class CIR_FPEStatioLoss1D(FPEStatioLoss1D):
-    r"""
-    Return the dynamic loss whose solution is the probability density
-    function of a stationary Cox-Ingersoll-Ross process in one dimension:
-
-    .. math::
-        -\frac{\partial}{\partial x}\left[(\mu - \alpha x)u(x)\right] +
-        \frac{\partial^2}{\partial x^2}\left[\frac{\sigma^2}{2}xu(x)\right]=0
-
-    """
-
-    def __init__(self, derivatives="nn_params", eq_params_heterogeneity=None):
-        """
-        Parameters
-        ----------
-        derivatives
-            A string. Either ``nn_params``, ``eq_params``, ``both``. Determines
-            with respect to which set of parameters gradients of the dynamic
-            loss are computed. Default "nn_params", this is what is typically
-            done in solving forward problems, when we only estimate the
-            equation solution with as PINN.
-        eq_params_heterogeneity
-            Default None. A dict with the keys being the same as in eq_params
-            and the value being `time`, `space`, `both` or None which corresponds to
-            the heterogeneity of a given parameter. A value can be missing, in
-            this case there is no heterogeneity (=None). If
-            eq_params_heterogeneity is None this means there is no
-            heterogeneity for no parameters.
-        """
-        super().__init__(derivatives, eq_params_heterogeneity)
-
-    def drift(self, x, eq_params):
-        r"""
-        Return the drift term
-
-        Parameters
-        ----------
-        x
-            A point in :math:`\Omega`
-        eq_params
-            A dictionary containing the equation parameters
-        """
-        return eq_params["mu"] - eq_params["alpha"] * x
-
-    def diffusion(self, x, eq_params):
-        r"""
-        Return the computation of the diffusion tensor term in 1D
-
-        Parameters
-        ----------
-        x
-            A point in :math:`\Omega`
-        eq_params
-            A dictionary containing the equation parameters
-        """
-        return 0.5 * (eq_params["sigma"] ** 2) * x
-
-
-class FPENonStatioLoss1D(PDENonStatio):
-    r"""
-    Return the dynamic loss for a non stationary Fokker Planck Equation in one
-    dimension:
-
-    .. math::
-        -\frac{\partial}{\partial x}\left[\mu(t, x)u(t, x)\right] +
-        \frac{\partial^2}{\partial x^2}\left[D(t, x)u(t, x)\right] =
-        \frac{\partial}{\partial t}u(t,x)
-
-    where :math:`\mu(t, x)` is the drift term and :math:`D(t, x)` is the diffusion
-    term.
-
-    The drift and diffusion terms are not specified here, hence this class
-    is `abstract`.
-    Other classes inherit from FPENonStatioLoss1D and define the drift and
-    diffusion terms, which then defines several other dynamic losses
-    (Ornstein-Uhlenbeck, Cox-Ingersoll-Ross, ...)
-    """
-
-    def __init__(self, Tmax=1, derivatives="nn_params", eq_params_heterogeneity=None):
-        """
-        Parameters
-        ----------
-        Tmax
-            Tmax needs to be given when the PINN time input is normalized in
-            [0, 1], ie. we have performed renormalization of the differential
-            equation
-        eq_params_heterogeneity
-            Default None. A dict with the keys being the same as in eq_params
-            and the value being `time`, `space`, `both` or None which corresponds to
-            the heterogeneity of a given parameter. A value can be missing, in
-            this case there is no heterogeneity (=None). If
-            eq_params_heterogeneity is None this means there is no
-            heterogeneity for no parameters.
-        """
-        super().__init__(Tmax, derivatives, eq_params_heterogeneity)
-
-    def evaluate(self, t, x, u, params):
-        """
-        Evaluate the dynamic loss at :math:`(t,x)`.
-
-        **Note:** In practice this `u` is vectorized and `t` and `x` have a
-        batch dimension.
-
-        Parameters
-        ---------
-        t
-            A time point
-        x
-            A point in :math:`\Omega`
-        u
-            The PINN
-        params
-            The dictionary of parameters of the model.
-            Typically, it is a dictionary of
-            dictionaries: `eq_params` and `nn_params``, respectively the
-            differential equation parameters and the neural network parameter
-        """
-        nn_params, eq_params = self.set_stop_gradient(params)
-        # (drift * u)'
-
-        order_1 = grad(
-            lambda t, x: (self.drift(t, x, eq_params) * u(t, x, nn_params, eq_params))[
-                0
-            ],
-            1,
-        )(t, x)
-
-        # (diffusion * u)''
-        order_2 = grad(
-            lambda t, x: grad(
-                lambda t, x: (
-                    self.diffusion(t, x, eq_params) * u(t, x, nn_params, eq_params)
-                )[0],
-                1,
-            )(t, x)[0],
-            1,
-        )(t, x)
-
-        du_dt = grad(u, 0)(t, x, nn_params, eq_params)
-
-        return -du_dt + self.Tmax * (-order_1 + order_2)
-
-
-class OU_FPENonStatioLoss1D(FPENonStatioLoss1D):
-    r"""
-    Return the dynamic loss whose solution is the probability density
-    function of a non-stationary Ornstein-Uhlenbeck process in one dimension:
-
-    .. math::
-        -\frac{\partial}{\partial x}\left[(\alpha(\mu - x))u(t,x)\right] +
-        \frac{\partial^2}{\partial x^2}\left[\frac{\sigma^2}{2}u(t,x)\right] =
-        \frac{\partial}{\partial t}u(t,x)
-
-    """
-
-    def __init__(self, Tmax=1, derivatives="nn_params", eq_params_heterogeneity=None):
-        """
-        Parameters
-        ----------
-        Tmax
-            Tmax needs to be given when the PINN time input is normalized in
-            [0, 1], ie. we have performed renormalization of the differential
-            equation
-        derivatives
-            A string. Either ``nn_params``, ``eq_params``, ``both``. Determines
-            with respect to which set of parameters gradients of the dynamic
-            loss are computed. Default "nn_params", this is what is typically
-            done in solving forward problems, when we only estimate the
-            equation solution with as PINN.
-        eq_params_heterogeneity
-            Default None. A dict with the keys being the same as in eq_params
-            and the value being `time`, `space`, `both` or None which corresponds to
-            the heterogeneity of a given parameter. A value can be missing, in
-            this case there is no heterogeneity (=None). If
-            eq_params_heterogeneity is None this means there is no
-            heterogeneity for no parameters.
-        """
-        super().__init__(Tmax, derivatives, eq_params_heterogeneity)
-
-    def drift(self, t, x, eq_params):
-        r"""
-        Return the drift term
-
-        Parameters
-        ----------
-        t
-            A time point
-        x
-            A point in :math:`\Omega`
-        eq_params
-            A dictionary containing the equation parameters
-        """
-        return eq_params["alpha"] * (eq_params["mu"] - x)
-
-    def diffusion(self, t, x, eq_params):
-        r"""
-        Return the computation of the diffusion tensor term in 1D
-
-        Parameters
-        ----------
-        t
-            A time point
-        x
-            A point in :math:`\Omega`
-        eq_params
-            A dictionary containing the equation parameters
-        """
-        return 0.5 * eq_params["sigma"] ** 2
-
-
-class CIR_FPENonStatioLoss1D(FPENonStatioLoss1D):
-    r"""
-    Return the dynamic loss whose solution is the probability density
-    function of a stationary Cox-Ingersoll-Ross process in one dimension:
-
-    .. math::
-        -\frac{\partial}{\partial x}\left[(\mu - \alpha x)u(x)\right] +
-        \frac{\partial^2}{\partial x^2}\left[\frac{\sigma^2}{2}xu(x)\right] =
-        \frac{\partial}{\partial t}u(t,x)
-
-    """
-
-    def __init__(self, Tmax=1, derivatives="nn_params"):
-        """
-        Parameters
-        ----------
-        Tmax
-            Tmax needs to be given when the PINN time input is normalized in
-            [0, 1], ie. we have performed renormalization of the differential
-            equation
-        derivatives
-            A string. Either ``nn_params``, ``eq_params``, ``both``. Determines
-            with respect to which set of parameters gradients of the dynamic
-            loss are computed. Default "nn_params", this is what is typically
-            done in solving forward problems, when we only estimate the
-            equation solution with as PINN.
-        """
-        super().__init__(Tmax, derivatives, eq_params_heterogeneity)
-
-    def drift(self, t, x, eq_params):
-        r"""
-        Return the drift term
-
-        Parameters
-        ----------
-        t
-            A time point
-        x
-            A point in :math:`\Omega`
-        eq_params
-            A dictionary containing the equation parameters
-        """
-        return eq_params["mu"] - eq_params["alpha"] * x
-
-    def diffusion(self, t, x, eq_params):
-        r"""
-        Return the computation of the diffusion tensor term in 1D
-
-        Parameters
-        ----------
-        t
-            A time point
-        x
-            A point in :math:`\Omega`
-        eq_params
-            A dictionary containing the equation parameters
-        """
-        return 0.5 * (eq_params["sigma"] ** 2) * x
-
-
-class Sinus_FPENonStatioLoss1D(FPENonStatioLoss1D):
-    r"""
-    Return the dynamic loss whose solution is the probability density
-    function of a non-stationary Ornstein-Uhlenbeck process in one dimension:
-
-    .. math::
-        -\frac{\partial}{\partial x}\left[\sin(x)u(x)\right] +
-        \frac{\partial^2}{\partial x^2}\left[\frac{1}{2}u(x)\right] =
-        \frac{\partial}{\partial t}u(t,x)
-
-    """
-
-    def __init__(self, Tmax=1, derivatives="nn_params", eq_params_heterogeneity=None):
-        """
-        Parameters
-        ----------
-        Tmax
-            Tmax needs to be given when the PINN time input is normalized in
-            [0, 1], ie. we have performed renormalization of the differential
-            equation
-        derivatives
-            A string. Either ``nn_params``, ``eq_params``, ``both``. Determines
-            with respect to which set of parameters gradients of the dynamic
-            loss are computed. Default "nn_params", this is what is typically
-            done in solving forward problems, when we only estimate the
-            equation solution with as PINN.
-        eq_params_heterogeneity
-            Default None. A dict with the keys being the same as in eq_params
-            and the value being `time`, `space`, `both` or None which corresponds to
-            the heterogeneity of a given parameter. A value can be missing, in
-            this case there is no heterogeneity (=None). If
-            eq_params_heterogeneity is None this means there is no
-            heterogeneity for no parameters.
-        """
-        super().__init__(Tmax, derivatives, eq_params_heterogeneity)
-
-    def drift(self, t, x, eq_params):
-        r"""
-        Return the drift term
-
-        Parameters
-        ----------
-        t
-            A time point
-        x
-            A point in :math:`\Omega`
-        eq_params
-            A dictionary containing the equation parameters
-        """
-        return jnp.sin(x)
-
-    def diffusion(self, t, x, eq_params):
-        r"""
-        Return the computation of the diffusion tensor term in 1D
-
-        Parameters
-        ----------
-        t
-            A time point
-        x
-            A point in :math:`\Omega`
-        eq_params
-            A dictionary containing the equation parameters
-        """
-        return 0.5 * jnp.ones((1))
-
-
-class FPEStatioLoss2D(PDEStatio):
-    r"""
-    Return the dynamic loss for a stationary Fokker Planck Equation in two
-    dimensions:
-
-    .. math::
-        -\sum_{i=1}^2\frac{\partial}{\partial \mathbf{x}}
-        \left[\mu(\mathbf{x})u(\mathbf{x})\right] +
-        \sum_{i=1}^2\sum_{j=1}^2\frac{\partial^2}{\partial x_i \partial x_j}
-        \left[D(\mathbf{x})u(\mathbf{x})\right]=0
-
-    where :math:`\mu(\mathbf{x})` is the drift term and :math:`D(\mathbf{x})` is the diffusion
-    term.
-
-    The drift and diffusion terms are not specified here, hence this class
-    is `abstract`.
-    Other classes inherit from FPEStatioLoss2D and define the drift and
-    diffusion terms, which then defines several other dynamic losses
-    (Ornstein-Uhlenbeck, Cox-Ingersoll-Ross, ...)
-    """
-
-    def __init__(self, derivatives="nn_params", eq_params_heterogeneity=None):
-        """
-        Parameters
-        ----------
-        derivatives
-            A string. Either ``nn_params``, ``eq_params``, ``both``. Determines
-            with respect to which set of parameters gradients of the dynamic
-            loss are computed. Default "nn_params", this is what is typically
-            done in solving forward problems, when we only estimate the
-            equation solution with as PINN.
-        eq_params_heterogeneity
-            Default None. A dict with the keys being the same as in eq_params
-            and the value being `time`, `space`, `both` or None which corresponds to
-            the heterogeneity of a given parameter. A value can be missing, in
-            this case there is no heterogeneity (=None). If
-            eq_params_heterogeneity is None this means there is no
-            heterogeneity for no parameters.
-        """
-        super().__init__(derivatives, eq_params_heterogeneity)
-
-    def evaluate(self, x, u, params):
-        """
-        Evaluate the dynamic loss at :math:`\mathbf{x}`.
-
-        **Note:** For computational purpose we use compositions of calls to
-        `jax.grad` instead of a call to `jax.hessian`
-
-        **Note:** In practice this `u` is vectorized and :math:`\mathbf{x}` has a
-        batch dimension.
-
-        Parameters
-        ---------
-        x
-            A point in :math:`\Omega`
-        u
-            The PINN
-        params
-            The dictionary of parameters of the model.
-            Typically, it is a dictionary of
-            dictionaries: `eq_params` and `nn_params``, respectively the
-            differential equation parameters and the neural network parameter
-        """
-        nn_params, eq_params = self.set_stop_gradient(params)
-
-        order_1 = (
-            grad(
-                lambda x: self.drift(x, eq_params)[0] * u(x, nn_params, eq_params),
-                0,
-            )(x)[0]
-            + grad(
-                lambda x: self.drift(x, eq_params)[1] * u(x, nn_params, eq_params),
-                0,
-            )(x)[1]
-        )
-
-        order_2 = (
-            grad(
-                lambda x: grad(
-                    lambda x: u(x, nn_params, eq_params)
-                    * self.diffusion(x, eq_params)[0, 0],
-                    0,
-                )(x)[0],
-                0,
-            )(x)[0]
-            + grad(
-                lambda x: grad(
-                    lambda x: u(x, nn_params, eq_params)
-                    * self.diffusion(x, eq_params)[1, 0],
-                    0,
-                )(x)[1],
-                0,
-            )(x)[0]
-            + grad(
-                lambda x: grad(
-                    lambda x: u(x, nn_params, eq_params)
-                    * self.diffusion(x, eq_params)[0, 1],
-                    0,
-                )(x)[0],
-                0,
-            )(x)[1]
-            + grad(
-                lambda x: grad(
-                    lambda x: u(x, nn_params, eq_params)
-                    * self.diffusion(x, eq_params)[1, 1],
-                    0,
-                )(x)[1],
-                0,
-            )(x)[1]
-        )
-        return -order_1 + order_2
-
-
-class OU_FPEStatioLoss2D(FPEStatioLoss2D):
-    r"""
-    Return the dynamic loss for a stationary Fokker Planck Equation in two
-    dimensions:
-
-    .. math::
-        -\sum_{i=1}^2\frac{\partial}{\partial \mathbf{x}}
-        \left[(\alpha(\mu - \mathbf{x}))u(\mathbf{x})\right] +
-        \sum_{i=1}^2\sum_{j=1}^2\frac{\partial^2}{\partial x_i \partial x_j}
-        \left[\frac{\sigma^2}{2}u(\mathbf{x})\right]=0
-
-    """
-
-    def __init__(self, derivatives="nn_params", eq_params_heterogeneity=None):
-        """
-        Parameters
-        ----------
-        derivatives
-            A string. Either ``nn_params``, ``eq_params``, ``both``. Determines
-            with respect to which set of parameters gradients of the dynamic
-            loss are computed. Default "nn_params", this is what is typically
-            done in solving forward problems, when we only estimate the
-            equation solution with as PINN.
-        eq_params_heterogeneity
-            Default None. A dict with the keys being the same as in eq_params
-            and the value being `time`, `space`, `both` or None which corresponds to
-            the heterogeneity of a given parameter. A value can be missing, in
-            this case there is no heterogeneity (=None). If
-            eq_params_heterogeneity is None this means there is no
-            heterogeneity for no parameters.
-        """
-        super().__init__(derivatives, eq_params_heterogeneity)
-
-    def drift(self, x, eq_params):
-        r"""
-        Return the drift term
-
-        Parameters
-        ----------
-        x
-            A point in :math:`\Omega`
-        eq_params
-            A dictionary containing the equation parameters
-        """
-        return eq_params["alpha"] * (eq_params["mu"] - x)
-
-    def sigma_mat(self, x, eq_params):
-        r"""
-        Return the square root of the diffusion tensor in the sense of the outer
-        product used to create the diffusion tensor
-
-        Parameters
-        ----------
-        x
-            A point in :math:`\Omega`
-        eq_params
-            A dictionary containing the equation parameters
-        """
-        return jnp.diag(eq_params["sigma"])
-
-    def diffusion(self, x, eq_params):
-        r"""
-        Return the computation of the diffusion tensor term in 2D (or
-        higher)
-
-        Parameters
-        ----------
-        x
-            A point in :math:`\Omega`
-        eq_params
-            A dictionary containing the equation parameters
-        """
-        return 0.5 * (
-            jnp.matmul(
-                self.sigma_mat(x, eq_params),
-                jnp.transpose(self.sigma_mat(x, eq_params)),
-            )
         )
 
 
@@ -1044,9 +419,6 @@ class FPENonStatioLoss2D(PDENonStatio):
         """
         Evaluate the dynamic loss at :math:`(t,\mathbf{x})`.
 
-        **Note:** In practice this `u` is vectorized and `t` and
-        :math:`\mathbf{x}` have a batch dimension.
-
         Parameters
         ---------
         t
@@ -1061,59 +433,129 @@ class FPENonStatioLoss2D(PDENonStatio):
             dictionaries: `eq_params` and `nn_params``, respectively the
             differential equation parameters and the neural network parameter
         """
-        nn_params, eq_params = self.set_stop_gradient(params)
+        if isinstance(u, PINN):
+            nn_params, eq_params = self.set_stop_gradient(params)
+            eq_params = self._eval_heterogeneous_parameters(
+                eq_params, t, x, self.eq_params_heterogeneity
+            )
 
-        order_1 = (
-            grad(
-                lambda t, x: self.drift(t, x, eq_params)[0]
-                * u(t, x, nn_params, eq_params),
-                1,
-            )(t, x)[0]
-            + grad(
-                lambda t, x: self.drift(t, x, eq_params)[1]
-                * u(t, x, nn_params, eq_params),
-                1,
-            )(t, x)[1]
-        )
+            # Note that the last dim of u is nec. 1
+            u_ = lambda t, x: u(t, x, nn_params, eq_params)[0]
 
-        order_2 = (
-            grad(
-                lambda t, x: grad(
-                    lambda t, x: u(t, x, nn_params, eq_params)
-                    * self.diffusion(t, x, eq_params)[0, 0],
+            order_1 = (
+                grad(
+                    lambda t, x: self.drift(t, x, eq_params)[0] * u_(t, x),
                     1,
-                )(t, x)[0],
-                1,
-            )(t, x)[0]
-            + grad(
-                lambda t, x: grad(
-                    lambda t, x: u(t, x, nn_params, eq_params)
-                    * self.diffusion(t, x, eq_params)[1, 0],
+                )(
+                    t, x
+                )[0:1]
+                + grad(
+                    lambda t, x: self.drift(t, x, eq_params)[1] * u_(t, x),
                     1,
-                )(t, x)[1],
-                1,
-            )(t, x)[0]
-            + grad(
-                lambda t, x: grad(
-                    lambda t, x: u(t, x, nn_params, eq_params)
-                    * self.diffusion(t, x, eq_params)[0, 1],
-                    1,
-                )(t, x)[0],
-                1,
-            )(t, x)[1]
-            + grad(
-                lambda t, x: grad(
-                    lambda t, x: u(t, x, nn_params, eq_params)
-                    * self.diffusion(t, x, eq_params)[1, 1],
-                    1,
-                )(t, x)[1],
-                1,
-            )(t, x)[1]
-        )
+                )(
+                    t, x
+                )[1:2]
+            )
 
-        du_dt = grad(u, 0)(t, x, nn_params, eq_params)
+            order_2 = (
+                grad(
+                    lambda t, x: grad(
+                        lambda t, x: u_(t, x) * self.diffusion(t, x, eq_params)[0, 0],
+                        1,
+                    )(t, x)[0],
+                    1,
+                )(t, x)[0:1]
+                + grad(
+                    lambda t, x: grad(
+                        lambda t, x: u_(t, x) * self.diffusion(t, x, eq_params)[1, 0],
+                        1,
+                    )(t, x)[1],
+                    1,
+                )(t, x)[0:1]
+                + grad(
+                    lambda t, x: grad(
+                        lambda t, x: u_(t, x) * self.diffusion(t, x, eq_params)[0, 1],
+                        1,
+                    )(t, x)[0],
+                    1,
+                )(t, x)[1:2]
+                + grad(
+                    lambda t, x: grad(
+                        lambda t, x: u_(t, x) * self.diffusion(t, x, eq_params)[1, 1],
+                        1,
+                    )(t, x)[1],
+                    1,
+                )(t, x)[1:2]
+            )
 
-        return -du_dt + self.Tmax * (-order_1 + order_2)
+            du_dt = grad(u_, 0)(t, x)
+
+            return -du_dt + self.Tmax * (-order_1 + order_2)
+
+        elif isinstance(u, SPINN):
+            nn_params, eq_params = self.set_stop_gradient(params)
+            x_grid = _get_grid(x)
+            eq_params = self._eval_heterogeneous_parameters(
+                eq_params, t, x_grid, self.eq_params_heterogeneity
+            )
+
+            _, du_dt = jax.jvp(
+                lambda t: u(t, x, nn_params, eq_params),
+                (t,),
+                (jnp.ones_like(t),),
+            )
+
+            # in forward AD we do not have the results for all the input
+            # dimension at once (as it is the case with grad), we then write
+            # two jvp calls
+            tangent_vec_0 = jnp.repeat(jnp.array([1.0, 0.0])[None], x.shape[0], axis=0)
+            tangent_vec_1 = jnp.repeat(jnp.array([0.0, 1.0])[None], x.shape[0], axis=0)
+            _, dau_dx1 = jax.jvp(
+                lambda x: self.drift(t, _get_grid(x), eq_params)[None, ..., 0:1]
+                * u(t, x, nn_params, eq_params)[..., 0:1],
+                (x,),
+                (tangent_vec_0,),
+            )
+            _, dau_dx2 = jax.jvp(
+                lambda x: self.drift(t, _get_grid(x), eq_params)[None, ..., 1:2]
+                * u(t, x, nn_params, eq_params)[..., 0:1],
+                (x,),
+                (tangent_vec_1,),
+            )
+
+            dsu_dx1_fun = lambda x, i, j: jax.jvp(
+                lambda x: self.diffusion(t, _get_grid(x), eq_params, i, j)[
+                    None, None, None, None
+                ]
+                * u(t, x, nn_params, eq_params)[..., 0:1],
+                (x,),
+                (tangent_vec_0,),
+            )[1]
+            dsu_dx2_fun = lambda x, i, j: jax.jvp(
+                lambda x: self.diffusion(t, _get_grid(x), eq_params, i, j)[
+                    None, None, None, None
+                ]
+                * u(t, x, nn_params, eq_params)[..., 0:1],
+                (x,),
+                (tangent_vec_1,),
+            )[1]
+            _, d2su_dx12 = jax.jvp(
+                lambda x: dsu_dx1_fun(x, 0, 0), (x,), (tangent_vec_0,)
+            )
+            _, d2su_dx1dx2 = jax.jvp(
+                lambda x: dsu_dx1_fun(x, 0, 1), (x,), (tangent_vec_1,)
+            )
+            _, d2su_dx22 = jax.jvp(
+                lambda x: dsu_dx2_fun(x, 1, 1), (x,), (tangent_vec_1,)
+            )
+            _, d2su_dx2dx1 = jax.jvp(
+                lambda x: dsu_dx2_fun(x, 1, 0), (x,), (tangent_vec_0,)
+            )
+
+            return -du_dt + self.Tmax * (
+                -(dau_dx1 + dau_dx2)
+                + (d2su_dx12 + d2su_dx22 + d2su_dx1dx2 + d2su_dx2dx1)
+            )
 
 
 class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
@@ -1184,9 +626,10 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
         eq_params
             A dictionary containing the equation parameters
         """
+
         return jnp.diag(eq_params["sigma"])
 
-    def diffusion(self, t, x, eq_params):
+    def diffusion(self, t, x, eq_params, i=None, j=None):
         r"""
         Return the computation of the diffusion tensor term in 2D (or
         higher)
@@ -1200,12 +643,20 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
         eq_params
             A dictionary containing the equation parameters
         """
-        return 0.5 * (
-            jnp.matmul(
-                self.sigma_mat(t, x, eq_params),
-                jnp.transpose(self.sigma_mat(t, x, eq_params)),
+        if i is None or j is None:
+            return 0.5 * (
+                jnp.matmul(
+                    self.sigma_mat(t, x, eq_params),
+                    jnp.transpose(self.sigma_mat(t, x, eq_params)),
+                )
             )
-        )
+        else:
+            return 0.5 * (
+                jnp.matmul(
+                    self.sigma_mat(t, x, eq_params),
+                    jnp.transpose(self.sigma_mat(t, x, eq_params)),
+                )[i, j]
+            )
 
 
 class ConvectionDiffusionNonStatio(FPENonStatioLoss2D):
@@ -1326,9 +777,6 @@ class MassConservation2DStatio(PDEStatio):
         Evaluate the dynamic loss at `\mathbf{x}`.
         For stability we implement the dynamic loss in log space.
 
-        **Note:** In practice each `u` from `u_dict` is vectorized and
-        `\mathbf{x}` has a batch dimension.
-
         Parameters
         ---------
         x
@@ -1342,14 +790,25 @@ class MassConservation2DStatio(PDEStatio):
             differential equation parameters and the neural network parameter.
             Must have the same keys as `u_dict`
         """
-        nn_params, eq_params = self.set_stop_gradient(params_dict)
+        if isinstance(u_dict[self.nn_key], PINN):
+            nn_params, eq_params = self.set_stop_gradient(params_dict)
 
-        nn_params = nn_params[self.nn_key]
-        eq_params = eq_params
+            nn_params = nn_params[self.nn_key]
+            eq_params = eq_params
 
-        u = u_dict[self.nn_key]
+            u = u_dict[self.nn_key]
 
-        return _div(u, nn_params, eq_params, x)
+            return _div_rev(u, nn_params, eq_params, x)[..., None]
+
+        elif isinstance(u_dict[self.nn_key], SPINN):
+            nn_params, eq_params = self.set_stop_gradient(params_dict)
+
+            nn_params = nn_params[self.nn_key]
+            eq_params = eq_params
+
+            u = u_dict[self.nn_key]
+
+            return _div_fwd(u, nn_params, eq_params, x)[..., None]
 
 
 class NavierStokes2DStatio(PDEStatio):
@@ -1422,9 +881,6 @@ class NavierStokes2DStatio(PDEStatio):
         Evaluate the dynamic loss at `\mathbf{x}`.
         For stability we implement the dynamic loss in log space.
 
-        **Note:** In practice each `u` from `u_dict` is vectorized and
-        `\mathbf{x}` has a batch dimension.
-
         Parameters
         ---------
         x
@@ -1438,35 +894,77 @@ class NavierStokes2DStatio(PDEStatio):
             differential equation parameters and the neural network parameter.
             Must have the same keys as `u_dict`
         """
-        nn_params, eq_params = self.set_stop_gradient(params_dict)
+        if isinstance(u_dict[self.u_key], PINN):
+            nn_params, eq_params = self.set_stop_gradient(params_dict)
 
-        u_nn_params = nn_params[self.u_key]
-        p_nn_params = nn_params[self.p_key]
-        eq_params = eq_params
+            u_nn_params = nn_params[self.u_key]
+            p_nn_params = nn_params[self.p_key]
+            eq_params = eq_params
 
-        u = u_dict[self.u_key]
+            u = u_dict[self.u_key]
 
-        u_dot_nabla_x_u = _u_dot_nabla_times_u(u, u_nn_params, eq_params, x)
+            u_dot_nabla_x_u = _u_dot_nabla_times_u_rev(u, u_nn_params, eq_params, x)
 
-        p = lambda x: u_dict[self.p_key](x, p_nn_params, eq_params)
-        jac_p = jacrev(p, 0)(x)  # compute the gradient
+            p = lambda x: u_dict[self.p_key](x, p_nn_params, eq_params)
+            jac_p = jacrev(p, 0)(x)  # compute the gradient
 
-        vec_laplacian_u = _vectorial_laplacian(
-            u, u_nn_params, eq_params, x, u_vec_ndim=2
-        )
+            vec_laplacian_u = _vectorial_laplacian(
+                u, u_nn_params, eq_params, x, u_vec_ndim=2
+            )
 
-        # dynamic loss on x axis
-        result_x = (
-            u_dot_nabla_x_u[0]
-            + 1 / eq_params["rho"] * jac_p[0]
-            - eq_params["nu"] * vec_laplacian_u[0]
-        )
-        # dynamic loss on y axis
-        result_y = (
-            u_dot_nabla_x_u[1]
-            + 1 / eq_params["rho"] * jac_p[1]
-            - eq_params["nu"] * vec_laplacian_u[1]
-        )
+            # dynamic loss on x axis
+            result_x = (
+                u_dot_nabla_x_u[0]
+                + 1 / eq_params["rho"] * jac_p[0, 0]
+                - eq_params["nu"] * vec_laplacian_u[0]
+            )
 
-        # output is 2D
-        return jnp.stack([result_x, result_y], axis=-1)
+            # dynamic loss on y axis
+            result_y = (
+                u_dot_nabla_x_u[1]
+                + 1 / eq_params["rho"] * jac_p[0, 1]
+                - eq_params["nu"] * vec_laplacian_u[1]
+            )
+
+            # output is 2D
+            return jnp.stack([result_x, result_y], axis=-1)
+
+        elif isinstance(u_dict[self.u_key], SPINN):
+            nn_params, eq_params = self.set_stop_gradient(params_dict)
+
+            u_nn_params = nn_params[self.u_key]
+            p_nn_params = nn_params[self.p_key]
+            eq_params = eq_params
+
+            u = u_dict[self.u_key]
+
+            u_dot_nabla_x_u = _u_dot_nabla_times_u_fwd(u, u_nn_params, eq_params, x)
+
+            p = lambda x: u_dict[self.p_key](x, p_nn_params, eq_params)
+
+            tangent_vec_0 = jnp.repeat(jnp.array([1.0, 0.0])[None], x.shape[0], axis=0)
+            _, dp_dx = jax.jvp(p, (x,), (tangent_vec_0,))
+            tangent_vec_1 = jnp.repeat(jnp.array([0.0, 1.0])[None], x.shape[0], axis=0)
+            _, dp_dy = jax.jvp(p, (x,), (tangent_vec_1,))
+
+            vec_laplacian_u = jnp.moveaxis(
+                _vectorial_laplacian(u, u_nn_params, eq_params, x, u_vec_ndim=2),
+                source=0,
+                destination=-1,
+            )
+
+            # dynamic loss on x axis
+            result_x = (
+                u_dot_nabla_x_u[..., 0]
+                + 1 / eq_params["rho"] * dp_dx.squeeze()
+                - eq_params["nu"] * vec_laplacian_u[..., 0]
+            )
+            # dynamic loss on y axis
+            result_y = (
+                u_dot_nabla_x_u[..., 1]
+                + 1 / eq_params["rho"] * dp_dy.squeeze()
+                - eq_params["nu"] * vec_laplacian_u[..., 1]
+            )
+
+            # output is 2D
+            return jnp.stack([result_x, result_y], axis=-1)
