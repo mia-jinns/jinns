@@ -76,25 +76,30 @@ def _laplacian_bwd(u, nn_params, eq_params, x, t=None):
     else:
         u_ = lambda t, x: u(t, x, nn_params, eq_params)[0]
 
-    def scan_fun(_, i):
-        if t is None:
-            d2u_dxi2 = grad(
-                lambda x: grad(u_, 0)(x)[i],
-                0,
-            )(
-                x
-            )[i]
-        else:
-            d2u_dxi2 = grad(
-                lambda t, x: grad(u_, 1)(t, x)[i],
-                1,
-            )(
-                t, x
-            )[i]
-        return _, d2u_dxi2
+    # def scan_fun(_, i):
+    #    if t is None:
+    #        d2u_dxi2 = grad(
+    #            lambda x: grad(u_, 0)(x)[i],
+    #            0,
+    #        )(
+    #            x
+    #        )[i]
+    #    else:
+    #        d2u_dxi2 = grad(
+    #            lambda t, x: grad(u_, 1)(t, x)[i],
+    #            1,
+    #        )(
+    #            t, x
+    #        )[i]
+    #    return _, d2u_dxi2
 
-    _, trace_hessian = jax.lax.scan(scan_fun, {}, jnp.arange(x.shape[0]))
-    return jnp.sum(trace_hessian)
+    # _, trace_hessian = jax.lax.scan(scan_fun, {}, jnp.arange(x.shape[0]))
+    # return jnp.sum(trace_hessian)
+
+    if t is None:
+        return jnp.trace(jax.hessian(u_)(x))
+    else:
+        return jnp.trace(jax.hessian(u_, argnums=1)(t, x))
 
 
 def _laplacian_fwd(u, nn_params, eq_params, x, t=None):
