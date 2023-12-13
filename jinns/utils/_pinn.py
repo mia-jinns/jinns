@@ -206,16 +206,9 @@ def create_PINN(
     #    raise RuntimeError("Error in the declarations of the number of parameters")
 
     if input_transform is None:
-        if eq_type == "nonstatio_PDE":
 
-            def input_transform(_in1):  # , _in2):
-                print(_in1)
-                return _in1  # , _in2
-
-        else:  # "statio_PDE" or "ODE":
-
-            def input_transform(_in):
-                return _in
+        def input_transform(_in):
+            return _in
 
     if output_transform is None:
 
