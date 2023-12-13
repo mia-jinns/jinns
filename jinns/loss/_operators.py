@@ -8,10 +8,9 @@ from jinns.utils._spinn import SPINN
 
 def _div_rev(u, nn_params, eq_params, x, t=None):
     r"""
-    Compute the divergence of a vector field :math:`\mathbf{u}` ie
-    :math:`\nabla \cdot u(x)` with :math:`\mathbf{u}` a vector
-    field from :math:`\mathbb{R}^n` to :math:`\mathbb{R}^n`
-
+    Compute the divergence of a vector field :math:`\mathbf{u}`, i.e.,
+    :math:`\nabla \cdot \mathbf{u}(\mathbf{x})` with :math:`\mathbf{u}` a vector
+    field from :math:`\mathbb{R}^d` to :math:`\mathbb{R}^d`.
     The computation is done using backward AD
     """
 
@@ -32,14 +31,13 @@ def _div_rev(u, nn_params, eq_params, x, t=None):
 
 def _div_fwd(u, nn_params, eq_params, x, t=None):
     r"""
-    Compute the divergence of a vector field :math:`\mathbf{u}` ie
-    :math:`\nabla \cdot u(x)` with :math:`\mathbf{u}` a vector
-    field from :math:`\mathbb{R}^{b \times n}` to :math:`\mathbb{R}^{b \times n}`
-
-    In this case because of batch dimensions, the computation is very efficient
-    using forward AD. This is the idea behind Separable PINNs.
-
-    ** Note ** To be used in the context of SPINNs
+    Compute the divergence of a **batched** vector field :math:`\mathbf{u}`, i.e.,
+    :math:`\nabla \cdot \mathbf{u}(\mathbf{x})` with :math:`\mathbf{u}` a vector
+    field from :math:`\mathbb{R}^{b \times d}` to :math:`\mathbb{R}^{b \times b
+    \times d}`. The result is then in :math:`\mathbb{R}^{b\times b}`.
+    Because of the embedding that happens in SPINNs the
+    computation is most efficient with forward AD. This is the idea behind Separable PINNs.
+    This function is to be used in the context of SPINNs only.
     """
 
     def scan_fun(_, i):
@@ -62,13 +60,10 @@ def _div_fwd(u, nn_params, eq_params, x, t=None):
 
 def _laplacian_rev(u, nn_params, eq_params, x, t=None):
     r"""
-    Compute the Laplacian of a scalar field u (from :math:`\mathbb{R}^n`
-    to :math:`\mathbb{R}`) for x of arbitrary dimension ie
-    :math:`\Delta u(x)=\nabla\cdot\nabla u(x)`
-
-    The computation is done using backward AD
-    For computational reason we do not compute the trace of the Hessian but
-    we explicitly call the gradient twice
+    Compute the Laplacian of a scalar field :math:`u` (from :math:`\mathbb{R}^d`
+    to :math:`\mathbb{R}`) for :math:`\mathbf{x}` of arbitrary dimension, i.e.,
+    :math:`\Delta u(\mathbf{x})=\nabla\cdot\nabla u(\mathbf{x})`.
+    The computation is done using backward AD.
     """
 
     # Note that the last dim of u is nec. 1
@@ -76,6 +71,15 @@ def _laplacian_rev(u, nn_params, eq_params, x, t=None):
         u_ = lambda x: u(x, nn_params, eq_params)[0]
     else:
         u_ = lambda t, x: u(t, x, nn_params, eq_params)[0]
+
+    if t is None:
+        return jnp.trace(jax.hessian(u_)(x))
+    else:
+        return jnp.trace(jax.hessian(u_, argnums=1)(t, x))
+
+    # For a small d, we found out that trace of the Hessian is faster, but the
+    # trick below for taking directly the diagonal elements might prove useful
+    # in higher dimensions?
 
     # def scan_fun(_, i):
     #    if t is None:
@@ -97,23 +101,16 @@ def _laplacian_rev(u, nn_params, eq_params, x, t=None):
     # _, trace_hessian = jax.lax.scan(scan_fun, {}, jnp.arange(x.shape[0]))
     # return jnp.sum(trace_hessian)
 
-    if t is None:
-        return jnp.trace(jax.hessian(u_)(x))
-    else:
-        return jnp.trace(jax.hessian(u_, argnums=1)(t, x))
-
 
 def _laplacian_fwd(u, nn_params, eq_params, x, t=None):
     r"""
-    Compute the Laplacian of a **batched** scalar field u
-    (from :math:`\mathbb{R}^{b\times n}` to :math:`\mathbb{R}^{b\times d}`)
-    for x of arbitrary dimension :math:`n` **but including a
-    batch dimension** :math:`b`
-
-    In this case because of batch dimensions, the computation is very efficient
-    using forward AD. This is the idea behind Separable PINNs.
-
-    ** Note ** To be used in the context of SPINNs
+    Compute the Laplacian of a **batched** scalar field :math:`u`
+    (from :math:`\mathbb{R}^{b\times d}` to :math:`\mathbb{R}^{b\times b}`)
+    for :math:`\mathbf{x}` of arbitrary dimension :math:`d` with batch
+    dimension :math:`b`.
+    Because of the embedding that happens in SPINNs the
+    computation is most efficient with forward AD. This is the idea behind Separable PINNs.
+    This function is to be used in the context of SPINNs only.
     """
 
     def scan_fun(_, i):
@@ -121,45 +118,42 @@ def _laplacian_fwd(u, nn_params, eq_params, x, t=None):
             jax.nn.one_hot(i, x.shape[-1])[None], x.shape[0], axis=0
         )
 
-        # tangent_vec = (
-        #    jnp.ones(([x.shape[0] for d in range(x.shape[-1])]))[..., None]
-        #    * jax.nn.one_hot(i, x.shape[-1])[None]
-        # )
-        ## broadcasting is used to create a correctly shaped array even when x
-        ## is multidimensional in space
-
         if t is None:
             du_dxi_fun = lambda x: jax.jvp(
                 lambda x: u(x, nn_params, eq_params)[..., 0], (x,), (tangent_vec,)
             )[
                 1
-            ]  # Note the indexing of u: ok because here u is necesary scalar
+            ]  # Note the indexing [..., 0]
             __, d2u_dxi2 = jax.jvp(du_dxi_fun, (x,), (tangent_vec,))
         else:
             du_dxi_fun = lambda x: jax.jvp(
                 lambda x: u(t, x, nn_params, eq_params)[..., 0], (x,), (tangent_vec,)
             )[
                 1
-            ]  # Note the indexing of u: ok because here u is necesary scalar
+            ]  # Note the indexing [..., 0]
             __, d2u_dxi2 = jax.jvp(du_dxi_fun, (x,), (tangent_vec,))
         return _, d2u_dxi2
 
     _, trace_hessian = jax.lax.scan(scan_fun, {}, jnp.arange(x.shape[1]))
-    return jnp.sum(trace_hessian, axis=0)  # Sum over axis 0 only, we get one
-    # Laplacian by position (b\times d)
+    return jnp.sum(trace_hessian, axis=0)
 
 
 def _vectorial_laplacian(u, nn_params, eq_params, x, t=None, u_vec_ndim=None):
     r"""
-    Compute the vectorial Laplacian of a vector field u (from :math:`\mathbb{R}^m`
-    to :math:`\mathbb{R}^n`) for x of arbitrary dimension ie
-    :math:`\Delta \mathbf{u}(x)=\nabla\cdot\nabla \mathbf{u}(x)`
+    Compute the vectorial Laplacian of a vector field :math:`\mathbf{u}` (from
+    :math:`\mathbb{R}^d`
+    to :math:`\mathbb{R}^n`) for :math:`\mathbf{x}` of arbitrary dimension, i.e.,
+    :math:`\Delta \mathbf{u}(\mathbf{x})=\nabla\cdot\nabla
+    \mathbf{u}(\mathbf{x})`.
 
-    **Note:** We need to provide in u_vec_ndim the dimension of the vector
-    :math:`\mathbf{u}(x)` if it is different than that of x
+    **Note:** We need to provide `u_vec_ndim` the dimension of the vector
+    :math:`\mathbf{u}(\mathbf{x})` if it is different than that of
+    :math:`\mathbf{x}`.
 
-    **Note:** Forward mode is used in the context of SPINNs with batched `x`.
-    The return is then of dimension (u_vec_ndim x batch_size x batch_size)
+    **Note:** `u` can be a SPINN, in this case, it corresponds to a vector
+    field from (from :math:`\mathbb{R}^{b\times d}` to
+    :math:`\mathbb{R}^{b\times b\times n}`) and forward mode AD is used.
+    Technically, the return is of dimension :math:`n\times b \times b`.
     """
     if u_vec_ndim is None:
         u_vec_ndim = x.shape[0]
@@ -197,14 +191,12 @@ def _vectorial_laplacian(u, nn_params, eq_params, x, t=None, u_vec_ndim=None):
 
 def _u_dot_nabla_times_u_rev(u, nn_params, eq_params, x, t=None):
     r"""
-    Implement :math:`((\mathbf{u}\cdot\nabla)\mathbf{u})(x)` for x of arbitrary
-    dimension. Note that :math:`\mathbf{u}` is a vector field from :math:`\mathbb{R}^n`
-    to :math:`\mathbb{R}^n`
-    Currently for `x.ndim=2`
-
+    Implement :math:`((\mathbf{u}\cdot\nabla)\mathbf{u})(\mathbf{x})` for
+    :math:`\mathbf{x}` of arbitrary
+    dimension. :math:`\mathbf{u}` is a vector field from :math:`\mathbb{R}^n`
+    to :math:`\mathbb{R}^n`. **Currently for** `x.ndim=2` **only**.
     The computation is done using backward AD.
-
-    **Note:** We do not use loops but code explicitly the expression to avoid
+    We do not use loops but code explicitly the expression to avoid
     computing twice some terms
     """
     if x.shape[0] == 2:
@@ -246,19 +238,17 @@ def _u_dot_nabla_times_u_rev(u, nn_params, eq_params, x, t=None):
 
 def _u_dot_nabla_times_u_fwd(u, nn_params, eq_params, x, t=None):
     r"""
-    Implement :math:`((\mathbf{u}\cdot\nabla)\mathbf{u})(x)` for x of arbitrary
-    dimension **with a batch dimension**.
-    Thus, :math:`\mathbf{u}` is a vector field from :math:`\mathbb{R}^{b\times n}`
-    to :math:`\mathbb{R}^{b \times n}`
-    Currently for :math:`x` of dimension 2.
-
-    **Note:** We do not use loops but code explicitly the expression to avoid
-    computing twice some terms
-
-    In this case because of batch dimensions, the computation is very efficient
-    using forward AD. This is the idea behind Separable PINNs.
-
-    ** Note ** To be used in the context of SPINNs
+    Implement :math:`((\mathbf{u}\cdot\nabla)\mathbf{u})(\mathbf{x})` for
+    :math:`\mathbf{x}` of arbitrary dimension **with a batch dimension**.
+    I.e., :math:`\mathbf{u}` is a vector field from :math:`\mathbb{R}^{b\times
+    b}`
+    to :math:`\mathbb{R}^{b\times b \times d}`. **Currently for** :math:`d=2`
+    **only**.
+    We do not use loops but code explicitly the expression to avoid
+    computing twice some terms.
+    Because of the embedding that happens in SPINNs the
+    computation is most efficient with forward AD. This is the idea behind Separable PINNs.
+    This function is to be used in the context of SPINNs only.
     """
     if x.shape[-1] == 2:
         tangent_vec_0 = jnp.repeat(jnp.array([1.0, 0.0])[None], x.shape[0], axis=0)
@@ -295,15 +285,15 @@ def _u_dot_nabla_times_u_fwd(u, nn_params, eq_params, x, t=None):
 
 def _sobolev(u, m, statio=True):
     r"""
-    Compute the Sobolev regularization of order m
-    of a scalar field u (from :math:`\mathbb{R}^d1` to :math:`\mathbb{R}`)
-    for x of arbitrary dimension i.e.
+    Compute the Sobolev regularization of order :math:`m`
+    of a scalar field :math:`u` (from :math:`\mathbb{R}^{d}` to :math:`\mathbb{R}`)
+    for :math:`\mathbf{x}` of arbitrary dimension :math:`d`, i.e.,
     :math:`\frac{1}{n_l}\sum_{l=1}^{n_l}\sum_{|\alpha|=1}^{m+1} ||\partial^{\alpha} u(x_l)||_2^2` where
-    :math:`m\geq\max(d_1 // 2, K)` with `K` the order of the differential
+    :math:`m\geq\max(d_1 // 2, K)` with :math:`K` the order of the differential
     operator.
 
-    This regularization is proposed in _Convergence and error analysis of
-    PINNs_, Doumeche et al., 2023, https://arxiv.org/pdf/2305.01240.pdf
+    This regularization is proposed in *Convergence and error analysis of
+    PINNs*, Doumeche et al., 2023, https://arxiv.org/pdf/2305.01240.pdf
     """
 
     def jac_recursive(u, order, start):

@@ -10,7 +10,7 @@ Changelog:
 
 * v0.5.0:
 
-    - SPINNs are now implemented in `jinns` in many common use cases! They have been proposed in *Separable Physics-Informed Neural Networks*, Cho et al., 2023.
+    - SPINNs are now implemented in `jinns` in many common use cases and their results have been added to the existing notebboks! SPINNs have been proposed in *Separable Physics-Informed Neural Networks*, Cho et al., 2023.
 
     - New convention to handle vectorial solutions: now, when we are working with PDEs, neural networks encoding solution of one dimension must have a trailing (1,) in its shape. Same thing for the returned value of dynamic losses: one must have a trailing (1,)
 

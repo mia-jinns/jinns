@@ -266,7 +266,7 @@ class LossPDEStatio(LossPDEAbstract):
         sobolev_m
             An integer. Default is None.
             It corresponds to the Sobolev regularization order as proposed in
-            _Convergence and error analysis of PINNs_,
+            *Convergence and error analysis of PINNs*,
             Doumeche et al., 2023, https://arxiv.org/pdf/2305.01240.pdf
 
 
@@ -708,7 +708,7 @@ class LossPDENonStatio(LossPDEStatio):
         sobolev_m
             An integer. Default is None.
             It corresponds to the Sobolev regularization order as proposed in
-            _Convergence and error analysis of PINNs_,
+            *Convergence and error analysis of PINNs*,
             Doumeche et al., 2023, https://arxiv.org/pdf/2305.01240.pdf
 
 
@@ -1180,7 +1180,7 @@ class SystemLossPDE:
             Default is None. A dictionary of integers, one per key which must
             match `u_dict`.
             It corresponds to the Sobolev regularization order as proposed in
-            _Convergence and error analysis of PINNs_,
+            *Convergence and error analysis of PINNs*,
             Doumeche et al., 2023, https://arxiv.org/pdf/2305.01240.pdf
 
 
