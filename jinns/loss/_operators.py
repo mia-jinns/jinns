@@ -5,7 +5,7 @@ from functools import partial
 from jinns.utils._utils import PINN, SPINN
 
 
-def _div_bwd(u, nn_params, eq_params, x, t=None):
+def _div_rev(u, nn_params, eq_params, x, t=None):
     r"""
     Compute the divergence of a vector field :math:`\mathbf{u}` ie
     :math:`\nabla \cdot u(x)` with :math:`\mathbf{u}` a vector
@@ -59,7 +59,7 @@ def _div_fwd(u, nn_params, eq_params, x, t=None):
     return jnp.sum(accu, axis=0)
 
 
-def _laplacian_bwd(u, nn_params, eq_params, x, t=None):
+def _laplacian_rev(u, nn_params, eq_params, x, t=None):
     r"""
     Compute the Laplacian of a scalar field u (from :math:`\mathbb{R}^n`
     to :math:`\mathbb{R}`) for x of arbitrary dimension ie
@@ -176,7 +176,7 @@ def _vectorial_laplacian(u, nn_params, eq_params, x, t=None, u_vec_ndim=None):
                 uj = lambda t, x, nn_params, eq_params: jnp.expand_dims(
                     u(t, x, nn_params, eq_params)[j], axis=-1
                 )
-            lap_on_j = _laplacian_bwd(uj, nn_params, eq_params, x, t)
+            lap_on_j = _laplacian_rev(uj, nn_params, eq_params, x, t)
         elif isinstance(u, SPINN):
             if t is None:
                 uj = lambda x, nn_params, eq_params: jnp.expand_dims(
@@ -194,7 +194,7 @@ def _vectorial_laplacian(u, nn_params, eq_params, x, t=None, u_vec_ndim=None):
     return vec_lap
 
 
-def _u_dot_nabla_times_u_bwd(u, nn_params, eq_params, x, t=None):
+def _u_dot_nabla_times_u_rev(u, nn_params, eq_params, x, t=None):
     r"""
     Implement :math:`((\mathbf{u}\cdot\nabla)\mathbf{u})(x)` for x of arbitrary
     dimension. Note that :math:`\mathbf{u}` is a vector field from :math:`\mathbb{R}^n`
