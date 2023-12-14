@@ -33,7 +33,7 @@ class _SPINN(eqx.Module):
             that could be required (eg. the size of the layer).
             __Note:__ the `key` argument need not be given.
             Thus typical example is `eqx_list=
-            [[eqx.nn.Linear, d, 20],
+            [[eqx.nn.Linear, 1, 20],
                 [jax.nn.tanh],
                 [eqx.nn.Linear, 20, 20],
                 [jax.nn.tanh],
@@ -143,7 +143,7 @@ def create_SPINN(key, d, r, eqx_list, eq_type, m=1):
         that could be required (eg. the size of the layer).
         __Note:__ the `key` argument need not be given.
         Thus typical example is `eqx_list=
-        [[eqx.nn.Linear, d, 20],
+        [[eqx.nn.Linear, 1, 20],
         [jax.nn.tanh],
         [eqx.nn.Linear, 20, 20],
         [jax.nn.tanh],
