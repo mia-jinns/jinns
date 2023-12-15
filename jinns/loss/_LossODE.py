@@ -138,7 +138,7 @@ class LossODE:
                 * jnp.mean(v_dyn_loss(temporal_batch, params) ** 2, axis=0)
             )
         else:
-            mse_dyn_loss = 0
+            mse_dyn_loss = jnp.array(0.0)
 
         # initial condition
         if self.initial_condition is not None:
@@ -158,7 +158,7 @@ class LossODE:
                 ** 2
             )
         else:
-            mse_initial_condition = 0
+            mse_initial_condition = jnp.array(0.0)
 
         # MSE loss wrt to an observed batch
         if self.obs_batch is not None:
@@ -176,7 +176,7 @@ class LossODE:
                 )
             )
         else:
-            mse_observation_loss = 0
+            mse_observation_loss = jnp.array(0.0)
 
         # total loss
         total_loss = mse_dyn_loss + mse_initial_condition + mse_observation_loss
