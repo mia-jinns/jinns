@@ -444,7 +444,7 @@ class LossPDEStatio(LossPDEAbstract):
                 )
 
         else:
-            mse_dyn_loss = 0
+            mse_dyn_loss = jnp.array(0.0)
 
         # normalization part
         if self.normalization_loss is not None:
@@ -485,7 +485,7 @@ class LossPDEStatio(LossPDEAbstract):
                     ** 2
                 )
         else:
-            mse_norm_loss = 0
+            mse_norm_loss = jnp.array(0.0)
             self.loss_weights["norm_loss"] = 0
 
         # boundary part
@@ -522,7 +522,7 @@ class LossPDEStatio(LossPDEAbstract):
                         )
                     )
         else:
-            mse_boundary_loss = 0
+            mse_boundary_loss = jnp.array(0.0)
 
         # Observation MSE (if obs_batch provided)
         # NOTE that it does not use jax.lax.stop_gradient on "eq_params" here
@@ -547,7 +547,7 @@ class LossPDEStatio(LossPDEAbstract):
                     "observation loss term not yet implemented for SPINNs"
                 )
         else:
-            mse_observation_loss = 0
+            mse_observation_loss = jnp.array(0.0)
             self.loss_weights["observations"] = 0
 
         # Sobolev regularization
@@ -569,7 +569,7 @@ class LossPDEStatio(LossPDEAbstract):
             elif isinstance(self.u, SPINN):
                 raise RuntimeError("Sobolev loss term not yet implemented for SPINNs")
         else:
-            mse_sobolev_loss = 0
+            mse_sobolev_loss = jnp.array(0.0)
             self.loss_weights["sobolev"] = 0
 
         # total loss
@@ -858,7 +858,7 @@ class LossPDENonStatio(LossPDEStatio):
             #        ),
             #        shift=1, axis=0)) * residuals
         else:
-            mse_dyn_loss = 0
+            mse_dyn_loss = jnp.array(0.0)
 
         # normalization part
         if self.normalization_loss is not None:
@@ -904,7 +904,7 @@ class LossPDENonStatio(LossPDEStatio):
                 )
 
         else:
-            mse_norm_loss = 0
+            mse_norm_loss = jnp.array(0.0)
 
         # boundary part
         if self.omega_boundary_fun is not None:
@@ -942,7 +942,7 @@ class LossPDENonStatio(LossPDEStatio):
                         )
                     )
         else:
-            mse_boundary_loss = 0
+            mse_boundary_loss = jnp.array(0.0)
 
         # initial condition
         if self.initial_condition_fun is not None:
@@ -979,7 +979,7 @@ class LossPDENonStatio(LossPDEStatio):
                     self.loss_weights["initial_condition"] * jnp.sum(res**2, axis=-1)
                 )
         else:
-            mse_initial_condition = 0
+            mse_initial_condition = jnp.array(0.0)
 
         # Observation MSE (if obs_batch provided)
         # NOTE that it does not use jax.lax.stop_gradient on "eq_params" here
@@ -1008,7 +1008,7 @@ class LossPDENonStatio(LossPDEStatio):
                     "observation loss term not yet implemented for SPINNs"
                 )
         else:
-            mse_observation_loss = 0
+            mse_observation_loss = jnp.array(0.0)
             self.loss_weights["observations"] = 0
 
         # Sobolev regularization
@@ -1031,8 +1031,8 @@ class LossPDENonStatio(LossPDEStatio):
             elif isinstance(self.u, SPINN):
                 raise RuntimeError("Sobolev loss term not yet implemented for SPINNs")
         else:
-            mse_sobolev_loss = 0
-            self.loss_weights["sobolev"] = 0
+            mse_sobolev_loss = jnp.array(0.0)
+            self.loss_weights["sobolev"] = 0.0
 
         # total loss
         total_loss = (
