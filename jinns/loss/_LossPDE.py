@@ -539,7 +539,8 @@ class LossPDEStatio(LossPDEAbstract):
                 mse_observation_loss = jnp.mean(
                     self.loss_weights["observations"]
                     * jnp.sum(
-                        (val - self.obs_batch[1].reshape(val.shape)) ** 2,
+                        (val - _check_user_func_return(self.obs_batch[1], val.shape))
+                        ** 2,
                         # the reshape above avoids a potential missing (1,)
                         axis=-1,
                     )
@@ -998,7 +999,8 @@ class LossPDENonStatio(LossPDEStatio):
                 mse_observation_loss = jnp.mean(
                     self.loss_weights["observations"]
                     * jnp.sum(
-                        (val - self.obs_batch[2].reshape(val.shape)) ** 2,
+                        (val - _check_user_func_return(self.obs_batch[2], val.shape))
+                        ** 2,
                         # the reshape above avoids a potential missing (1,)
                         axis=-1,
                     )
