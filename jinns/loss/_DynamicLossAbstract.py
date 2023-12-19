@@ -1,6 +1,8 @@
+"""
+Implements abstract classes for dynamic losses
+"""
+
 import jax
-from jax import jit, grad
-import jax.numpy as jnp
 
 
 class DynamicLoss:
