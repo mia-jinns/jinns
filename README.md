@@ -10,7 +10,7 @@ Physics Informed Neural Networks with JAX. **jinns** has been developed to estim
 
 - We focus the development towards inverse problems and inference in mecanistic-statistical models
 
-- [Separable PINN](https://openreview.net/pdf?id=dEySGIcDnI) are implemented
+- [Separable PINNs](https://openreview.net/pdf?id=dEySGIcDnI) are implemented
 
 - Check out our various notebooks to get started with `jinns`
 
@@ -27,8 +27,6 @@ pip install jinns
 # Documentation
 
 The project's documentation is available at [https://mia_jinns.gitlab.io/jinns/index.html](https://mia_jinns.gitlab.io/jinns/index.html)
-
-Note that all the tests were performed on a rather small Nvidia T600 GPU, expect a substancial performance gain on bigger devices.
 
 # Contributing
 

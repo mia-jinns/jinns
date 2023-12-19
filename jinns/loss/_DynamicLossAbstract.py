@@ -1,6 +1,8 @@
+"""
+Implements abstract classes for dynamic losses
+"""
+
 import jax
-from jax import jit, grad
-import jax.numpy as jnp
 
 
 class DynamicLoss:
@@ -29,7 +31,13 @@ class DynamicLoss:
             equation solution with as PINN.
         eq_params_heterogeneity
             Default None. A dict with the keys being the same as in eq_params
-            and the value being either None (no heterogeneity) or a function which encodes for the spatio-temporal heterogeneity of the parameter. Such a function must be jittable and take three arguments `t`, `x` and `params["eq_params"]` even if one is not used. Therefore, one can introduce spatio-temporal covariates upon which a particular parameter can depend, e.g. in a GLM fashion. The effect of these covariables can themselves be estimated by being in `eq_params` too.
+            and the value being either None (no heterogeneity) or a function
+            which encodes for the spatio-temporal heterogeneity of the parameter.
+            Such a function must be jittable and take three arguments `t`,
+            `x` and `params["eq_params"]` even if one is not used. Therefore,
+            one can introduce spatio-temporal covariates upon which a particular
+            parameter can depend, e.g. in a GLM fashion. The effect of these
+            covariables can themselves be estimated by being in `eq_params` too.
             A value can be missing, in this case there is no heterogeneity (=None).
             If eq_params_heterogeneity is None this means there is no
             heterogeneity for no parameters.
@@ -79,15 +87,14 @@ class DynamicLoss:
 
         if self.derivatives == "nn_params":
             return (nn_params, jax.lax.stop_gradient(eq_params))
-        elif self.derivatives == "eq_params":
+        if self.derivatives == "eq_params":
             return (jax.lax.stop_gradient(nn_params), eq_params)
-        elif self.derivatives == "both":
+        if self.derivatives == "both":
             return (nn_params, eq_params)
-        else:
-            return (
-                jax.lax.stop_gradient(nn_params),
-                jax.lax.stop_gradient(eq_params),
-            )
+        return (
+            jax.lax.stop_gradient(nn_params),
+            jax.lax.stop_gradient(eq_params),
+        )
 
 
 class ODE(DynamicLoss):

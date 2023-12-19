@@ -1,8 +1,11 @@
+"""
+Main module to implement a ODE loss in jinns
+"""
+
 import jax
 import jax.numpy as jnp
 from jax import vmap
 from jax.tree_util import register_pytree_node_class
-from jinns.data._DataGenerators import ODEBatch
 from jinns.utils._utils import _get_vmap_in_axes_params
 
 
@@ -29,7 +32,6 @@ class LossODE:
         initial_condition=None,
         obs_batch=None,
         obs_slice=None,
-        nn_output_weights=None,
     ):
         r"""
         Parameters
@@ -62,9 +64,6 @@ class LossODE:
             slice object specifying the begininning/ending
             slice of u output(s) that is observed (this is then useful for
             multidim PINN). Default is None.
-        nn_output_weights:
-            Give different weights to the output of the neural network
-            Default is None, ie all nn outputs are
 
         Raises
         ------
@@ -105,11 +104,6 @@ class LossODE:
         batch
             A batch of time points at which to evaluate the loss
         """
-        if isinstance(params, tuple):
-            params_ = params[0]
-        else:
-            params_ = params
-
         temporal_batch = batch.temporal_batch
 
         vmap_in_axes_t = (0,)
@@ -408,7 +402,7 @@ class SystemLossODE:
         for i in self.dynamic_loss_dict.keys():
             # dynamic part
             v_dyn_loss = vmap(
-                lambda t, params_dict: self.dynamic_loss_dict[i].evaluate(
+                lambda t, params_dict, key=i: self.dynamic_loss_dict[key].evaluate(
                     t, self.u_dict, params_dict
                 ),
                 vmap_in_axes_t + vmap_in_axes_params,

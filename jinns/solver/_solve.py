@@ -1,4 +1,8 @@
-from functools import partial
+"""
+This modules implements the main `solve()` function of jinns which
+handles the optimization process
+"""
+
 from jaxopt import OptaxSolver, LBFGS
 from optax import GradientTransformation
 from jax_tqdm import scan_tqdm
@@ -150,8 +154,9 @@ def solve(
 
     curr_seq = 0
     if seq2seq is not None:
-        assert data.method == "uniform", "data.method must be uniform if"
-        " using seq2seq learning !"
+        assert data.method == "uniform", (
+            "data.method must be uniform if" + " using seq2seq learning !"
+        )
 
         _update_seq2seq_true = _initialize_seq2seq(loss, data, seq2seq, opt_state)
 
@@ -213,7 +218,7 @@ def solve(
         _ = jax.lax.cond(
             i % print_loss_every == 0,
             lambda _: jax.debug.print(
-                "Iteration {i}: loss value = " "{total_loss_val}",
+                "Iteration {i}: loss value = {total_loss_val}",
                 i=i,
                 total_loss_val=total_loss_val,
             ),
@@ -273,7 +278,7 @@ def solve(
     )
 
     jax.debug.print(
-        "Iteration {i}: loss value = " "{total_loss_val}",
+        "Iteration {i}: loss value = {total_loss_val}",
         i=n_iter,
         total_loss_val=accu[-1][-1],
     )

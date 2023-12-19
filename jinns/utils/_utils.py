@@ -1,10 +1,13 @@
+"""
+Implements various utility functions
+"""
+
+from functools import reduce
+from operator import getitem
 import numpy as np
 import jax
 import jax.numpy as jnp
 import optax
-import equinox as eqx
-from functools import reduce
-from operator import getitem
 
 
 def _check_nan_in_pytree(pytree):
@@ -23,12 +26,11 @@ def _check_nan_in_pytree(pytree):
     """
     return jnp.any(
         jnp.array(
-            [
-                value
-                for value in jax.tree_util.tree_leaves(
+            list(
+                jax.tree_util.tree_leaves(
                     jax.tree_util.tree_map(lambda x: jnp.any(jnp.isnan(x)), pytree)
                 )
-            ]
+            )
         )
     )
 
@@ -70,8 +72,7 @@ def _get_grid(in_array):
             ),
             axis=-1,
         )
-    else:
-        return in_array
+    return in_array
 
 
 def _get_vmap_in_axes_params(eq_params_batch_dict, params):
@@ -82,21 +83,20 @@ def _get_vmap_in_axes_params(eq_params_batch_dict, params):
     """
     if eq_params_batch_dict is None:
         return (None,)
-    else:
-        # We use pytree indexing of vmapped axes and vmap on axis
-        # 0 of the eq_parameters for which we have a batch
-        # this is for a fine-grained vmaping
-        # scheme over the params
-        vmap_in_axes_params = (
-            {
-                "eq_params": {
-                    k: (0 if k in eq_params_batch_dict.keys() else None)
-                    for k in params["eq_params"].keys()
-                },
-                "nn_params": None,
+    # We use pytree indexing of vmapped axes and vmap on axis
+    # 0 of the eq_parameters for which we have a batch
+    # this is for a fine-grained vmaping
+    # scheme over the params
+    vmap_in_axes_params = (
+        {
+            "eq_params": {
+                k: (0 if k in eq_params_batch_dict.keys() else None)
+                for k in params["eq_params"].keys()
             },
-        )
-        return vmap_in_axes_params
+            "nn_params": None,
+        },
+    )
+    return vmap_in_axes_params
 
 
 def _check_user_func_return(r, shape):
@@ -104,128 +104,17 @@ def _check_user_func_return(r, shape):
     Correctly handles the result from a user defined function (eg a boundary
     condition) to get the correct broadcast
     """
-    if isinstance(r, int) or isinstance(r, float):
+    if isinstance(r, (int, float)):
         # if we have a scalar cast it to float
         return float(r)
     if r.shape == () or len(r.shape) == 1:
-        # if we have a scalar (or a vector, but no batch dim) inside an array
+        # if we have a scalar (or a vector)
         return r.astype(float)
-    else:
-        # if we have an array of the shape of the batch dimension(s) check that
-        # we have the correct broadcast
-        # the reshape below avoids a missing (1,) ending dimension
-        # depending on how the user has coded the inital function
-        return r.reshape(shape)
-
-
-def alternate_optax_solver(
-    steps, parameters_set1, parameters_set2, lr_set1, lr_set2, label_fn=None
-):
-    """
-    This function creates an optax optimizer that alternates the optimization
-    between two set of parameters (ie. when some parameters are update to a
-    given learning rates, others are not updated (learning rate = 0)
-    The optimizers are scaled by adam parameters.
-
-    __Note:__ The alternating pattern relies on
-    `optax.piecewise_constant_schedule` which __multiplies__ learning rates of
-    previous steps (current included) to set the new learning rate. Hence, our
-    strategy used here is to relying on potentially cancelling power of tens to
-    create the alternating scheme.
-
-    Parameters
-    ----------
-    steps
-        An array which describes the epochis number at which we alternate the
-        optimization: the parameter_set that is being updated now stops
-        updating, the other parameter_set starts updating.
-        __Note:__ The step 0 should not be included
-    parameters_set1
-        A list of leaf level keys which must be found in the general `params` dict. The
-        parameters in this `set1` will be the parameters which are updated
-        first in the alternating scheme.
-    parameters_set2
-        A list of leaf level keys which must be found in the general `params` dict. The
-        parameters in this `set2` will be the parameters which are not updated
-        first in the alternating scheme.
-    lr_set1
-        A float. The learning rate of updates for set1.
-    lr_set2
-        A float. The learning rate of updates for set2.
-    label_fn
-        The same function as the label_fn function passed in an optax
-        `multi_transform`
-        [https://optax.readthedocs.io/en/latest/api.html#optax.multi_transform](see
-        here)
-        Default None, ie, we already internally provide the default one (as
-        proposed in the optax documentation) which may suit many use cases
-
-    Returns
-    -------
-    tx
-        The optax optimizer object
-    """
-
-    def map_nested_fn(fn):
-        """
-        Recursively apply `fn` to the key-value pairs of a nested dict
-        We follow the example from
-        https://optax.readthedocs.io/en/latest/api.html#optax.multi_transform
-        for different learning rates
-        """
-
-        def map_fn(nested_dict):
-            return {
-                k: (map_fn(v) if isinstance(v, dict) else fn(k, v))
-                for k, v in nested_dict.items()
-            }
-
-        return map_fn
-
-    label_fn = map_nested_fn(lambda k, _: k)
-
-    power_to_0 = 1e-25  # power of ten used to force a learning rate to 0
-    power_to_lr = 1 / power_to_0  # power of ten used to force a learning rate to lr
-    nn_params_scheduler = optax.piecewise_constant_schedule(
-        init_value=lr_set1,
-        boundaries_and_scales={
-            k: (
-                power_to_0
-                if even_odd % 2 == 0  # set lr to 0 eg if even_odd is even ie at
-                # first step
-                else power_to_lr
-            )
-            for even_odd, k in enumerate(steps)
-        },
-    )
-    eq_params_scheduler = optax.piecewise_constant_schedule(
-        init_value=power_to_0 * lr_set2,  # so normal learning rate is 1e-3
-        boundaries_and_scales={
-            k: (power_to_lr if even_odd % 2 == 0 else power_to_0)
-            for even_odd, k in enumerate(steps)
-        },
-    )
-
-    # the scheduler for set1 is called nn_chain because we usually start by
-    # updating the NN parameters
-    nn_chain = optax.chain(
-        optax.scale_by_adam(),
-        optax.scale_by_schedule(nn_params_scheduler),
-        optax.scale(-1.0),
-    )
-    eq_chain = optax.chain(
-        optax.scale_by_adam(),
-        optax.scale_by_schedule(eq_params_scheduler),
-        optax.scale(-1.0),
-    )
-    dict_params_set1 = {p: nn_chain for p in parameters_set1}
-    dict_params_set2 = {p: eq_chain for p in parameters_set2}
-    tx = optax.multi_transform(
-        {**dict_params_set1, **dict_params_set2},
-        label_fn,
-    )
-
-    return tx
+    # if we have an array of the shape of the batch dimension(s) check that
+    # we have the correct broadcast
+    # the reshape below avoids a missing (1,) ending dimension
+    # depending on how the user has coded the inital function
+    return r.reshape(shape)
 
 
 def euler_maruyama_density(t, x, s, y, params, Tmax=1):
@@ -258,7 +147,7 @@ def euler_maruyama(x0, alpha, mu, sigma, T, N):
     path = [np.array([x0])]
 
     time_steps, step_size = np.linspace(0, T, N, retstep=True)
-    for i in time_steps[1:]:
+    for _ in time_steps[1:]:
         path.append(
             path[-1]
             + step_size * (alpha * (mu - path[-1]))

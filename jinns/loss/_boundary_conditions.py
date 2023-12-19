@@ -1,3 +1,7 @@
+"""
+Implements the main boundary conditions for all kinds of losses in jinns
+"""
+
 import jax
 import jax.numpy as jnp
 from jax import vmap, grad
@@ -49,10 +53,8 @@ def _compute_boundary_loss_statio(
     if boundary_condition_type.lower() in "dirichlet":
         mse = boundary_dirichlet_statio(f, border_batch, u, params)
     elif any(
-        [
-            boundary_condition_type.lower() in s
-            for s in ["von neumann", "vn", "vonneumann"]
-        ]
+        boundary_condition_type.lower() in s
+        for s in ["von neumann", "vn", "vonneumann"]
     ):
         mse = boundary_neumann_statio(f, border_batch, u, params, facet)
     return mse
@@ -102,10 +104,8 @@ def _compute_boundary_loss_nonstatio(
     if boundary_condition_type.lower() in "dirichlet":
         mse = boundary_dirichlet_nonstatio(f, times_batch, border_batch, u, params)
     elif any(
-        [
-            boundary_condition_type.lower() in s
-            for s in ["von neumann", "vn", "vonneumann"]
-        ]
+        boundary_condition_type.lower() in s
+        for s in ["von neumann", "vn", "vonneumann"]
     ):
         mse = boundary_neumann_nonstatio(f, times_batch, border_batch, u, params, facet)
     return mse
@@ -195,7 +195,7 @@ def boundary_neumann_statio(f, border_batch, u, params, facet):
         n = jnp.array([[-1, 1, 0, 0], [0, 0, -1, 1]])
 
     if isinstance(u, PINN):
-        u_ = lambda x, nn, eq: u(t, x, nn, eq)[0]
+        u_ = lambda x, nn, eq: u(x, nn, eq)[0]
         v_neumann = vmap(
             lambda dx: jnp.dot(
                 grad(u_, 0)(
@@ -219,16 +219,16 @@ def boundary_neumann_statio(f, border_batch, u, params, facet):
                     params["nn_params"],
                     jax.lax.stop_gradient(params["eq_params"]),
                 ),
-                (omega_border_batch,),
-                (jnp.ones_like(x),),
+                (border_batch,),
+                (jnp.ones_like(border_batch),),
             )
             values = du_dx * n[facet]
-        elif omega_border_batch.shape[-1] == 2:
+        elif border_batch.shape[-1] == 2:
             tangent_vec_0 = jnp.repeat(
-                jnp.array([1.0, 0.0])[None], omega_border_batch.shape[0], axis=0
+                jnp.array([1.0, 0.0])[None], border_batch.shape[0], axis=0
             )
             tangent_vec_1 = jnp.repeat(
-                jnp.array([0.0, 1.0])[None], omega_border_batch.shape[0], axis=0
+                jnp.array([0.0, 1.0])[None], border_batch.shape[0], axis=0
             )
             _, du_dx1 = jax.jvp(
                 lambda x: u(
@@ -236,7 +236,7 @@ def boundary_neumann_statio(f, border_batch, u, params, facet):
                     params["nn_params"],
                     jax.lax.stop_gradient(params["eq_params"]),
                 ),
-                (omega_border_batch,),
+                (border_batch,),
                 (tangent_vec_0,),
             )
             _, du_dx2 = jax.jvp(
@@ -245,7 +245,7 @@ def boundary_neumann_statio(f, border_batch, u, params, facet):
                     params["nn_params"],
                     jax.lax.stop_gradient(params["eq_params"]),
                 ),
-                (omega_border_batch,),
+                (border_batch,),
                 (tangent_vec_1,),
             )
             values = du_dx1 * n[0, facet] + du_dx2 * n[1, facet]  # dot product
@@ -421,7 +421,7 @@ def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params, fa
                     jax.lax.stop_gradient(params["eq_params"]),
                 ),
                 (omega_border_batch,),
-                (jnp.ones_like(x),),
+                (jnp.ones_like(omega_border_batch),),
             )
             values = du_dx * n[facet]
         elif omega_border_batch.shape[-1] == 2:

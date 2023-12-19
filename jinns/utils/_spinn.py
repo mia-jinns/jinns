@@ -1,3 +1,7 @@
+"""
+Implements utility function to create PINNs
+"""
+
 import jax
 import jax.numpy as jnp
 import equinox as eqx
@@ -42,14 +46,12 @@ class _SPINN(eqx.Module):
                 [eqx.nn.Linear, 20, r]
             ]`
         """
-        keys = jax.random.split(key, 8)
-
         self.d = d
         self.r = r
         self.m = m
 
         self.separated_mlp = []
-        for d in range(self.d):
+        for _ in range(self.d):
             self.layers = []
             for l in eqx_list:
                 if len(l) == 1:
@@ -114,8 +116,7 @@ class SPINN:
         # force (1,) output for non vectorial solution (consistency)
         if len(res.shape) == self.d:
             return jnp.expand_dims(res, axis=-1)
-        else:
-            return res
+        return res
 
 
 def create_SPINN(key, d, r, eqx_list, eq_type, m=1):
@@ -209,7 +210,7 @@ def create_SPINN(key, d, r, eqx_list, eq_type, m=1):
 
     if d > 24:
         raise ValueError(
-            "Too many dimensions, not enough letters" " available in jnp.einsum"
+            "Too many dimensions, not enough letters available in jnp.einsum"
         )
 
     if eq_type == "statio_PDE":
