@@ -9,7 +9,7 @@ from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
 
 
-def _div_rev(u, nn_params, eq_params, x, t=None):
+def _div_rev(u, params, x, t=None):
     r"""
     Compute the divergence of a vector field :math:`\mathbf{u}`, i.e.,
     :math:`\nabla \cdot \mathbf{u}(\mathbf{x})` with :math:`\mathbf{u}` a vector
@@ -19,20 +19,16 @@ def _div_rev(u, nn_params, eq_params, x, t=None):
 
     def scan_fun(_, i):
         if t is None:
-            du_dxi = grad(
-                lambda x, nn_params, eq_params: u(x, nn_params, eq_params)[i], 0
-            )(x, nn_params, eq_params)[i]
+            du_dxi = grad(lambda x, params: u(x, params)[i], 0)(x, params)[i]
         else:
-            du_dxi = grad(
-                lambda t, x, nn_params, eq_params: u(x, nn_params, eq_params)[i], 1
-            )(x, nn_params, eq_params)[i]
+            du_dxi = grad(lambda t, x, params: u(x, params)[i], 1)(x, params)[i]
         return _, du_dxi
 
     _, accu = jax.lax.scan(scan_fun, {}, jnp.arange(x.shape[0]))
     return jnp.sum(accu)
 
 
-def _div_fwd(u, nn_params, eq_params, x, t=None):
+def _div_fwd(u, params, x, t=None):
     r"""
     Compute the divergence of a **batched** vector field :math:`\mathbf{u}`, i.e.,
     :math:`\nabla \cdot \mathbf{u}(\mathbf{x})` with :math:`\mathbf{u}` a vector
@@ -48,12 +44,10 @@ def _div_fwd(u, nn_params, eq_params, x, t=None):
             jax.nn.one_hot(i, x.shape[-1])[None], x.shape[0], axis=0
         )
         if t is None:
-            __, du_dxi = jax.jvp(
-                lambda x: u(x, nn_params, eq_params)[..., i], (x,), (tangent_vec,)
-            )
+            __, du_dxi = jax.jvp(lambda x: u(x, params)[..., i], (x,), (tangent_vec,))
         else:
             __, du_dxi = jax.jvp(
-                lambda x: u(t, x, nn_params, eq_params)[..., i], (x,), (tangent_vec,)
+                lambda x: u(t, x, params)[..., i], (x,), (tangent_vec,)
             )
         return _, du_dxi
 
@@ -61,7 +55,7 @@ def _div_fwd(u, nn_params, eq_params, x, t=None):
     return jnp.sum(accu, axis=0)
 
 
-def _laplacian_rev(u, nn_params, eq_params, x, t=None):
+def _laplacian_rev(u, params, x, t=None):
     r"""
     Compute the Laplacian of a scalar field :math:`u` (from :math:`\mathbb{R}^d`
     to :math:`\mathbb{R}`) for :math:`\mathbf{x}` of arbitrary dimension, i.e.,
@@ -71,9 +65,9 @@ def _laplacian_rev(u, nn_params, eq_params, x, t=None):
 
     # Note that the last dim of u is nec. 1
     if t is None:
-        u_ = lambda x: u(x, nn_params, eq_params)[0]
+        u_ = lambda x: u(x, params)[0]
     else:
-        u_ = lambda t, x: u(t, x, nn_params, eq_params)[0]
+        u_ = lambda t, x: u(t, x, params)[0]
 
     if t is None:
         return jnp.trace(jax.hessian(u_)(x))
@@ -104,7 +98,7 @@ def _laplacian_rev(u, nn_params, eq_params, x, t=None):
     # return jnp.sum(trace_hessian)
 
 
-def _laplacian_fwd(u, nn_params, eq_params, x, t=None):
+def _laplacian_fwd(u, params, x, t=None):
     r"""
     Compute the Laplacian of a **batched** scalar field :math:`u`
     (from :math:`\mathbb{R}^{b\times d}` to :math:`\mathbb{R}^{b\times b}`)
@@ -122,14 +116,14 @@ def _laplacian_fwd(u, nn_params, eq_params, x, t=None):
 
         if t is None:
             du_dxi_fun = lambda x: jax.jvp(
-                lambda x: u(x, nn_params, eq_params)[..., 0], (x,), (tangent_vec,)
+                lambda x: u(x, params)[..., 0], (x,), (tangent_vec,)
             )[
                 1
             ]  # Note the indexing [..., 0]
             __, d2u_dxi2 = jax.jvp(du_dxi_fun, (x,), (tangent_vec,))
         else:
             du_dxi_fun = lambda x: jax.jvp(
-                lambda x: u(t, x, nn_params, eq_params)[..., 0], (x,), (tangent_vec,)
+                lambda x: u(t, x, params)[..., 0], (x,), (tangent_vec,)
             )[
                 1
             ]  # Note the indexing [..., 0]
@@ -140,7 +134,7 @@ def _laplacian_fwd(u, nn_params, eq_params, x, t=None):
     return jnp.sum(trace_hessian, axis=0)
 
 
-def _vectorial_laplacian(u, nn_params, eq_params, x, t=None, u_vec_ndim=None):
+def _vectorial_laplacian(u, params, x, t=None, u_vec_ndim=None):
     r"""
     Compute the vectorial Laplacian of a vector field :math:`\mathbf{u}` (from
     :math:`\mathbb{R}^d`
@@ -166,24 +160,18 @@ def _vectorial_laplacian(u, nn_params, eq_params, x, t=None, u_vec_ndim=None):
         # Note the expand_dims
         if isinstance(u, PINN):
             if t is None:
-                uj = lambda x, nn_params, eq_params: jnp.expand_dims(
-                    u(x, nn_params, eq_params)[j], axis=-1
-                )
+                uj = lambda x, params: jnp.expand_dims(u(x, params)[j], axis=-1)
             else:
-                uj = lambda t, x, nn_params, eq_params: jnp.expand_dims(
-                    u(t, x, nn_params, eq_params)[j], axis=-1
-                )
-            lap_on_j = _laplacian_rev(uj, nn_params, eq_params, x, t)
+                uj = lambda t, x, params: jnp.expand_dims(u(t, x, params)[j], axis=-1)
+            lap_on_j = _laplacian_rev(uj, params, x, t)
         elif isinstance(u, SPINN):
             if t is None:
-                uj = lambda x, nn_params, eq_params: jnp.expand_dims(
-                    u(x, nn_params, eq_params)[..., j], axis=-1
-                )
+                uj = lambda x, params: jnp.expand_dims(u(x, params)[..., j], axis=-1)
             else:
-                uj = lambda t, x, nn_params, eq_params: jnp.expand_dims(
-                    u(t, x, nn_params, eq_params)[..., j], axis=-1
+                uj = lambda t, x, params: jnp.expand_dims(
+                    u(t, x, params)[..., j], axis=-1
                 )
-            lap_on_j = _laplacian_fwd(uj, nn_params, eq_params, x, t)
+            lap_on_j = _laplacian_fwd(uj, params, x, t)
 
         return _, lap_on_j
 
@@ -191,7 +179,7 @@ def _vectorial_laplacian(u, nn_params, eq_params, x, t=None, u_vec_ndim=None):
     return vec_lap
 
 
-def _u_dot_nabla_times_u_rev(u, nn_params, eq_params, x, t=None):
+def _u_dot_nabla_times_u_rev(u, params, x, t=None):
     r"""
     Implement :math:`((\mathbf{u}\cdot\nabla)\mathbf{u})(\mathbf{x})` for
     :math:`\mathbf{x}` of arbitrary
@@ -203,8 +191,8 @@ def _u_dot_nabla_times_u_rev(u, nn_params, eq_params, x, t=None):
     """
     if x.shape[0] == 2:
         if t is None:
-            ux = lambda x: u(x, nn_params, eq_params)[0]
-            uy = lambda x: u(x, nn_params, eq_params)[1]
+            ux = lambda x: u(x, params)[0]
+            uy = lambda x: u(x, params)[1]
 
             dux_dx = lambda x: grad(ux, 0)(x)[0]
             dux_dy = lambda x: grad(ux, 0)(x)[1]
@@ -218,8 +206,8 @@ def _u_dot_nabla_times_u_rev(u, nn_params, eq_params, x, t=None):
                     ux(x) * duy_dx(x) + uy(x) * duy_dy(x),
                 ]
             )
-        ux = lambda t, x: u(t, x, nn_params, eq_params)[0]
-        uy = lambda t, x: u(t, x, nn_params, eq_params)[1]
+        ux = lambda t, x: u(t, x, params)[0]
+        uy = lambda t, x: u(t, x, params)[1]
 
         dux_dx = lambda t, x: grad(ux, 1)(t, x)[0]
         dux_dy = lambda t, x: grad(ux, 1)(t, x)[1]
@@ -236,7 +224,7 @@ def _u_dot_nabla_times_u_rev(u, nn_params, eq_params, x, t=None):
     raise NotImplementedError("x.ndim must be 2")
 
 
-def _u_dot_nabla_times_u_fwd(u, nn_params, eq_params, x, t=None):
+def _u_dot_nabla_times_u_fwd(u, params, x, t=None):
     r"""
     Implement :math:`((\mathbf{u}\cdot\nabla)\mathbf{u})(\mathbf{x})` for
     :math:`\mathbf{x}` of arbitrary dimension **with a batch dimension**.
@@ -255,22 +243,18 @@ def _u_dot_nabla_times_u_fwd(u, nn_params, eq_params, x, t=None):
         tangent_vec_1 = jnp.repeat(jnp.array([0.0, 1.0])[None], x.shape[0], axis=0)
         if t is None:
             u_at_x, du_dx = jax.jvp(
-                lambda x: u(x, nn_params, eq_params), (x,), (tangent_vec_0,)
+                lambda x: u(x, params), (x,), (tangent_vec_0,)
             )  # thanks to forward AD this gets dux_dx and duy_dx in a vector
             # ie the derivatives of both components of u wrt x
             # this also gets the vector of u evaluated at x
             u_at_x, du_dy = jax.jvp(
-                lambda x: u(x, nn_params, eq_params), (x,), (tangent_vec_1,)
+                lambda x: u(x, params), (x,), (tangent_vec_1,)
             )  # thanks to forward AD this gets dux_dy and duy_dy in a vector
             # ie the derivatives of both components of u wrt y
 
         else:
-            u_at_x, du_dx = jax.jvp(
-                lambda x: u(t, x, nn_params, eq_params), (x,), (tangent_vec_0,)
-            )
-            u_at_x, du_dy = jax.jvp(
-                lambda x: u(t, x, nn_params, eq_params), (x,), (tangent_vec_1,)
-            )
+            u_at_x, du_dx = jax.jvp(lambda x: u(t, x, params), (x,), (tangent_vec_0,))
+            u_at_x, du_dy = jax.jvp(lambda x: u(t, x, params), (x,), (tangent_vec_1,))
 
         return jnp.stack(
             [
@@ -304,11 +288,11 @@ def _sobolev(u, m, statio=True):
         return jac_recursive(jax.jacfwd(u), order - 1, start + 1)
 
     if statio:
-        return lambda x, nn_params, eq_params: jnp.sum(
-            jac_recursive(lambda x: u(x, nn_params, eq_params), m + 1, 0)(x) ** 2
+        return lambda x, params: jnp.sum(
+            jac_recursive(lambda x: u(x, params), m + 1, 0)(x) ** 2
         )
-    return lambda t, x, nn_params, eq_params: jnp.sum(
-        jac_recursive(lambda tx: u(tx[0:1], tx[1:], nn_params, eq_params), m + 1, 0)(
+    return lambda t, x, params: jnp.sum(
+        jac_recursive(lambda tx: u(tx[0:1], tx[1:], params), m + 1, 0)(
             jnp.concatenate([t, x], axis=0)
         )
         ** 2

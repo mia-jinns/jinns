@@ -2,8 +2,6 @@
 Implements abstract classes for dynamic losses
 """
 
-import jax
-
 
 class DynamicLoss:
     r"""

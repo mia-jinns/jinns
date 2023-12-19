@@ -66,40 +66,45 @@ class FisherKPP(PDENonStatio):
             dictionaries: `eq_params` and `nn_params``, respectively the
             differential equation parameters and the neural network parameter
         """
-        nn_params = params["nn_params"]
-        eq_params = params["eq_params"]
         if isinstance(u, PINN):
-            eq_params = self._eval_heterogeneous_parameters(
-                eq_params, t, x, self.eq_params_heterogeneity
+            params["eq_params"] = self._eval_heterogeneous_parameters(
+                params["eq_params"], t, x, self.eq_params_heterogeneity
             )
 
             # Note that the last dim of u is nec. 1
-            u_ = lambda t, x: u(t, x, nn_params, eq_params)[0]
+            u_ = lambda t, x: u(t, x, params)[0]
 
             du_dt = grad(u_, 0)(t, x)
 
-            lap = _laplacian_rev(u, nn_params, eq_params, x, t)[..., None]
+            lap = _laplacian_rev(u, params, x, t)[..., None]
 
             return du_dt + self.Tmax * (
-                -eq_params["D"] * lap
-                - u(t, x, nn_params, eq_params)
-                * (eq_params["r"] - eq_params["g"] * u(t, x, nn_params, eq_params))
+                -params["eq_params"]["D"] * lap
+                - u(t, x, params)
+                * (
+                    params["eq_params"]["r"]
+                    - params["eq_params"]["g"] * u(t, x, params)
+                )
             )
         if isinstance(u, SPINN):
             x_grid = _get_grid(x)
-            eq_params = self._eval_heterogeneous_parameters(
-                eq_params, t, x_grid, self.eq_params_heterogeneity
+            params["eq_params"] = self._eval_heterogeneous_parameters(
+                params["eq_params"], t, x_grid, self.eq_params_heterogeneity
             )
 
             u_tx, du_dt = jax.jvp(
-                lambda t: u(t, x, nn_params, eq_params),
+                lambda t: u(t, x, params),
                 (t,),
                 (jnp.ones_like(t),),
             )
-            lap = _laplacian_fwd(u, nn_params, eq_params, x, t)[..., None]
+            lap = _laplacian_fwd(u, params, x, t)[..., None]
             return du_dt + self.Tmax * (
-                -eq_params["D"] * lap
-                - u_tx * (eq_params["r"][..., None] - eq_params["g"] * u_tx)
+                -params["eq_params"]["D"] * lap
+                - u_tx
+                * (
+                    params["eq_params"]["r"][..., None]
+                    - params["eq_params"]["g"] * u_tx
+                )
             )
         raise ValueError("u is not among the recognized types (PINN or SPINN)")
 
@@ -178,7 +183,6 @@ class BurgerEquation(PDENonStatio):
     def __init__(
         self,
         Tmax=1,
-        derivatives="nn_params",
         eq_params_heterogeneity=None,
     ):
         """
@@ -188,12 +192,6 @@ class BurgerEquation(PDENonStatio):
             Tmax needs to be given when the PINN time input is normalized in
             [0, 1], ie. we have performed renormalization of the differential
             equation
-        derivatives
-            A string. Either ``nn_params``, ``eq_params``, ``both``. Determines
-            with respect to which set of parameters gradients of the dynamic
-            loss are computed. Default "nn_params", this is what is typically
-            done in solving forward problems, when we only estimate the
-            equation solution with as PINN.
         eq_params_heterogeneity
             Default None. A dict with the keys being the same as in eq_params
             and the value being `time`, `space`, `both` or None which corresponds to
@@ -202,7 +200,7 @@ class BurgerEquation(PDENonStatio):
             eq_params_heterogeneity is None this means there is no
             heterogeneity for no parameters.
         """
-        super().__init__(Tmax, derivatives, eq_params_heterogeneity)
+        super().__init__(Tmax, eq_params_heterogeneity)
 
     def evaluate(self, t, x, u, params):
         r"""
@@ -223,13 +221,12 @@ class BurgerEquation(PDENonStatio):
             differential equation parameters and the neural network parameter
         """
         if isinstance(u, PINN):
-            nn_params, eq_params = self.set_stop_gradient(params)
-            eq_params = self._eval_heterogeneous_parameters(
-                eq_params, t, x, self.eq_params_heterogeneity
+            params["eq_params"] = self._eval_heterogeneous_parameters(
+                params["eq_params"], t, x, self.eq_params_heterogeneity
             )
 
             # Note that the last dim of u is nec. 1
-            u_ = lambda t, x: u(t, x, nn_params, eq_params)[0]
+            u_ = lambda t, x: u(t, x, params)[0]
             du_dt = grad(u_, 0)
             du_dx = grad(u_, 1)
             d2u_dx2 = grad(
@@ -238,31 +235,32 @@ class BurgerEquation(PDENonStatio):
             )
 
             return du_dt(t, x) + self.Tmax * (
-                u(t, x, nn_params, eq_params) * du_dx(t, x)
-                - eq_params["nu"] * d2u_dx2(t, x)
+                u(t, x, params) * du_dx(t, x)
+                - params["eq_params"]["nu"] * d2u_dx2(t, x)
             )
 
         if isinstance(u, SPINN):
-            nn_params, eq_params = self.set_stop_gradient(params)
             x_grid = _get_grid(x)
-            eq_params = self._eval_heterogeneous_parameters(
-                eq_params, t, x_grid, self.eq_params_heterogeneity
+            params["eq_params"] = self._eval_heterogeneous_parameters(
+                params["eq_params"], t, x_grid, self.eq_params_heterogeneity
             )
             # d=2 JVP calls are expected since we have time and x
             # then with a batch of size B, we then have Bd JVP calls
             u_tx, du_dt = jax.jvp(
-                lambda t: u(t, x, nn_params, eq_params),
+                lambda t: u(t, x, params),
                 (t,),
                 (jnp.ones_like(t),),
             )
             du_dx_fun = lambda x: jax.jvp(
-                lambda x: u(t, x, nn_params, eq_params),
+                lambda x: u(t, x, params),
                 (x,),
                 (jnp.ones_like(x),),
             )[1]
             du_dx, d2u_dx2 = jax.jvp(du_dx_fun, (x,), (jnp.ones_like(x),))
             # Note that ones_like(x) works because x is Bx1 !
-            return du_dt + self.Tmax * (u_tx * du_dx - eq_params["nu"] * d2u_dx2)
+            return du_dt + self.Tmax * (
+                u_tx * du_dx - params["eq_params"]["nu"] * d2u_dx2
+            )
         raise ValueError("u is not among the recognized types (PINN or SPINN)")
 
 

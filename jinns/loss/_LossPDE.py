@@ -496,7 +496,7 @@ class LossPDEStatio(LossPDEAbstract):
                     partial(
                         self.u,
                         u_params=params["nn_params"],
-                        eq_params=jax.lax.stop_gradient(params["eq_params"]),
+                        eq_params=params["eq_params"],
                     ),
                     (0),
                     0,
@@ -514,7 +514,7 @@ class LossPDEStatio(LossPDEAbstract):
                 res = self.u(
                     norm_samples,
                     params["nn_params"],
-                    jax.lax.stop_gradient(params["eq_params"]),
+                    params["eq_params"],
                 )
                 mse_norm_loss = self.loss_weights["norm_loss"] * (
                     jnp.abs(
@@ -604,7 +604,7 @@ class LossPDEStatio(LossPDEAbstract):
                     lambda x: self.sobolev_reg(
                         x,
                         params["nn_params"],
-                        jax.lax.stop_gradient(params["eq_params"]),
+                        params["eq_params"],
                     ),
                     (0, 0),
                     0,
@@ -926,12 +926,7 @@ class LossPDENonStatio(LossPDEStatio):
             if isinstance(self.u, PINN):
                 v_u = vmap(
                     vmap(
-                        lambda t, x: self.u(
-                            t,
-                            x,
-                            params["nn_params"],
-                            params["eq_params"],
-                        ),
+                        lambda t, x: self.u(t, x, params),
                         in_axes=(None, 0),
                     ),
                     in_axes=(0, None),
@@ -946,10 +941,7 @@ class LossPDENonStatio(LossPDEStatio):
                 assert norm_samples.shape[0] % times_batch.shape[0] == 0
                 rep_t = norm_samples.shape[0] // times_batch.shape[0]
                 res = self.u(
-                    jnp.repeat(times_batch, rep_t, axis=0),
-                    norm_samples,
-                    params["nn_params"],
-                    params["eq_params"],
+                    jnp.repeat(times_batch, rep_t, axis=0), norm_samples, params
                 )
                 # the outer mean() below is for the times stamps
                 mse_norm_loss = self.loss_weights["norm_loss"] * jnp.mean(
@@ -1010,12 +1002,7 @@ class LossPDENonStatio(LossPDEStatio):
             if isinstance(self.u, PINN):
                 v_u_t0 = vmap(
                     lambda x: self.initial_condition_fun(x)
-                    - self.u(
-                        t=jnp.zeros((1,)),
-                        x=x,
-                        u_params=params["nn_params"],
-                        eq_params=params["eq_params"],
-                    ),
+                    - self.u(jnp.zeros((1,)), x, params),
                     (0),
                     0,
                 )
@@ -1027,8 +1014,7 @@ class LossPDENonStatio(LossPDEStatio):
                 values = lambda x: self.u(
                     jnp.repeat(jnp.zeros((1, 1)), omega_batch.shape[0], axis=0),
                     x,
-                    params["nn_params"],
-                    params["eq_params"],
+                    params,
                 )[0]
                 omega_batch_grid = _get_grid(omega_batch)
                 v_ini = values(omega_batch)
@@ -1049,7 +1035,7 @@ class LossPDENonStatio(LossPDEStatio):
             # TODO implement for SPINN
             if isinstance(self.u, PINN):
                 v_u = vmap(
-                    lambda t, x: self.u(t, x, params["nn_params"], params["eq_params"]),
+                    lambda t, x: self.u(t, x, params),
                     (0, 0),
                     0,
                 )
@@ -1077,10 +1063,7 @@ class LossPDENonStatio(LossPDEStatio):
             if isinstance(self.u, PINN):
                 v_sob_reg = vmap(
                     lambda t, x: self.sobolev_reg(  # pylint: disable=E1121
-                        t,
-                        x,
-                        params["nn_params"],
-                        jax.lax.stop_gradient(params["eq_params"]),
+                        t, x, params
                     ),
                     (0, 0),
                     0,
