@@ -107,11 +107,12 @@ def _check_user_func_return(r, shape):
     if isinstance(r, (int, float)):
         # if we have a scalar cast it to float
         return float(r)
-    if r.shape == () or len(r.shape) == 1:
-        # if we have a scalar (or a vector)
+    if r.shape == ():
+        # if we have a scalar inside a ndarray
         return r.astype(float)
-    # if we have an array of the shape of the batch dimension(s) check that
-    # we have the correct broadcast
+    if r.shape[-1] == shape[-1]:
+        # the broadcast will be OK
+        return r.astype(float)
     # the reshape below avoids a missing (1,) ending dimension
     # depending on how the user has coded the inital function
     return r.reshape(shape)
