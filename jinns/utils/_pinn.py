@@ -1,3 +1,7 @@
+"""
+Implements utility function to create PINNs
+"""
+
 import jax
 import jax.numpy as jnp
 import equinox as eqx
@@ -71,7 +75,7 @@ class PINN:
     def __call__(self, *args, **kwargs):
         return self.apply_fn(self, *args, **kwargs)
 
-    def _eval_nn(self, inputs, u_params, eq_params, input_transform, output_transform):
+    def _eval_nn(self, inputs, u_params, input_transform, output_transform):
         """
         inner function to factorize code. apply_fn (which takes varying forms)
         call _eval_nn which always have the same content.
@@ -85,8 +89,7 @@ class PINN:
         ## force (1,) output for non vectorial solution (consistency)
         if not res.shape:
             return jnp.expand_dims(res, axis=-1)
-        else:
-            return res
+        return res
 
 
 def create_PINN(
@@ -185,20 +188,13 @@ def create_PINN(
     if eq_type != "ODE" and dim_x == 0:
         raise RuntimeError("Wrong parameter combination eq_type and dim_x")
 
-    dim_t = 0 if eq_type == "statio_PDE" else 1
-    dim_in_params = len(with_eq_params) if with_eq_params is not None else 0
-    try:
-        nb_inputs_declared = eqx_list[0][1]  # normally we look for 2nd ele of 1st layer
-    except IndexError:
-        nb_inputs_declared = eqx_list[1][1]
-        # but we can have, eg, a flatten first layer
-
-    try:
-        nb_outputs_declared = eqx_list[-1][2]  # normally we look for 3rd ele of
-        # last layer
-    except IndexError:
-        nb_outputs_declared = eqx_list[-2][2]
-        # but we can have, eg, a `jnp.exp` last layer
+    # TODO Used in a disabled check
+    # dim_in_params = len(with_eq_params) if with_eq_params is not None else 0
+    # try:
+    #    nb_inputs_declared = eqx_list[0][1]  # normally we look for 2nd ele of 1st layer
+    # except IndexError:
+    #    nb_inputs_declared = eqx_list[1][1]
+    #    # but we can have, eg, a flatten first layer
 
     # NOTE Currently the check below is disabled because we added
     # input_transform
@@ -223,7 +219,7 @@ def create_PINN(
                     None
                 ]  # Note that we added a dimension to t which is lacking for the ODE batches
                 return self._eval_nn(
-                    t, u_params, eq_params, input_transform, output_transform
+                    t, u_params, input_transform, output_transform
                 ).squeeze()
 
         else:
@@ -237,7 +233,7 @@ def create_PINN(
                 )
                 t_eq_params = jnp.concatenate([t, eq_params_flatten], axis=-1)
                 return self._eval_nn(
-                    t_eq_params, u_params, eq_params, input_transform, output_transform
+                    t_eq_params, u_params, input_transform, output_transform
                 )
 
     elif eq_type == "statio_PDE":
@@ -245,9 +241,7 @@ def create_PINN(
         if with_eq_params is None:
 
             def apply_fn(self, x, u_params, eq_params=None):
-                return self._eval_nn(
-                    x, u_params, eq_params, input_transform, output_transform
-                )
+                return self._eval_nn(x, u_params, input_transform, output_transform)
 
         else:
 
@@ -257,7 +251,7 @@ def create_PINN(
                 )
                 x_eq_params = jnp.concatenate([x, eq_params_flatten], axis=-1)
                 return self._eval_nn(
-                    x_eq_params, u_params, eq_params, input_transform, output_transform
+                    x_eq_params, u_params, input_transform, output_transform
                 )
 
     elif eq_type == "nonstatio_PDE":
@@ -266,9 +260,7 @@ def create_PINN(
 
             def apply_fn(self, t, x, u_params, eq_params=None):
                 t_x = jnp.concatenate([t, x], axis=-1)
-                return self._eval_nn(
-                    t_x, u_params, eq_params, input_transform, output_transform
-                )
+                return self._eval_nn(t_x, u_params, input_transform, output_transform)
 
         else:
 
@@ -281,7 +273,6 @@ def create_PINN(
                 return self._eval_nn(
                     t_x_eq_params,
                     u_params,
-                    eq_params,
                     input_transform,
                     output_transform,
                 )
@@ -302,7 +293,6 @@ def create_PINN(
                 pinn.static = static
             pinns.append(pinn)
         return pinns
-    else:
-        pinn = PINN(key, eqx_list)
-        pinn.apply_fn = apply_fn
-        return pinn
+    pinn = PINN(key, eqx_list)
+    pinn.apply_fn = apply_fn
+    return pinn

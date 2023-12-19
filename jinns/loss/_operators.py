@@ -1,7 +1,10 @@
+"""
+Implements diverse operators for dynamic losses
+"""
+
 import jax
 import jax.numpy as jnp
 from jax import grad
-from functools import partial
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
 
@@ -74,8 +77,7 @@ def _laplacian_rev(u, nn_params, eq_params, x, t=None):
 
     if t is None:
         return jnp.trace(jax.hessian(u_)(x))
-    else:
-        return jnp.trace(jax.hessian(u_, argnums=1)(t, x))
+    return jnp.trace(jax.hessian(u_, argnums=1)(t, x))
 
     # For a small d, we found out that trace of the Hessian is faster, but the
     # trick below for taking directly the diagonal elements might prove useful
@@ -216,24 +218,22 @@ def _u_dot_nabla_times_u_rev(u, nn_params, eq_params, x, t=None):
                     ux(x) * duy_dx(x) + uy(x) * duy_dy(x),
                 ]
             )
-        else:
-            ux = lambda t, x: u(t, x, nn_params, eq_params)[0]
-            uy = lambda t, x: u(t, x, nn_params, eq_params)[1]
+        ux = lambda t, x: u(t, x, nn_params, eq_params)[0]
+        uy = lambda t, x: u(t, x, nn_params, eq_params)[1]
 
-            dux_dx = lambda t, x: grad(ux, 1)(t, x)[0]
-            dux_dy = lambda t, x: grad(ux, 1)(t, x)[1]
+        dux_dx = lambda t, x: grad(ux, 1)(t, x)[0]
+        dux_dy = lambda t, x: grad(ux, 1)(t, x)[1]
 
-            duy_dx = lambda t, x: grad(uy, 1)(t, x)[0]
-            duy_dy = lambda t, x: grad(uy, 1)(t, x)[1]
+        duy_dx = lambda t, x: grad(uy, 1)(t, x)[0]
+        duy_dy = lambda t, x: grad(uy, 1)(t, x)[1]
 
-            return jnp.array(
-                [
-                    ux(t, x) * dux_dx(t, x) + uy(t, x) * dux_dy(t, x),
-                    ux(t, x) * duy_dx(t, x) + uy(t, x) * duy_dy(t, x),
-                ]
-            )
-    else:
-        raise NotImplementedError("x.ndim must be 2")
+        return jnp.array(
+            [
+                ux(t, x) * dux_dx(t, x) + uy(t, x) * dux_dy(t, x),
+                ux(t, x) * duy_dx(t, x) + uy(t, x) * duy_dy(t, x),
+            ]
+        )
+    raise NotImplementedError("x.ndim must be 2")
 
 
 def _u_dot_nabla_times_u_fwd(u, nn_params, eq_params, x, t=None):
@@ -279,8 +279,7 @@ def _u_dot_nabla_times_u_fwd(u, nn_params, eq_params, x, t=None):
             ],
             axis=-1,
         )
-    else:
-        raise NotImplementedError("x.ndim must be 2")
+    raise NotImplementedError("x.ndim must be 2")
 
 
 def _sobolev(u, m, statio=True):
@@ -300,19 +299,17 @@ def _sobolev(u, m, statio=True):
         # Compute the derivative of order `start`
         if order == 0:
             return u
-        elif start == 0:
+        if start == 0:
             return jac_recursive(jax.jacrev(u), order - 1, start + 1)
-        else:
-            return jac_recursive(jax.jacfwd(u), order - 1, start + 1)
+        return jac_recursive(jax.jacfwd(u), order - 1, start + 1)
 
     if statio:
         return lambda x, nn_params, eq_params: jnp.sum(
             jac_recursive(lambda x: u(x, nn_params, eq_params), m + 1, 0)(x) ** 2
         )
-    else:
-        return lambda t, x, nn_params, eq_params: jnp.sum(
-            jac_recursive(
-                lambda tx: u(tx[0:1], tx[1:], nn_params, eq_params), m + 1, 0
-            )(jnp.concatenate([t, x], axis=0))
-            ** 2
+    return lambda t, x, nn_params, eq_params: jnp.sum(
+        jac_recursive(lambda tx: u(tx[0:1], tx[1:], nn_params, eq_params), m + 1, 0)(
+            jnp.concatenate([t, x], axis=0)
         )
+        ** 2
+    )

@@ -1,14 +1,18 @@
+"""
+Main module to implement a PDE loss in jinns
+"""
+
+from functools import partial
+import warnings
 import jax
 import jax.numpy as jnp
 from jax import vmap
 from jax.tree_util import register_pytree_node_class
-from functools import partial
-import warnings
 from jinns.loss._boundary_conditions import (
     _compute_boundary_loss_statio,
     _compute_boundary_loss_nonstatio,
 )
-from jinns.loss._DynamicLoss import ODE, PDEStatio, PDENonStatio
+from jinns.loss._DynamicLoss import PDEStatio
 from jinns.data._DataGenerators import PDEStatioBatch, PDENonStatioBatch
 from jinns.utils._utils import (
     _get_vmap_in_axes_params,
@@ -98,7 +102,7 @@ class LossPDEAbstract:
             if not isinstance(self.norm_borders[0], tuple):
                 self.norm_borders = (self.norm_borders,)
             self.norm_xmin, self.norm_xmax = [], []
-            for i in range(len(self.norm_borders)):
+            for i, _ in enumerate(self.norm_borders):
                 self.norm_xmin.append(self.norm_borders[i][0])
                 self.norm_xmax.append(self.norm_borders[i][1])
             self.int_length = jnp.prod(
@@ -122,7 +126,7 @@ class LossPDEAbstract:
             if not isinstance(self.norm_borders[0], tuple):
                 self.norm_borders = (self.norm_borders,)
             self.norm_xmin, self.norm_xmax = [], []
-            for i in range(len(self.norm_borders)):
+            for i, _ in enumerate(self.norm_borders):
                 self.norm_xmin.append(self.norm_borders[i][0])
                 self.norm_xmax.append(self.norm_borders[i][1])
             self.int_length = jnp.prod(
@@ -143,7 +147,7 @@ class LossPDEAbstract:
         """
         if self.norm_sample_method == "user":
             return self.norm_samples
-        elif self.norm_sample_method == "generate":
+        if self.norm_sample_method == "generate":
             ## NOTE TODO CHECK the performances of this for loop
             norm_samples = []
             for d in range(len(self.norm_borders)):
@@ -158,8 +162,7 @@ class LossPDEAbstract:
                 )
             self.norm_samples = jnp.concatenate(norm_samples, axis=-1)
             return self.norm_samples
-        else:
-            raise RuntimeError("Problem with the value of self.norm_sample_method")
+        raise RuntimeError("Problem with the value of self.norm_sample_method")
 
     def tree_flatten(self):
         children = (self.norm_key, self.norm_samples, self.loss_weights)
@@ -211,7 +214,7 @@ class LossPDEStatio(LossPDEAbstract):
         obs_batch=None,
         sobolev_m=None,
     ):
-        """
+        r"""
         Parameters
         ----------
         u
@@ -224,7 +227,7 @@ class LossPDEStatio(LossPDEAbstract):
             `u` which then ponderates each output of `u`
         dynamic_loss
             the stationary PDE dynamic part of the loss, basically the differential
-            operator :math:`\mathcal{N}[u](t)`. Should implement a method
+            operator :math:` \mathcal{N}[u](t)`. Should implement a method
             `dynamic_loss.evaluate(t, u, params)`.
             Can be None in order to access only some part of the evaluate call
             results.
@@ -284,10 +287,10 @@ class LossPDEStatio(LossPDEAbstract):
                 raise ValueError(
                     f"obs_batch must be a list of size 2. You gave {len(obs_batch)}"
                 )
-            elif any([isinstance(b, jnp.array) for b in obs_batch]):
+            if any(isinstance(b, jnp.ndarray) for b in obs_batch):
                 raise ValueError("Every element of obs_batch should be a jnp.array.")
             n_obs = obs_batch[0].shape[0]
-            if any([b.shape[0] != n_obs for b in obs_batch]):
+            if any(b.shape[0] != n_obs for b in obs_batch):
                 raise ValueError(
                     "Every jnp array should have the same size of the first axis (number of observations)."
                 )
@@ -304,10 +307,10 @@ class LossPDEStatio(LossPDEAbstract):
                 "Boundary function is thus ignored."
             )
         else:
-            if type(omega_boundary_condition) is dict:
-                for k, v in omega_boundary_condition.items():
+            if isinstance(omega_boundary_condition, dict):
+                for _, v in omega_boundary_condition.items():
                     if v is not None and not any(
-                        [v.lower() in s for s in _IMPLEMENTED_BOUNDARY_CONDITIONS]
+                        v.lower() in s for s in _IMPLEMENTED_BOUNDARY_CONDITIONS
                     ):
                         raise NotImplementedError(
                             f"The boundary condition {omega_boundary_condition} is not"
@@ -316,19 +319,16 @@ class LossPDEStatio(LossPDEAbstract):
                         )
             else:
                 if not any(
-                    [
-                        omega_boundary_condition.lower() in s
-                        for s in _IMPLEMENTED_BOUNDARY_CONDITIONS
-                    ]
+                    omega_boundary_condition.lower() in s
+                    for s in _IMPLEMENTED_BOUNDARY_CONDITIONS
                 ):
                     raise NotImplementedError(
                         f"The boundary condition {omega_boundary_condition} is not"
                         f"implemented yet. Try one of :"
                         f"{_IMPLEMENTED_BOUNDARY_CONDITIONS}."
                     )
-                if (
-                    type(omega_boundary_fun) is dict
-                    and type(omega_boundary_condition) is dict
+                if isinstance(omega_boundary_fun, dict) and isinstance(
+                    omega_boundary_condition, dict
                 ):
                     if (
                         not (
@@ -360,6 +360,7 @@ class LossPDEStatio(LossPDEAbstract):
             )  # we return a function, that way
             # the order of sobolev_m is static and the conditional in the recursive
             # function is properly set
+            self.sobolev_m = sobolev_m
         else:
             self.sobolev_reg = None
 
@@ -373,11 +374,11 @@ class LossPDEStatio(LossPDEAbstract):
             self.loss_weights["sobolev"] = 0
 
         if (
-            type(self.omega_boundary_fun) is dict
-            and not (type(self.omega_boundary_condition) is dict)
+            isinstance(self.omega_boundary_fun, dict)
+            and not isinstance(self.omega_boundary_condition, dict)
         ) or (
-            not (type(self.omega_boundary_fun) is dict)
-            and type(self.omega_boundary_condition) is dict
+            not isinstance(self.omega_boundary_fun, dict)
+            and isinstance(self.omega_boundary_condition, dict)
         ):
             raise ValueError(
                 "if one of self.omega_boundary_fun or "
@@ -405,7 +406,6 @@ class LossPDEStatio(LossPDEAbstract):
             border
         """
         omega_batch, omega_border_batch = batch.inside_batch, batch.border_batch
-        n = omega_batch.shape[0]
 
         vmap_in_axes_x = (0,)
 
@@ -490,7 +490,7 @@ class LossPDEStatio(LossPDEAbstract):
 
         # boundary part
         if self.omega_boundary_condition is not None:
-            if type(self.omega_boundary_fun) is dict:
+            if isinstance(self.omega_boundary_fun, dict):
                 # means self.omega_boundary_condition is dict too because of
                 # check in init
                 mse_boundary_loss = 0
@@ -535,10 +535,12 @@ class LossPDEStatio(LossPDEAbstract):
                     0,
                     0,
                 )
+                val = v_u(self.obs_batch[0][:, None])
                 mse_observation_loss = jnp.mean(
                     self.loss_weights["observations"]
                     * jnp.sum(
-                        (v_u(self.obs_batch[0][:, None]) - self.obs_batch[1]) ** 2,
+                        (val - self.obs_batch[1].reshape(val.shape)) ** 2,
+                        # the reshape above avoids a potential missing (1,)
                         axis=-1,
                     )
                 )
@@ -724,10 +726,10 @@ class LossPDENonStatio(LossPDEStatio):
                 raise ValueError(
                     f"obs_batch must be a list of size 3. You gave {len(obs_batch)}"
                 )
-            elif not all([isinstance(b, jnp.ndarray) for b in obs_batch]):
+            if not all(isinstance(b, jnp.ndarray) for b in obs_batch):
                 raise ValueError("Every element of obs_batch should be a jnp.array.")
             n_obs = obs_batch[0].shape[0]
-            if any([b.shape[0] != n_obs for b in obs_batch]):
+            if any(b.shape[0] != n_obs for b in obs_batch):
                 raise ValueError(
                     "Every jnp array should have the same size of the first axis (number of observations)."
                 )
@@ -908,7 +910,7 @@ class LossPDENonStatio(LossPDEStatio):
 
         # boundary part
         if self.omega_boundary_fun is not None:
-            if type(self.omega_boundary_fun) is dict:
+            if isinstance(self.omega_boundary_fun, dict):
                 # means self.omega_boundary_condition is dict too because of
                 # check in init
                 mse_boundary_loss = 0
@@ -992,14 +994,12 @@ class LossPDENonStatio(LossPDEStatio):
                     (0, 0),
                     0,
                 )
+                val = v_u(self.obs_batch[0][:, None], self.obs_batch[1])
                 mse_observation_loss = jnp.mean(
                     self.loss_weights["observations"]
-                    * jnp.mean(
-                        (
-                            v_u(self.obs_batch[0][:, None], self.obs_batch[1])
-                            - self.obs_batch[2]
-                        )
-                        ** 2,
+                    * jnp.sum(
+                        (val - self.obs_batch[2].reshape(val.shape)) ** 2,
+                        # the reshape above avoids a potential missing (1,)
                         axis=-1,
                     )
                 )
@@ -1016,7 +1016,7 @@ class LossPDENonStatio(LossPDEStatio):
             # TODO implement for SPINN
             if isinstance(self.u, PINN):
                 v_sob_reg = vmap(
-                    lambda t, x: self.sobolev_reg(
+                    lambda t, x: self.sobolev_reg(  # pylint: disable=E1121
                         t,
                         x,
                         params["nn_params"],
@@ -1290,7 +1290,7 @@ class SystemLossPDE:
                     dynamic_loss=None,
                     omega_boundary_fun=self.omega_boundary_fun_dict[i],
                     omega_boundary_condition=self.omega_boundary_condition_dict[i],
-                    initial_condition_fun=self.initial_condition_fun[i],
+                    initial_condition_fun=self.initial_condition_fun_dict[i],
                     norm_key=self.norm_key_dict[i],
                     norm_borders=self.norm_borders_dict[i],
                     norm_samples=self.norm_samples_dict[i],
@@ -1299,16 +1299,16 @@ class SystemLossPDE:
                 )
             else:
                 raise ValueError(
-                    f"Wrong value for nn_type_dict[i], got " "{nn_type_dict[i]}"
+                    f"Wrong value for nn_type_dict[i], got {nn_type_dict[i]}"
                 )
 
         # also make sure we only have PINNs or SPINNs
         if not (
-            all(type(value) == PINN for value in u_dict.values())
-            or all(type(value) == SPINN for value in u_dict.values())
+            all(isinstance(value, PINN) for value in u_dict.values())
+            or all(isinstance(value, SPINN) for value in u_dict.values())
         ):
             raise ValueError(
-                "We only accept dictionary of PINNs or dictionary" " of SPINNs"
+                "We only accept dictionary of PINNs or dictionary of SPINNs"
             )
 
     @property
@@ -1387,10 +1387,10 @@ class SystemLossPDE:
             raise ValueError("u_dict and params_dict[nn_params] should have same keys ")
 
         if isinstance(batch, PDEStatioBatch):
-            omega_batch, omega_border_batch = batch.inside_batch, batch.border_batch
+            omega_batch, _ = batch.inside_batch, batch.border_batch
             n = omega_batch.shape[0]
         elif isinstance(batch, PDENonStatioBatch):
-            omega_batch, omega_border_batch, times_batch = (
+            omega_batch, _, times_batch = (
                 batch.inside_batch,
                 batch.border_batch,
                 batch.temporal_batch,
@@ -1436,7 +1436,9 @@ class SystemLossPDE:
                 # must only have SPINNs or only PINNs
                 if isinstance(list(self.u_dict.values())[0], PINN):
                     v_dyn_loss = vmap(
-                        lambda x, params_dict: self.dynamic_loss_dict[i].evaluate(
+                        lambda x, params_dict, key=i: self.dynamic_loss_dict[
+                            key
+                        ].evaluate(
                             x,
                             self.u_dict,
                             params_dict,
@@ -1462,14 +1464,12 @@ class SystemLossPDE:
             else:
                 if isinstance(list(self.u_dict.values())[0], PINN):
                     v_dyn_loss = vmap(
-                        lambda t, x, params_dict: self.dynamic_loss_dict[i].evaluate(
-                            t, x, self.u_dict, params_dict
-                        ),
+                        lambda t, x, params_dict, key=i: self.dynamic_loss_dict[
+                            key
+                        ].evaluate(t, x, self.u_dict, params_dict),
                         vmap_in_axes_x_t + vmap_in_axes_params,
                         0,
                     )
-
-                    tile_omega_batch = jnp.tile(omega_batch, reps=(nt, 1))
 
                     omega_batch_ = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
                     times_batch_ = rep_times(n)  # it is repeated

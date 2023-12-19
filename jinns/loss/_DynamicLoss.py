@@ -1,5 +1,9 @@
+"""
+Implements several dynamic losses
+"""
+
 import jax
-from jax import jit, grad, jacrev, jacfwd
+from jax import grad, jacrev
 import jax.numpy as jnp
 from jinns.utils._utils import _get_grid
 from jinns.utils._pinn import PINN
@@ -51,7 +55,7 @@ class FisherKPP(PDENonStatio):
         super().__init__(Tmax, derivatives, eq_params_heterogeneity)
 
     def evaluate(self, t, x, u, params):
-        """
+        r"""
         Evaluate the dynamic loss at :math:`(t,x)`.
 
         Parameters
@@ -86,7 +90,7 @@ class FisherKPP(PDENonStatio):
                 - u(t, x, nn_params, eq_params)
                 * (eq_params["r"] - eq_params["g"] * u(t, x, nn_params, eq_params))
             )
-        elif isinstance(u, SPINN):
+        if isinstance(u, SPINN):
             nn_params, eq_params = self.set_stop_gradient(params)
             x_grid = _get_grid(x)
             eq_params = self._eval_heterogeneous_parameters(
@@ -103,6 +107,7 @@ class FisherKPP(PDENonStatio):
                 -eq_params["D"] * lap
                 - u_tx * (eq_params["r"][..., None] - eq_params["g"] * u_tx)
             )
+        raise ValueError("u is not among the recognized types (PINN or SPINN)")
 
 
 class Malthus(ODE):
@@ -206,7 +211,7 @@ class BurgerEquation(PDENonStatio):
         super().__init__(Tmax, derivatives, eq_params_heterogeneity)
 
     def evaluate(self, t, x, u, params):
-        """
+        r"""
         Evaluate the dynamic loss at :math:`(t,x)`.
 
         Parameters
@@ -243,7 +248,7 @@ class BurgerEquation(PDENonStatio):
                 - eq_params["nu"] * d2u_dx2(t, x)
             )
 
-        elif isinstance(u, SPINN):
+        if isinstance(u, SPINN):
             nn_params, eq_params = self.set_stop_gradient(params)
             x_grid = _get_grid(x)
             eq_params = self._eval_heterogeneous_parameters(
@@ -264,6 +269,7 @@ class BurgerEquation(PDENonStatio):
             du_dx, d2u_dx2 = jax.jvp(du_dx_fun, (x,), (jnp.ones_like(x),))
             # Note that ones_like(x) works because x is Bx1 !
             return du_dt + self.Tmax * (u_tx * du_dx - eq_params["nu"] * d2u_dx2)
+        raise ValueError("u is not among the recognized types (PINN or SPINN)")
 
 
 class GeneralizedLotkaVolterra(ODE):
@@ -416,7 +422,7 @@ class FPENonStatioLoss2D(PDENonStatio):
         super().__init__(Tmax, derivatives, eq_params_heterogeneity)
 
     def evaluate(self, t, x, u, params):
-        """
+        r"""
         Evaluate the dynamic loss at :math:`(t,\mathbf{x})`.
 
         Parameters
@@ -492,7 +498,7 @@ class FPENonStatioLoss2D(PDENonStatio):
 
             return -du_dt + self.Tmax * (-order_1 + order_2)
 
-        elif isinstance(u, SPINN):
+        if isinstance(u, SPINN):
             nn_params, eq_params = self.set_stop_gradient(params)
             x_grid = _get_grid(x)
             eq_params = self._eval_heterogeneous_parameters(
@@ -556,6 +562,7 @@ class FPENonStatioLoss2D(PDENonStatio):
                 -(dau_dx1 + dau_dx2)
                 + (d2su_dx12 + d2su_dx22 + d2su_dx1dx2 + d2su_dx2dx1)
             )
+        raise ValueError("u is not among the recognized types (PINN or SPINN)")
 
 
 class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
@@ -650,13 +657,12 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
                     jnp.transpose(self.sigma_mat(t, x, eq_params)),
                 )
             )
-        else:
-            return 0.5 * (
-                jnp.matmul(
-                    self.sigma_mat(t, x, eq_params),
-                    jnp.transpose(self.sigma_mat(t, x, eq_params)),
-                )[i, j]
-            )
+        return 0.5 * (
+            jnp.matmul(
+                self.sigma_mat(t, x, eq_params),
+                jnp.transpose(self.sigma_mat(t, x, eq_params)),
+            )[i, j]
+        )
 
 
 class ConvectionDiffusionNonStatio(FPENonStatioLoss2D):
@@ -773,7 +779,7 @@ class MassConservation2DStatio(PDEStatio):
         super().__init__(derivatives, eq_params_heterogeneity)
 
     def evaluate(self, x, u_dict, params_dict):
-        """
+        r"""
         Evaluate the dynamic loss at `\mathbf{x}`.
         For stability we implement the dynamic loss in log space.
 
@@ -794,21 +800,20 @@ class MassConservation2DStatio(PDEStatio):
             nn_params, eq_params = self.set_stop_gradient(params_dict)
 
             nn_params = nn_params[self.nn_key]
-            eq_params = eq_params
 
             u = u_dict[self.nn_key]
 
             return _div_rev(u, nn_params, eq_params, x)[..., None]
 
-        elif isinstance(u_dict[self.nn_key], SPINN):
+        if isinstance(u_dict[self.nn_key], SPINN):
             nn_params, eq_params = self.set_stop_gradient(params_dict)
 
             nn_params = nn_params[self.nn_key]
-            eq_params = eq_params
 
             u = u_dict[self.nn_key]
 
             return _div_fwd(u, nn_params, eq_params, x)[..., None]
+        raise ValueError("u is not among the recognized types (PINN or SPINN)")
 
 
 class NavierStokes2DStatio(PDEStatio):
@@ -843,7 +848,7 @@ class NavierStokes2DStatio(PDEStatio):
     def __init__(
         self, u_key, p_key, derivatives="nn_params", eq_params_heterogeneity=None
     ):
-        """
+        r"""
         Parameters
         ----------
         u_key
@@ -899,7 +904,6 @@ class NavierStokes2DStatio(PDEStatio):
 
             u_nn_params = nn_params[self.u_key]
             p_nn_params = nn_params[self.p_key]
-            eq_params = eq_params
 
             u = u_dict[self.u_key]
 
@@ -929,12 +933,11 @@ class NavierStokes2DStatio(PDEStatio):
             # output is 2D
             return jnp.stack([result_x, result_y], axis=-1)
 
-        elif isinstance(u_dict[self.u_key], SPINN):
+        if isinstance(u_dict[self.u_key], SPINN):
             nn_params, eq_params = self.set_stop_gradient(params_dict)
 
             u_nn_params = nn_params[self.u_key]
             p_nn_params = nn_params[self.p_key]
-            eq_params = eq_params
 
             u = u_dict[self.u_key]
 
@@ -968,3 +971,4 @@ class NavierStokes2DStatio(PDEStatio):
 
             # output is 2D
             return jnp.stack([result_x, result_y], axis=-1)
+        raise ValueError("u is not among the recognized types (PINN or SPINN)")
