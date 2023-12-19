@@ -30,7 +30,7 @@ class FisherKPP(PDENonStatio):
 
     """
 
-    def __init__(self, Tmax=1, derivatives="nn_params", eq_params_heterogeneity=None):
+    def __init__(self, Tmax=1, eq_params_heterogeneity=None):
         """
         Parameters
         ----------
@@ -38,12 +38,6 @@ class FisherKPP(PDENonStatio):
             Tmax needs to be given when the PINN time input is normalized in
             [0, 1], ie. we have performed renormalization of the differential
             equation
-        derivatives
-            A string. Either ``nn_params``, ``eq_params``, ``both``. Determines
-            with respect to which set of parameters gradients of the dynamic
-            loss are computed. Default "nn_params", this is what is typically
-            done in solving forward problems, when we only estimate the
-            equation solution with as PINN.
         eq_params_heterogeneity
             Default None. A dict with the keys being the same as in eq_params
             and the value being `time`, `space`, `both` or None which corresponds to
@@ -52,7 +46,7 @@ class FisherKPP(PDENonStatio):
             eq_params_heterogeneity is None this means there is no
             heterogeneity for no parameters.
         """
-        super().__init__(Tmax, derivatives, eq_params_heterogeneity)
+        super().__init__(Tmax, eq_params_heterogeneity)
 
     def evaluate(self, t, x, u, params):
         r"""
@@ -72,8 +66,9 @@ class FisherKPP(PDENonStatio):
             dictionaries: `eq_params` and `nn_params``, respectively the
             differential equation parameters and the neural network parameter
         """
+        nn_params = params["nn_params"]
+        eq_params = params["eq_params"]
         if isinstance(u, PINN):
-            nn_params, eq_params = self.set_stop_gradient(params)
             eq_params = self._eval_heterogeneous_parameters(
                 eq_params, t, x, self.eq_params_heterogeneity
             )
@@ -91,7 +86,6 @@ class FisherKPP(PDENonStatio):
                 * (eq_params["r"] - eq_params["g"] * u(t, x, nn_params, eq_params))
             )
         if isinstance(u, SPINN):
-            nn_params, eq_params = self.set_stop_gradient(params)
             x_grid = _get_grid(x)
             eq_params = self._eval_heterogeneous_parameters(
                 eq_params, t, x_grid, self.eq_params_heterogeneity
@@ -882,7 +876,7 @@ class NavierStokes2DStatio(PDEStatio):
         super().__init__(derivatives, eq_params_heterogeneity)
 
     def evaluate(self, x, u_dict, params_dict):
-        """
+        r"""
         Evaluate the dynamic loss at `\mathbf{x}`.
         For stability we implement the dynamic loss in log space.
 

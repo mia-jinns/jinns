@@ -135,7 +135,7 @@ def boundary_dirichlet_statio(f, border_batch, u, params):
             lambda dx: u(
                 dx,
                 u_params=params["nn_params"],
-                eq_params=jax.lax.stop_gradient(params["eq_params"]),
+                eq_params=params["eq_params"],
             )
             - f(dx),
             (0),
@@ -147,7 +147,7 @@ def boundary_dirichlet_statio(f, border_batch, u, params):
         values = u(
             border_batch,
             params["nn_params"],
-            jax.lax.stop_gradient(params["eq_params"]),
+            params["eq_params"],
         )
         x_grid = _get_grid(border_batch)
         boundaries = _check_user_func_return(f(x_grid), values.shape)
@@ -198,9 +198,7 @@ def boundary_neumann_statio(f, border_batch, u, params, facet):
         u_ = lambda x, nn, eq: u(x, nn, eq)[0]
         v_neumann = vmap(
             lambda dx: jnp.dot(
-                grad(u_, 0)(
-                    dx, params["nn_params"], jax.lax.stop_gradient(params["eq_params"])
-                ),
+                grad(u_, 0)(dx, params["nn_params"], params["eq_params"]),
                 n[..., facet],
             )
             - f(dx),
@@ -217,7 +215,7 @@ def boundary_neumann_statio(f, border_batch, u, params, facet):
                 lambda x: u(
                     x,
                     params["nn_params"],
-                    jax.lax.stop_gradient(params["eq_params"]),
+                    params["eq_params"],
                 ),
                 (border_batch,),
                 (jnp.ones_like(border_batch),),
@@ -234,7 +232,7 @@ def boundary_neumann_statio(f, border_batch, u, params, facet):
                 lambda x: u(
                     x,
                     params["nn_params"],
-                    jax.lax.stop_gradient(params["eq_params"]),
+                    params["eq_params"],
                 ),
                 (border_batch,),
                 (tangent_vec_0,),
@@ -243,7 +241,7 @@ def boundary_neumann_statio(f, border_batch, u, params, facet):
                 lambda x: u(
                     x,
                     params["nn_params"],
-                    jax.lax.stop_gradient(params["eq_params"]),
+                    params["eq_params"],
                 ),
                 (border_batch,),
                 (tangent_vec_1,),
@@ -294,7 +292,7 @@ def boundary_dirichlet_nonstatio(f, times_batch, omega_border_batch, u, params):
                 t,
                 dx,
                 u_params=params["nn_params"],
-                eq_params=jax.lax.stop_gradient(params["eq_params"]),
+                eq_params=params["eq_params"],
             )
             - f(t, dx),
             (0, 0),
@@ -323,7 +321,7 @@ def boundary_dirichlet_nonstatio(f, times_batch, omega_border_batch, u, params):
             times_batch,
             tile_omega_border_batch,
             params["nn_params"],
-            jax.lax.stop_gradient(params["eq_params"]),
+            params["eq_params"],
         )
         tx_grid = _get_grid(jnp.concatenate([times_batch, omega_border_batch], axis=-1))
         boundaries = _check_user_func_return(
@@ -385,7 +383,7 @@ def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params, fa
                     t,
                     dx,
                     params["nn_params"],
-                    jax.lax.stop_gradient(params["eq_params"]),
+                    params["eq_params"],
                 ),
                 n[..., facet],
             )
@@ -418,7 +416,7 @@ def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params, fa
                     times_batch,
                     x,
                     params["nn_params"],
-                    jax.lax.stop_gradient(params["eq_params"]),
+                    params["eq_params"],
                 ),
                 (omega_border_batch,),
                 (jnp.ones_like(omega_border_batch),),
@@ -436,7 +434,7 @@ def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params, fa
                     times_batch,
                     x,
                     params["nn_params"],
-                    jax.lax.stop_gradient(params["eq_params"]),
+                    params["eq_params"],
                 ),
                 (omega_border_batch,),
                 (tangent_vec_0,),
@@ -446,7 +444,7 @@ def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params, fa
                     times_batch,
                     x,
                     params["nn_params"],
-                    jax.lax.stop_gradient(params["eq_params"]),
+                    params["eq_params"],
                 ),
                 (omega_border_batch,),
                 (tangent_vec_1,),
