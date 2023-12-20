@@ -5,3 +5,4 @@ from ._utils import (
 )
 from ._pinn import create_PINN
 from ._spinn import create_SPINN
+from ._optim import alternate_optimizer, delayed_optimizer
