@@ -8,7 +8,9 @@ Physics Informed Neural Networks with JAX. **jinns** has been developed to estim
 
 - **jinns** is coded with JAX as a backend: forward and backward autodiff, vmapping, jitting and more!
 
-- We focus the development towards inverse problems and inference in mecanistic-statistical models
+- In **jinns**, we give the user maximum control on what is happening. We also keep the maths and computations visible and not hidden behind layers of code!
+
+- In the near future, we want to focus the development on inverse problems and inference in mecanistic-statistical models
 
 - [Separable PINNs](https://openreview.net/pdf?id=dEySGIcDnI) are implemented
 
