@@ -275,7 +275,14 @@ class SystemLossODE:
             at the leaf level can have jnp.arrays with the same dimension of
             `u` which then ponderates each output of `u`
         derivative_keys_dict
-            XXX
+            A dict of derivative keys as defined in LossODE. The key of this
+            dict must be that of `dynamic_loss_dict` at least and specify how
+            to compute gradient for the `dyn_loss` loss term at least (see the
+            check at the beginning of the present `__init__` function.
+            Other keys of this dict might be that of `u_dict` to specify how to
+            compute gradients for all the different constraints. If those keys
+            are not specified then the default behaviour for `derivative_keys`
+            of LossODE is used
         initial_condition_dict
             dict of tuple of length 2 with initial condition :math:`(t_0, u_0)`
             Must share the keys of `u_dict`. Default is None. No initial

@@ -8,6 +8,20 @@ Welcome to jinn's documentation!
 
 Changelog:
 
+* v0.6.0:
+
+    - Code refactoring: now we only pass `params` to the PINN. If we want to add some elements of `params["eq_params"]` as inputs of the PINN we can do so through a `input_transform(t, x, params)` function. See the Burger notebook for inverse problem.
+
+    - Set gradients is now highly modular: for each term of the loss you can chose the parameter(s) w.r.t. which you want to compute the gradient
+
+    - We provide two utility functions for optimization: delayed and alternate schedule for two sets of parameters
+
+    - Diverse code improvements, code corrections and updated notebooks.
+
+* v0.5.2:
+
+    - Fix problem in observation loss term. Add tests for observation loss term.
+
 * v0.5.1:
 
     - Fix problem in observation loss term. Add tests for observation loss term.

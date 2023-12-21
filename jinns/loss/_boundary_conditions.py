@@ -186,7 +186,7 @@ def boundary_neumann_statio(f, border_batch, u, params, facet):
         n = jnp.array([[-1, 1, 0, 0], [0, 0, -1, 1]])
 
     if isinstance(u, PINN):
-        u_ = lambda x, nn, eq: u(x, nn, eq)[0]
+        u_ = lambda x, params: u(x, params)[0]
         v_neumann = vmap(
             lambda dx: jnp.dot(
                 grad(u_, 0)(dx, params),
@@ -358,7 +358,7 @@ def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params, fa
         def rep_times(k):
             return jnp.repeat(times_batch, k, axis=0)
 
-        u_ = lambda t, x, nn, eq: u(t, x, nn, eq)[0]
+        u_ = lambda t, x, params: u(t, x, params)[0]
         v_neumann = vmap(
             lambda t, dx: jnp.dot(
                 grad(u_, 1)(t, dx, params),

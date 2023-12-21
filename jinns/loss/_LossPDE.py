@@ -1194,7 +1194,14 @@ class SystemLossPDE:
             `nn_statio` or `nn_nonstatio` which signifies either the PINN has a
             time component in input or not.
         derivative_keys_dict
-            XXX
+            A dict of derivative keys as defined in LossODE. The key of this
+            dict must be that of `dynamic_loss_dict` at least and specify how
+            to compute gradient for the `dyn_loss` loss term at least (see the
+            check at the beginning of the present `__init__` function.
+            Other keys of this dict might be that of `u_dict` to specify how to
+            compute gradients for all the different constraints. If those keys
+            are not specified then the default behaviour for `derivative_keys`
+            of LossODE is used
         omega_boundary_fun_dict
             A dict of functions to be matched in the border condition, or a
             dict of dict of functions (see doc for `omega_boundary_fun` in
@@ -1512,9 +1519,7 @@ class SystemLossPDE:
                 # must only have SPINNs or only PINNs
                 if isinstance(list(self.u_dict.values())[0], PINN):
                     v_dyn_loss = vmap(
-                        lambda x, params_dict, key=i: self.dynamic_loss_dict[
-                            key
-                        ].evaluate(
+                        lambda x, params_dict_: self.dynamic_loss_dict[i].evaluate(
                             x,
                             self.u_dict,
                             params_dict_,
@@ -1540,9 +1545,9 @@ class SystemLossPDE:
             else:
                 if isinstance(list(self.u_dict.values())[0], PINN):
                     v_dyn_loss = vmap(
-                        lambda t, x, params_dict_, key=i: self.dynamic_loss_dict[
-                            key
-                        ].evaluate(t, x, self.u_dict, params_dict_),
+                        lambda t, x, params_dict_: self.dynamic_loss_dict[i].evaluate(
+                            t, x, self.u_dict, params_dict_
+                        ),
                         vmap_in_axes_x_t + vmap_in_axes_params,
                         0,
                     )

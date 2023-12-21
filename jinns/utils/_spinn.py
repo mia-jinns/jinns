@@ -216,7 +216,10 @@ def create_SPINN(key, d, r, eqx_list, eq_type, m=1):
     if eq_type == "statio_PDE":
 
         def apply_fn(self, x, params):
-            spinn = eqx.combine(params["nn_params"], self.static)
+            try:
+                spinn = eqx.combine(params["nn_params"], self.static)
+            except:  # give more flexibility
+                spinn = eqx.combine(params, self.static)
             v_model = jax.vmap(spinn, (0))
             res = v_model(t=None, x=x)
             return self._eval_nn(res)
@@ -224,7 +227,10 @@ def create_SPINN(key, d, r, eqx_list, eq_type, m=1):
     elif eq_type == "nonstatio_PDE":
 
         def apply_fn(self, t, x, params):
-            spinn = eqx.combine(params["nn_params"], self.static)
+            try:
+                spinn = eqx.combine(params["nn_params"], self.static)
+            except:  # give more flexibility
+                spinn = eqx.combine(params, self.static)
             v_model = jax.vmap(spinn, ((0, 0)))
             res = v_model(t, x)
             return self._eval_nn(res)

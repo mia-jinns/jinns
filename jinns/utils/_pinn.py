@@ -80,7 +80,10 @@ class PINN:
         inner function to factorize code. apply_fn (which takes varying forms)
         call _eval_nn which always have the same content.
         """
-        model = eqx.combine(params["nn_params"], self.static)
+        try:
+            model = eqx.combine(params["nn_params"], self.static)
+        except:  # give more flexibility
+            model = eqx.combine(params, self.static)
         res = output_transform(inputs, model(input_transform(inputs, params)).squeeze())
 
         if self.output_slice is not None:

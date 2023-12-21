@@ -268,9 +268,7 @@ class GeneralizedLotkaVolterra(ODE):
             The dictionary of dictionaries of parameters of the model. Keys at
             top level are "nn_params" and "eq_params"
         """
-        params_main = _extract_nn_params(
-            params_dict, self.key_main, with_eq_params=True
-        )
+        params_main = _extract_nn_params(params_dict, self.key_main)
 
         u = u_dict[self.key_main]
         du_dt = grad(lambda t: jnp.log(u(t, params_main)), 0)(t)
@@ -282,7 +280,7 @@ class GeneralizedLotkaVolterra(ODE):
             t, params_main
         )
         for i, k in enumerate(self.keys_other):
-            params_k = _extract_nn_params(params_dict, k, with_eq_params=True)
+            params_k = _extract_nn_params(params_dict, k)
             carrying_term += params_main["eq_params"]["carrying_capacity"] * u_dict[k](
                 t, params_k
             )

@@ -89,11 +89,11 @@ def _get_vmap_in_axes_params(eq_params_batch_dict, params):
     # scheme over the params
     vmap_in_axes_params = (
         {
+            "nn_params": None,
             "eq_params": {
                 k: (0 if k in eq_params_batch_dict.keys() else None)
                 for k in params["eq_params"].keys()
             },
-            "nn_params": None,
         },
     )
     return vmap_in_axes_params
@@ -143,25 +143,23 @@ def _set_derivatives(params, loss_term, derivative_keys):
     return params
 
 
-def _extract_nn_params(params_dict, nn_key, with_eq_params=False):
+def _extract_nn_params(params_dict, nn_key):
     """
     Given a params_dict for system loss (ie "nn_params" and "eq_params" as main
     keys which contain dicts for each PINN (the nn_keys)) we extract the
     corresponding "nn_params" for `nn_key` and reform a dict with "nn_params"
     as main key as expected by the PINN/SPINN apply_fn
     """
-    if with_eq_params:
-        try:
-            return {
-                "nn_params": params_dict["nn_params"][nn_key],
-                "eq_params": params_dict["eq_params"][nn_key],
-            }
-        except (KeyError, IndexError) as e:
-            return {
-                "nn_params": params_dict["nn_params"][nn_key],
-                "eq_params": params_dict["eq_params"],
-            }
-    return {"nn_params": params_dict["nn_params"][nn_key]}
+    try:
+        return {
+            "nn_params": params_dict["nn_params"][nn_key],
+            "eq_params": params_dict["eq_params"][nn_key],
+        }
+    except (KeyError, IndexError) as e:
+        return {
+            "nn_params": params_dict["nn_params"][nn_key],
+            "eq_params": params_dict["eq_params"],
+        }
 
 
 def euler_maruyama_density(t, x, s, y, params, Tmax=1):
