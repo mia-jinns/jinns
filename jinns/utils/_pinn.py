@@ -134,7 +134,7 @@ def create_PINN(
         can be high dimensional.
         "nonstatio_PDE": the PINN is called with two inputs `t` and `x`, `x`
         can be high dimensional.
-        **Note: the input dimension as given in eqx_list has to match the sum
+        **Note**: the input dimension as given in eqx_list has to match the sum
         of the dimension of `t` + the dimension of `x` or the output dimension
         after the `input_transform` function
     dim_x
