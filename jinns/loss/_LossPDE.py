@@ -580,8 +580,6 @@ class LossPDEStatio(LossPDEAbstract):
             mse_boundary_loss = jnp.array(0.0)
 
         # Observation MSE (if obs_batch provided)
-        # NOTE that it does not use jax.lax.stop_gradient on "eq_params" here
-        # since we may wish to optimize on it.
         params_ = _set_derivatives(params, "observations", self.derivative_keys)
         if self.obs_batch is not None:
             # TODO implement for SPINN
@@ -1033,8 +1031,6 @@ class LossPDENonStatio(LossPDEStatio):
             mse_initial_condition = jnp.array(0.0)
 
         # Observation MSE (if obs_batch provided)
-        # NOTE that it does not use jax.lax.stop_gradient on "eq_params" here
-        # since we may wish to optimize on it.
         params_ = _set_derivatives(params, "observations", self.derivative_keys)
         if self.obs_batch is not None:
             # TODO implement for SPINN

@@ -135,8 +135,8 @@ def create_PINN(
         "nonstatio_PDE": the PINN is called with two inputs `t` and `x`, `x`
         can be high dimensional.
         **Note: the input dimension as given in eqx_list has to match the sum
-        of the dimension of `t` + the dimension of `x` + the number of
-        parameters in `eq_params` if with_eq_params is `True` (see below)**
+        of the dimension of `t` + the dimension of `x` or the output dimension
+        after the `input_transform` function
     dim_x
         An integer. The dimension of `x`. Default `0`
     input_transform
@@ -161,9 +161,8 @@ def create_PINN(
         jax random key
     apply_fn
         A function to apply the neural network on given inputs for given
-        parameters. A typical call will be of the form `u(t, nn_params)` for
-        ODE or `u(t, x, nn_params)` for nD PDEs (`x` being multidimensional)
-        or even `u(t, x, nn_params, eq_params)` if with_eq_params is `True`
+        parameters. A typical call will be of the form `u(t, params)` for
+        ODE or `u(t, x, params)` for nD PDEs (`x` being multidimensional)
 
     Raises
     ------
@@ -182,19 +181,6 @@ def create_PINN(
 
     if eq_type != "ODE" and dim_x == 0:
         raise RuntimeError("Wrong parameter combination eq_type and dim_x")
-
-    # TODO Used in a disabled check
-    # dim_in_params = len(with_eq_params) if with_eq_params is not None else 0
-    # try:
-    #    nb_inputs_declared = eqx_list[0][1]  # normally we look for 2nd ele of 1st layer
-    # except IndexError:
-    #    nb_inputs_declared = eqx_list[1][1]
-    #    # but we can have, eg, a flatten first layer
-
-    # NOTE Currently the check below is disabled because we added
-    # input_transform
-    # if dim_t + dim_x + dim_in_params != nb_inputs_declared:
-    #    raise RuntimeError("Error in the declarations of the number of parameters")
 
     if input_transform is None:
 

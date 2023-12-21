@@ -159,9 +159,6 @@ def create_SPINN(key, d, r, eqx_list, eq_type, m=1):
         can be high dimensional.
         "nonstatio_PDE": the PINN is called with two inputs `t` and `x`, `x`
         can be high dimensional.
-        **Note: the input dimension as given in eqx_list has to match the sum
-        of the dimension of `t` + the dimension of `x` + the number of
-        parameters in `eq_params` if with_eq_params is `True` (see below)**
     m
         An integer. The output dimension of the neural network. According to
         the SPINN article, a total embedding dimension of `r*m` is defined. We
@@ -176,9 +173,8 @@ def create_SPINN(key, d, r, eqx_list, eq_type, m=1):
         jax random key
     apply_fn
         A function to apply the neural network on given inputs for given
-        parameters. A typical call will be of the form `u(t, nn_params)` for
-        ODE or `u(t, x, nn_params)` for nD PDEs (`x` being multidimensional)
-        or even `u(t, x, nn_params, eq_params)` if with_eq_params is `True`
+        parameters. A typical call will be of the form `u(t, params)` for
+        ODE or `u(t, x, params)` for nD PDEs (`x` being multidimensional)
 
     Raises
     ------
