@@ -204,68 +204,23 @@ def create_PINN(
             return _out_pinn
 
     if eq_type == "ODE":
-        if with_eq_params is None:
 
-            def apply_fn(self, t, u_params, eq_params=None):
-                t = t[
-                    None
-                ]  # Note that we added a dimension to t which is lacking for the ODE batches
-                return self._eval_nn(
-                    t, u_params, input_transform, output_transform
-                ).squeeze()
-
-        else:
-
-            def apply_fn(self, t, u_params, eq_params):
-                t = t[
-                    None
-                ]  # We added a dimension to t which is lacking for the ODE batches
-                eq_params_flatten = jnp.concatenate(
-                    [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
-                )
-                t_eq_params = jnp.concatenate([t, eq_params_flatten], axis=-1)
-                return self._eval_nn(
-                    t_eq_params, u_params, input_transform, output_transform
-                )
+        def apply_fn(self, t, params):
+            t = t[
+                None
+            ]  # Note that we added a dimension to t which is lacking for the ODE batches
+            return self._eval_nn(t, params, input_transform, output_transform).squeeze()
 
     elif eq_type == "statio_PDE":
         # Here we add an argument `x` which can be high dimensional
-        if with_eq_params is None:
-
-            def apply_fn(self, x, u_params, eq_params=None):
-                return self._eval_nn(x, u_params, input_transform, output_transform)
-
-        else:
-
-            def apply_fn(self, x, u_params, eq_params):
-                eq_params_flatten = jnp.concatenate(
-                    [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
-                )
-                x_eq_params = jnp.concatenate([x, eq_params_flatten], axis=-1)
-                return self._eval_nn(
-                    x_eq_params, u_params, input_transform, output_transform
-                )
+        def apply_fn(self, x, params):
+            return self._eval_nn(x, params, input_transform, output_transform)
 
     elif eq_type == "nonstatio_PDE":
         # Here we add an argument `x` which can be high dimensional
         def apply_fn(self, t, x, params):
             t_x = jnp.concatenate([t, x], axis=-1)
             return self._eval_nn(t_x, params, input_transform, output_transform)
-
-        # else:
-
-        #    def apply_fn(self, t, x, params):
-        #        t_x = jnp.concatenate([t, x], axis=-1)
-        #        eq_params_flatten = jnp.concatenate(
-        #            [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
-        #        )
-        #        t_x_eq_params = jnp.concatenate([t_x, eq_params_flatten], axis=-1)
-        #        return self._eval_nn(
-        #            t_x_eq_params,
-        #            u_params,
-        #            input_transform,
-        #            output_transform,
-        #        )
 
     else:
         raise RuntimeError("Wrong parameter value for eq_type")
