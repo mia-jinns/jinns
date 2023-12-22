@@ -75,13 +75,16 @@ class PINN:
     def __call__(self, *args, **kwargs):
         return self.apply_fn(self, *args, **kwargs)
 
-    def _eval_nn(self, inputs, u_params, input_transform, output_transform):
+    def _eval_nn(self, inputs, params, input_transform, output_transform):
         """
         inner function to factorize code. apply_fn (which takes varying forms)
         call _eval_nn which always have the same content.
         """
-        model = eqx.combine(u_params, self.static)
-        res = output_transform(inputs, model(input_transform(inputs)).squeeze())
+        try:
+            model = eqx.combine(params["nn_params"], self.static)
+        except:  # give more flexibility
+            model = eqx.combine(params, self.static)
+        res = output_transform(inputs, model(input_transform(inputs, params)).squeeze())
 
         if self.output_slice is not None:
             res = res[self.output_slice]
@@ -97,7 +100,6 @@ def create_PINN(
     eqx_list,
     eq_type,
     dim_x=0,
-    with_eq_params=None,
     input_transform=None,
     output_transform=None,
     shared_pinn_outputs=None,
@@ -132,22 +134,15 @@ def create_PINN(
         can be high dimensional.
         "nonstatio_PDE": the PINN is called with two inputs `t` and `x`, `x`
         can be high dimensional.
-        **Note: the input dimension as given in eqx_list has to match the sum
-        of the dimension of `t` + the dimension of `x` + the number of
-        parameters in `eq_params` if with_eq_params is `True` (see below)**
+        **Note**: the input dimension as given in eqx_list has to match the sum
+        of the dimension of `t` + the dimension of `x` or the output dimension
+        after the `input_transform` function
     dim_x
         An integer. The dimension of `x`. Default `0`
-    with_eq_params
-        Default is None. Otherwise a list of keys from the dict `eq_params`
-        that  the network also takes as inputs.
-        the equation parameters (`eq_params`).
-        **If some keys are provided, the input dimension
-        as given in eqx_list must take into account the number of such provided
-        keys (i.e., the input dimension is the addition of the dimension of ``t``
-        + the dimension of ``x`` + the number of ``eq_params``)**
     input_transform
         A function that will be called before entering the PINN. Its output(s)
-        must match the PINN inputs. Default is the No operation
+        must match the PINN inputs. Its inputs are the PINN inputs (`t` and/or
+        `x` concatenated together and the parameters). Default is the No operation
     output_transform
         A function with arguments the same input(s) as the PINN AND the PINN
         output that will be called after exiting the PINN. Default is the No
@@ -166,9 +161,8 @@ def create_PINN(
         jax random key
     apply_fn
         A function to apply the neural network on given inputs for given
-        parameters. A typical call will be of the form `u(t, nn_params)` for
-        ODE or `u(t, x, nn_params)` for nD PDEs (`x` being multidimensional)
-        or even `u(t, x, nn_params, eq_params)` if with_eq_params is `True`
+        parameters. A typical call will be of the form `u(t, params)` for
+        ODE or `u(t, x, params)` for nD PDEs (`x` being multidimensional)
 
     Raises
     ------
@@ -188,22 +182,9 @@ def create_PINN(
     if eq_type != "ODE" and dim_x == 0:
         raise RuntimeError("Wrong parameter combination eq_type and dim_x")
 
-    # TODO Used in a disabled check
-    # dim_in_params = len(with_eq_params) if with_eq_params is not None else 0
-    # try:
-    #    nb_inputs_declared = eqx_list[0][1]  # normally we look for 2nd ele of 1st layer
-    # except IndexError:
-    #    nb_inputs_declared = eqx_list[1][1]
-    #    # but we can have, eg, a flatten first layer
-
-    # NOTE Currently the check below is disabled because we added
-    # input_transform
-    # if dim_t + dim_x + dim_in_params != nb_inputs_declared:
-    #    raise RuntimeError("Error in the declarations of the number of parameters")
-
     if input_transform is None:
 
-        def input_transform(_in):
+        def input_transform(_in, _params):
             return _in
 
     if output_transform is None:
@@ -212,70 +193,23 @@ def create_PINN(
             return _out_pinn
 
     if eq_type == "ODE":
-        if with_eq_params is None:
 
-            def apply_fn(self, t, u_params, eq_params=None):
-                t = t[
-                    None
-                ]  # Note that we added a dimension to t which is lacking for the ODE batches
-                return self._eval_nn(
-                    t, u_params, input_transform, output_transform
-                ).squeeze()
-
-        else:
-
-            def apply_fn(self, t, u_params, eq_params):
-                t = t[
-                    None
-                ]  # We added a dimension to t which is lacking for the ODE batches
-                eq_params_flatten = jnp.concatenate(
-                    [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
-                )
-                t_eq_params = jnp.concatenate([t, eq_params_flatten], axis=-1)
-                return self._eval_nn(
-                    t_eq_params, u_params, input_transform, output_transform
-                )
+        def apply_fn(self, t, params):
+            t = t[
+                None
+            ]  # Note that we added a dimension to t which is lacking for the ODE batches
+            return self._eval_nn(t, params, input_transform, output_transform).squeeze()
 
     elif eq_type == "statio_PDE":
         # Here we add an argument `x` which can be high dimensional
-        if with_eq_params is None:
-
-            def apply_fn(self, x, u_params, eq_params=None):
-                return self._eval_nn(x, u_params, input_transform, output_transform)
-
-        else:
-
-            def apply_fn(self, x, u_params, eq_params):
-                eq_params_flatten = jnp.concatenate(
-                    [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
-                )
-                x_eq_params = jnp.concatenate([x, eq_params_flatten], axis=-1)
-                return self._eval_nn(
-                    x_eq_params, u_params, input_transform, output_transform
-                )
+        def apply_fn(self, x, params):
+            return self._eval_nn(x, params, input_transform, output_transform)
 
     elif eq_type == "nonstatio_PDE":
         # Here we add an argument `x` which can be high dimensional
-        if with_eq_params is None:
-
-            def apply_fn(self, t, x, u_params, eq_params=None):
-                t_x = jnp.concatenate([t, x], axis=-1)
-                return self._eval_nn(t_x, u_params, input_transform, output_transform)
-
-        else:
-
-            def apply_fn(self, t, x, u_params, eq_params):
-                t_x = jnp.concatenate([t, x], axis=-1)
-                eq_params_flatten = jnp.concatenate(
-                    [e.ravel() for k, e in eq_params.items() if k in with_eq_params]
-                )
-                t_x_eq_params = jnp.concatenate([t_x, eq_params_flatten], axis=-1)
-                return self._eval_nn(
-                    t_x_eq_params,
-                    u_params,
-                    input_transform,
-                    output_transform,
-                )
+        def apply_fn(self, t, x, params):
+            t_x = jnp.concatenate([t, x], axis=-1)
+            return self._eval_nn(t_x, params, input_transform, output_transform)
 
     else:
         raise RuntimeError("Wrong parameter value for eq_type")

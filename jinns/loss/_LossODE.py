@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 from jax import vmap
 from jax.tree_util import register_pytree_node_class
-from jinns.utils._utils import _get_vmap_in_axes_params
+from jinns.utils._utils import _get_vmap_in_axes_params, _set_derivatives
 
 
 @register_pytree_node_class
@@ -29,6 +29,7 @@ class LossODE:
         u,
         loss_weights,
         dynamic_loss,
+        derivative_keys=None,
         initial_condition=None,
         obs_batch=None,
         obs_slice=None,
@@ -49,6 +50,18 @@ class LossODE:
             `dynamic_loss.evaluate(t, u, params)`.
             Can be None in order to
             access only some part of the evaluate call results.
+        derivative_keys
+            A dict of lists of strings. In the dict, the key must correspond to
+            the loss term keywords. Then each of the values must correspond to keys in the parameter
+            dictionary (*at top level only of the parameter dictionary*).
+            It enables selecting the set of parameters
+            with respect to which the gradients of the dynamic
+            loss are computed. If nothing is provided, we set ["nn_params"] for all loss term
+            keywords, this is what is typically
+            done in solving forward problems, when we only estimate the
+            equation solution with a PINN. If some loss terms keywords are
+            missing we set their value to ["nn_params"] by default for the same
+            reason
         initial_condition :
             tuple of length 2 with initial condition :math:`(t0, u0)`.
             Can be None in order to
@@ -72,6 +85,29 @@ class LossODE:
         """
         self.dynamic_loss = dynamic_loss
         self.u = u
+        if derivative_keys is None:
+            # be default we only take gradient wrt nn_params
+            derivative_keys = {
+                k: ["nn_params"]
+                for k in [
+                    "dyn_loss",
+                    "initial_condition",
+                    "observations",
+                ]
+            }
+        if isinstance(derivative_keys, list):
+            # if the user only provided a list, this defines the gradient taken
+            # for all the loss entries
+            derivative_keys = {
+                k: derivative_keys
+                for k in [
+                    "dyn_loss",
+                    "initial_condition",
+                    "observations",
+                ]
+            }
+
+        self.derivative_keys = derivative_keys
         if initial_condition is not None:
             if not isinstance(initial_condition, tuple) or len(initial_condition) != 2:
                 raise ValueError(
@@ -121,43 +157,37 @@ class LossODE:
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
         ## dynamic part
+        params_ = _set_derivatives(params, "dyn_loss", self.derivative_keys)
         if self.dynamic_loss is not None:
             v_dyn_loss = vmap(
-                lambda t, params: self.dynamic_loss.evaluate(t, self.u, params),
+                lambda t, params_: self.dynamic_loss.evaluate(t, self.u, params_),
                 vmap_in_axes_t + vmap_in_axes_params,
                 0,
             )
             mse_dyn_loss = jnp.mean(
                 self.loss_weights["dyn_loss"]
-                * jnp.mean(v_dyn_loss(temporal_batch, params) ** 2, axis=0)
+                * jnp.mean(v_dyn_loss(temporal_batch, params_) ** 2, axis=0)
             )
         else:
             mse_dyn_loss = jnp.array(0.0)
 
         # initial condition
+        params_ = _set_derivatives(params, "initial_condition", self.derivative_keys)
         if self.initial_condition is not None:
             t0, u0 = self.initial_condition
             t0 = jnp.array(t0)
             u0 = jnp.array(u0)
             mse_initial_condition = jnp.mean(
-                self.loss_weights["initial_condition"]
-                * (
-                    self.u(
-                        t0,
-                        params["nn_params"],
-                        jax.lax.stop_gradient(params["eq_params"]),
-                    )
-                    - u0
-                )
-                ** 2
+                self.loss_weights["initial_condition"] * (self.u(t0, params_) - u0) ** 2
             )
         else:
             mse_initial_condition = jnp.array(0.0)
 
         # MSE loss wrt to an observed batch
+        params_ = _set_derivatives(params, "observations", self.derivative_keys)
         if self.obs_batch is not None:
             v_u = vmap(
-                lambda t: self.u(t, params["nn_params"], params["eq_params"]),
+                lambda t: self.u(t, params_),
                 0,
                 0,
             )
@@ -227,6 +257,7 @@ class SystemLossODE:
         u_dict,
         loss_weights,
         dynamic_loss_dict,
+        derivative_keys_dict=None,
         initial_condition_dict=None,
         obs_batch_dict=None,
     ):
@@ -243,6 +274,15 @@ class SystemLossODE:
             dictionaries must share the keys of `u_dict`. Note that the values
             at the leaf level can have jnp.arrays with the same dimension of
             `u` which then ponderates each output of `u`
+        derivative_keys_dict
+            A dict of derivative keys as defined in LossODE. The key of this
+            dict must be that of `dynamic_loss_dict` at least and specify how
+            to compute gradient for the `dyn_loss` loss term at least (see the
+            check at the beginning of the present `__init__` function.
+            Other keys of this dict might be that of `u_dict` to specify how to
+            compute gradients for all the different constraints. If those keys
+            are not specified then the default behaviour for `derivative_keys`
+            of LossODE is used
         initial_condition_dict
             dict of tuple of length 2 with initial condition :math:`(t_0, u_0)`
             Must share the keys of `u_dict`. Default is None. No initial
@@ -289,6 +329,25 @@ class SystemLossODE:
                     "All the dicts (except dynamic_loss_dict) should have same keys"
                 )
 
+        if derivative_keys_dict is None:
+            self.derivative_keys_dict = {
+                k: None
+                for k in set(list(dynamic_loss_dict.keys()) + list(u_dict.keys()))
+            }
+            # set() because we can have duplicate entries and in this case we
+            # say it corresponds to the same derivative_keys_dict entry
+        else:
+            self.derivative_keys_dict = derivative_keys_dict
+
+        # but then if the user did not provide anything, we must at least have
+        # a default value for the dynamic_loss_dict keys entries in
+        # self.derivative_keys_dict since the computation of dynamic losses is
+        # made without create a lossODE object that would provide the
+        # default values
+        for k in dynamic_loss_dict.keys():
+            if self.derivative_keys_dict[k] is None:
+                self.derivative_keys_dict[k] = {"dyn_loss": ["nn_params"]}
+
         self.dynamic_loss_dict = dynamic_loss_dict
         self.u_dict = u_dict
 
@@ -308,6 +367,7 @@ class SystemLossODE:
                     "observations": 1.0,
                 },
                 dynamic_loss=None,
+                derivative_keys=self.derivative_keys_dict[i],
                 initial_condition=self.initial_condition_dict[i],
                 obs_batch=self.obs_batch_dict[i],
             )
@@ -401,16 +461,19 @@ class SystemLossODE:
 
         for i in self.dynamic_loss_dict.keys():
             # dynamic part
+            params_dict_ = _set_derivatives(
+                params_dict, "dyn_loss", self.derivative_keys_dict[i]
+            )
             v_dyn_loss = vmap(
-                lambda t, params_dict, key=i: self.dynamic_loss_dict[key].evaluate(
-                    t, self.u_dict, params_dict
+                lambda t, params_dict_, key=i: self.dynamic_loss_dict[key].evaluate(
+                    t, self.u_dict, params_dict_
                 ),
                 vmap_in_axes_t + vmap_in_axes_params,
                 0,
             )
             mse_dyn_loss += jnp.mean(
                 self._loss_weights["dyn_loss"][i]
-                * jnp.mean(v_dyn_loss(temporal_batch, params_dict) ** 2, axis=0)
+                * jnp.mean(v_dyn_loss(temporal_batch, params_dict_) ** 2, axis=0)
             )
 
         # initial conditions and observation_loss via the internal LossODE

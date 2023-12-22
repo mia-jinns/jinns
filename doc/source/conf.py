@@ -14,7 +14,12 @@ author = "Hugo Gangloff, Nicolas Jouvin"
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = ["sphinx.ext.napoleon", "sphinx_rtd_theme", "nbsphinx"]
+extensions = [
+    "sphinx.ext.napoleon",
+    "sphinx_rtd_theme",
+    "nbsphinx",
+    "sphinx.ext.viewcode",
+]
 
 templates_path = ["_templates"]
 exclude_patterns = []

@@ -83,14 +83,11 @@ def train_imperfect_sobolev_init():
     from jinns.loss import PDENonStatio
 
     class advection_loss(PDENonStatio):
-        def __init__(
-            self, Tmax=1, derivatives="nn_params", eq_params_heterogeneity=None
-        ):
-            super().__init__(Tmax, derivatives, eq_params_heterogeneity)
+        def __init__(self, Tmax=1, eq_params_heterogeneity=None):
+            super().__init__(Tmax, eq_params_heterogeneity)
 
         def evaluate(self, t, x, u, params):
-            nn_params, eq_params = self.set_stop_gradient(params)
-            u_ = lambda t, x: u(t, x, nn_params, eq_params)[0]
+            u_ = lambda t, x: u(t, x, params)[0]
             du_dt = jax.grad(u_, 0)
             du_dx = jax.grad(u_, 1)
 

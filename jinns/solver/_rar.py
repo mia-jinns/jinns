@@ -8,7 +8,7 @@ from jinns.data._DataGenerators import (
 )
 from jinns.loss._LossPDE import LossPDEStatio, LossPDENonStatio, SystemLossPDE
 from jinns.loss._LossODE import LossODE, SystemLossODE
-from functools import partial
+from jinns.loss._DynamicLossAbstract import PDEStatio
 
 
 def _rar_step_triggerer(carry, i, _rar_step_true, _rar_step_false):

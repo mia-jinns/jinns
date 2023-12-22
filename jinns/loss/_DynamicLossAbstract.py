@@ -2,8 +2,6 @@
 Implements abstract classes for dynamic losses
 """
 
-import jax
-
 
 class DynamicLoss:
     r"""
@@ -13,9 +11,7 @@ class DynamicLoss:
         \mathcal{N}[u](t, x) = 0
     """
 
-    def __init__(
-        self, Tmax=None, derivatives="nn_params", eq_params_heterogeneity=None
-    ):
+    def __init__(self, Tmax=None, eq_params_heterogeneity=None):
         """
         Parameters
         ----------
@@ -23,12 +19,6 @@ class DynamicLoss:
             Tmax needs to be given when the PINN time input is normalized in
             [0, 1], ie. we have performed renormalization of the differential
             equation
-        derivatives
-            A string. Either ``nn_params``, ``eq_params``, ``both``. Determines
-            with respect to which set of parameters gradients of the dynamic
-            loss are computed. Default "nn_params", this is what is typically
-            done in solving forward problems, when we only estimate the
-            equation solution with as PINN.
         eq_params_heterogeneity
             Default None. A dict with the keys being the same as in eq_params
             and the value being either None (no heterogeneity) or a function
@@ -43,9 +33,6 @@ class DynamicLoss:
             heterogeneity for no parameters.
         """
         self.Tmax = Tmax
-        if derivatives not in ["nn_params", "eq_params", "both"]:
-            raise RuntimeError("derivative argument has an invalid value")
-        self.derivatives = derivatives
         self.eq_params_heterogeneity = eq_params_heterogeneity
 
     def _eval_heterogeneous_parameters(
@@ -68,43 +55,13 @@ class DynamicLoss:
                 eq_params_[k] = p
         return eq_params_
 
-    def set_stop_gradient(self, params_dict):
-        """
-        Set the stop gradient operators in the dynamic loss `evaluate`
-        function according to the rule defined by the attribute
-        `self.derivatives`
-
-        Parameters
-        ----------
-        params_dict
-            The dictionary of parameters of the model.
-            Typically, it is a dictionary of
-            dictionaries: `eq_params` and `nn_params``, respectively the
-            differential equation parameters and the neural network parameter
-        """
-        nn_params = params_dict["nn_params"]
-        eq_params = params_dict["eq_params"]
-
-        if self.derivatives == "nn_params":
-            return (nn_params, jax.lax.stop_gradient(eq_params))
-        if self.derivatives == "eq_params":
-            return (jax.lax.stop_gradient(nn_params), eq_params)
-        if self.derivatives == "both":
-            return (nn_params, eq_params)
-        return (
-            jax.lax.stop_gradient(nn_params),
-            jax.lax.stop_gradient(eq_params),
-        )
-
 
 class ODE(DynamicLoss):
     r"""
     Abstract base class for ODE dynamic losses
     """
 
-    def __init__(
-        self, Tmax=None, derivatives="nn_params", eq_params_heterogeneity=None
-    ):
+    def __init__(self, Tmax=None, eq_params_heterogeneity=None):
         """
         Parameters
         ----------
@@ -112,12 +69,6 @@ class ODE(DynamicLoss):
             Tmax needs to be given when the PINN time input is normalized in
             [0, 1], ie. we have performed renormalization of the differential
             equation
-        derivatives
-            A string. Either ``nn_params``, ``eq_params``, ``both``. Determines
-            with respect to which set of parameters gradients of the dynamic
-            loss are computed. Default "nn_params", this is what is typically
-            done in solving forward problems, when we only estimate the
-            equation solution with as PINN.
         eq_params_heterogeneity
             Default None. A dict with the keys being the same as in eq_params
             and the value being `time`, `space`, `both` or None which corresponds to
@@ -126,7 +77,7 @@ class ODE(DynamicLoss):
             eq_params_heterogeneity is None this means there is no
             heterogeneity for no parameters.
         """
-        super().__init__(Tmax, derivatives, eq_params_heterogeneity)
+        super().__init__(Tmax, eq_params_heterogeneity)
 
 
 class PDEStatio(DynamicLoss):
@@ -134,16 +85,10 @@ class PDEStatio(DynamicLoss):
     Abstract base class for PDE statio dynamic losses
     """
 
-    def __init__(self, derivatives="nn_params", eq_params_heterogeneity=None):
+    def __init__(self, eq_params_heterogeneity=None):
         """
         Parameters
         ----------
-        derivatives
-            A string. Either ``nn_params``, ``eq_params``, ``both``. Determines
-            with respect to which set of parameters gradients of the dynamic
-            loss are computed. Default "nn_params", this is what is typically
-            done in solving forward problems, when we only estimate the
-            equation solution with as PINN.
         eq_params_heterogeneity
             Default None. A dict with the keys being the same as in eq_params
             and the value being `time`, `space`, `both` or None which corresponds to
@@ -152,9 +97,7 @@ class PDEStatio(DynamicLoss):
             eq_params_heterogeneity is None this means there is no
             heterogeneity for no parameters.
         """
-        super().__init__(
-            derivatives=derivatives, eq_params_heterogeneity=eq_params_heterogeneity
-        )
+        super().__init__(eq_params_heterogeneity=eq_params_heterogeneity)
 
 
 class PDENonStatio(DynamicLoss):
@@ -162,9 +105,7 @@ class PDENonStatio(DynamicLoss):
     Abstract base class for PDE Non statio dynamic losses
     """
 
-    def __init__(
-        self, Tmax=None, derivatives="nn_params", eq_params_heterogeneity=None
-    ):
+    def __init__(self, Tmax=None, eq_params_heterogeneity=None):
         """
         Parameters
         ----------
@@ -172,12 +113,6 @@ class PDENonStatio(DynamicLoss):
             Tmax needs to be given when the PINN time input is normalized in
             [0, 1], ie. we have performed renormalization of the differential
             equation
-        derivatives
-            A string. Either ``nn_params``, ``eq_params``, ``both``. Determines
-            with respect to which set of parameters gradients of the dynamic
-            loss are computed. Default "nn_params", this is what is typically
-            done in solving forward problems, when we only estimate the
-            equation solution with as PINN.
         eq_params_heterogeneity
             Default None. A dict with the keys being the same as in eq_params
             and the value being `time`, `space`, `both` or None which corresponds to
@@ -186,4 +121,4 @@ class PDENonStatio(DynamicLoss):
             eq_params_heterogeneity is None this means there is no
             heterogeneity for no parameters.
         """
-        super().__init__(Tmax, derivatives, eq_params_heterogeneity)
+        super().__init__(Tmax, eq_params_heterogeneity)

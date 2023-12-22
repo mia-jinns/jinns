@@ -10,10 +10,10 @@ import jax.numpy as jnp
 
 
 def _seq2seq_triggerer(carry, i, _update_seq2seq_true, _update_seq2seq_false):
-    carry["curr_seq"], carry["loss"], carry["data"], carry["state"] = jax.lax.cond(
+    carry["curr_seq"], carry["loss"], carry["data"], carry["opt_state"] = jax.lax.cond(
         carry["curr_seq"] + 1
         < jnp.sum(
-            seq2seq["iter_steps"] < i
+            carry["seq2seq"]["iter_steps"] < i
         ),  # check if we fall in another time interval
         _update_seq2seq_true,
         _update_seq2seq_false,
@@ -23,7 +23,7 @@ def _seq2seq_triggerer(carry, i, _update_seq2seq_true, _update_seq2seq_false):
             carry["data"],
             carry["params"],
             carry["curr_seq"],
-            carry["state"],
+            carry["opt_state"],
         ),
     )
     return carry
@@ -90,11 +90,7 @@ def _initialize_seq2seq(loss, data, seq2seq, opt_state):
             "learning_rate"
         ][curr_seq]
 
-    elif (
-        isinstance(loss, LossPDENonStatio)
-        or isinstance(loss, LossPDE)
-        or isinstance(loss, SystemLossPDE)
-    ):
+    elif isinstance(loss, (LossPDENonStatio, LossPDEStatio, SystemLossPDE)):
         raise RuntimeError("Not implemented")
 
     # No need to return data here since this function will not be jitted and

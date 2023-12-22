@@ -18,6 +18,7 @@ from jinns.utils._utils import (
     _get_vmap_in_axes_params,
     _get_grid,
     _check_user_func_return,
+    _set_derivatives,
 )
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
@@ -46,6 +47,7 @@ class LossPDEAbstract:
         self,
         u,
         loss_weights,
+        derivative_keys=None,
         norm_key=None,
         norm_borders=None,
         norm_samples=None,
@@ -61,6 +63,18 @@ class LossPDEAbstract:
             and `observations`
             Note that we can have jnp.arrays with the same dimension of
             `u` which then ponderates each output of `u`
+        derivative_keys
+            A dict of lists of strings. In the dict, the key must correspond to
+            the loss term keywords. Then each of the values must correspond to keys in the parameter
+            dictionary (*at top level only of the parameter dictionary*).
+            It enables selecting the set of parameters
+            with respect to which the gradients of the dynamic
+            loss are computed. If nothing is provided, we set ["nn_params"] for all loss term
+            keywords, this is what is typically
+            done in solving forward problems, when we only estimate the
+            equation solution with a PINN. If some loss terms keywords are
+            missing we set their value to ["nn_params"] by default for the
+            same reason
         norm_key
             Jax random key to draw samples in for the Monte Carlo computation
             of the normalization constant. Default is None
@@ -86,6 +100,35 @@ class LossPDEAbstract:
         """
 
         self.u = u
+        if derivative_keys is None:
+            # be default we only take gradient wrt nn_params
+            derivative_keys = {
+                k: ["nn_params"]
+                for k in [
+                    "dyn_loss",
+                    "boundary_loss",
+                    "norm_loss",
+                    "initial_condition",
+                    "observations",
+                    "sobolev",
+                ]
+            }
+        if isinstance(derivative_keys, list):
+            # if the user only provided a list, this defines the gradient taken
+            # for all the loss entries
+            derivative_keys = {
+                k: derivative_keys
+                for k in [
+                    "dyn_loss",
+                    "boundary_loss",
+                    "norm_loss",
+                    "initial_condition",
+                    "observations",
+                    "sobolev",
+                ]
+            }
+
+        self.derivative_keys = derivative_keys
         self.loss_weights = loss_weights
         self.norm_borders = norm_borders
         self.norm_key = norm_key
@@ -168,6 +211,7 @@ class LossPDEAbstract:
         children = (self.norm_key, self.norm_samples, self.loss_weights)
         aux_data = {
             "norm_borders": self.norm_borders,
+            "derivative_keys": self.derivative_keys,
             "u": self.u,
         }
         return (children, aux_data)
@@ -178,6 +222,7 @@ class LossPDEAbstract:
         pls = self(
             aux_data["u"],
             loss_weights,
+            aux_data["derivative_keys"],
             norm_key,
             aux_data["norm_borders"],
             norm_samples,
@@ -206,6 +251,7 @@ class LossPDEStatio(LossPDEAbstract):
         u,
         loss_weights,
         dynamic_loss,
+        derivative_keys=None,
         omega_boundary_fun=None,
         omega_boundary_condition=None,
         norm_key=None,
@@ -231,6 +277,18 @@ class LossPDEStatio(LossPDEAbstract):
             `dynamic_loss.evaluate(t, u, params)`.
             Can be None in order to access only some part of the evaluate call
             results.
+        derivative_keys
+            A dict of lists of strings. In the dict, the key must correspond to
+            the loss term keywords. Then each of the values must correspond to keys in the parameter
+            dictionary (*at top level only of the parameter dictionary*).
+            It enables selecting the set of parameters
+            with respect to which the gradients of the dynamic
+            loss are computed. If nothing is provided, we set ["nn_params"] for all loss term
+            keywords, this is what is typically
+            done in solving forward problems, when we only estimate the
+            equation solution with a PINN. If some loss terms keywords are
+            missing we set their value to ["nn_params"] by default for the same
+            reason
         omega_boundary_fun
             The function to be matched in the border condition (can be None)
             or a dictionary of such function. In this case, the keys are the
@@ -299,7 +357,9 @@ class LossPDEStatio(LossPDEAbstract):
                 # obs_batch is (nb_obs, 1)
                 obs_batch[1] = obs_batch[1][:, None]
 
-        super().__init__(u, loss_weights, norm_key, norm_borders, norm_samples)
+        super().__init__(
+            u, loss_weights, derivative_keys, norm_key, norm_borders, norm_samples
+        )
 
         if omega_boundary_condition is None or omega_boundary_fun is None:
             warnings.warn(
@@ -422,23 +482,24 @@ class LossPDEStatio(LossPDEAbstract):
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
         # dynamic part
+        params_ = _set_derivatives(params, "dyn_loss", self.derivative_keys)
         if self.dynamic_loss is not None:
             if isinstance(self.u, PINN):
                 v_dyn_loss = vmap(
-                    lambda x, params: self.dynamic_loss.evaluate(
+                    lambda x, params_: self.dynamic_loss.evaluate(
                         x,
                         self.u,
-                        params,
+                        params_,
                     ),
                     vmap_in_axes_x + vmap_in_axes_params,
                     0,
                 )
                 mse_dyn_loss = jnp.mean(
                     self.loss_weights["dyn_loss"]
-                    * jnp.sum(v_dyn_loss(omega_batch, params) ** 2, axis=-1)
+                    * jnp.sum(v_dyn_loss(omega_batch, params_) ** 2, axis=-1)
                 )
             elif isinstance(self.u, SPINN):
-                residuals = self.dynamic_loss.evaluate(omega_batch, self.u, params)
+                residuals = self.dynamic_loss.evaluate(omega_batch, self.u, params_)
                 mse_dyn_loss = jnp.mean(
                     self.loss_weights["dyn_loss"] * jnp.sum(residuals**2, axis=-1)
                 )
@@ -447,14 +508,11 @@ class LossPDEStatio(LossPDEAbstract):
             mse_dyn_loss = jnp.array(0.0)
 
         # normalization part
+        params_ = _set_derivatives(params, "norm_loss", self.derivative_keys)
         if self.normalization_loss is not None:
             if isinstance(self.u, PINN):
                 v_u = vmap(
-                    partial(
-                        self.u,
-                        u_params=params["nn_params"],
-                        eq_params=jax.lax.stop_gradient(params["eq_params"]),
-                    ),
+                    lambda x: self.u(x, params_),
                     (0),
                     0,
                 )
@@ -468,11 +526,7 @@ class LossPDEStatio(LossPDEAbstract):
                 )
             elif isinstance(self.u, SPINN):
                 norm_samples = self.get_norm_samples()
-                res = self.u(
-                    norm_samples,
-                    params["nn_params"],
-                    jax.lax.stop_gradient(params["eq_params"]),
-                )
+                res = self.u(norm_samples, params_)
                 mse_norm_loss = self.loss_weights["norm_loss"] * (
                     jnp.abs(
                         jnp.mean(
@@ -489,6 +543,7 @@ class LossPDEStatio(LossPDEAbstract):
             self.loss_weights["norm_loss"] = 0
 
         # boundary part
+        params_ = _set_derivatives(params, "boundary_loss", self.derivative_keys)
         if self.omega_boundary_condition is not None:
             if isinstance(self.omega_boundary_fun, dict):
                 # means self.omega_boundary_condition is dict too because of
@@ -503,7 +558,7 @@ class LossPDEStatio(LossPDEAbstract):
                                 self.omega_boundary_fun[facet],
                                 omega_border_batch[..., idx],
                                 self.u,
-                                params,
+                                params_,
                                 idx,
                             )
                         )
@@ -517,7 +572,7 @@ class LossPDEStatio(LossPDEAbstract):
                             self.omega_boundary_fun,
                             omega_border_batch[..., facet],
                             self.u,
-                            params,
+                            params_,
                             facet,
                         )
                     )
@@ -525,13 +580,12 @@ class LossPDEStatio(LossPDEAbstract):
             mse_boundary_loss = jnp.array(0.0)
 
         # Observation MSE (if obs_batch provided)
-        # NOTE that it does not use jax.lax.stop_gradient on "eq_params" here
-        # since we may wish to optimize on it.
+        params_ = _set_derivatives(params, "observations", self.derivative_keys)
         if self.obs_batch is not None:
             # TODO implement for SPINN
             if isinstance(self.u, PINN):
                 v_u = vmap(
-                    lambda x: self.u(x, params["nn_params"], params["eq_params"]),
+                    lambda x: self.u(x, params_),
                     0,
                     0,
                 )
@@ -554,14 +608,14 @@ class LossPDEStatio(LossPDEAbstract):
             self.loss_weights["observations"] = 0
 
         # Sobolev regularization
+        params_ = _set_derivatives(params, "sobolev", self.derivative_keys)
         if self.sobolev_reg is not None:
             # TODO implement for SPINN
             if isinstance(self.u, PINN):
                 v_sob_reg = vmap(
-                    lambda x: self.sobolev_reg(
+                    lambda x: self.sobolev_reg(  # pylint: disable=E1121
                         x,
-                        params["nn_params"],
-                        jax.lax.stop_gradient(params["eq_params"]),
+                        params_,
                     ),
                     (0, 0),
                     0,
@@ -598,6 +652,7 @@ class LossPDEStatio(LossPDEAbstract):
         aux_data = {
             "u": self.u,
             "dynamic_loss": self.dynamic_loss,
+            "derivative_keys": self.derivative_keys,
             "omega_boundary_fun": self.omega_boundary_fun,
             "omega_boundary_condition": self.omega_boundary_condition,
             "norm_borders": self.norm_borders,
@@ -612,6 +667,7 @@ class LossPDEStatio(LossPDEAbstract):
             aux_data["u"],
             loss_weights,
             aux_data["dynamic_loss"],
+            aux_data["derivative_keys"],
             aux_data["omega_boundary_fun"],
             aux_data["omega_boundary_condition"],
             norm_key,
@@ -647,6 +703,7 @@ class LossPDENonStatio(LossPDEStatio):
         u,
         loss_weights,
         dynamic_loss,
+        derivative_keys=None,
         omega_boundary_fun=None,
         omega_boundary_condition=None,
         initial_condition_fun=None,
@@ -670,6 +727,18 @@ class LossPDENonStatio(LossPDEStatio):
             dynamic term in the loss
             Can be None in order to access only some part of the evaluate call
             results.
+        derivative_keys
+            A dict of lists of strings. In the dict, the key must correspond to
+            the loss term keywords. Then each of the values must correspond to keys in the parameter
+            dictionary (*at top level only of the parameter dictionary*).
+            It enables selecting the set of parameters
+            with respect to which the gradients of the dynamic
+            loss are computed. If nothing is provided, we set ["nn_params"] for all loss term
+            keywords, this is what is typically
+            done in solving forward problems, when we only estimate the
+            equation solution with a PINN. If some loss terms keywords are
+            missing we set their value to ["nn_params"] by default for the same
+            reason
         omega_boundary_fun
             The function to be matched in the border condition (can be None)
             or a dictionary of such function. In this case, the keys are the
@@ -743,6 +812,7 @@ class LossPDENonStatio(LossPDEStatio):
             u,
             loss_weights,
             dynamic_loss,
+            derivative_keys,
             omega_boundary_fun,
             omega_boundary_condition,
             norm_key,
@@ -794,6 +864,7 @@ class LossPDENonStatio(LossPDEStatio):
             A batch of points in the domain, a batch of points in the domain
             border and a batch of time points
         """
+
         omega_batch, omega_border_batch, times_batch = (
             batch.inside_batch,
             batch.border_batch,
@@ -825,55 +896,37 @@ class LossPDENonStatio(LossPDEStatio):
             times_batch_ = rep_times(n)  # it is repeated
 
         # dynamic part
+        params_ = _set_derivatives(params, "dyn_loss", self.derivative_keys)
         if self.dynamic_loss is not None:
             if isinstance(self.u, PINN):
                 v_dyn_loss = vmap(
-                    lambda t, x, params: self.dynamic_loss.evaluate(
-                        t, x, self.u, params
+                    lambda t, x, params_: self.dynamic_loss.evaluate(
+                        t, x, self.u, params_
                     ),
                     vmap_in_axes_x_t + vmap_in_axes_params,
                     0,
                 )
-                residuals = v_dyn_loss(times_batch_, omega_batch_, params)
+                residuals = v_dyn_loss(times_batch_, omega_batch_, params_)
                 mse_dyn_loss = jnp.mean(
                     self.loss_weights["dyn_loss"] * jnp.sum(residuals**2, axis=-1)
                 )
-            # TODO implement Causality is all you need (not yet implemented)
-            #  epsilon = 0.01
-            #  times_batch_ = jnp.sort(times_batch_)
-            #  val_dyn_loss = v_dyn_loss(times_batch_, omega_batch_, params)
-            #  causality_is_all_you_need = jax.lax.stop_gradient(jnp.roll(jnp.exp(-epsilon *
-            #      jnp.cumsum(val_dyn_loss)), shift=1,
-            #      axis=0)) * val_dyn_loss
-            #  mse_dyn_loss = jnp.mean(causality_is_all_you_need ** 2)
             elif isinstance(self.u, SPINN):
                 residuals = self.dynamic_loss.evaluate(
-                    times_batch, omega_batch, self.u, params
+                    times_batch, omega_batch, self.u, params_
                 )
                 mse_dyn_loss = jnp.mean(
                     self.loss_weights["dyn_loss"] * jnp.sum(residuals**2, axis=-1)
                 )
-            # TODO implement Causality is all you need (not yet implemented)
-            #    epsilon = 0.01
-            #    times_batch = jnp.sort(times_batch)
-            #    residuals = jax.lax.stop_gradient(jnp.roll(jnp.exp(-epsilon *
-            #        jnp.cumsum(jnp.cumsum(residuals, axis=-2), axis=-1)
-            #        ),
-            #        shift=1, axis=0)) * residuals
         else:
             mse_dyn_loss = jnp.array(0.0)
 
         # normalization part
+        params_ = _set_derivatives(params, "norm_loss", self.derivative_keys)
         if self.normalization_loss is not None:
             if isinstance(self.u, PINN):
                 v_u = vmap(
                     vmap(
-                        lambda t, x: self.u(
-                            t,
-                            x,
-                            params["nn_params"],
-                            jax.lax.stop_gradient(params["eq_params"]),
-                        ),
+                        lambda t, x: self.u(t, x, params_),
                         in_axes=(None, 0),
                     ),
                     in_axes=(0, None),
@@ -888,10 +941,7 @@ class LossPDENonStatio(LossPDEStatio):
                 assert norm_samples.shape[0] % times_batch.shape[0] == 0
                 rep_t = norm_samples.shape[0] // times_batch.shape[0]
                 res = self.u(
-                    jnp.repeat(times_batch, rep_t, axis=0),
-                    norm_samples,
-                    params["nn_params"],
-                    jax.lax.stop_gradient(params["eq_params"]),
+                    jnp.repeat(times_batch, rep_t, axis=0), norm_samples, params_
                 )
                 # the outer mean() below is for the times stamps
                 mse_norm_loss = self.loss_weights["norm_loss"] * jnp.mean(
@@ -910,6 +960,7 @@ class LossPDENonStatio(LossPDEStatio):
             mse_norm_loss = jnp.array(0.0)
 
         # boundary part
+        params_ = _set_derivatives(params, "boundary_loss", self.derivative_keys)
         if self.omega_boundary_fun is not None:
             if isinstance(self.omega_boundary_fun, dict):
                 # means self.omega_boundary_condition is dict too because of
@@ -925,7 +976,7 @@ class LossPDENonStatio(LossPDEStatio):
                                 times_batch,
                                 omega_border_batch[..., idx],
                                 self.u,
-                                params,
+                                params_,
                                 idx,
                             )
                         )
@@ -940,7 +991,7 @@ class LossPDENonStatio(LossPDEStatio):
                             times_batch,
                             omega_border_batch[..., facet],
                             self.u,
-                            params,
+                            params_,
                             facet,
                         )
                     )
@@ -948,16 +999,12 @@ class LossPDENonStatio(LossPDEStatio):
             mse_boundary_loss = jnp.array(0.0)
 
         # initial condition
+        params_ = _set_derivatives(params, "initial_condition", self.derivative_keys)
         if self.initial_condition_fun is not None:
             if isinstance(self.u, PINN):
                 v_u_t0 = vmap(
                     lambda x: self.initial_condition_fun(x)
-                    - self.u(
-                        t=jnp.zeros((1,)),
-                        x=x,
-                        u_params=params["nn_params"],
-                        eq_params=jax.lax.stop_gradient(params["eq_params"]),
-                    ),
+                    - self.u(jnp.zeros((1,)), x, params_),
                     (0),
                     0,
                 )
@@ -969,8 +1016,7 @@ class LossPDENonStatio(LossPDEStatio):
                 values = lambda x: self.u(
                     jnp.repeat(jnp.zeros((1, 1)), omega_batch.shape[0], axis=0),
                     x,
-                    params["nn_params"],
-                    jax.lax.stop_gradient(params["eq_params"]),
+                    params_,
                 )[0]
                 omega_batch_grid = _get_grid(omega_batch)
                 v_ini = values(omega_batch)
@@ -985,13 +1031,12 @@ class LossPDENonStatio(LossPDEStatio):
             mse_initial_condition = jnp.array(0.0)
 
         # Observation MSE (if obs_batch provided)
-        # NOTE that it does not use jax.lax.stop_gradient on "eq_params" here
-        # since we may wish to optimize on it.
+        params_ = _set_derivatives(params, "observations", self.derivative_keys)
         if self.obs_batch is not None:
             # TODO implement for SPINN
             if isinstance(self.u, PINN):
                 v_u = vmap(
-                    lambda t, x: self.u(t, x, params["nn_params"], params["eq_params"]),
+                    lambda t, x: self.u(t, x, params_),
                     (0, 0),
                     0,
                 )
@@ -1014,15 +1059,13 @@ class LossPDENonStatio(LossPDEStatio):
             self.loss_weights["observations"] = 0
 
         # Sobolev regularization
+        params_ = _set_derivatives(params, "sobolev", self.derivative_keys)
         if self.sobolev_reg is not None:
             # TODO implement for SPINN
             if isinstance(self.u, PINN):
                 v_sob_reg = vmap(
                     lambda t, x: self.sobolev_reg(  # pylint: disable=E1121
-                        t,
-                        x,
-                        params["nn_params"],
-                        jax.lax.stop_gradient(params["eq_params"]),
+                        t, x, params_
                     ),
                     (0, 0),
                     0,
@@ -1062,6 +1105,7 @@ class LossPDENonStatio(LossPDEStatio):
         aux_data = {
             "u": self.u,
             "dynamic_loss": self.dynamic_loss,
+            "derivative_keys": self.derivative_keys,
             "omega_boundary_fun": self.omega_boundary_fun,
             "omega_boundary_condition": self.omega_boundary_condition,
             "initial_condition_fun": self.initial_condition_fun,
@@ -1077,6 +1121,7 @@ class LossPDENonStatio(LossPDEStatio):
             aux_data["u"],
             loss_weights,
             aux_data["dynamic_loss"],
+            aux_data["derivative_keys"],
             aux_data["omega_boundary_fun"],
             aux_data["omega_boundary_condition"],
             aux_data["initial_condition_fun"],
@@ -1115,6 +1160,7 @@ class SystemLossPDE:
         loss_weights,
         dynamic_loss_dict,
         nn_type_dict,
+        derivative_keys_dict=None,
         omega_boundary_fun_dict=None,
         omega_boundary_condition_dict=None,
         initial_condition_fun_dict=None,
@@ -1143,6 +1189,15 @@ class SystemLossPDE:
             A dict whose keys are that of u_dict whose value is either
             `nn_statio` or `nn_nonstatio` which signifies either the PINN has a
             time component in input or not.
+        derivative_keys_dict
+            A dict of derivative keys as defined in LossODE. The key of this
+            dict must be that of `dynamic_loss_dict` at least and specify how
+            to compute gradient for the `dyn_loss` loss term at least (see the
+            check at the beginning of the present `__init__` function.
+            Other keys of this dict might be that of `u_dict` to specify how to
+            compute gradients for all the different constraints. If those keys
+            are not specified then the default behaviour for `derivative_keys`
+            of LossODE is used
         omega_boundary_fun_dict
             A dict of functions to be matched in the border condition, or a
             dict of dict of functions (see doc for `omega_boundary_fun` in
@@ -1230,6 +1285,23 @@ class SystemLossPDE:
             self.sobolev_m_dict = {k: None for k in u_dict.keys()}
         else:
             self.sobolev_m_dict = sobolev_m_dict
+        if derivative_keys_dict is None:
+            self.derivative_keys_dict = {
+                k: None
+                for k in set(list(dynamic_loss_dict.keys()) + list(u_dict.keys()))
+            }
+            # set() because we can have duplicate entries and in this case we
+            # say it corresponds to the same derivative_keys_dict entry
+        else:
+            self.derivative_keys_dict = derivative_keys_dict
+        # but then if the user did not provide anything, we must at least have
+        # a default value for the dynamic_loss_dict keys entries in
+        # self.derivative_keys_dict since the computation of dynamic losses is
+        # made without create a lossODE object that would provide the
+        # default values
+        for k in dynamic_loss_dict.keys():
+            if self.derivative_keys_dict[k] is None:
+                self.derivative_keys_dict[k] = {"dyn_loss": ["nn_params"]}
 
         # Second we make sure that all the dicts (except dynamic_loss_dict) have the same keys
         if (
@@ -1270,6 +1342,7 @@ class SystemLossPDE:
                         "sobolev": 1.0,
                     },
                     dynamic_loss=None,
+                    derivative_keys=self.derivative_keys_dict[i],
                     omega_boundary_fun=self.omega_boundary_fun_dict[i],
                     omega_boundary_condition=self.omega_boundary_condition_dict[i],
                     norm_key=self.norm_key_dict[i],
@@ -1290,6 +1363,7 @@ class SystemLossPDE:
                         "sobolev": 1.0,
                     },
                     dynamic_loss=None,
+                    derivative_keys=self.derivative_keys_dict[i],
                     omega_boundary_fun=self.omega_boundary_fun_dict[i],
                     omega_boundary_condition=self.omega_boundary_condition_dict[i],
                     initial_condition_fun=self.initial_condition_fun_dict[i],
@@ -1433,28 +1507,29 @@ class SystemLossPDE:
 
         for i in self.dynamic_loss_dict.keys():
             # dynamic part
+            params_dict_ = _set_derivatives(
+                params_dict, "dyn_loss", self.derivative_keys_dict[i]
+            )
             if isinstance(self.dynamic_loss_dict[i], PDEStatio):
                 # Below we just look at the first element because we suppose we
                 # must only have SPINNs or only PINNs
                 if isinstance(list(self.u_dict.values())[0], PINN):
                     v_dyn_loss = vmap(
-                        lambda x, params_dict, key=i: self.dynamic_loss_dict[
-                            key
-                        ].evaluate(
+                        lambda x, params_dict_: self.dynamic_loss_dict[i].evaluate(
                             x,
                             self.u_dict,
-                            params_dict,
+                            params_dict_,
                         ),
                         vmap_in_axes_x + vmap_in_axes_params,
                         0,
                     )
                     mse_dyn_loss += jnp.mean(
                         self._loss_weights["dyn_loss"][i]
-                        * jnp.sum(v_dyn_loss(omega_batch, params_dict) ** 2, axis=-1)
+                        * jnp.sum(v_dyn_loss(omega_batch, params_dict_) ** 2, axis=-1)
                     )
                 elif isinstance(list(self.u_dict.values())[0], SPINN):
                     residuals = self.dynamic_loss_dict[i].evaluate(
-                        omega_batch, self.u_dict, params_dict
+                        omega_batch, self.u_dict, params_dict_
                     )
                     mse_dyn_loss += jnp.mean(
                         self._loss_weights["dyn_loss"][i]
@@ -1466,9 +1541,9 @@ class SystemLossPDE:
             else:
                 if isinstance(list(self.u_dict.values())[0], PINN):
                     v_dyn_loss = vmap(
-                        lambda t, x, params_dict, key=i: self.dynamic_loss_dict[
-                            key
-                        ].evaluate(t, x, self.u_dict, params_dict),
+                        lambda t, x, params_dict_: self.dynamic_loss_dict[i].evaluate(
+                            t, x, self.u_dict, params_dict_
+                        ),
                         vmap_in_axes_x_t + vmap_in_axes_params,
                         0,
                     )
@@ -1479,13 +1554,13 @@ class SystemLossPDE:
                     mse_dyn_loss += jnp.mean(
                         self._loss_weights["dyn_loss"][i]
                         * jnp.sum(
-                            v_dyn_loss(times_batch_, omega_batch_, params_dict) ** 2,
+                            v_dyn_loss(times_batch_, omega_batch_, params_dict_) ** 2,
                             axis=-1,
                         )
                     )
                 elif isinstance(list(self.u_dict.values())[0], SPINN):
                     residuals = self.dynamic_loss_dict[i].evaluate(
-                        times_batch, omega_batch, self.u_dict, params_dict
+                        times_batch, omega_batch, self.u_dict, params_dict_
                     )
                     mse_dyn_loss += jnp.mean(
                         self._loss_weights["dyn_loss"][i]
