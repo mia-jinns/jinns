@@ -345,7 +345,7 @@ class LossPDEStatio(LossPDEAbstract):
                 raise ValueError(
                     f"obs_batch must be a list of size 2. You gave {len(obs_batch)}"
                 )
-            if any(isinstance(b, jnp.ndarray) for b in obs_batch):
+            if not all(isinstance(b, jnp.ndarray) for b in obs_batch):
                 raise ValueError("Every element of obs_batch should be a jnp.array.")
             n_obs = obs_batch[0].shape[0]
             if any(b.shape[0] != n_obs for b in obs_batch):
@@ -589,7 +589,7 @@ class LossPDEStatio(LossPDEAbstract):
                     0,
                     0,
                 )
-                val = v_u(self.obs_batch[0][:, None])
+                val = v_u(self.obs_batch[0])
                 mse_observation_loss = jnp.mean(
                     self.loss_weights["observations"]
                     * jnp.sum(
