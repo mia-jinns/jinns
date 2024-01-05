@@ -64,9 +64,10 @@ class PINN:
     The function create_PINN has the role to population the `__call__` function
     """
 
-    def __init__(self, key, eqx_list, output_slice=None):
+    def __init__(self, key, eqx_list, dim_solution, output_slice=None):
         _pinn = _MLP(key, eqx_list)
         self.params, self.static = eqx.partition(_pinn, eqx.is_inexact_array)
+        self.dim_solution = dim_solution
         self.output_slice = output_slice
 
     def init_params(self):
@@ -103,6 +104,7 @@ def create_PINN(
     input_transform=None,
     output_transform=None,
     shared_pinn_outputs=None,
+    dim_solution=None,
 ):
     """
     Utility function to create a standard PINN neural network with the equinox
@@ -152,6 +154,10 @@ def create_PINN(
         network. In this case we return a list of PINNs, one for each output in
         shared_pinn_outputs. This is useful to create PINNs that share the
         same network and same parameters. Default is None, we only return one PINN.
+    dim_solution
+        The dimension of the solution that this PINN represents. Default None
+        means that dim_solution = the pinn output dim. This argument is useful
+        when the pinn is also used to output equation parameters for example
 
 
     Returns
@@ -181,6 +187,15 @@ def create_PINN(
 
     if eq_type != "ODE" and dim_x == 0:
         raise RuntimeError("Wrong parameter combination eq_type and dim_x")
+
+    try:
+        nb_outputs_declared = eqx_list[-1][2]  # normally we look for 3rd ele of
+        # last layer
+    except IndexError:
+        nb_outputs_declared = eqx_list[-2][2]
+
+    if dim_solution is None:
+        dim_solution = nb_outputs_declared
 
     if input_transform is None:
 
@@ -218,7 +233,7 @@ def create_PINN(
         pinns = []
         static = None
         for output_slice in shared_pinn_outputs:
-            pinn = PINN(key, eqx_list, output_slice)
+            pinn = PINN(key, eqx_list, dim_solution, output_slice)
             pinn.apply_fn = apply_fn
             # all the pinns are in fact the same so we share the same static
             if static is None:
@@ -227,6 +242,6 @@ def create_PINN(
                 pinn.static = static
             pinns.append(pinn)
         return pinns
-    pinn = PINN(key, eqx_list)
+    pinn = PINN(key, eqx_list, dim_solution)
     pinn.apply_fn = apply_fn
     return pinn
