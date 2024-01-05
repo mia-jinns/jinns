@@ -68,7 +68,7 @@ class FisherKPP(PDENonStatio):
         """
         if isinstance(u, PINN):
             params["eq_params"] = self._eval_heterogeneous_parameters(
-                params["eq_params"], t, x, self.eq_params_heterogeneity
+                t, x, u, params, self.eq_params_heterogeneity
             )
 
             # Note that the last dim of u is nec. 1
@@ -89,7 +89,7 @@ class FisherKPP(PDENonStatio):
         if isinstance(u, SPINN):
             x_grid = _get_grid(x)
             params["eq_params"] = self._eval_heterogeneous_parameters(
-                params["eq_params"], t, x_grid, self.eq_params_heterogeneity
+                t, x_grid, u, params, self.eq_params_heterogeneity
             )
 
             u_tx, du_dt = jax.jvp(
@@ -161,11 +161,11 @@ class BurgerEquation(PDENonStatio):
         """
         if isinstance(u, PINN):
             params["eq_params"] = self._eval_heterogeneous_parameters(
-                params["eq_params"], t, x, self.eq_params_heterogeneity
+                t, x, u, params, self.eq_params_heterogeneity
             )
 
             # Note that the last dim of u is nec. 1
-            u_ = lambda t, x: u(t, x, params)[0]
+            u_ = lambda t, x: jnp.squeeze(u(t, x, params)[: u.dim_solution])
             du_dt = grad(u_, 0)
             du_dx = grad(u_, 1)
             d2u_dx2 = grad(
@@ -181,7 +181,7 @@ class BurgerEquation(PDENonStatio):
         if isinstance(u, SPINN):
             x_grid = _get_grid(x)
             params["eq_params"] = self._eval_heterogeneous_parameters(
-                params["eq_params"], t, x_grid, self.eq_params_heterogeneity
+                t, x_grid, u, params, self.eq_params_heterogeneity
             )
             # d=2 JVP calls are expected since we have time and x
             # then with a batch of size B, we then have Bd JVP calls
@@ -353,7 +353,7 @@ class FPENonStatioLoss2D(PDENonStatio):
         """
         if isinstance(u, PINN):
             params["eq_params"] = self._eval_heterogeneous_parameters(
-                params["eq_params"], t, x, self.eq_params_heterogeneity
+                t, x, u, params, self.eq_params_heterogeneity
             )
 
             # Note that the last dim of u is nec. 1
@@ -412,7 +412,7 @@ class FPENonStatioLoss2D(PDENonStatio):
         if isinstance(u, SPINN):
             x_grid = _get_grid(x)
             params["eq_params"] = self._eval_heterogeneous_parameters(
-                params["eq_params"], t, x_grid, self.eq_params_heterogeneity
+                t, x_grid, u, params, self.eq_params_heterogeneity
             )
 
             _, du_dt = jax.jvp(
