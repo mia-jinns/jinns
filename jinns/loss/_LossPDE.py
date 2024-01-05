@@ -254,6 +254,7 @@ class LossPDEStatio(LossPDEAbstract):
         derivative_keys=None,
         omega_boundary_fun=None,
         omega_boundary_condition=None,
+        omega_boundary_dim=None,
         norm_key=None,
         norm_borders=None,
         norm_samples=None,
@@ -310,6 +311,10 @@ class LossPDEStatio(LossPDEAbstract):
             enforce a particular boundary condition on this facet.
             The facet called "xmin", resp. "xmax" etc., in 2D,
             refers to the set of 2D points with fixed "xmin", resp. "xmax", etc.
+        omega_boundary_dim
+            Either None, or a jnp.s_ or a dict of jnp.s_ with keys following
+            the logic of omega_boundary_fun. It indicates which dimension(s) of
+            the PINN will be forced to match the boundary condition
         norm_key
             Jax random key to draw samples in for the Monte Carlo computation
             of the normalization constant. Default is None
@@ -411,6 +416,11 @@ class LossPDEStatio(LossPDEAbstract):
 
         self.omega_boundary_fun = omega_boundary_fun
         self.omega_boundary_condition = omega_boundary_condition
+        self.omega_boundary_dim = omega_boundary_dim
+
+        if omega_boundary_dim is None:
+            omega_boundary_dim = jnp.s_[::]
+
         self.dynamic_loss = dynamic_loss
         self.obs_batch = obs_batch
 
@@ -574,6 +584,7 @@ class LossPDEStatio(LossPDEAbstract):
                             self.u,
                             params_,
                             facet,
+                            self.omega_boundary_dim,
                         )
                     )
         else:
@@ -655,6 +666,7 @@ class LossPDEStatio(LossPDEAbstract):
             "derivative_keys": self.derivative_keys,
             "omega_boundary_fun": self.omega_boundary_fun,
             "omega_boundary_condition": self.omega_boundary_condition,
+            "omega_boundary_dim": self.omega_boundary_dim,
             "norm_borders": self.norm_borders,
             "sobolev_m": self.sobolev_m,
         }
@@ -670,6 +682,7 @@ class LossPDEStatio(LossPDEAbstract):
             aux_data["derivative_keys"],
             aux_data["omega_boundary_fun"],
             aux_data["omega_boundary_condition"],
+            aux_data["omega_boundary_dim"],
             norm_key,
             aux_data["norm_borders"],
             norm_samples,
@@ -815,6 +828,7 @@ class LossPDENonStatio(LossPDEStatio):
             derivative_keys,
             omega_boundary_fun,
             omega_boundary_condition,
+            None,  # TODO
             norm_key,
             norm_borders,
             norm_samples,
