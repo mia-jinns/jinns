@@ -523,7 +523,7 @@ class LossPDEStatio(LossPDEAbstract):
         if self.normalization_loss is not None:
             if isinstance(self.u, PINN):
                 v_u = vmap(
-                    lambda x: self.u(x, params_),
+                    lambda x: self.u(x, params_)[: self.u.dim_solution],
                     (0),
                     0,
                 )
@@ -597,7 +597,7 @@ class LossPDEStatio(LossPDEAbstract):
             # TODO implement for SPINN
             if isinstance(self.u, PINN):
                 v_u = vmap(
-                    lambda x: self.u(x, params_),
+                    lambda x: self.u(x, params_)[: self.u.dim_solution],
                     0,
                     0,
                 )
@@ -1051,7 +1051,7 @@ class LossPDENonStatio(LossPDEStatio):
             # TODO implement for SPINN
             if isinstance(self.u, PINN):
                 v_u = vmap(
-                    lambda t, x: self.u(t, x, params_),
+                    lambda t, x: self.u(t, x, params_)[: self.u.dim_solution],
                     (0, 0),
                     0,
                 )
