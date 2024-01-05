@@ -424,13 +424,14 @@ class LossPDEStatio(LossPDEAbstract):
         self.dynamic_loss = dynamic_loss
         self.obs_batch = obs_batch
 
-        if sobolev_m is not None:
+        self.sobolev_m = sobolev_m
+        if self.sobolev_m is not None:
             self.sobolev_reg = _sobolev(
-                self.u, sobolev_m
+                self.u, self.sobolev_m
             )  # we return a function, that way
             # the order of sobolev_m is static and the conditional in the recursive
             # function is properly set
-            self.sobolev_m = sobolev_m
+            self.sobolev_m = self.sobolev_m
         else:
             self.sobolev_reg = None
 
