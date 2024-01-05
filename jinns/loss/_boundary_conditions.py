@@ -11,7 +11,7 @@ from jinns.utils._spinn import SPINN
 
 
 def _compute_boundary_loss_statio(
-    boundary_condition_type, f, border_batch, u, params, facet
+    boundary_condition_type, f, border_batch, u, params, facet, dim_to_apply
 ):
     r"""A generic function that will compute the mini-batch MSE of a
     boundary condition in the stationary case, given by:
@@ -44,6 +44,9 @@ def _compute_boundary_loss_statio(
     facet:
         An integer which represents the id of the facet which is currently
         considered (in the order provided wy the DataGenerator which is fixed)
+    dim_to_apply
+        A jnp.s_ object which indicates which dimension(s) of u will be forced
+        to match the boundary condition
 
     Returns
     -------
@@ -51,7 +54,7 @@ def _compute_boundary_loss_statio(
         the MSE computed on `border_batch`
     """
     if boundary_condition_type.lower() in "dirichlet":
-        mse = boundary_dirichlet_statio(f, border_batch, u, params)
+        mse = boundary_dirichlet_statio(f, border_batch, u, params, dim_to_apply)
     elif any(
         boundary_condition_type.lower() in s
         for s in ["von neumann", "vn", "vonneumann"]
@@ -111,7 +114,7 @@ def _compute_boundary_loss_nonstatio(
     return mse
 
 
-def boundary_dirichlet_statio(f, border_batch, u, params):
+def boundary_dirichlet_statio(f, border_batch, u, params, dim_to_apply):
     r"""
     This omega boundary condition enforces a solution that is equal to f on
     border batch.
@@ -129,10 +132,12 @@ def boundary_dirichlet_statio(f, border_batch, u, params):
         Typically, it is a dictionary of
         dictionaries: `eq_params` and `nn_params``, respectively the
         differential equation parameters and the neural network parameter
+    dim_to_apply
+        A jnp.s_ object. The dimension of u on which to apply the boundary condition
     """
     if isinstance(u, PINN):
         v_u_boundary = vmap(
-            lambda dx: u(dx, params) - f(dx),
+            lambda dx: u(dx, params)[dim_to_apply] - f(dx),
             (0),
             0,
         )
