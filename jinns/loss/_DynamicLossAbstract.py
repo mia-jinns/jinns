@@ -23,8 +23,8 @@ class DynamicLoss:
             Default None. A dict with the keys being the same as in eq_params
             and the value being either None (no heterogeneity) or a function
             which encodes for the spatio-temporal heterogeneity of the parameter.
-            Such a function must be jittable and take three arguments `t`,
-            `x` and `params["eq_params"]` even if one is not used. Therefore,
+            Such a function must be jittable and take four arguments `t`, `x`,
+            `u` and `params` even if one is not used. Therefore,
             one can introduce spatio-temporal covariates upon which a particular
             parameter can depend, e.g. in a GLM fashion. The effect of these
             covariables can themselves be estimated by being in `eq_params` too.
@@ -36,19 +36,24 @@ class DynamicLoss:
         self.eq_params_heterogeneity = eq_params_heterogeneity
 
     def _eval_heterogeneous_parameters(
-        self, eq_params, t, x, eq_params_heterogeneity=None
+        self, t, x, u, params, eq_params_heterogeneity=None
     ):
         eq_params_ = {}
         if eq_params_heterogeneity is None:
-            return eq_params
-        for k, p in eq_params.items():
+            return params["eq_params"]
+        for k, p in params["eq_params"].items():
             try:
                 if eq_params_heterogeneity[k] is None:
                     eq_params_[k] = p
                 else:
-                    eq_params_[k] = eq_params_heterogeneity[k](
-                        t, x, eq_params  # heterogeneity encoded through a function
-                    )
+                    if t is None:
+                        eq_params_[k] = eq_params_heterogeneity[k](
+                            x, u, params  # heterogeneity encoded through a function
+                        )
+                    else:
+                        eq_params_[k] = eq_params_heterogeneity[k](
+                            t, x, u, params  # heterogeneity encoded through a function
+                        )
             except KeyError:
                 # we authorize missing eq_params_heterogeneity key
                 # is its heterogeneity is None anyway
@@ -79,6 +84,13 @@ class ODE(DynamicLoss):
         """
         super().__init__(Tmax, eq_params_heterogeneity)
 
+    def _eval_heterogeneous_parameters(
+        self, t, u, params, eq_params_heterogeneity=None
+    ):
+        return super()._eval_heterogeneous_parameters(
+            t, None, u, params, eq_params_heterogeneity
+        )
+
 
 class PDEStatio(DynamicLoss):
     r"""
@@ -98,6 +110,13 @@ class PDEStatio(DynamicLoss):
             heterogeneity for no parameters.
         """
         super().__init__(eq_params_heterogeneity=eq_params_heterogeneity)
+
+    def _eval_heterogeneous_parameters(
+        self, x, u, params, eq_params_heterogeneity=None
+    ):
+        return super()._eval_heterogeneous_parameters(
+            None, x, u, params, eq_params_heterogeneity
+        )
 
 
 class PDENonStatio(DynamicLoss):
@@ -122,3 +141,10 @@ class PDENonStatio(DynamicLoss):
             heterogeneity for no parameters.
         """
         super().__init__(Tmax, eq_params_heterogeneity)
+
+    def _eval_heterogeneous_parameters(
+        self, t, x, u, params, eq_params_heterogeneity=None
+    ):
+        return super()._eval_heterogeneous_parameters(
+            t, x, u, params, eq_params_heterogeneity
+        )
