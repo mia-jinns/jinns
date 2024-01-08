@@ -416,10 +416,24 @@ class LossPDEStatio(LossPDEAbstract):
 
         self.omega_boundary_fun = omega_boundary_fun
         self.omega_boundary_condition = omega_boundary_condition
-        self.omega_boundary_dim = omega_boundary_dim
 
-        if omega_boundary_dim is None:
-            omega_boundary_dim = jnp.s_[::]
+        self.omega_boundary_dim = omega_boundary_dim
+        if isinstance(self.omega_boundary_fun, dict):
+            if self.omega_boundary_dim is None:
+                self.omega_boundary_dim = {
+                    k: jnp.s_[::] for k in self.omega_boundary_fun.keys()
+                }
+            else:
+                if list(self.omega_boundary_dim.keys()) != list(
+                    self.omega_boundary_fun.keys()
+                ):
+                    raise ValueError(
+                        "If omega_boundary_fun is a dict,"
+                        " omega_boundary_dim should be a dict with the same keys"
+                    )
+        else:
+            if omega_boundary_dim is None:
+                omega_boundary_dim = jnp.s_[::]
 
         self.dynamic_loss = dynamic_loss
         self.obs_batch = obs_batch
@@ -571,6 +585,7 @@ class LossPDEStatio(LossPDEAbstract):
                                 self.u,
                                 params_,
                                 idx,
+                                self.omega_boundary_dim[facet],
                             )
                         )
             else:
@@ -720,6 +735,7 @@ class LossPDENonStatio(LossPDEStatio):
         derivative_keys=None,
         omega_boundary_fun=None,
         omega_boundary_condition=None,
+        omega_boundary_dim=None,
         initial_condition_fun=None,
         norm_key=None,
         norm_borders=None,
@@ -774,6 +790,10 @@ class LossPDENonStatio(LossPDEStatio):
             enforce a particular boundary condition on this facet.
             The facet called "xmin", resp. "xmax" etc., in 2D,
             refers to the set of 2D points with fixed "xmin", resp. "xmax", etc.
+        omega_boundary_dim
+            Either None, or a jnp.s_ or a dict of jnp.s_ with keys following
+            the logic of omega_boundary_fun. It indicates which dimension(s) of
+            the PINN will be forced to match the boundary condition
         initial_condition_fun
             A function representing the temporal initial condition. If None
             (default) then no initial condition is applied
@@ -829,7 +849,7 @@ class LossPDENonStatio(LossPDEStatio):
             derivative_keys,
             omega_boundary_fun,
             omega_boundary_condition,
-            None,  # TODO
+            omega_boundary_dim,
             norm_key,
             norm_borders,
             norm_samples,
@@ -993,6 +1013,7 @@ class LossPDENonStatio(LossPDEStatio):
                                 self.u,
                                 params_,
                                 idx,
+                                self.omega_boundary_dim[facet],
                             )
                         )
             else:
@@ -1008,6 +1029,7 @@ class LossPDENonStatio(LossPDEStatio):
                             self.u,
                             params_,
                             facet,
+                            self.omega_boundary_dim,
                         )
                     )
         else:
@@ -1123,6 +1145,7 @@ class LossPDENonStatio(LossPDEStatio):
             "derivative_keys": self.derivative_keys,
             "omega_boundary_fun": self.omega_boundary_fun,
             "omega_boundary_condition": self.omega_boundary_condition,
+            "omega_boundary_dim": self.omega_boundary_dim,
             "initial_condition_fun": self.initial_condition_fun,
             "norm_borders": self.norm_borders,
             "sobolev_m": self.sobolev_m,
@@ -1139,6 +1162,7 @@ class LossPDENonStatio(LossPDEStatio):
             aux_data["derivative_keys"],
             aux_data["omega_boundary_fun"],
             aux_data["omega_boundary_condition"],
+            aux_data["omega_boundary_dim"],
             aux_data["initial_condition_fun"],
             norm_key,
             aux_data["norm_borders"],
@@ -1178,6 +1202,7 @@ class SystemLossPDE:
         derivative_keys_dict=None,
         omega_boundary_fun_dict=None,
         omega_boundary_condition_dict=None,
+        omega_boundary_dim_dict=None,
         initial_condition_fun_dict=None,
         norm_key_dict=None,
         norm_borders_dict=None,
@@ -1214,15 +1239,17 @@ class SystemLossPDE:
             are not specified then the default behaviour for `derivative_keys`
             of LossODE is used
         omega_boundary_fun_dict
-            A dict of functions to be matched in the border condition, or a
-            dict of dict of functions (see doc for `omega_boundary_fun` in
-            LossPDEStatio or LossPDENonStatio).
-            Must share the keys of `u_dict`
+            A dict of dict of functions (see doc for `omega_boundary_fun` in
+            LossPDEStatio or LossPDENonStatio). Default is None.
+            Must share the keys of `u_dict`.
         omega_boundary_condition_dict
-            A dict of either None (no condition), or a string defining the boundary
-            condition e.g. Dirichlet or Von Neumann, or a dict of dict of
-            strings (see doc for `omega_boundary_fun` in
-            LossPDEStatio or LossPDENonStatio).
+            A dict of dict of strings (see doc for
+            `omega_boundary_condition_dict` in
+            LossPDEStatio or LossPDENonStatio). Default is None.
+            Must share the keys of `u_dict`
+        omega_boundary_dim_dict
+            A dict of dict of slices (see doc for `omega_boundary_dim` in
+            LossPDEStatio or LossPDENonStatio). Default is None.
             Must share the keys of `u_dict`
         initial_condition_fun_dict
             A dict of functions representing the temporal initial condition. If None
@@ -1280,6 +1307,10 @@ class SystemLossPDE:
             self.omega_boundary_condition_dict = {k: None for k in u_dict.keys()}
         else:
             self.omega_boundary_condition_dict = omega_boundary_condition_dict
+        if omega_boundary_dim_dict is None:
+            self.omega_boundary_dim_dict = {k: None for k in u_dict.keys()}
+        else:
+            self.omega_boundary_dim_dict = omega_boundary_dim_dict
         if initial_condition_fun_dict is None:
             self.initial_condition_fun_dict = {k: None for k in u_dict.keys()}
         else:
@@ -1324,6 +1355,7 @@ class SystemLossPDE:
             or u_dict.keys() != self.obs_batch_dict.keys()
             or u_dict.keys() != self.omega_boundary_fun_dict.keys()
             or u_dict.keys() != self.omega_boundary_condition_dict.keys()
+            or u_dict.keys() != self.omega_boundary_dim_dict.keys()
             or u_dict.keys() != self.initial_condition_fun_dict.keys()
             or u_dict.keys() != self.norm_key_dict.keys()
             or u_dict.keys() != self.norm_borders_dict.keys()
@@ -1360,6 +1392,7 @@ class SystemLossPDE:
                     derivative_keys=self.derivative_keys_dict[i],
                     omega_boundary_fun=self.omega_boundary_fun_dict[i],
                     omega_boundary_condition=self.omega_boundary_condition_dict[i],
+                    omega_boundary_dim=self.omega_boundary_dim_dict[i],
                     norm_key=self.norm_key_dict[i],
                     norm_borders=self.norm_borders_dict[i],
                     norm_samples=self.norm_samples_dict[i],
@@ -1381,6 +1414,7 @@ class SystemLossPDE:
                     derivative_keys=self.derivative_keys_dict[i],
                     omega_boundary_fun=self.omega_boundary_fun_dict[i],
                     omega_boundary_condition=self.omega_boundary_condition_dict[i],
+                    omega_boundary_dim=self.omega_boundary_dim_dict[i],
                     initial_condition_fun=self.initial_condition_fun_dict[i],
                     norm_key=self.norm_key_dict[i],
                     norm_borders=self.norm_borders_dict[i],

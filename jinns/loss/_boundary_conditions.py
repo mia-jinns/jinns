@@ -59,12 +59,19 @@ def _compute_boundary_loss_statio(
         boundary_condition_type.lower() in s
         for s in ["von neumann", "vn", "vonneumann"]
     ):
-        mse = boundary_neumann_statio(f, border_batch, u, params, facet)
+        mse = boundary_neumann_statio(f, border_batch, u, params, facet, dim_to_apply)
     return mse
 
 
 def _compute_boundary_loss_nonstatio(
-    boundary_condition_type, f, times_batch, border_batch, u, params, facet
+    boundary_condition_type,
+    f,
+    times_batch,
+    border_batch,
+    u,
+    params,
+    facet,
+    dim_to_apply,
 ):
     r"""A generic function that will compute the mini-batch MSE of a
     boundary condition in the non-stationary case, given by:
@@ -98,6 +105,8 @@ def _compute_boundary_loss_nonstatio(
     facet:
         An integer which represents the id of the facet which is currently
         considered (in the order provided wy the DataGenerator which is fixed)
+    dim_to_apply
+        A jnp.s_ object. The dimension of u on which to apply the boundary condition
 
     Returns
     -------
@@ -105,12 +114,16 @@ def _compute_boundary_loss_nonstatio(
         the MSE computed on `border_batch`
     """
     if boundary_condition_type.lower() in "dirichlet":
-        mse = boundary_dirichlet_nonstatio(f, times_batch, border_batch, u, params)
+        mse = boundary_dirichlet_nonstatio(
+            f, times_batch, border_batch, u, params, dim_to_apply
+        )
     elif any(
         boundary_condition_type.lower() in s
         for s in ["von neumann", "vn", "vonneumann"]
     ):
-        mse = boundary_neumann_nonstatio(f, times_batch, border_batch, u, params, facet)
+        mse = boundary_neumann_nonstatio(
+            f, times_batch, border_batch, u, params, facet, dim_to_apply
+        )
     return mse
 
 
@@ -144,7 +157,7 @@ def boundary_dirichlet_statio(f, border_batch, u, params, dim_to_apply):
 
         mse_u_boundary = jnp.sum((v_u_boundary(border_batch)) ** 2, axis=-1)
     elif isinstance(u, SPINN):
-        values = u(border_batch, params)
+        values = u(border_batch, params)[..., dim_to_apply]
         x_grid = _get_grid(border_batch)
         boundaries = _check_user_func_return(f(x_grid), values.shape)
         res = values - boundaries
@@ -155,7 +168,7 @@ def boundary_dirichlet_statio(f, border_batch, u, params, dim_to_apply):
     return mse_u_boundary
 
 
-def boundary_neumann_statio(f, border_batch, u, params, facet):
+def boundary_neumann_statio(f, border_batch, u, params, facet, dim_to_apply):
     r"""
     This omega boundary condition enforces a solution where :math:`\nabla u\cdot
     n` is equal to `f` on omega borders. :math:`n` is the unitary
@@ -178,6 +191,8 @@ def boundary_neumann_statio(f, border_batch, u, params, facet):
     facet:
         An integer which represents the id of the facet which is currently
         considered (in the order provided wy the DataGenerator which is fixed)
+    dim_to_apply
+        A jnp.s_ object. The dimension of u on which to apply the boundary condition
     """
     # We resort to the shape of the border_batch to determine the dimension as
     # described in the border_batch function
@@ -191,7 +206,7 @@ def boundary_neumann_statio(f, border_batch, u, params, facet):
         n = jnp.array([[-1, 1, 0, 0], [0, 0, -1, 1]])
 
     if isinstance(u, PINN):
-        u_ = lambda x, params: u(x, params)[0]
+        u_ = lambda x, params: jnp.squeeze(u(x, params)[dim_to_apply])
         v_neumann = vmap(
             lambda dx: jnp.dot(
                 grad(u_, 0)(dx, params),
@@ -211,7 +226,7 @@ def boundary_neumann_statio(f, border_batch, u, params, facet):
                 lambda x: u(
                     x,
                     params,
-                ),
+                )[..., dim_to_apply],
                 (border_batch,),
                 (jnp.ones_like(border_batch),),
             )
@@ -251,7 +266,9 @@ def boundary_neumann_statio(f, border_batch, u, params, facet):
     return mse_u_boundary
 
 
-def boundary_dirichlet_nonstatio(f, times_batch, omega_border_batch, u, params):
+def boundary_dirichlet_nonstatio(
+    f, times_batch, omega_border_batch, u, params, dim_to_apply
+):
     """
     This omega boundary condition enforces a solution that is equal to f
     at times_batch x omega borders
@@ -271,6 +288,8 @@ def boundary_dirichlet_nonstatio(f, times_batch, omega_border_batch, u, params):
         Typically, it is a dictionary of
         dictionaries: `eq_params` and `nn_params``, respectively the
         differential equation parameters and the neural network parameter
+    dim_to_apply
+        A jnp.s_ object. The dimension of u on which to apply the boundary condition
     """
     if isinstance(u, PINN):
         tile_omega_border_batch = jnp.tile(
@@ -285,7 +304,7 @@ def boundary_dirichlet_nonstatio(f, times_batch, omega_border_batch, u, params):
                 t,
                 dx,
                 params,
-            )
+            )[dim_to_apply]
             - f(t, dx),
             (0, 0),
             0,
@@ -309,7 +328,7 @@ def boundary_dirichlet_nonstatio(f, times_batch, omega_border_batch, u, params):
         # otherwise we require batches to have same shape and we do not need
         # this operation
 
-        values = u(times_batch, tile_omega_border_batch, params)
+        values = u(times_batch, tile_omega_border_batch, params)[..., dim_to_apply]
         tx_grid = _get_grid(jnp.concatenate([times_batch, omega_border_batch], axis=-1))
         boundaries = _check_user_func_return(
             f(tx_grid[..., 0:1], tx_grid[..., 1:]), values.shape
@@ -319,7 +338,9 @@ def boundary_dirichlet_nonstatio(f, times_batch, omega_border_batch, u, params):
     return mse_u_boundary
 
 
-def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params, facet):
+def boundary_neumann_nonstatio(
+    f, times_batch, omega_border_batch, u, params, facet, dim_to_apply
+):
     r"""
     This omega boundary condition enforces a solution where :math:`\nabla u\cdot
     n` is equal to `f` at time_batch x omega borders. :math:`n` is the unitary
@@ -343,6 +364,8 @@ def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params, fa
     facet:
         An integer which represents the id of the facet which is currently
         considered (in the order provided wy the DataGenerator which is fixed)
+    dim_to_apply
+        A jnp.s_ object. The dimension of u on which to apply the boundary condition
     """
     # We resort to the shape of the border_batch to determine the dimension as
     # described in the border_batch function
@@ -363,7 +386,7 @@ def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params, fa
         def rep_times(k):
             return jnp.repeat(times_batch, k, axis=0)
 
-        u_ = lambda t, x, params: u(t, x, params)[0]
+        u_ = lambda t, x, params: jnp.squeeze(u(t, x, params)[dim_to_apply])
         v_neumann = vmap(
             lambda t, dx: jnp.dot(
                 grad(u_, 1)(t, dx, params),
@@ -394,7 +417,7 @@ def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params, fa
         # high dim output at once
         if omega_border_batch.shape[0] == 1:  # i.e. case 1D
             _, du_dx = jax.jvp(
-                lambda x: u(times_batch, x, params),
+                lambda x: u(times_batch, x, params)[..., dim_to_apply],
                 (omega_border_batch,),
                 (jnp.ones_like(omega_border_batch),),
             )
@@ -407,12 +430,12 @@ def boundary_neumann_nonstatio(f, times_batch, omega_border_batch, u, params, fa
                 jnp.array([0.0, 1.0])[None], omega_border_batch.shape[0], axis=0
             )
             _, du_dx1 = jax.jvp(
-                lambda x: u(times_batch, x, params),
+                lambda x: u(times_batch, x, params)[..., dim_to_apply],
                 (omega_border_batch,),
                 (tangent_vec_0,),
             )
             _, du_dx2 = jax.jvp(
-                lambda x: u(times_batch, x, params),
+                lambda x: u(times_batch, x, params)[..., dim_to_apply],
                 (omega_border_batch,),
                 (tangent_vec_1,),
             )
