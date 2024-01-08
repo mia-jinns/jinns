@@ -86,8 +86,9 @@ def train_ReacDiff_init():
 
     from jinns.utils._utils import _get_grid
 
-    def r_fun(t, x, eq_params):
+    def r_fun(t, x, u, params):
         """must be a jittable function"""
+        eq_params = params["eq_params"]
         r1, r2, r3 = eq_params["r"]
 
         # Next is required to be able to call plot_2D and see the map
