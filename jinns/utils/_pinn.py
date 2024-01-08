@@ -68,7 +68,7 @@ class PINN:
         self,
         key,
         eqx_list,
-        dim_solution,
+        slice_solution,
         eq_type,
         input_transform,
         output_transform,
@@ -76,7 +76,7 @@ class PINN:
     ):
         _pinn = _MLP(key, eqx_list)
         self.params, self.static = eqx.partition(_pinn, eqx.is_inexact_array)
-        self.dim_solution = dim_solution
+        self.slice_solution = slice_solution
         self.eq_type = eq_type
         self.input_transform = input_transform
         self.output_transform = output_transform
@@ -131,7 +131,7 @@ def create_PINN(
     input_transform=None,
     output_transform=None,
     shared_pinn_outputs=None,
-    dim_solution=None,
+    slice_solution=None,
 ):
     """
     Utility function to create a standard PINN neural network with the equinox
@@ -181,10 +181,13 @@ def create_PINN(
         network. In this case we return a list of PINNs, one for each output in
         shared_pinn_outputs. This is useful to create PINNs that share the
         same network and same parameters. Default is None, we only return one PINN.
-    dim_solution
-        The dimension of the solution that this PINN represents. Default None
-        means that dim_solution = the pinn output dim. This argument is useful
-        when the pinn is also used to output equation parameters for example
+    slice_solution
+        A jnp.s_ object which indicates which axis of the PINN output is
+        dedicated to the actual equation solution. Default None
+        means that slice_solution = the whole PINN output. This argument is useful
+        when the PINN is also used to output equation parameters for example
+        Note that it must be a slice and not an integer (a preprocessing of the
+        user provided argument takes care of it)
 
 
     Returns
@@ -221,8 +224,12 @@ def create_PINN(
     except IndexError:
         nb_outputs_declared = eqx_list[-2][2]
 
-    if dim_solution is None:
-        dim_solution = nb_outputs_declared
+    if slice_solution is None:
+        slice_solution = jnp.s_[0:nb_outputs_declared]
+    if isinstance(slice_solution, int):
+        # rewrite it as a slice to ensure that axis does not disappear when
+        # indexing
+        slice_solution = jnp.s_[slice_solution : slice_solution + 1]
 
     if input_transform is None:
 
@@ -241,7 +248,7 @@ def create_PINN(
             pinn = PINN(
                 key,
                 eqx_list,
-                dim_solution,
+                slice_solution,
                 eq_type,
                 input_transform,
                 output_transform,
@@ -254,5 +261,7 @@ def create_PINN(
                 pinn.static = static
             pinns.append(pinn)
         return pinns
-    pinn = PINN(key, eqx_list, dim_solution, eq_type, input_transform, output_transform)
+    pinn = PINN(
+        key, eqx_list, slice_solution, eq_type, input_transform, output_transform
+    )
     return pinn

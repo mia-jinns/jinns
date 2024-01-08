@@ -165,7 +165,7 @@ class BurgerEquation(PDENonStatio):
             )
 
             # Note that the last dim of u is nec. 1
-            u_ = lambda t, x: jnp.squeeze(u(t, x, params)[: u.dim_solution])
+            u_ = lambda t, x: jnp.squeeze(u(t, x, params)[u.slice_solution])
             du_dt = grad(u_, 0)
             du_dx = grad(u_, 1)
             d2u_dx2 = grad(

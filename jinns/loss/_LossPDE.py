@@ -315,6 +315,8 @@ class LossPDEStatio(LossPDEAbstract):
             Either None, or a jnp.s_ or a dict of jnp.s_ with keys following
             the logic of omega_boundary_fun. It indicates which dimension(s) of
             the PINN will be forced to match the boundary condition
+            Note that it must be a slice and not an integer (a preprocessing of the
+            user provided argument takes care of it)
         norm_key
             Jax random key to draw samples in for the Monte Carlo computation
             of the normalization constant. Default is None
@@ -423,17 +425,30 @@ class LossPDEStatio(LossPDEAbstract):
                 self.omega_boundary_dim = {
                     k: jnp.s_[::] for k in self.omega_boundary_fun.keys()
                 }
-            else:
-                if list(self.omega_boundary_dim.keys()) != list(
-                    self.omega_boundary_fun.keys()
-                ):
-                    raise ValueError(
-                        "If omega_boundary_fun is a dict,"
-                        " omega_boundary_dim should be a dict with the same keys"
-                    )
+            if list(self.omega_boundary_dim.keys()) != list(
+                self.omega_boundary_fun.keys()
+            ):
+                raise ValueError(
+                    "If omega_boundary_fun is a dict,"
+                    " omega_boundary_dim should be a dict with the same keys"
+                )
+            for k, v in self.omega_boundary_dim.items():
+                if isinstance(v, int):
+                    # rewrite it as a slice to ensure that axis does not disappear when
+                    # indexing
+                    self.omega_boundary_dim[k] = jnp.s_[v : v + 1]
+
         else:
-            if omega_boundary_dim is None:
-                omega_boundary_dim = jnp.s_[::]
+            if self.omega_boundary_dim is None:
+                self.omega_boundary_dim = jnp.s_[::]
+            if isinstance(self.omega_boundary_dim, int):
+                # rewrite it as a slice to ensure that axis does not disappear when
+                # indexing
+                self.omega_boundary_dim = jnp.s_[
+                    self.omega_boundary_dim : self.omega_boundary_dim + 1
+                ]
+            if not isinstance(self.omega_boundary_dim, slice):
+                raise ValueError("self.omega_boundary_dim must be a jnp.s_" " object")
 
         self.dynamic_loss = dynamic_loss
         self.obs_batch = obs_batch
@@ -537,7 +552,7 @@ class LossPDEStatio(LossPDEAbstract):
         if self.normalization_loss is not None:
             if isinstance(self.u, PINN):
                 v_u = vmap(
-                    lambda x: self.u(x, params_)[: self.u.dim_solution],
+                    lambda x: self.u(x, params_)[self.u.slice_solution],
                     (0),
                     0,
                 )
@@ -612,7 +627,7 @@ class LossPDEStatio(LossPDEAbstract):
             # TODO implement for SPINN
             if isinstance(self.u, PINN):
                 v_u = vmap(
-                    lambda x: self.u(x, params_)[: self.u.dim_solution],
+                    lambda x: self.u(x, params_)[self.u.slice_solution],
                     0,
                     0,
                 )
@@ -794,6 +809,8 @@ class LossPDENonStatio(LossPDEStatio):
             Either None, or a jnp.s_ or a dict of jnp.s_ with keys following
             the logic of omega_boundary_fun. It indicates which dimension(s) of
             the PINN will be forced to match the boundary condition
+            Note that it must be a slice and not an integer (a preprocessing of the
+            user provided argument takes care of it)
         initial_condition_fun
             A function representing the temporal initial condition. If None
             (default) then no initial condition is applied
@@ -1073,7 +1090,7 @@ class LossPDENonStatio(LossPDEStatio):
             # TODO implement for SPINN
             if isinstance(self.u, PINN):
                 v_u = vmap(
-                    lambda t, x: self.u(t, x, params_)[: self.u.dim_solution],
+                    lambda t, x: self.u(t, x, params_)[self.u.slice_solution],
                     (0, 0),
                     0,
                 )
