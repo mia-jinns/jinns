@@ -64,17 +64,44 @@ class PINN:
     The function create_PINN has the role to population the `__call__` function
     """
 
-    def __init__(self, key, eqx_list, dim_solution, output_slice=None):
+    def __init__(
+        self,
+        key,
+        eqx_list,
+        dim_solution,
+        eq_type,
+        input_transform,
+        output_transform,
+        output_slice=None,
+    ):
         _pinn = _MLP(key, eqx_list)
         self.params, self.static = eqx.partition(_pinn, eqx.is_inexact_array)
         self.dim_solution = dim_solution
+        self.eq_type = eq_type
+        self.input_transform = input_transform
+        self.output_transform = output_transform
         self.output_slice = output_slice
 
     def init_params(self):
         return self.params
 
-    def __call__(self, *args, **kwargs):
-        return self.apply_fn(self, *args, **kwargs)
+    def __call__(self, *args):
+        if self.eq_type == "ODE":
+            (t, params) = args
+            t = t[None]  #  Add dimension which is lacking for the ODE batches
+            return self._eval_nn(
+                t, params, self.input_transform, self.output_transform
+            ).squeeze()
+        if self.eq_type == "statio_PDE":
+            (x, params) = args
+            return self._eval_nn(x, params, self.input_transform, self.output_transform)
+        if self.eq_type == "nonstatio_PDE":
+            (t, x, params) = args
+            t_x = jnp.concatenate([t, x], axis=-1)
+            return self._eval_nn(
+                t_x, params, self.input_transform, self.output_transform
+            )
+        raise ValueError("Wrong value for self.eq_type")
 
     def _eval_nn(self, inputs, params, input_transform, output_transform):
         """
@@ -83,7 +110,7 @@ class PINN:
         """
         try:
             model = eqx.combine(params["nn_params"], self.static)
-        except:  # give more flexibility
+        except KeyError:  # give more flexibility
             model = eqx.combine(params, self.static)
         res = output_transform(inputs, model(input_transform(inputs, params)).squeeze())
 
@@ -207,34 +234,19 @@ def create_PINN(
         def output_transform(_in_pinn, _out_pinn):
             return _out_pinn
 
-    if eq_type == "ODE":
-
-        def apply_fn(self, t, params):
-            t = t[
-                None
-            ]  # Note that we added a dimension to t which is lacking for the ODE batches
-            return self._eval_nn(t, params, input_transform, output_transform).squeeze()
-
-    elif eq_type == "statio_PDE":
-        # Here we add an argument `x` which can be high dimensional
-        def apply_fn(self, x, params):
-            return self._eval_nn(x, params, input_transform, output_transform)
-
-    elif eq_type == "nonstatio_PDE":
-        # Here we add an argument `x` which can be high dimensional
-        def apply_fn(self, t, x, params):
-            t_x = jnp.concatenate([t, x], axis=-1)
-            return self._eval_nn(t_x, params, input_transform, output_transform)
-
-    else:
-        raise RuntimeError("Wrong parameter value for eq_type")
-
     if shared_pinn_outputs is not None:
         pinns = []
         static = None
         for output_slice in shared_pinn_outputs:
-            pinn = PINN(key, eqx_list, dim_solution, output_slice)
-            pinn.apply_fn = apply_fn
+            pinn = PINN(
+                key,
+                eqx_list,
+                dim_solution,
+                eq_type,
+                input_transform,
+                output_transform,
+                output_slice,
+            )
             # all the pinns are in fact the same so we share the same static
             if static is None:
                 static = pinn.static
@@ -242,6 +254,5 @@ def create_PINN(
                 pinn.static = static
             pinns.append(pinn)
         return pinns
-    pinn = PINN(key, eqx_list, dim_solution)
-    pinn.apply_fn = apply_fn
+    pinn = PINN(key, eqx_list, dim_solution, eq_type, input_transform, output_transform)
     return pinn
