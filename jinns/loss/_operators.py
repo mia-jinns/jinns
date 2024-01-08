@@ -21,7 +21,7 @@ def _div_rev(u, params, x, t=None):
         if t is None:
             du_dxi = grad(lambda x, params: u(x, params)[i], 0)(x, params)[i]
         else:
-            du_dxi = grad(lambda t, x, params: u(x, params)[i], 1)(x, params)[i]
+            du_dxi = grad(lambda t, x, params: u(t, x, params)[i], 1)(t, x, params)[i]
         return _, du_dxi
 
     _, accu = jax.lax.scan(scan_fun, {}, jnp.arange(x.shape[0]))
