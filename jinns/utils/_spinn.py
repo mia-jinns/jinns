@@ -96,7 +96,7 @@ class SPINN:
             (x, params) = args
             try:
                 spinn = eqx.combine(params["nn_params"], self.static)
-            except KeyError:
+            except (KeyError, TypeError) as e:
                 spinn = eqx.combine(params, self.static)
             v_model = jax.vmap(spinn, (0))
             res = v_model(t=None, x=x)
@@ -105,7 +105,7 @@ class SPINN:
             (t, x, params) = args
             try:
                 spinn = eqx.combine(params["nn_params"], self.static)
-            except KeyError:
+            except (KeyError, TypeError) as e:
                 spinn = eqx.combine(params, self.static)
             v_model = jax.vmap(spinn, ((0, 0)))
             res = v_model(t, x)

@@ -110,7 +110,7 @@ class PINN:
         """
         try:
             model = eqx.combine(params["nn_params"], self.static)
-        except KeyError:  # give more flexibility
+        except (KeyError, TypeError) as e:  # give more flexibility
             model = eqx.combine(params, self.static)
         res = output_transform(inputs, model(input_transform(inputs, params)).squeeze())
 
