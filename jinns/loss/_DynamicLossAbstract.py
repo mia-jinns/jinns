@@ -35,9 +35,8 @@ class DynamicLoss:
         self.Tmax = Tmax
         self.eq_params_heterogeneity = eq_params_heterogeneity
 
-    def _eval_heterogeneous_parameters(
-        self, t, x, u, params, eq_params_heterogeneity=None
-    ):
+    @staticmethod
+    def _eval_heterogeneous_parameters(t, x, u, params, eq_params_heterogeneity=None):
         eq_params_ = {}
         if eq_params_heterogeneity is None:
             return params["eq_params"]
@@ -84,12 +83,30 @@ class ODE(DynamicLoss):
         """
         super().__init__(Tmax, eq_params_heterogeneity)
 
-    def _eval_heterogeneous_parameters(
-        self, t, u, params, eq_params_heterogeneity=None
-    ):
+    def eval_heterogeneous_parameters(self, t, u, params, eq_params_heterogeneity=None):
         return super()._eval_heterogeneous_parameters(
             t, None, u, params, eq_params_heterogeneity
         )
+
+    @staticmethod
+    def evaluate_heterogeneous_parameters(evaluate):
+        """
+        Decorator which aims to decorate the evaluate methods of Dynamic losses
+        in order. It calls _eval_heterogeneous_parameters which applies the
+        user defined rules to obtain spatially / temporally heterogeneous
+        parameters
+        """
+
+        def wrapper(*args):
+            self, t, u, params = args
+            params["eq_params"] = self.eval_heterogeneous_parameters(
+                t, u, params, self.eq_params_heterogeneity
+            )
+            new_args = args[:-1] + (params,)
+            res = evaluate(*new_args)
+            return res
+
+        return wrapper
 
 
 class PDEStatio(DynamicLoss):
@@ -111,12 +128,30 @@ class PDEStatio(DynamicLoss):
         """
         super().__init__(eq_params_heterogeneity=eq_params_heterogeneity)
 
-    def _eval_heterogeneous_parameters(
-        self, x, u, params, eq_params_heterogeneity=None
-    ):
+    def eval_heterogeneous_parameters(self, x, u, params, eq_params_heterogeneity=None):
         return super()._eval_heterogeneous_parameters(
             None, x, u, params, eq_params_heterogeneity
         )
+
+    @staticmethod
+    def evaluate_heterogeneous_parameters(evaluate):
+        """
+        Decorator which aims to decorate the evaluate methods of Dynamic losses
+        in order. It calls _eval_heterogeneous_parameters which applies the
+        user defined rules to obtain spatially / temporally heterogeneous
+        parameters
+        """
+
+        def wrapper(*args):
+            self, x, u, params = args
+            params["eq_params"] = self.eval_heterogeneous_parameters(
+                x, u, params, self.eq_params_heterogeneity
+            )
+            new_args = args[:-1] + (params,)
+            res = evaluate(*new_args)
+            return res
+
+        return wrapper
 
 
 class PDENonStatio(DynamicLoss):
@@ -142,9 +177,29 @@ class PDENonStatio(DynamicLoss):
         """
         super().__init__(Tmax, eq_params_heterogeneity)
 
-    def _eval_heterogeneous_parameters(
+    def eval_heterogeneous_parameters(
         self, t, x, u, params, eq_params_heterogeneity=None
     ):
         return super()._eval_heterogeneous_parameters(
             t, x, u, params, eq_params_heterogeneity
         )
+
+    @staticmethod
+    def evaluate_heterogeneous_parameters(evaluate):
+        """
+        Decorator which aims to decorate the evaluate methods of Dynamic losses
+        in order. It calls _eval_heterogeneous_parameters which applies the
+        user defined rules to obtain spatially / temporally heterogeneous
+        parameters
+        """
+
+        def wrapper(*args):
+            self, t, x, u, params = args
+            params["eq_params"] = self.eval_heterogeneous_parameters(
+                t, x, u, params, self.eq_params_heterogeneity
+            )
+            new_args = args[:-1] + (params,)
+            res = evaluate(*new_args)
+            return res
+
+        return wrapper

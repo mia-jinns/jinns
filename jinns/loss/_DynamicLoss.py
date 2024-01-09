@@ -48,6 +48,7 @@ class FisherKPP(PDENonStatio):
         """
         super().__init__(Tmax, eq_params_heterogeneity)
 
+    @PDENonStatio.evaluate_heterogeneous_parameters
     def evaluate(self, t, x, u, params):
         r"""
         Evaluate the dynamic loss at :math:`(t,x)`.
@@ -67,10 +68,6 @@ class FisherKPP(PDENonStatio):
             differential equation parameters and the neural network parameter
         """
         if isinstance(u, PINN):
-            params["eq_params"] = self._eval_heterogeneous_parameters(
-                t, x, u, params, self.eq_params_heterogeneity
-            )
-
             # Note that the last dim of u is nec. 1
             u_ = lambda t, x: u(t, x, params)[0]
 
@@ -87,11 +84,6 @@ class FisherKPP(PDENonStatio):
                 )
             )
         if isinstance(u, SPINN):
-            x_grid = _get_grid(x)
-            params["eq_params"] = self._eval_heterogeneous_parameters(
-                t, x_grid, u, params, self.eq_params_heterogeneity
-            )
-
             u_tx, du_dt = jax.jvp(
                 lambda t: u(t, x, params),
                 (t,),
@@ -160,10 +152,6 @@ class BurgerEquation(PDENonStatio):
             differential equation parameters and the neural network parameter
         """
         if isinstance(u, PINN):
-            params["eq_params"] = self._eval_heterogeneous_parameters(
-                t, x, u, params, self.eq_params_heterogeneity
-            )
-
             # Note that the last dim of u is nec. 1
             u_ = lambda t, x: jnp.squeeze(u(t, x, params)[u.slice_solution])
             du_dt = grad(u_, 0)
@@ -179,10 +167,6 @@ class BurgerEquation(PDENonStatio):
             )
 
         if isinstance(u, SPINN):
-            x_grid = _get_grid(x)
-            params["eq_params"] = self._eval_heterogeneous_parameters(
-                t, x_grid, u, params, self.eq_params_heterogeneity
-            )
             # d=2 JVP calls are expected since we have time and x
             # then with a batch of size B, we then have Bd JVP calls
             u_tx, du_dt = jax.jvp(
@@ -352,10 +336,6 @@ class FPENonStatioLoss2D(PDENonStatio):
             differential equation parameters and the neural network parameter
         """
         if isinstance(u, PINN):
-            params["eq_params"] = self._eval_heterogeneous_parameters(
-                t, x, u, params, self.eq_params_heterogeneity
-            )
-
             # Note that the last dim of u is nec. 1
             u_ = lambda t, x: u(t, x, params)[0]
 
@@ -411,10 +391,6 @@ class FPENonStatioLoss2D(PDENonStatio):
 
         if isinstance(u, SPINN):
             x_grid = _get_grid(x)
-            params["eq_params"] = self._eval_heterogeneous_parameters(
-                t, x_grid, u, params, self.eq_params_heterogeneity
-            )
-
             _, du_dt = jax.jvp(
                 lambda t: u(t, x, params),
                 (t,),
