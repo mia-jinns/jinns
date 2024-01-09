@@ -88,6 +88,7 @@ def train_ReacDiff_init():
 
     def r_fun(t, x, u, params):
         """must be a jittable function"""
+        x = _get_grid(x)
         eq_params = params["eq_params"]
         r1, r2, r3 = eq_params["r"]
 
