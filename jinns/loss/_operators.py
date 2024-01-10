@@ -9,7 +9,7 @@ from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
 
 
-def _div_rev(u, params, x, t=None):
+def _div_rev(t, x, u, params):
     r"""
     Compute the divergence of a vector field :math:`\mathbf{u}`, i.e.,
     :math:`\nabla \cdot \mathbf{u}(\mathbf{x})` with :math:`\mathbf{u}` a vector
@@ -28,7 +28,7 @@ def _div_rev(u, params, x, t=None):
     return jnp.sum(accu)
 
 
-def _div_fwd(u, params, x, t=None):
+def _div_fwd(t, x, u, params):
     r"""
     Compute the divergence of a **batched** vector field :math:`\mathbf{u}`, i.e.,
     :math:`\nabla \cdot \mathbf{u}(\mathbf{x})` with :math:`\mathbf{u}` a vector
@@ -55,7 +55,7 @@ def _div_fwd(u, params, x, t=None):
     return jnp.sum(accu, axis=0)
 
 
-def _laplacian_rev(u, params, x, t=None):
+def _laplacian_rev(t, x, u, params):
     r"""
     Compute the Laplacian of a scalar field :math:`u` (from :math:`\mathbb{R}^d`
     to :math:`\mathbb{R}`) for :math:`\mathbf{x}` of arbitrary dimension, i.e.,
@@ -98,7 +98,7 @@ def _laplacian_rev(u, params, x, t=None):
     # return jnp.sum(trace_hessian)
 
 
-def _laplacian_fwd(u, params, x, t=None):
+def _laplacian_fwd(t, x, u, params):
     r"""
     Compute the Laplacian of a **batched** scalar field :math:`u`
     (from :math:`\mathbb{R}^{b\times d}` to :math:`\mathbb{R}^{b\times b}`)
@@ -134,7 +134,7 @@ def _laplacian_fwd(u, params, x, t=None):
     return jnp.sum(trace_hessian, axis=0)
 
 
-def _vectorial_laplacian(u, params, x, t=None, u_vec_ndim=None):
+def _vectorial_laplacian(t, x, u, params, u_vec_ndim=None):
     r"""
     Compute the vectorial Laplacian of a vector field :math:`\mathbf{u}` (from
     :math:`\mathbb{R}^d`
@@ -163,7 +163,7 @@ def _vectorial_laplacian(u, params, x, t=None, u_vec_ndim=None):
                 uj = lambda x, params: jnp.expand_dims(u(x, params)[j], axis=-1)
             else:
                 uj = lambda t, x, params: jnp.expand_dims(u(t, x, params)[j], axis=-1)
-            lap_on_j = _laplacian_rev(uj, params, x, t)
+            lap_on_j = _laplacian_rev(t, x, uj, params)
         elif isinstance(u, SPINN):
             if t is None:
                 uj = lambda x, params: jnp.expand_dims(u(x, params)[..., j], axis=-1)
@@ -171,7 +171,7 @@ def _vectorial_laplacian(u, params, x, t=None, u_vec_ndim=None):
                 uj = lambda t, x, params: jnp.expand_dims(
                     u(t, x, params)[..., j], axis=-1
                 )
-            lap_on_j = _laplacian_fwd(uj, params, x, t)
+            lap_on_j = _laplacian_fwd(t, x, uj, params)
 
         return _, lap_on_j
 
@@ -179,7 +179,7 @@ def _vectorial_laplacian(u, params, x, t=None, u_vec_ndim=None):
     return vec_lap
 
 
-def _u_dot_nabla_times_u_rev(u, params, x, t=None):
+def _u_dot_nabla_times_u_rev(t, x, u, params):
     r"""
     Implement :math:`((\mathbf{u}\cdot\nabla)\mathbf{u})(\mathbf{x})` for
     :math:`\mathbf{x}` of arbitrary
@@ -224,7 +224,7 @@ def _u_dot_nabla_times_u_rev(u, params, x, t=None):
     raise NotImplementedError("x.ndim must be 2")
 
 
-def _u_dot_nabla_times_u_fwd(u, params, x, t=None):
+def _u_dot_nabla_times_u_fwd(t, x, u, params):
     r"""
     Implement :math:`((\mathbf{u}\cdot\nabla)\mathbf{u})(\mathbf{x})` for
     :math:`\mathbf{x}` of arbitrary dimension **with a batch dimension**.

@@ -73,7 +73,7 @@ class FisherKPP(PDENonStatio):
 
             du_dt = grad(u_, 0)(t, x)
 
-            lap = _laplacian_rev(u, params, x, t)[..., None]
+            lap = _laplacian_rev(t, x, u, params)[..., None]
 
             return du_dt + self.Tmax * (
                 -params["eq_params"]["D"] * lap
@@ -89,7 +89,7 @@ class FisherKPP(PDENonStatio):
                 (t,),
                 (jnp.ones_like(t),),
             )
-            lap = _laplacian_fwd(u, params, x, t)[..., None]
+            lap = _laplacian_fwd(t, x, u, params)[..., None]
             return du_dt + self.Tmax * (
                 -params["eq_params"]["D"] * lap
                 - u_tx
@@ -610,12 +610,12 @@ class MassConservation2DStatio(PDEStatio):
         if isinstance(u_dict[self.nn_key], PINN):
             u = u_dict[self.nn_key]
 
-            return _div_rev(u, params, x)[..., None]
+            return _div_rev(None, x, u, params)[..., None]
 
         if isinstance(u_dict[self.nn_key], SPINN):
             u = u_dict[self.nn_key]
 
-            return _div_fwd(u, params, x)[..., None]
+            return _div_fwd(None, x, u, params)[..., None]
         raise ValueError("u is not among the recognized types (PINN or SPINN)")
 
 
@@ -700,12 +700,12 @@ class NavierStokes2DStatio(PDEStatio):
         if isinstance(u_dict[self.u_key], PINN):
             u = u_dict[self.u_key]
 
-            u_dot_nabla_x_u = _u_dot_nabla_times_u_rev(u, u_params, x)
+            u_dot_nabla_x_u = _u_dot_nabla_times_u_rev(None, x, u, u_params)
 
             p = lambda x: u_dict[self.p_key](x, p_params)
             jac_p = jacrev(p, 0)(x)  # compute the gradient
 
-            vec_laplacian_u = _vectorial_laplacian(u, u_params, x, u_vec_ndim=2)
+            vec_laplacian_u = _vectorial_laplacian(None, x, u, u_params, u_vec_ndim=2)
 
             # dynamic loss on x axis
             result_x = (
@@ -727,7 +727,7 @@ class NavierStokes2DStatio(PDEStatio):
         if isinstance(u_dict[self.u_key], SPINN):
             u = u_dict[self.u_key]
 
-            u_dot_nabla_x_u = _u_dot_nabla_times_u_fwd(u, u_params, x)
+            u_dot_nabla_x_u = _u_dot_nabla_times_u_fwd(None, x, u, u_params)
 
             p = lambda x: u_dict[self.p_key](x, p_params)
 
@@ -737,7 +737,7 @@ class NavierStokes2DStatio(PDEStatio):
             _, dp_dy = jax.jvp(p, (x,), (tangent_vec_1,))
 
             vec_laplacian_u = jnp.moveaxis(
-                _vectorial_laplacian(u, u_params, x, u_vec_ndim=2),
+                _vectorial_laplacian(None, x, u, u_params, u_vec_ndim=2),
                 source=0,
                 destination=-1,
             )
