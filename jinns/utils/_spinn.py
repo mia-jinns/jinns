@@ -82,16 +82,35 @@ class SPINN:
     The function create_SPINN has the role to population the `__call__` function
     """
 
-    def __init__(self, key, d, r, eqx_list, m=1):
+    def __init__(self, key, d, r, eqx_list, eq_type, m=1):
         self.d, self.r, self.m = d, r, m
         _spinn = _SPINN(key, d, r, eqx_list, m)
         self.params, self.static = eqx.partition(_spinn, eqx.is_inexact_array)
+        self.eq_type = eq_type
 
     def init_params(self):
         return self.params
 
-    def __call__(self, *args, **kwargs):
-        return self.apply_fn(self, *args, **kwargs)
+    def __call__(self, *args):
+        if self.eq_type == "statio_PDE":
+            (x, params) = args
+            try:
+                spinn = eqx.combine(params["nn_params"], self.static)
+            except (KeyError, TypeError) as e:
+                spinn = eqx.combine(params, self.static)
+            v_model = jax.vmap(spinn, (0))
+            res = v_model(t=None, x=x)
+            return self._eval_nn(res)
+        if self.eq_type == "nonstatio_PDE":
+            (t, x, params) = args
+            try:
+                spinn = eqx.combine(params["nn_params"], self.static)
+            except (KeyError, TypeError) as e:
+                spinn = eqx.combine(params, self.static)
+            v_model = jax.vmap(spinn, ((0, 0)))
+            res = v_model(t, x)
+            return self._eval_nn(res)
+        raise RuntimeError("Wrong parameter value for eq_type")
 
     def _eval_nn(self, res):
         """
@@ -209,32 +228,6 @@ def create_SPINN(key, d, r, eqx_list, eq_type, m=1):
             "Too many dimensions, not enough letters available in jnp.einsum"
         )
 
-    if eq_type == "statio_PDE":
-
-        def apply_fn(self, x, params):
-            try:
-                spinn = eqx.combine(params["nn_params"], self.static)
-            except:  # give more flexibility
-                spinn = eqx.combine(params, self.static)
-            v_model = jax.vmap(spinn, (0))
-            res = v_model(t=None, x=x)
-            return self._eval_nn(res)
-
-    elif eq_type == "nonstatio_PDE":
-
-        def apply_fn(self, t, x, params):
-            try:
-                spinn = eqx.combine(params["nn_params"], self.static)
-            except:  # give more flexibility
-                spinn = eqx.combine(params, self.static)
-            v_model = jax.vmap(spinn, ((0, 0)))
-            res = v_model(t, x)
-            return self._eval_nn(res)
-
-    else:
-        raise RuntimeError("Wrong parameter value for eq_type")
-
-    spinn = SPINN(key, d, r, eqx_list, m)
-    spinn.apply_fn = apply_fn
+    spinn = SPINN(key, d, r, eqx_list, eq_type, m)
 
     return spinn

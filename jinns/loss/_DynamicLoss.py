@@ -48,6 +48,7 @@ class FisherKPP(PDENonStatio):
         """
         super().__init__(Tmax, eq_params_heterogeneity)
 
+    @PDENonStatio.evaluate_heterogeneous_parameters
     def evaluate(self, t, x, u, params):
         r"""
         Evaluate the dynamic loss at :math:`(t,x)`.
@@ -67,16 +68,12 @@ class FisherKPP(PDENonStatio):
             differential equation parameters and the neural network parameter
         """
         if isinstance(u, PINN):
-            params["eq_params"] = self._eval_heterogeneous_parameters(
-                params["eq_params"], t, x, self.eq_params_heterogeneity
-            )
-
             # Note that the last dim of u is nec. 1
             u_ = lambda t, x: u(t, x, params)[0]
 
             du_dt = grad(u_, 0)(t, x)
 
-            lap = _laplacian_rev(u, params, x, t)[..., None]
+            lap = _laplacian_rev(t, x, u, params)[..., None]
 
             return du_dt + self.Tmax * (
                 -params["eq_params"]["D"] * lap
@@ -87,17 +84,12 @@ class FisherKPP(PDENonStatio):
                 )
             )
         if isinstance(u, SPINN):
-            x_grid = _get_grid(x)
-            params["eq_params"] = self._eval_heterogeneous_parameters(
-                params["eq_params"], t, x_grid, self.eq_params_heterogeneity
-            )
-
             u_tx, du_dt = jax.jvp(
                 lambda t: u(t, x, params),
                 (t,),
                 (jnp.ones_like(t),),
             )
-            lap = _laplacian_fwd(u, params, x, t)[..., None]
+            lap = _laplacian_fwd(t, x, u, params)[..., None]
             return du_dt + self.Tmax * (
                 -params["eq_params"]["D"] * lap
                 - u_tx
@@ -160,12 +152,8 @@ class BurgerEquation(PDENonStatio):
             differential equation parameters and the neural network parameter
         """
         if isinstance(u, PINN):
-            params["eq_params"] = self._eval_heterogeneous_parameters(
-                params["eq_params"], t, x, self.eq_params_heterogeneity
-            )
-
             # Note that the last dim of u is nec. 1
-            u_ = lambda t, x: u(t, x, params)[0]
+            u_ = lambda t, x: jnp.squeeze(u(t, x, params)[u.slice_solution])
             du_dt = grad(u_, 0)
             du_dx = grad(u_, 1)
             d2u_dx2 = grad(
@@ -179,10 +167,6 @@ class BurgerEquation(PDENonStatio):
             )
 
         if isinstance(u, SPINN):
-            x_grid = _get_grid(x)
-            params["eq_params"] = self._eval_heterogeneous_parameters(
-                params["eq_params"], t, x_grid, self.eq_params_heterogeneity
-            )
             # d=2 JVP calls are expected since we have time and x
             # then with a batch of size B, we then have Bd JVP calls
             u_tx, du_dt = jax.jvp(
@@ -352,10 +336,6 @@ class FPENonStatioLoss2D(PDENonStatio):
             differential equation parameters and the neural network parameter
         """
         if isinstance(u, PINN):
-            params["eq_params"] = self._eval_heterogeneous_parameters(
-                params["eq_params"], t, x, self.eq_params_heterogeneity
-            )
-
             # Note that the last dim of u is nec. 1
             u_ = lambda t, x: u(t, x, params)[0]
 
@@ -411,10 +391,6 @@ class FPENonStatioLoss2D(PDENonStatio):
 
         if isinstance(u, SPINN):
             x_grid = _get_grid(x)
-            params["eq_params"] = self._eval_heterogeneous_parameters(
-                params["eq_params"], t, x_grid, self.eq_params_heterogeneity
-            )
-
             _, du_dt = jax.jvp(
                 lambda t: u(t, x, params),
                 (t,),
@@ -634,12 +610,12 @@ class MassConservation2DStatio(PDEStatio):
         if isinstance(u_dict[self.nn_key], PINN):
             u = u_dict[self.nn_key]
 
-            return _div_rev(u, params, x)[..., None]
+            return _div_rev(None, x, u, params)[..., None]
 
         if isinstance(u_dict[self.nn_key], SPINN):
             u = u_dict[self.nn_key]
 
-            return _div_fwd(u, params, x)[..., None]
+            return _div_fwd(None, x, u, params)[..., None]
         raise ValueError("u is not among the recognized types (PINN or SPINN)")
 
 
@@ -724,12 +700,12 @@ class NavierStokes2DStatio(PDEStatio):
         if isinstance(u_dict[self.u_key], PINN):
             u = u_dict[self.u_key]
 
-            u_dot_nabla_x_u = _u_dot_nabla_times_u_rev(u, u_params, x)
+            u_dot_nabla_x_u = _u_dot_nabla_times_u_rev(None, x, u, u_params)
 
             p = lambda x: u_dict[self.p_key](x, p_params)
             jac_p = jacrev(p, 0)(x)  # compute the gradient
 
-            vec_laplacian_u = _vectorial_laplacian(u, u_params, x, u_vec_ndim=2)
+            vec_laplacian_u = _vectorial_laplacian(None, x, u, u_params, u_vec_ndim=2)
 
             # dynamic loss on x axis
             result_x = (
@@ -751,7 +727,7 @@ class NavierStokes2DStatio(PDEStatio):
         if isinstance(u_dict[self.u_key], SPINN):
             u = u_dict[self.u_key]
 
-            u_dot_nabla_x_u = _u_dot_nabla_times_u_fwd(u, u_params, x)
+            u_dot_nabla_x_u = _u_dot_nabla_times_u_fwd(None, x, u, u_params)
 
             p = lambda x: u_dict[self.p_key](x, p_params)
 
@@ -761,7 +737,7 @@ class NavierStokes2DStatio(PDEStatio):
             _, dp_dy = jax.jvp(p, (x,), (tangent_vec_1,))
 
             vec_laplacian_u = jnp.moveaxis(
-                _vectorial_laplacian(u, u_params, x, u_vec_ndim=2),
+                _vectorial_laplacian(None, x, u, u_params, u_vec_ndim=2),
                 source=0,
                 destination=-1,
             )

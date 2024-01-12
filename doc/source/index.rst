@@ -8,6 +8,14 @@ Welcome to jinn's documentation!
 
 Changelog:
 
+* v0.6.1:
+
+    - Generalization and improvements of heterogeneous equation parameters (in particular, an equation parameter can now be set as a PINN output). Introduce a decorator for simpler and cleaner dynamic losses with heterogeneous parameters).
+
+    - Inverse problems from the literature are coded in notebooks 2D_Poisson_inverse and 2D_Heat_inverse.
+
+    - Diverse code improvements, code corrections and updated notebooks.
+
 * v0.6.0:
 
     - Code refactoring: now we only pass `params` to the PINN. If we want to add some elements of `params["eq_params"]` as inputs of the PINN we can do so through a `input_transform(t, x, params)` function. See the Burger notebook for inverse problem.
