@@ -501,9 +501,11 @@ class LossPDEStatio(LossPDEAbstract):
             dictionaries: `eq_params` and `nn_params``, respectively the
             differential equation parameters and the neural network parameter
         batch
-            A tuple.
-            A batch of points in the domain and a batch of points in the domain
-            border
+            A PDEStatioBatch object.
+            Such a named tuple is composed of a batch of points in the
+            domain, a batch of points in the domain
+            border and an optional additional batch of parameters (eg. for
+            metamodeling)
         """
         omega_batch, omega_border_batch = batch.inside_batch, batch.border_batch
 
@@ -912,9 +914,11 @@ class LossPDENonStatio(LossPDEStatio):
             dictionaries: `eq_params` and `nn_params`, respectively the
             differential equation parameters and the neural network parameter
         batch
-            A tuple.
-            A batch of points in the domain, a batch of points in the domain
-            border and a batch of time points
+            A PDENonStatioBatch object.
+            Such a named tuple is composed of a batch of points in
+            the domain, a batch of points in the domain
+            border, a batch of time points and an optional additional batch
+            of parameters (eg. for metamodeling)
         """
 
         omega_batch, omega_border_batch, times_batch = (
@@ -1523,7 +1527,11 @@ class SystemLossPDE:
             dictionaries: `eq_params` and `nn_params``, respectively the
             differential equation parameters and the neural network parameter
         batch
-            A batch of time points at which to evaluate the loss
+            A PDEStatioBatch or PDENonStatioBatch object.
+            Such named tuples are composed of  batch of points in the
+            domain, a batch of points in the domain
+            border, (a batch of time points a for PDENonStatioBatch) and an
+            optional additional batch of parameters (eg. for metamodeling)
         """
         if self.u_dict.keys() != params_dict["nn_params"].keys():
             raise ValueError("u_dict and params_dict[nn_params] should have same keys ")
