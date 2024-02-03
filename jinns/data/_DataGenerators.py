@@ -1087,15 +1087,21 @@ class DataGeneratorParameter:
             once during 1 epoch.
         param_batch_size
             An integer. The size of the batch of randomly selected points among
-            the `n` points
+            the `n` points.  `param_batch_size` will be the same for all the
+            additional batch(es) of parameter(s). `param_batch_size` must be
+            equal to `temporal_batch_size` or `omega_batch_size` or the product
+            of both whether the present DataGeneratorParameter instance
+            complements and ODEBatch, a PDEStatioBatch or a PDENonStatioBatch,
+            respectively.
         param_ranges
             A dict. A dict of tuples (min, max), which
             reprensents the range of real numbers where to sample batches (of
             length `param_batch_size` among `n` points).
-            The key corresponds to the parameter name.
-            By providing several entries in this dictionary we can sample an arbitrary
-            number of parameters.
-            **Note** that we currently only support unidimensional parameters
+            The key corresponds to the parameter name. The keys must match the
+            keys in `params["eq_params"]`.
+            By providing several entries in this dictionary we can sample
+            an arbitrary number of parameters.
+            __Note__ that we currently only support unidimensional parameters
         method
             Either `grid` or `uniform`, default is `grid`. `grid` means
             regularly spaced points over the domain. `uniform` means uniformly
@@ -1133,7 +1139,6 @@ class DataGeneratorParameter:
         # Generate param n samples
         self.param_n_samples = {}
         for k, e in self.param_ranges.items():
-            # TODO add support for multidimensional additional_data key
             if self.method == "grid":
                 xmin, xmax = e[0], e[1]
                 self.partial = (xmax - xmin) / self.n
@@ -1150,7 +1155,7 @@ class DataGeneratorParameter:
 
     def param_batch(self):
         """
-        Return a ditionary with batches of parameters
+        Return a dictionary with batches of parameters
         If all the batches have been seen, we reshuffle them,
         otherwise we just return the next unseen batch.
         """
