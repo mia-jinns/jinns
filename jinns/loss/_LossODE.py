@@ -5,7 +5,7 @@ Main module to implement a ODE loss in jinns
 import jax
 import jax.numpy as jnp
 from jax import vmap
-from jax.tree_util import register_pytree_node_class, tree_multimap
+from jax.tree_util import register_pytree_node_class, tree_map
 from jinns.utils._utils import _get_vmap_in_axes_params, _set_derivatives
 
 
@@ -152,7 +152,7 @@ class LossODE:
         # and update vmap_in_axes
         if batch.param_batch_dict is not None:
             eq_params_batch_dict = batch.param_batch_dict
-            params["eq_params"] = tree_multimap(
+            params["eq_params"] = tree_map(
                 lambda p, q: q, params["eq_params"], eq_params_batch_dict
             )
 
