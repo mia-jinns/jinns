@@ -7,7 +7,7 @@ import warnings
 import jax
 import jax.numpy as jnp
 from jax import vmap
-from jax.tree_util import register_pytree_node_class
+from jax.tree_util import register_pytree_node_class, tree_multimap
 from jinns.loss._boundary_conditions import (
     _compute_boundary_loss_statio,
     _compute_boundary_loss_nonstatio,
@@ -516,10 +516,11 @@ class LossPDEStatio(LossPDEAbstract):
         # and update vmap_in_axes
         if batch.param_batch_dict is not None:
             eq_params_batch_dict = batch.param_batch_dict
-
-            # feed the eq_params with the batch
-            for k in eq_params_batch_dict.keys():
-                params["eq_params"][k] = eq_params_batch_dict[k]
+            params["eq_params"] = tree_multimap(
+                lambda p, q: q, params["eq_params"], eq_params_batch_dict
+            )  # eq_params_batch_dict can have params['eq_params'] has a prefix
+            # so eq_params_batch_dict can have less keys that
+            # params['eq_params'] where no update would happen
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
@@ -940,10 +941,9 @@ class LossPDENonStatio(LossPDEStatio):
         # and update vmap_in_axes
         if batch.param_batch_dict is not None:
             eq_params_batch_dict = batch.param_batch_dict
-
-            # feed the eq_params with the batch
-            for k in eq_params_batch_dict.keys():
-                params["eq_params"][k] = eq_params_batch_dict[k]
+            params["eq_params"] = tree_multimap(
+                lambda p, q: q, params["eq_params"], eq_params_batch_dict
+            )
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
@@ -1563,10 +1563,9 @@ class SystemLossPDE:
         # and update vmap_in_axes
         if batch.param_batch_dict is not None:
             eq_params_batch_dict = batch.param_batch_dict
-
-            # feed the eq_params with the batch
-            for k in eq_params_batch_dict.keys():
-                params_dict["eq_params"][k] = eq_params_batch_dict[k]
+            params_dict["eq_params"] = tree_multimap(
+                lambda p, q: q, params_dict["eq_params"], eq_params_batch_dict
+            )
 
         vmap_in_axes_params = _get_vmap_in_axes_params(
             batch.param_batch_dict, params_dict
