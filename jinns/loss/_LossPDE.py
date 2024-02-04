@@ -554,13 +554,13 @@ class LossPDEStatio(LossPDEAbstract):
         if self.normalization_loss is not None:
             if isinstance(self.u, PINN):
                 v_u = vmap(
-                    lambda x: self.u(x, params_)[self.u.slice_solution],
-                    (0),
+                    lambda x, params_: self.u(x, params_)[self.u.slice_solution],
+                    (0,) + vmap_in_axes_params,
                     0,
                 )
                 mse_norm_loss = self.loss_weights["norm_loss"] * jnp.mean(
                     jnp.abs(
-                        jnp.mean(v_u(self.get_norm_samples()), axis=-1)
+                        jnp.mean(v_u(self.get_norm_samples(), params_), axis=-1)
                         * self.int_length
                         - 1
                     )
@@ -598,7 +598,7 @@ class LossPDEStatio(LossPDEAbstract):
                             * _compute_boundary_loss_statio(
                                 self.omega_boundary_condition[facet],
                                 self.omega_boundary_fun[facet],
-                                omega_border_batch[..., idx],
+                                batch,
                                 self.u,
                                 params_,
                                 idx,
@@ -613,7 +613,7 @@ class LossPDEStatio(LossPDEAbstract):
                         * _compute_boundary_loss_statio(
                             self.omega_boundary_condition,
                             self.omega_boundary_fun,
-                            omega_border_batch[..., facet],
+                            batch,
                             self.u,
                             params_,
                             facet,
@@ -629,11 +629,11 @@ class LossPDEStatio(LossPDEAbstract):
             # TODO implement for SPINN
             if isinstance(self.u, PINN):
                 v_u = vmap(
-                    lambda x: self.u(x, params_)[self.u.slice_solution],
-                    0,
+                    lambda x, params_: self.u(x, params_)[self.u.slice_solution],
+                    (0,) + vmap_in_axes_params,
                     0,
                 )
-                val = v_u(self.obs_batch[0])
+                val = v_u(self.obs_batch[0], params_)
                 mse_observation_loss = jnp.mean(
                     self.loss_weights["observations"]
                     * jnp.sum(
@@ -657,15 +657,15 @@ class LossPDEStatio(LossPDEAbstract):
             # TODO implement for SPINN
             if isinstance(self.u, PINN):
                 v_sob_reg = vmap(
-                    lambda x: self.sobolev_reg(  # pylint: disable=E1121
+                    lambda x, params_: self.sobolev_reg(  # pylint: disable=E1121
                         x,
                         params_,
                     ),
-                    (0, 0),
+                    (0,) + vmap_in_axes_params,
                     0,
                 )
                 mse_sobolev_loss = self.loss_weights["sobolev"] * jnp.mean(
-                    v_sob_reg(omega_batch)
+                    v_sob_reg(omega_batch, params_)
                 )
             elif isinstance(self.u, SPINN):
                 raise RuntimeError("Sobolev loss term not yet implemented for SPINNs")
@@ -982,12 +982,12 @@ class LossPDENonStatio(LossPDEStatio):
             if isinstance(self.u, PINN):
                 v_u = vmap(
                     vmap(
-                        lambda t, x: self.u(t, x, params_),
-                        in_axes=(None, 0),
+                        lambda t, x, params_: self.u(t, x, params_),
+                        in_axes=(None, 0) + vmap_in_axes_params,
                     ),
-                    in_axes=(0, None),
+                    in_axes=(0, None) + vmap_in_axes_params,
                 )
-                res = v_u(times_batch, self.get_norm_samples())
+                res = v_u(times_batch, self.get_norm_samples(), params_)
                 # the outer mean() below is for the times stamps
                 mse_norm_loss = self.loss_weights["norm_loss"] * jnp.mean(
                     jnp.abs(jnp.mean(res, axis=(-2, -1)) * self.int_length - 1) ** 2
@@ -1029,8 +1029,7 @@ class LossPDENonStatio(LossPDEStatio):
                             * _compute_boundary_loss_nonstatio(
                                 self.omega_boundary_condition[facet],
                                 self.omega_boundary_fun[facet],
-                                times_batch,
-                                omega_border_batch[..., idx],
+                                batch,
                                 self.u,
                                 params_,
                                 idx,
@@ -1045,8 +1044,7 @@ class LossPDENonStatio(LossPDEStatio):
                         * _compute_boundary_loss_nonstatio(
                             self.omega_boundary_condition,
                             self.omega_boundary_fun,
-                            times_batch,
-                            omega_border_batch[..., facet],
+                            batch,
                             self.u,
                             params_,
                             facet,
@@ -1061,12 +1059,16 @@ class LossPDENonStatio(LossPDEStatio):
         if self.initial_condition_fun is not None:
             if isinstance(self.u, PINN):
                 v_u_t0 = vmap(
-                    lambda x: self.initial_condition_fun(x)
+                    lambda x, params_: self.initial_condition_fun(x)
                     - self.u(jnp.zeros((1,)), x, params_),
-                    (0),
+                    (0,) + vmap_in_axes_params,
                     0,
                 )
-                res = v_u_t0(omega_batch)
+                res = v_u_t0(omega_batch_, params_)  # NOTE take the tiled
+                # omega_batch (ie omega_batch_) to have the same batch
+                # dimension as params to be able to vmap.
+                # Recall that by convention:
+                # param_batch_dict = times_batch_size * omega_batch_size
                 mse_initial_condition = jnp.mean(
                     self.loss_weights["initial_condition"] * jnp.sum(res**2, axis=-1)
                 )
@@ -1094,11 +1096,11 @@ class LossPDENonStatio(LossPDEStatio):
             # TODO implement for SPINN
             if isinstance(self.u, PINN):
                 v_u = vmap(
-                    lambda t, x: self.u(t, x, params_)[self.u.slice_solution],
-                    (0, 0),
+                    lambda t, x, params_: self.u(t, x, params_)[self.u.slice_solution],
+                    (0, 0) + vmap_in_axes_params,
                     0,
                 )
-                val = v_u(self.obs_batch[0][:, None], self.obs_batch[1])
+                val = v_u(self.obs_batch[0][:, None], self.obs_batch[1], params_)
                 mse_observation_loss = jnp.mean(
                     self.loss_weights["observations"]
                     * jnp.sum(
@@ -1122,14 +1124,14 @@ class LossPDENonStatio(LossPDEStatio):
             # TODO implement for SPINN
             if isinstance(self.u, PINN):
                 v_sob_reg = vmap(
-                    lambda t, x: self.sobolev_reg(  # pylint: disable=E1121
+                    lambda t, x, params_: self.sobolev_reg(  # pylint: disable=E1121
                         t, x, params_
                     ),
-                    (0, 0),
+                    (0, 0) + vmap_in_axes_params,
                     0,
                 )
                 mse_sobolev_loss = self.loss_weights["sobolev"] * jnp.mean(
-                    v_sob_reg(omega_batch_, times_batch_)
+                    v_sob_reg(omega_batch_, times_batch_, params_)
                 )
             elif isinstance(self.u, SPINN):
                 raise RuntimeError("Sobolev loss term not yet implemented for SPINNs")

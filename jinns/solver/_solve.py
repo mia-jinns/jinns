@@ -131,6 +131,7 @@ def solve(
             )
             or (
                 isinstance(data, CubicMeshPDEStatio)
+                and not isinstance(data, CubicMeshPDENonStatio)
                 and param_data.param_batch_size != data.omega_batch_size
             )
             or (
