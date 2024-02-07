@@ -1,5 +1,6 @@
 """
-Implements utility function to create PINNs
+Implements utility function to create Separable PINNs
+https://arxiv.org/abs/2211.08761
 """
 
 import jax
