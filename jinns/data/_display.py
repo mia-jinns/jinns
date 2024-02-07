@@ -116,8 +116,8 @@ def plot2d(
                     values_grid, mesh, plot=False, colorbar=True, spinn=True
                 )
             im = ax.pcolormesh(mesh[0], mesh[1], t_slice, cmap=cmap)
-            ax.set_title(f"t = {times[idx] * Tmax}")
-            ax.cax.colorbar(im)
+            ax.set_title(f"t = {times[idx] * Tmax:.2f}")
+            ax.cax.colorbar(im, format="%0.2f")
 
 
 def _plot_2D_statio(
@@ -155,7 +155,7 @@ def _plot_2D_statio(
         fig = plt.figure(figsize=figsize)
         im = plt.pcolormesh(x_grid, y_grid, values_grid, cmap=cmap)
         if colorbar:
-            fig.colorbar(im)
+            fig.colorbar(im, format="%0.2f")
         # don't plt.show() because it is done in plot2d()
     else:
         return values_grid, plt.gca()
@@ -200,7 +200,7 @@ def plot1d_slice(
             values = jnp.squeeze(
                 fun(t * jnp.ones((xdata.shape[0], 1)), xdata[..., None])[0]
             )
-        plt.plot(xdata, values, label=f"$t_i={t * Tmax}$")
+        plt.plot(xdata, values, label=f"$t_i={t * Tmax:.2f}$")
     plt.xlabel("x")
     plt.ylabel(r"$u(t_i, x)$")
     plt.legend()
@@ -252,5 +252,5 @@ def plot1d_image(
     fig, ax = plt.subplots(1, 1, figsize=figsize)
     im = ax.pcolormesh(mesh[0] * Tmax, mesh[1], values_grid, cmap=cmap)
     if colorbar:
-        fig.colorbar(im)
+        fig.colorbar(im, format="%0.2f")
     ax.set_title(title)
