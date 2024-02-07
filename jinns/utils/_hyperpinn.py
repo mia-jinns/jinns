@@ -134,7 +134,7 @@ class HYPERPINN(PINN):
                 [params["eq_params"][k].flatten() for k in self.hyperparams], axis=0
             )
         )
-        self.hyper_to_pinn(hyper_output)
+        self.hyper_to_pinn(hyper_output)  # in place transform
 
         pinn = eqx.combine(self.params, self.static)
         res = output_transform(inputs, pinn(input_transform(inputs, params)).squeeze())
@@ -158,6 +158,7 @@ def create_HYPERPINN(
     input_transform=None,
     output_transform=None,
     slice_solution=None,
+    shared_pinn_outputs=None,
     eqx_list_hyper=None,
 ):
     """
@@ -217,6 +218,13 @@ def create_HYPERPINN(
         when the PINN is also used to output equation parameters for example
         Note that it must be a slice and not an integer (a preprocessing of the
         user provided argument takes care of it)
+    shared_pinn_outputs
+        A tuple of jnp.s_[] (slices) to determine the different output for each
+        network. In this case we return a list of PINNs, one for each output in
+        shared_pinn_outputs. This is useful to create PINNs that share the
+        same network and same parameters; __the user must then use the same
+        parameter set in their manipulation__.
+        Default is None, we only return one stantard PINN.
     eqx_list_hyper
         Same as eqx_list but for the hypernetwork. Default is None, i.e., we
         use the same architecture as the PINN, up to the number of inputs and
@@ -280,6 +288,29 @@ def create_HYPERPINN(
         def output_transform(_in_pinn, _out_pinn):
             return _out_pinn
 
+    if shared_pinn_outputs is not None:
+        hyperpinns = []
+        static = None
+        for output_slice in shared_pinn_outputs:
+            hyperpinn = HYPERPINN(
+                key,
+                eqx_list,
+                eqx_list_hyper,
+                slice_solution,
+                eq_type,
+                input_transform,
+                output_transform,
+                hyperparams,
+                hypernet_input_size,
+                output_slice,
+            )
+            # all the pinns are in fact the same so we share the same static
+            if static is None:
+                static = hyperpinn.static
+            else:
+                hyperpinn.static = static
+            hyperpinns.append(hyperpinn)
+        return hyperpinns
     hyperpinn = HYPERPINN(
         key,
         eqx_list,
