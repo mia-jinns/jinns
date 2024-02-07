@@ -5,7 +5,8 @@ Currently implements the resolution of a Fisher KPP problem
 """
 
 from typing import Callable
-
+from mpl_toolkits.axes_grid1 import ImageGrid
+import matplotlib.pyplot as plt
 import diffrax
 import equinox as eqx  # https://github.com/patrick-kidger/equinox
 import jax
@@ -87,26 +88,15 @@ class SpatialDiscretisation(eqx.Module):
         return self.binop(other, lambda x, y: y - x)
 
 
-def laplacian(y: SpatialDiscretisation, von_neumann: bool) -> SpatialDiscretisation:
+def laplacian(y: SpatialDiscretisation) -> SpatialDiscretisation:
     dx2, dy2 = y.δx**2, y.δy**2
 
     lap_kernel = jnp.array([[0, dy2, 0], [dx2, -2 * (dx2 + dy2), dx2], [0, dy2, 0]])
 
-    if von_neumann:
-        y_extended = jnp.pad(y.vals, pad_width=1)
-        y_extended = y_extended.at[0, :].set(y_extended[2, :])
-        y_extended = y_extended.at[-1, :].set(y_extended[-3, :])
-        y_extended = y_extended.at[:, 0].set(y_extended[:, 2])
-        y_extended = y_extended.at[:, -1].set(y_extended[:, -3])
-        Δy = (
-            jax.scipy.signal.convolve(y_extended, lap_kernel, mode="same") / (dx2 * dy2)
-        )[1:-1, 1:-1]
+    lap_y = jax.scipy.signal.convolve(y.vals, lap_kernel, mode="same") / (dx2 * dy2)
+    y_vals = lap_y
 
-    else:
-        Δy = y.vals
-        Δy = jax.scipy.signal.convolve(Δy, lap_kernel, mode="same") / (dx2 * dy2)
-
-    return SpatialDiscretisation(y.xmin, y.xmax, y.ymin, y.ymax, Δy)
+    return SpatialDiscretisation(y.xmin, y.xmax, y.ymin, y.ymax, y_vals)
 
 
 def dirichlet_boundary_condition(y: SpatialDiscretisation) -> SpatialDiscretisation:
@@ -114,14 +104,57 @@ def dirichlet_boundary_condition(y: SpatialDiscretisation) -> SpatialDiscretisat
     y_vals = y_vals.at[-1, :].set(jnp.zeros_like(y_vals[-1, :]))
     y_vals = y_vals.at[:, 0].set(jnp.zeros_like(y_vals[:, 0]))
     y_vals = y_vals.at[:, -1].set(jnp.zeros_like(y_vals[:, -1]))
-    return SpatialDiscretisation(y.xmin, y.xmax, y.ymin, y.ymax, y.vals)
+    return SpatialDiscretisation(y.xmin, y.xmax, y.ymin, y.ymax, y_vals)
 
 
-def diffrax_solver(pde_control, vector_field):
-    # Prepare ODE object on discretized problem
-    term = diffrax.ODETerm(vector_field)
+def neumann_boundary_condition(y: SpatialDiscretisation) -> SpatialDiscretisation:
+    y_vals = y.vals.at[0, :].set(y.vals[1, :])
+    y_vals = y_vals.at[-1, :].set(y_vals[-2, :])
+    y_vals = y_vals.at[:, 0].set(y_vals[:, 1])
+    y_vals = y_vals.at[:, -1].set(y_vals[:, -2])
+    return SpatialDiscretisation(y.xmin, y.xmax, y.ymin, y.ymax, y_vals)
 
+
+def diffrax_solver(pde_control, term):
     # Solve the ODE
     u_sol = diffrax.diffeqsolve(term, **pde_control["ode_hyperparams"])
 
     return u_sol
+
+
+def plot_diffrax_solution(diffrax_sol, nplot, pde_control):
+    """
+    Plot a 2D diffrax solution at selected times
+    """
+    t_ind = jnp.floor(jnp.linspace(0, len(diffrax_sol.ts), nplot)).astype(int)
+    # t_ind = t_ind.at[0].set(1)
+
+    fig = plt.figure(figsize=(20, 20 * nplot))
+    grid = ImageGrid(
+        fig,
+        111,
+        nrows_ncols=(1, nplot),
+        axes_pad=0.2,
+        share_all=True,
+        cbar_location="bottom",
+        cbar_mode="each",
+        cbar_size="7%",
+        cbar_pad=0.4,
+    )
+
+    (xmin, xmax) = pde_control["xboundary"]
+    (ymin, ymax) = pde_control["yboundary"]
+    for i, ax in enumerate(grid):
+        ti = t_ind[i]
+        im = ax.imshow(
+            diffrax_sol.ys.vals[ti, :, :].T,
+            origin="lower",
+            extent=(xmin, xmax, ymin, ymax),
+            aspect=(xmin - xmax) / (ymin - ymax),
+            cmap="inferno",
+        )
+        ax.set_xlabel("x")
+        ax.set_ylabel("y", rotation=0)
+        ax.set_title(f"Solution with t={diffrax_sol.ts[ti]:.2f}")
+        ax.cax.colorbar(im, format="%0.2f")
+    plt.show()

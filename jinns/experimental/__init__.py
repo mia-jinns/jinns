@@ -3,4 +3,6 @@ from ._diffrax_solver import (
     SpatialDiscretisation,
     laplacian,
     dirichlet_boundary_condition,
+    neumann_boundary_condition,
+    plot_diffrax_solution,
 )
