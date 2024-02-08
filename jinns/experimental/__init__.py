@@ -1,6 +1,6 @@
 from ._diffrax_solver import (
-    diffrax_solver,
     SpatialDiscretisation,
+    reaction_diffusion_2d_vector_field,
     laplacian,
     dirichlet_boundary_condition,
     neumann_boundary_condition,

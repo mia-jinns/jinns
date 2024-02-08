@@ -1,20 +1,16 @@
 """
-This is an adaptation of the diffrax tutorial which indicates how to solve PDEs
-
-Currently implements the resolution of a Fisher KPP problem
+This is originally based on the diffrax tutorial which indicates how to solve PDEs
+using the line method
 """
 
 from typing import Callable
-from mpl_toolkits.axes_grid1 import ImageGrid
 import matplotlib.pyplot as plt
-import diffrax
-import equinox as eqx  # https://github.com/patrick-kidger/equinox
+import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array, Float  # https://github.com/google/jaxtyping
+from jaxtyping import Array, Float
 from jax import vmap
-from functools import partial
-import numpy as np
+from mpl_toolkits.axes_grid1 import ImageGrid
 
 
 class SpatialDiscretisation(eqx.Module):
@@ -88,7 +84,36 @@ class SpatialDiscretisation(eqx.Module):
         return self.binop(other, lambda x, y: y - x)
 
 
+def reaction_diffusion_2d_vector_field(t, y, args):
+    """Version of J. Papaix adapted for JAX & Diffrax"""
+    D, r = args
+
+    nx, ny = y.vals.shape
+    dA = jnp.ones(nx - 1)
+    A = jnp.diag(dA, -1) - 2 * jnp.eye(nx) + jnp.diag(dA, 1)
+
+    dB = jnp.ones(ny - 1)
+    B = jnp.diag(dB, -1) - 2 * jnp.eye(ny) + jnp.diag(dB, 1)
+
+    # Neumann conditions
+    A = A.at[0, 0].set(-1)
+    A = A.at[-1, -1].set(-1)
+    B = B.at[0, 0].set(-1)
+    B = B.at[-1, -1].set(-1)
+
+    A = A / y.δx**2
+    B = B / y.δy**2
+
+    # transpose because he works with a (ny, nx) mesh
+    step = D * (B @ y.vals.T + y.vals.T @ A) + r * y.vals.T * (1 - y.vals.T)
+    return SpatialDiscretisation(y.xmin, y.xmax, y.ymin, y.ymax, step.T)
+
+
 def laplacian(y: SpatialDiscretisation) -> SpatialDiscretisation:
+    """
+    A discrete Laplacian operator in 2D
+    """
+
     dx2, dy2 = y.δx**2, y.δy**2
 
     lap_kernel = jnp.array([[0, dy2, 0], [dx2, -2 * (dx2 + dy2), dx2], [0, dy2, 0]])
@@ -115,19 +140,17 @@ def neumann_boundary_condition(y: SpatialDiscretisation) -> SpatialDiscretisatio
     return SpatialDiscretisation(y.xmin, y.xmax, y.ymin, y.ymax, y_vals)
 
 
-def diffrax_solver(pde_control, term):
-    # Solve the ODE
-    u_sol = diffrax.diffeqsolve(term, **pde_control["ode_hyperparams"])
-
-    return u_sol
-
-
-def plot_diffrax_solution(diffrax_sol, nplot, pde_control):
+def plot_diffrax_solution(diffrax_sol, xbounds, ybounds, t_ind=None, nplot=None):
     """
     Plot a 2D diffrax solution at selected times
     """
-    t_ind = jnp.floor(jnp.linspace(0, len(diffrax_sol.ts), nplot)).astype(int)
-    # t_ind = t_ind.at[0].set(1)
+    if t_ind is None and nplot is None:
+        raise ValueError("At least one of t_ind or nplot must not be None")
+
+    if t_ind is None:
+        t_ind = jnp.floor(jnp.linspace(0, len(diffrax_sol.ts), nplot)).astype(int)
+
+    nplot = len(t_ind)
 
     fig = plt.figure(figsize=(20, 20 * nplot))
     grid = ImageGrid(
@@ -142,8 +165,8 @@ def plot_diffrax_solution(diffrax_sol, nplot, pde_control):
         cbar_pad=0.4,
     )
 
-    (xmin, xmax) = pde_control["xboundary"]
-    (ymin, ymax) = pde_control["yboundary"]
+    (xmin, xmax) = xbounds
+    (ymin, ymax) = ybounds
     for i, ax in enumerate(grid):
         ti = t_ind[i]
         im = ax.imshow(
