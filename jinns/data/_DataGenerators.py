@@ -1,18 +1,13 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @author: Nicolas Jouvin
-# @email: nicolas.jouvin@inrae.fr
-
-import jax.numpy as jnp
-from jax import random, vmap
-from jax.tree_util import register_pytree_node_class
-import jax.lax
-import warnings
-
-import math
+"""
+DataGenerators to generate batches of points in space, time and more
+"""
 
 from typing import NamedTuple
 from jax.typing import ArrayLike
+import jax.numpy as jnp
+from jax import random
+from jax.tree_util import register_pytree_node_class
+import jax.lax
 
 
 class ODEBatch(NamedTuple):
@@ -147,9 +142,9 @@ class DataGeneratorODE:
 
         if rar_parameters is not None and nt_start is None:
             raise ValueError(
-                "nt_start must be provided in the context of RAR" " sampling scheme"
+                "nt_start must be provided in the context of RAR sampling scheme"
             )
-        elif rar_parameters is not None:
+        if rar_parameters is not None:
             self.nt_start = nt_start
             # Default p is None. However, in the RAR sampling scheme we use 0
             # probability to specify non-used collocation points (i.e. points
@@ -338,7 +333,7 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         n_start=None,
         data_exists=False,
     ):
-        """
+        r"""
         Parameters
         ----------
         key
@@ -411,9 +406,9 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
 
         if rar_parameters is not None and n_start is None:
             raise ValueError(
-                "n_start must be provided in the context of RAR" " sampling scheme"
+                "n_start must be provided in the context of RAR sampling scheme"
             )
-        elif rar_parameters is not None:
+        if rar_parameters is not None:
             self.n_start = n_start
             # Default p is None. However, in the RAR sampling scheme we use 0
             # probability to specify non-used collocation points (i.e. points
@@ -492,30 +487,29 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             return random.uniform(
                 subkey, shape=(n_samples, 1), minval=xmin, maxval=xmax
             )
-        else:
-            keys = random.split(self._key, self.dim + 1)
-            self._key = keys[0]
-            return jnp.concatenate(
-                [
-                    random.uniform(
-                        keys[i + 1],
-                        (n_samples, 1),
-                        minval=self.min_pts[i],
-                        maxval=self.max_pts[i],
-                    )
-                    for i in range(self.dim)
-                ],
-                axis=-1,
-            )
+        keys = random.split(self._key, self.dim + 1)
+        self._key = keys[0]
+        return jnp.concatenate(
+            [
+                random.uniform(
+                    keys[i + 1],
+                    (n_samples, 1),
+                    minval=self.min_pts[i],
+                    maxval=self.max_pts[i],
+                )
+                for i in range(self.dim)
+            ],
+            axis=-1,
+        )
 
     def sample_in_omega_border_domain(self, n_samples):
         if self.omega_border_batch_size is None:
             return None
-        elif self.dim == 1:
+        if self.dim == 1:
             xmin = self.min_pts[0]
             xmax = self.max_pts[0]
             return jnp.array([xmin, xmax]).astype(float)
-        elif self.dim == 2:
+        if self.dim == 2:
             # currently hard-coded the 4 edges for d==2
             # TODO : find a general & efficient way to sample from the border
             # (facets) of the hypercube in general dim.
@@ -569,13 +563,13 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
                 ]
             )
             return jnp.stack([xmin, xmax, ymin, ymax], axis=-1)
-        else:
-            raise NotImplementedError(
-                f"Generation of the border of a cube in dimension > 2 is not implemented yet. You are asking for generation in dimension d={self.dim}."
-            )
+        raise NotImplementedError(
+            "Generation of the border of a cube in dimension > 2 is not "
+            + f"implemented yet. You are asking for generation in dimension d={self.dim}."
+        )
 
     def generate_data(self):
-        """
+        r"""
         Construct a complete set of `self.n` :math:`\Omega` points according to the
         specified `self.method`. Also constructs a complete set of `self.nb`
         :math:`\partial\Omega` points if `self.omega_border_batch_size` is not
@@ -611,7 +605,7 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         self.omega_border = self.sample_in_omega_border_domain(self.nb)
 
     def inside_batch(self):
-        """
+        r"""
         Return a batch of points in :math:`\Omega`.
         If all the batches have been seen, we reshuffle them,
         otherwise we just return the next unseen batch.
@@ -644,7 +638,7 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         )
 
     def border_batch(self):
-        """
+        r"""
         Return
 
         - The value `None` if `self.omega_border_batch_size` is `None`.
@@ -662,41 +656,40 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         """
         if self.omega_border_batch_size is None:
             return None
-        elif self.dim == 1:
+        if self.dim == 1:
             # 1-D case, no randomness : we always return the whole omega border,
             # i.e. (1, 1, 2) shape jnp.array([[[xmin], [xmax]]]).
             return self.omega_border[None, None]  # shape is (1, 1, 2)
-        else:
-            bstart = self.curr_omega_border_idx
-            bend = bstart + self.omega_border_batch_size
-            # update curr_omega_idx or/and omega when end of batch is reached
-            # jax.lax.cond is <=> to an if statment but JITable.
+        bstart = self.curr_omega_border_idx
+        bend = bstart + self.omega_border_batch_size
+        # update curr_omega_idx or/and omega when end of batch is reached
+        # jax.lax.cond is <=> to an if statment but JITable.
+        (
+            self._key,
+            self.omega_border,
+            self.curr_omega_border_idx,
+        ) = jax.lax.cond(
+            bend > self.nb,
+            _reset_batch_idx_and_permute,  # true_fun
+            _increment_batch_idx,  # false_fun
             (
                 self._key,
                 self.omega_border,
                 self.curr_omega_border_idx,
-            ) = jax.lax.cond(
-                bend > self.nb,
-                _reset_batch_idx_and_permute,  # true_fun
-                _increment_batch_idx,  # false_fun
-                (
-                    self._key,
-                    self.omega_border,
-                    self.curr_omega_border_idx,
-                    self.omega_border_batch_size,
-                    self.p_border,
-                ),  # arguments
-            )
+                self.omega_border_batch_size,
+                self.p_border,
+            ),  # arguments
+        )
 
-            # commands below are equivalent to
-            # return self.omega[i:(i+batch_size), 0:dim, 0:nb_facets]
-            # and nb_facets = 2 * dimension
-            # but JAX prefer the latter
-            return jax.lax.dynamic_slice(
-                self.omega_border,
-                start_indices=(self.curr_omega_border_idx, 0, 0),
-                slice_sizes=(self.omega_border_batch_size, self.dim, 2 * self.dim),
-            )
+        # commands below are equivalent to
+        # return self.omega[i:(i+batch_size), 0:dim, 0:nb_facets]
+        # and nb_facets = 2 * dimension
+        # but JAX prefer the latter
+        return jax.lax.dynamic_slice(
+            self.omega_border,
+            start_indices=(self.curr_omega_border_idx, 0, 0),
+            slice_sizes=(self.omega_border_batch_size, self.dim, 2 * self.dim),
+        )
 
     def get_batch(self):
         """
@@ -807,7 +800,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         n_start=None,
         data_exists=False,
     ):
-        """
+        r"""
         Parameters
         ----------
         key
@@ -916,7 +909,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         return random.uniform(subkey, (n_samples,), minval=self.tmin, maxval=self.tmax)
 
     def generate_data_nonstatio(self):
-        """
+        r"""
         Construct a complete set of `self.nt` time points according to the
         specified `self.method`. This completes the `super` function
         `generate_data()` which generates :math:`\Omega` and
@@ -1076,7 +1069,7 @@ class DataGeneratorParameter:
         method="grid",
         data_exists=False,
     ):
-        """
+        r"""
         Parameters
         ----------
         key
