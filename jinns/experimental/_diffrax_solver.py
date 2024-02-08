@@ -14,6 +14,16 @@ from mpl_toolkits.axes_grid1 import ImageGrid
 
 
 class SpatialDiscretisation(eqx.Module):
+    """A class inspired and adpated from the diffrax tutorial on non linear
+    heat PDE which indicates how to solve PDE with diffrax.
+
+    It is an equinox module storing the values on a 2-dimensional grid, along
+    with the x and y limits of the grid. Several binary operator such as +, x,
+    - are defined to allow for algebraic manipulation of the class.
+
+    Source : https://docs.kidger.site/diffrax/examples/nonlinear_heat_pde/
+    """
+
     xmin: float = eqx.field(static=True)
     xmax: float = eqx.field(static=True)
     ymin: float = eqx.field(static=True)
@@ -84,8 +94,22 @@ class SpatialDiscretisation(eqx.Module):
         return self.binop(other, lambda x, y: y - x)
 
 
-def reaction_diffusion_2d_vector_field(t, y, args):
-    """Version of J. Papaix adapted for JAX & Diffrax"""
+def reaction_diffusion_2d_vector_field(
+    t, y: SpatialDiscretisation, args
+) -> SpatialDiscretisation:
+    """
+    Matrix stencil implementation of the reaction-diffusion equation using
+    finite differences. See e.g. Section 2.6.1 of
+    https://hplgit.github.io/fdm-book/doc/pub/book/pdf/fdm-book-4screen.pdf
+
+    The reaction-diffusion equation is
+    .. math::
+        \partial_t u = D \Delta u + r u (1-u).
+
+    In diffrax, the `vector_field` is the derivative of the function y with
+    respect to time `t` in the ODE :math:`y'(t) = F(y(t), t)`. Here it does not
+    depend on `t`.
+    """
     D, r = args
 
     nx, ny = y.vals.shape
@@ -95,7 +119,7 @@ def reaction_diffusion_2d_vector_field(t, y, args):
     dB = jnp.ones(ny - 1)
     B = jnp.diag(dB, -1) - 2 * jnp.eye(ny) + jnp.diag(dB, 1)
 
-    # Neumann conditions
+    # Neumann conditions (corresponding to central finite difference)
     A = A.at[0, 0].set(-1)
     A = A.at[-1, -1].set(-1)
     B = B.at[0, 0].set(-1)
@@ -111,7 +135,7 @@ def reaction_diffusion_2d_vector_field(t, y, args):
 
 def laplacian(y: SpatialDiscretisation) -> SpatialDiscretisation:
     """
-    A discrete Laplacian operator in 2D
+    NOT USED. Alternative implementation of the discrete laplacian
     """
 
     dx2, dy2 = y.δx**2, y.δy**2
@@ -125,6 +149,9 @@ def laplacian(y: SpatialDiscretisation) -> SpatialDiscretisation:
 
 
 def dirichlet_boundary_condition(y: SpatialDiscretisation) -> SpatialDiscretisation:
+    """
+    NOT USED. Dirichlet boundary condition
+    """
     y_vals = y.vals.at[0, :].set(jnp.zeros_like(y.vals[0, :]))
     y_vals = y_vals.at[-1, :].set(jnp.zeros_like(y_vals[-1, :]))
     y_vals = y_vals.at[:, 0].set(jnp.zeros_like(y_vals[:, 0]))
@@ -133,6 +160,9 @@ def dirichlet_boundary_condition(y: SpatialDiscretisation) -> SpatialDiscretisat
 
 
 def neumann_boundary_condition(y: SpatialDiscretisation) -> SpatialDiscretisation:
+    """
+    NOT USED. Neumann boundary condition
+    """
     y_vals = y.vals.at[0, :].set(y.vals[1, :])
     y_vals = y_vals.at[-1, :].set(y_vals[-2, :])
     y_vals = y_vals.at[:, 0].set(y_vals[:, 1])
