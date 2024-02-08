@@ -97,7 +97,7 @@ class SpatialDiscretisation(eqx.Module):
 def reaction_diffusion_2d_vector_field(
     t, y: SpatialDiscretisation, args
 ) -> SpatialDiscretisation:
-    """
+    r"""
     Matrix stencil implementation of the reaction-diffusion equation using
     finite differences. See e.g. Section 2.6.1 of
     https://hplgit.github.io/fdm-book/doc/pub/book/pdf/fdm-book-4screen.pdf
