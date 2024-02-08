@@ -94,30 +94,14 @@ class HYPERPINN(PINN):
                 for i in range(len(self.pinn_params_cumsum) - 1)
             ],
         )
+        # NOTE will it be problematic to store the pinn parameters for bigger
+        # network, or are we limited by the allocation on GPU anyway?
         self.params = tree_map(
             lambda a, b: a.reshape(b.shape),
             pinn_params_flat,
             self.params,
             is_leaf=lambda x: isinstance(x, jnp.ndarray),
         )
-
-    def __call__(self, *args):
-        if self.eq_type == "ODE":
-            (t, params) = args
-            t = t[None]  #  Add dimension which is lacking for the ODE batches
-            return self._eval_nn(
-                t, params, self.input_transform, self.output_transform
-            ).squeeze()
-        if self.eq_type == "statio_PDE":
-            (x, params) = args
-            return self._eval_nn(x, params, self.input_transform, self.output_transform)
-        if self.eq_type == "nonstatio_PDE":
-            (t, x, params) = args
-            t_x = jnp.concatenate([t, x], axis=-1)
-            return self._eval_nn(
-                t_x, params, self.input_transform, self.output_transform
-            )
-        raise ValueError("Wrong value for self.eq_type")
 
     def _eval_nn(self, inputs, params, input_transform, output_transform):
         """
