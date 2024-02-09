@@ -196,7 +196,7 @@ def create_HYPERPINN(
         output that will be called after exiting the PINN. Default is the No
         operation
     slice_solution
-        A jnp.s_ object which indicates which axis of the PINN output is
+        A jnp.s\_ object which indicates which axis of the PINN output is
         dedicated to the actual equation solution. Default None
         means that slice_solution = the whole PINN output. This argument is useful
         when the PINN is also used to output equation parameters for example

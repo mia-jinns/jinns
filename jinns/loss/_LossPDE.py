@@ -312,7 +312,7 @@ class LossPDEStatio(LossPDEAbstract):
             The facet called "xmin", resp. "xmax" etc., in 2D,
             refers to the set of 2D points with fixed "xmin", resp. "xmax", etc.
         omega_boundary_dim
-            Either None, or a jnp.s_ or a dict of jnp.s_ with keys following
+            Either None, or a jnp.s\_ or a dict of jnp.s\_ with keys following
             the logic of omega_boundary_fun. It indicates which dimension(s) of
             the PINN will be forced to match the boundary condition
             Note that it must be a slice and not an integer (a preprocessing of the
@@ -808,7 +808,7 @@ class LossPDENonStatio(LossPDEStatio):
             The facet called "xmin", resp. "xmax" etc., in 2D,
             refers to the set of 2D points with fixed "xmin", resp. "xmax", etc.
         omega_boundary_dim
-            Either None, or a jnp.s_ or a dict of jnp.s_ with keys following
+            Either None, or a jnp.s\_ or a dict of jnp.s\_ with keys following
             the logic of omega_boundary_fun. It indicates which dimension(s) of
             the PINN will be forced to match the boundary condition
             Note that it must be a slice and not an integer (a preprocessing of the

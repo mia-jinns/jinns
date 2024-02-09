@@ -52,7 +52,7 @@ def _compute_boundary_loss_statio(
         An integer which represents the id of the facet which is currently
         considered (in the order provided by the DataGenerator which is fixed)
     dim_to_apply
-        A jnp.s_ object which indicates which dimension(s) of u will be forced
+        A jnp.s\_ object which indicates which dimension(s) of u will be forced
         to match the boundary condition
 
     Returns
@@ -118,7 +118,7 @@ def _compute_boundary_loss_nonstatio(
         An integer which represents the id of the facet which is currently
         considered (in the order provided by the DataGenerator which is fixed)
     dim_to_apply
-        A jnp.s_ object. The dimension of u on which to apply the boundary condition
+        A jnp.s\_ object. The dimension of u on which to apply the boundary condition
 
     Returns
     -------
@@ -162,7 +162,7 @@ def boundary_dirichlet_statio(f, batch, u, params, facet, dim_to_apply):
         dictionaries: `eq_params` and `nn_params``, respectively the
         differential equation parameters and the neural network parameter
     dim_to_apply
-        A jnp.s_ object. The dimension of u on which to apply the boundary condition
+        A jnp.s\_ object. The dimension of u on which to apply the boundary condition
     """
     _, border_batch = batch.inside_batch, batch.border_batch
     border_batch = border_batch[..., facet]
@@ -221,7 +221,7 @@ def boundary_neumann_statio(f, batch, u, params, facet, dim_to_apply):
         An integer which represents the id of the facet which is currently
         considered (in the order provided wy the DataGenerator which is fixed)
     dim_to_apply
-        A jnp.s_ object. The dimension of u on which to apply the boundary condition
+        A jnp.s\_ object. The dimension of u on which to apply the boundary condition
     """
     _, border_batch = batch.inside_batch, batch.border_batch
     border_batch = border_batch[..., facet]
@@ -332,7 +332,7 @@ def boundary_dirichlet_nonstatio(f, batch, u, params, facet, dim_to_apply):
         An integer which represents the id of the facet which is currently
         considered (in the order provided wy the DataGenerator which is fixed)
     dim_to_apply
-        A jnp.s_ object. The dimension of u on which to apply the boundary condition
+        A jnp.s\_ object. The dimension of u on which to apply the boundary condition
     """
     _, omega_border_batch, times_batch = (
         batch.inside_batch,
@@ -424,7 +424,7 @@ def boundary_neumann_nonstatio(f, batch, u, params, facet, dim_to_apply):
         An integer which represents the id of the facet which is currently
         considered (in the order provided wy the DataGenerator which is fixed)
     dim_to_apply
-        A jnp.s_ object. The dimension of u on which to apply the boundary condition
+        A jnp.s\_ object. The dimension of u on which to apply the boundary condition
     """
     _, omega_border_batch, times_batch = (
         batch.inside_batch,

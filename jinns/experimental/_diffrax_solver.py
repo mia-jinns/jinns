@@ -103,6 +103,7 @@ def reaction_diffusion_2d_vector_field(
     https://hplgit.github.io/fdm-book/doc/pub/book/pdf/fdm-book-4screen.pdf
 
     The reaction-diffusion equation is
+
     .. math::
         \partial_t u = D \Delta u + r u (1-u).
 
