@@ -1,18 +1,13 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @author: Nicolas Jouvin
-# @email: nicolas.jouvin@inrae.fr
-
-import jax.numpy as jnp
-from jax import random, vmap
-from jax.tree_util import register_pytree_node_class
-import jax.lax
-import warnings
-
-import math
+"""
+DataGenerators to generate batches of points in space, time and more
+"""
 
 from typing import NamedTuple
 from jax.typing import ArrayLike
+import jax.numpy as jnp
+from jax import random
+from jax.tree_util import register_pytree_node_class
+import jax.lax
 
 
 class ODEBatch(NamedTuple):
@@ -41,7 +36,6 @@ def append_param_batch(batch, param_batch_dict):
     return batch._replace(param_batch_dict=param_batch_dict)
 
 
-# utility function for jax.lax.cond in *_batch() method
 def _reset_batch_idx_and_permute(operands):
     key, domain, curr_idx, _, p = operands
     # resetting counter
@@ -62,6 +56,35 @@ def _increment_batch_idx(operands):
     # simply increases counter and get the batch
     curr_idx += batch_size
     return (key, domain, curr_idx)
+
+
+def _reset_or_increment(bend, n_eff, operands):
+    """
+    Factorize the code of the jax.lax.cond which checks if we have seen all the
+    batches in an epoch
+    If bend > n_eff (ie n when no RAR sampling) we reshuffle and start from 0
+    again. Otherwise, if bend < n_eff, this means there are still *_batch_size
+    samples at least that have not been seen and we can take a new batch
+
+    Parameters
+    ----------
+    bend
+        An integer. The new hypothetical index for the starting of the batch
+    n_eff
+        An integer. The number of points to see to complete an epoch
+    operands
+        A tuple. As passed to _reset_batch_idx_and_permute and
+        _increment_batch_idx
+
+    Returns
+    -------
+    res
+        A tuple as returned by _reset_batch_idx_and_permute or
+        _increment_batch_idx
+    """
+    return jax.lax.cond(
+        bend > n_eff, _reset_batch_idx_and_permute, _increment_batch_idx, operands
+    )
 
 
 #####################################################
@@ -147,9 +170,9 @@ class DataGeneratorODE:
 
         if rar_parameters is not None and nt_start is None:
             raise ValueError(
-                "nt_start must be provided in the context of RAR" " sampling scheme"
+                "nt_start must be provided in the context of RAR sampling scheme"
             )
-        elif rar_parameters is not None:
+        if rar_parameters is not None:
             self.nt_start = nt_start
             # Default p is None. However, in the RAR sampling scheme we use 0
             # probability to specify non-used collocation points (i.e. points
@@ -175,7 +198,7 @@ class DataGeneratorODE:
             self.curr_time_idx = 0
             self.generate_time_data()
             self._key, self.times, _ = _reset_batch_idx_and_permute(
-                (self._key, self.times, self.curr_time_idx, None, self.p)
+                self._get_time_operands()
             )
 
     def sample_in_time_domain(self, n_samples):
@@ -198,6 +221,15 @@ class DataGeneratorODE:
         else:
             raise ValueError("Method " + self.method + " is not implemented.")
 
+    def _get_time_operands(self):
+        return (
+            self._key,
+            self.times,
+            self.curr_time_idx,
+            self.temporal_batch_size,
+            self.p,
+        )
+
     def temporal_batch(self):
         """
         Return a batch of time points. If all the batches have been seen, we
@@ -214,17 +246,8 @@ class DataGeneratorODE:
             )
         else:
             nt_eff = self.nt
-        (self._key, self.times, self.curr_time_idx) = jax.lax.cond(
-            bend > nt_eff,
-            _reset_batch_idx_and_permute,
-            _increment_batch_idx,
-            (
-                self._key,
-                self.times,
-                self.curr_time_idx,
-                self.temporal_batch_size,
-                self.p,
-            ),
+        (self._key, self.times, self.curr_time_idx) = _reset_or_increment(
+            bend, nt_eff, self._get_time_operands()
         )
 
         # commands below are equivalent to
@@ -338,7 +361,7 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         n_start=None,
         data_exists=False,
     ):
-        """
+        r"""
         Parameters
         ----------
         key
@@ -411,9 +434,9 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
 
         if rar_parameters is not None and n_start is None:
             raise ValueError(
-                "n_start must be provided in the context of RAR" " sampling scheme"
+                "n_start must be provided in the context of RAR sampling scheme"
             )
-        elif rar_parameters is not None:
+        if rar_parameters is not None:
             self.n_start = n_start
             # Default p is None. However, in the RAR sampling scheme we use 0
             # probability to specify non-used collocation points (i.e. points
@@ -472,17 +495,11 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             self.curr_omega_border_idx = 0
             self.generate_data()
             self._key, self.omega, _ = _reset_batch_idx_and_permute(
-                (self._key, self.omega, self.curr_omega_idx, None, self.p)
+                self._get_omega_operands()
             )
             if self.omega_border is not None and self.dim > 1:
                 self._key, self.omega_border, _ = _reset_batch_idx_and_permute(
-                    (
-                        self._key,
-                        self.omega_border,
-                        self.curr_omega_border_idx,
-                        None,
-                        self.p_border,
-                    )
+                    self._get_omega_border_operands()
                 )
 
     def sample_in_omega_domain(self, n_samples):
@@ -492,30 +509,29 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             return random.uniform(
                 subkey, shape=(n_samples, 1), minval=xmin, maxval=xmax
             )
-        else:
-            keys = random.split(self._key, self.dim + 1)
-            self._key = keys[0]
-            return jnp.concatenate(
-                [
-                    random.uniform(
-                        keys[i + 1],
-                        (n_samples, 1),
-                        minval=self.min_pts[i],
-                        maxval=self.max_pts[i],
-                    )
-                    for i in range(self.dim)
-                ],
-                axis=-1,
-            )
+        keys = random.split(self._key, self.dim + 1)
+        self._key = keys[0]
+        return jnp.concatenate(
+            [
+                random.uniform(
+                    keys[i + 1],
+                    (n_samples, 1),
+                    minval=self.min_pts[i],
+                    maxval=self.max_pts[i],
+                )
+                for i in range(self.dim)
+            ],
+            axis=-1,
+        )
 
     def sample_in_omega_border_domain(self, n_samples):
         if self.omega_border_batch_size is None:
             return None
-        elif self.dim == 1:
+        if self.dim == 1:
             xmin = self.min_pts[0]
             xmax = self.max_pts[0]
             return jnp.array([xmin, xmax]).astype(float)
-        elif self.dim == 2:
+        if self.dim == 2:
             # currently hard-coded the 4 edges for d==2
             # TODO : find a general & efficient way to sample from the border
             # (facets) of the hypercube in general dim.
@@ -569,13 +585,13 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
                 ]
             )
             return jnp.stack([xmin, xmax, ymin, ymax], axis=-1)
-        else:
-            raise NotImplementedError(
-                f"Generation of the border of a cube in dimension > 2 is not implemented yet. You are asking for generation in dimension d={self.dim}."
-            )
+        raise NotImplementedError(
+            "Generation of the border of a cube in dimension > 2 is not "
+            + f"implemented yet. You are asking for generation in dimension d={self.dim}."
+        )
 
     def generate_data(self):
-        """
+        r"""
         Construct a complete set of `self.n` :math:`\Omega` points according to the
         specified `self.method`. Also constructs a complete set of `self.nb`
         :math:`\partial\Omega` points if `self.omega_border_batch_size` is not
@@ -610,8 +626,17 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         # Generate border of omega
         self.omega_border = self.sample_in_omega_border_domain(self.nb)
 
+    def _get_omega_operands(self):
+        return (
+            self._key,
+            self.omega,
+            self.curr_omega_idx,
+            self.omega_batch_size,
+            self.p,
+        )
+
     def inside_batch(self):
-        """
+        r"""
         Return a batch of points in :math:`\Omega`.
         If all the batches have been seen, we reshuffle them,
         otherwise we just return the next unseen batch.
@@ -628,11 +653,8 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         bstart = self.curr_omega_idx
         bend = bstart + self.omega_batch_size
 
-        (self._key, self.omega, self.curr_omega_idx) = jax.lax.cond(
-            bend > n_eff,
-            _reset_batch_idx_and_permute,
-            _increment_batch_idx,
-            (self._key, self.omega, self.curr_omega_idx, self.omega_batch_size, self.p),
+        (self._key, self.omega, self.curr_omega_idx) = _reset_or_increment(
+            bend, n_eff, self._get_omega_operands()
         )
 
         # commands below are equivalent to
@@ -643,8 +665,17 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             slice_sizes=(self.omega_batch_size, self.dim),
         )
 
+    def _get_omega_border_operands(self):
+        return (
+            self._key,
+            self.omega_border,
+            self.curr_omega_border_idx,
+            self.omega_border_batch_size,
+            self.p_border,
+        )
+
     def border_batch(self):
-        """
+        r"""
         Return
 
         - The value `None` if `self.omega_border_batch_size` is `None`.
@@ -662,41 +693,28 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         """
         if self.omega_border_batch_size is None:
             return None
-        elif self.dim == 1:
+        if self.dim == 1:
             # 1-D case, no randomness : we always return the whole omega border,
             # i.e. (1, 1, 2) shape jnp.array([[[xmin], [xmax]]]).
             return self.omega_border[None, None]  # shape is (1, 1, 2)
-        else:
-            bstart = self.curr_omega_border_idx
-            bend = bstart + self.omega_border_batch_size
-            # update curr_omega_idx or/and omega when end of batch is reached
-            # jax.lax.cond is <=> to an if statment but JITable.
-            (
-                self._key,
-                self.omega_border,
-                self.curr_omega_border_idx,
-            ) = jax.lax.cond(
-                bend > self.nb,
-                _reset_batch_idx_and_permute,  # true_fun
-                _increment_batch_idx,  # false_fun
-                (
-                    self._key,
-                    self.omega_border,
-                    self.curr_omega_border_idx,
-                    self.omega_border_batch_size,
-                    self.p_border,
-                ),  # arguments
-            )
+        bstart = self.curr_omega_border_idx
+        bend = bstart + self.omega_border_batch_size
 
-            # commands below are equivalent to
-            # return self.omega[i:(i+batch_size), 0:dim, 0:nb_facets]
-            # and nb_facets = 2 * dimension
-            # but JAX prefer the latter
-            return jax.lax.dynamic_slice(
-                self.omega_border,
-                start_indices=(self.curr_omega_border_idx, 0, 0),
-                slice_sizes=(self.omega_border_batch_size, self.dim, 2 * self.dim),
-            )
+        (
+            self._key,
+            self.omega_border,
+            self.curr_omega_border_idx,
+        ) = _reset_or_increment(bend, self.nb, self._get_omega_border_operands())
+
+        # commands below are equivalent to
+        # return self.omega[i:(i+batch_size), 0:dim, 0:nb_facets]
+        # and nb_facets = 2 * dimension
+        # but JAX prefer the latter
+        return jax.lax.dynamic_slice(
+            self.omega_border,
+            start_indices=(self.curr_omega_border_idx, 0, 0),
+            slice_sizes=(self.omega_border_batch_size, self.dim, 2 * self.dim),
+        )
 
     def get_batch(self):
         """
@@ -807,7 +825,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         n_start=None,
         data_exists=False,
     ):
-        """
+        r"""
         Parameters
         ----------
         key
@@ -908,15 +926,24 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.curr_time_idx = 0
             self.generate_data_nonstatio()
             self._key, self.times, _ = _reset_batch_idx_and_permute(
-                (self._key, self.times, self.curr_time_idx, None, self.p)
+                self._get_time_operands()
             )
 
     def sample_in_time_domain(self, n_samples):
         self._key, subkey = random.split(self._key, 2)
         return random.uniform(subkey, (n_samples,), minval=self.tmin, maxval=self.tmax)
 
+    def _get_time_operands(self):
+        return (
+            self._key,
+            self.times,
+            self.curr_time_idx,
+            self.temporal_batch_size,
+            self.p,
+        )
+
     def generate_data_nonstatio(self):
-        """
+        r"""
         Construct a complete set of `self.nt` time points according to the
         specified `self.method`. This completes the `super` function
         `generate_data()` which generates :math:`\Omega` and
@@ -947,17 +974,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         else:
             nt_eff = self.nt
 
-        (self._key, self.times, self.curr_time_idx) = jax.lax.cond(
-            bend > nt_eff,
-            _reset_batch_idx_and_permute,
-            _increment_batch_idx,
-            (
-                self._key,
-                self.times,
-                self.curr_time_idx,
-                self.temporal_batch_size,
-                self.p,
-            ),
+        (self._key, self.times, self.curr_time_idx) = _reset_or_increment(
+            bend, nt_eff, self._get_time_operands()
         )
 
         # commands below are equivalent to
@@ -1076,26 +1094,33 @@ class DataGeneratorParameter:
         method="grid",
         data_exists=False,
     ):
-        """
+        r"""
         Parameters
         ----------
         key
             Jax random key to sample new time points and to shuffle batches
+            or a dict of Jax random keys with key entries from param_ranges
         n
             An integer. The number of total points that will be divided in
             batches. Batches are made so that each data point is seen only
             once during 1 epoch.
         param_batch_size
             An integer. The size of the batch of randomly selected points among
-            the `n` points
+            the `n` points.  `param_batch_size` will be the same for all the
+            additional batch(es) of parameter(s). `param_batch_size` must be
+            equal to `temporal_batch_size` or `omega_batch_size` or the product
+            of both whether the present DataGeneratorParameter instance
+            complements and ODEBatch, a PDEStatioBatch or a PDENonStatioBatch,
+            respectively.
         param_ranges
             A dict. A dict of tuples (min, max), which
             reprensents the range of real numbers where to sample batches (of
             length `param_batch_size` among `n` points).
-            The key corresponds to the parameter name.
-            By providing several entries in this dictionary we can sample an arbitrary
-            number of parameters.
-            **Note** that we currently only support unidimensional parameters
+            The key corresponds to the parameter name. The keys must match the
+            keys in `params["eq_params"]`.
+            By providing several entries in this dictionary we can sample
+            an arbitrary number of parameters.
+            __Note__ that we currently only support unidimensional parameters
         method
             Either `grid` or `uniform`, default is `grid`. `grid` means
             regularly spaced points over the domain. `uniform` means uniformly
@@ -1107,7 +1132,12 @@ class DataGeneratorParameter:
         """
         self.data_exists = data_exists
         self.method = method
-        self._key = key
+        if not isinstance(key, dict):
+            self._keys = dict(
+                zip(param_ranges.keys(), jax.random.split(key, len(param_ranges)))
+            )
+        else:
+            self._keys = key
         self.n = n
         self.param_batch_size = param_batch_size
         self.param_ranges = param_ranges
@@ -1119,21 +1149,16 @@ class DataGeneratorParameter:
             self.curr_param_idx = {}
             for k in self.param_ranges.keys():
                 self.curr_param_idx[k] = 0
-                self._key, self.param_n_samples[k], _ = _reset_batch_idx_and_permute(
-                    (
-                        self._key,
-                        self.param_n_samples[k],
-                        self.curr_param_idx[k],
-                        None,
-                        None,
-                    )
-                )
+                (
+                    self._keys[k],
+                    self.param_n_samples[k],
+                    _,
+                ) = _reset_batch_idx_and_permute(self._get_param_operands(k))
 
     def generate_data(self):
         # Generate param n samples
         self.param_n_samples = {}
         for k, e in self.param_ranges.items():
-            # TODO add support for multidimensional additional_data key
             if self.method == "grid":
                 xmin, xmax = e[0], e[1]
                 self.partial = (xmax - xmin) / self.n
@@ -1141,48 +1166,61 @@ class DataGeneratorParameter:
                 self.param_n_samples[k] = jnp.arange(xmin, xmax, self.partial)[:, None]
             elif self.method == "uniform":
                 xmin, xmax = e[0], e[1]
-                self._key, subkey = random.split(self._key, 2)
+                self._keys[k], subkey = random.split(self._keys[k], 2)
                 self.param_n_samples[k] = random.uniform(
                     subkey, shape=(self.n, 1), minval=xmin, maxval=xmax
                 )
             else:
                 raise ValueError("Method " + self.method + " is not implemented.")
 
+    def _get_param_operands(self, k):
+        return (
+            self._keys[k],
+            self.param_n_samples[k],
+            self.curr_param_idx[k],
+            self.param_batch_size,
+            None,
+        )
+
     def param_batch(self):
         """
-        Return a ditionary with batches of parameters
+        Return a dictionary with batches of parameters
         If all the batches have been seen, we reshuffle them,
         otherwise we just return the next unseen batch.
         """
-        for k in self.param_n_samples.keys():
-            bstart = self.curr_param_idx[k]
-            bend = bstart + self.param_batch_size
 
-            (
-                self._key,
-                self.param_n_samples[k],
-                self.curr_param_idx[k],
-            ) = jax.lax.cond(
-                bend > self.n,
-                _reset_batch_idx_and_permute,
-                _increment_batch_idx,
-                (
-                    self._key,
-                    self.param_n_samples[k],
-                    self.curr_param_idx[k],
-                    self.param_batch_size,
-                    None,
-                ),
+        def _reset_or_increment_wrapper(param_k, idx_k, key_k):
+            return _reset_or_increment(
+                idx_k + self.param_batch_size,
+                self.n,
+                (key_k, param_k, idx_k, self.param_batch_size, None),
             )
 
-        return {
-            k: jax.lax.dynamic_slice(
-                self.param_n_samples[k],
-                start_indices=(self.curr_param_idx[k], 0),
-                slice_sizes=(self.param_batch_size, 1),
-            )
-            for k in self.param_n_samples.keys()
-        }
+        res = jax.tree_util.tree_map(
+            _reset_or_increment_wrapper,
+            self.param_n_samples,
+            self.curr_param_idx,
+            self._keys,
+        )
+        # we must transpose the pytrees because keys are merged in res
+        # https://jax.readthedocs.io/en/latest/jax-101/05.1-pytrees.html#transposing-trees
+        (
+            self._keys,
+            self.param_n_samples,
+            self.curr_param_idx,
+        ) = jax.tree_util.tree_transpose(
+            jax.tree_util.tree_structure(self._keys),
+            jax.tree_util.tree_structure([0, 0, 0]),
+            res,
+        )
+
+        return jax.tree_util.tree_map(
+            lambda p, q: jax.lax.dynamic_slice(
+                p, start_indices=(q, 0), slice_sizes=(self.param_batch_size, 1)
+            ),
+            self.param_n_samples,
+            self.curr_param_idx,
+        )
 
     def get_batch(self):
         """
@@ -1192,7 +1230,7 @@ class DataGeneratorParameter:
 
     def tree_flatten(self):
         children = (
-            self._key,
+            self._keys,
             self.param_n_samples,
             self.curr_param_idx,
         )
@@ -1210,12 +1248,12 @@ class DataGeneratorParameter:
     @classmethod
     def tree_unflatten(cls, aux_data, children):
         (
-            key,
+            keys,
             param_n_samples,
             curr_param_idx,
         ) = children
         obj = cls(
-            key=key,
+            key=keys,
             data_exists=True,
             **aux_data,
         )

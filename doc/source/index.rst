@@ -8,6 +8,14 @@ Welcome to jinn's documentation!
 
 Changelog:
 
+* v0.7.0:
+
+    - We introduce HyperPINNs (*HyperPINN: Learning parameterized differential equations with physics-informed hypernetworks*, Avila Belbute-Peres et al., 2021) for a more efficient metamodeling, have a look at the notebook!
+
+    - We start providing functions for solving PDEs with diffrax and the line method. Check out `jinns.experimental`.
+
+    - Diverse code improvements, code corrections and updated notebooks.
+
 * v0.6.1:
 
     - Generalization and improvements of heterogeneous equation parameters (in particular, an equation parameter can now be set as a PINN output). Introduce a decorator for simpler and cleaner dynamic losses with heterogeneous parameters).
@@ -124,6 +132,7 @@ Changelog:
    loss.rst
    data.rst
    utils.rst
+   experimental.rst
 
 .. toctree::
    :glob:

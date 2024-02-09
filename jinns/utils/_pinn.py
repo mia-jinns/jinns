@@ -177,12 +177,14 @@ def create_PINN(
         output that will be called after exiting the PINN. Default is the No
         operation
     shared_pinn_outputs
-        A tuple of jnp.s_[] (slices) to determine the different output for each
+        A tuple of jnp.s\_[] (slices) to determine the different output for each
         network. In this case we return a list of PINNs, one for each output in
         shared_pinn_outputs. This is useful to create PINNs that share the
-        same network and same parameters. Default is None, we only return one PINN.
+        same network and same parameters; __the user must then use the same
+        parameter set in their manipulation__.
+        Default is None, we only return one stantard PINN.
     slice_solution
-        A jnp.s_ object which indicates which axis of the PINN output is
+        A jnp.s\_ object which indicates which axis of the PINN output is
         dedicated to the actual equation solution. Default None
         means that slice_solution = the whole PINN output. This argument is useful
         when the PINN is also used to output equation parameters for example

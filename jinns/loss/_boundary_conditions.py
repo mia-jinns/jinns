@@ -5,7 +5,11 @@ Implements the main boundary conditions for all kinds of losses in jinns
 import jax
 import jax.numpy as jnp
 from jax import vmap, grad
-from jinns.utils._utils import _get_grid, _check_user_func_return
+from jinns.utils._utils import (
+    _get_grid,
+    _check_user_func_return,
+    _get_vmap_in_axes_params,
+)
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
 
@@ -21,6 +25,9 @@ def _compute_boundary_loss_statio(
 
     Where :math:`D[\cdot]` is a differential operator, possibly identity.
 
+    __Note__: if using a batch.param_batch_dict, we need to resolve the
+    vmapping axes in the boundary functions,  however params["eq_params"]
+    has already been fed with the batch in the `evaluate()` of `LossPDEStatio`.
 
     Parameters
     ----------
@@ -43,9 +50,9 @@ def _compute_boundary_loss_statio(
         differential equation parameters and the neural network parameter
     facet:
         An integer which represents the id of the facet which is currently
-        considered (in the order provided wy the DataGenerator which is fixed)
+        considered (in the order provided by the DataGenerator which is fixed)
     dim_to_apply
-        A jnp.s_ object which indicates which dimension(s) of u will be forced
+        A jnp.s\_ object which indicates which dimension(s) of u will be forced
         to match the boundary condition
 
     Returns
@@ -54,7 +61,7 @@ def _compute_boundary_loss_statio(
         the MSE computed on `border_batch`
     """
     if boundary_condition_type.lower() in "dirichlet":
-        mse = boundary_dirichlet_statio(f, border_batch, u, params, dim_to_apply)
+        mse = boundary_dirichlet_statio(f, border_batch, u, params, facet, dim_to_apply)
     elif any(
         boundary_condition_type.lower() in s
         for s in ["von neumann", "vn", "vonneumann"]
@@ -66,8 +73,7 @@ def _compute_boundary_loss_statio(
 def _compute_boundary_loss_nonstatio(
     boundary_condition_type,
     f,
-    times_batch,
-    border_batch,
+    batch,
     u,
     params,
     facet,
@@ -82,6 +88,9 @@ def _compute_boundary_loss_nonstatio(
 
     Where :math:`D[\cdot]` is a differential operator, possibly identity.
 
+    __Note__: if using a batch.param_batch_dict, we need to resolve the
+    vmapping axes in the boundary functions,  however params["eq_params"]
+    has already been fed with the batch in the `evaluate()` of `LossPDENonStatio`.
 
     Parameters
     ----------
@@ -93,8 +102,11 @@ def _compute_boundary_loss_nonstatio(
     f : a callable
         the function to be matched in the boundary condition. It should have
         one argument only (other are ignored).
-    border_batch : jnp.array
-        the mini-batch on :math:`\partial \Omega`
+    batch : a PDENonStatioBatch object.
+        Such a named tuple is composed of a batch of points in
+        the domain, a batch of points in the domain
+        border, a batch of time points and an optional additional batch
+        of parameters (eg. for metamodeling)
     u :
         a PINN
     params
@@ -104,9 +116,9 @@ def _compute_boundary_loss_nonstatio(
         differential equation parameters and the neural network parameter
     facet:
         An integer which represents the id of the facet which is currently
-        considered (in the order provided wy the DataGenerator which is fixed)
+        considered (in the order provided by the DataGenerator which is fixed)
     dim_to_apply
-        A jnp.s_ object. The dimension of u on which to apply the boundary condition
+        A jnp.s\_ object. The dimension of u on which to apply the boundary condition
 
     Returns
     -------
@@ -114,30 +126,34 @@ def _compute_boundary_loss_nonstatio(
         the MSE computed on `border_batch`
     """
     if boundary_condition_type.lower() in "dirichlet":
-        mse = boundary_dirichlet_nonstatio(
-            f, times_batch, border_batch, u, params, dim_to_apply
-        )
+        mse = boundary_dirichlet_nonstatio(f, batch, u, params, facet, dim_to_apply)
     elif any(
         boundary_condition_type.lower() in s
         for s in ["von neumann", "vn", "vonneumann"]
     ):
-        mse = boundary_neumann_nonstatio(
-            f, times_batch, border_batch, u, params, facet, dim_to_apply
-        )
+        mse = boundary_neumann_nonstatio(f, batch, u, params, facet, dim_to_apply)
     return mse
 
 
-def boundary_dirichlet_statio(f, border_batch, u, params, dim_to_apply):
+def boundary_dirichlet_statio(f, batch, u, params, facet, dim_to_apply):
     r"""
     This omega boundary condition enforces a solution that is equal to f on
     border batch.
+
+    __Note__: if using a batch.param_batch_dict, we need to resolve the
+    vmapping axes here however params["eq_params"] has already been fed with
+    the batch in the `evaluate()` of `LossPDEStatio`.
 
     Parameters
     ----------
     f:
         the constraint function
-    border_batch
-        A mini_batch of points
+    batch
+        A PDEStatioBatch object.
+        Such a named tuple is composed of a batch of points in the
+        domain, a batch of points in the domain
+        border and an optional additional batch of parameters (eg. for
+        metamodeling)
     u
         The PINN
     params
@@ -146,16 +162,22 @@ def boundary_dirichlet_statio(f, border_batch, u, params, dim_to_apply):
         dictionaries: `eq_params` and `nn_params``, respectively the
         differential equation parameters and the neural network parameter
     dim_to_apply
-        A jnp.s_ object. The dimension of u on which to apply the boundary condition
+        A jnp.s\_ object. The dimension of u on which to apply the boundary condition
     """
+    _, border_batch = batch.inside_batch, batch.border_batch
+    border_batch = border_batch[..., facet]
+
     if isinstance(u, PINN):
+        vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
+        vmap_in_axes_x = (0,)
+
         v_u_boundary = vmap(
-            lambda dx: u(dx, params)[dim_to_apply] - f(dx),
-            (0),
+            lambda dx, params: u(dx, params)[dim_to_apply] - f(dx),
+            vmap_in_axes_x + vmap_in_axes_params,
             0,
         )
 
-        mse_u_boundary = jnp.sum((v_u_boundary(border_batch)) ** 2, axis=-1)
+        mse_u_boundary = jnp.sum((v_u_boundary(border_batch, params)) ** 2, axis=-1)
     elif isinstance(u, SPINN):
         values = u(border_batch, params)[..., dim_to_apply]
         x_grid = _get_grid(border_batch)
@@ -168,19 +190,26 @@ def boundary_dirichlet_statio(f, border_batch, u, params, dim_to_apply):
     return mse_u_boundary
 
 
-def boundary_neumann_statio(f, border_batch, u, params, facet, dim_to_apply):
+def boundary_neumann_statio(f, batch, u, params, facet, dim_to_apply):
     r"""
     This omega boundary condition enforces a solution where :math:`\nabla u\cdot
     n` is equal to `f` on omega borders. :math:`n` is the unitary
     outgoing vector normal at border :math:`\partial\Omega`.
 
+    __Note__: if using a batch.param_batch_dict, we need to resolve the
+    vmapping axes here however params["eq_params"] has already been fed with
+    the batch in the `evaluate()` of `LossPDEStatio`.
+
     Parameters
     ----------
     f
         the constraint function
-
-    border_batch
-        A mini_batch of points
+    batch
+        A PDEStatioBatch object.
+        Such a named tuple is composed of a batch of points in the
+        domain, a batch of points in the domain
+        border and an optional additional batch of parameters (eg. for
+        metamodeling)
     u
         The PINN
     params
@@ -192,8 +221,11 @@ def boundary_neumann_statio(f, border_batch, u, params, facet, dim_to_apply):
         An integer which represents the id of the facet which is currently
         considered (in the order provided wy the DataGenerator which is fixed)
     dim_to_apply
-        A jnp.s_ object. The dimension of u on which to apply the boundary condition
+        A jnp.s\_ object. The dimension of u on which to apply the boundary condition
     """
+    _, border_batch = batch.inside_batch, batch.border_batch
+    border_batch = border_batch[..., facet]
+
     # We resort to the shape of the border_batch to determine the dimension as
     # described in the border_batch function
     if jnp.squeeze(border_batch).ndim == 0:  # case 1D borders (just a scalar)
@@ -207,15 +239,20 @@ def boundary_neumann_statio(f, border_batch, u, params, facet, dim_to_apply):
 
     if isinstance(u, PINN):
         u_ = lambda x, params: jnp.squeeze(u(x, params)[dim_to_apply])
+
+        vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
+        vmap_in_axes_x = (0,)
+
         v_neumann = vmap(
-            lambda dx: jnp.dot(
+            lambda dx, params: jnp.dot(
                 grad(u_, 0)(dx, params),
                 n[..., facet],
             )
             - f(dx),
+            vmap_in_axes_x + vmap_in_axes_params,
             0,
         )
-        mse_u_boundary = jnp.sum((v_neumann(border_batch)) ** 2, axis=-1)
+        mse_u_boundary = jnp.sum((v_neumann(border_batch, params)) ** 2, axis=-1)
     elif isinstance(u, SPINN):
         # the gradient we see in the PINN case can get gradients wrt to x
         # dimensions at once. But it would be very inefficient in SPINN because
@@ -266,21 +303,24 @@ def boundary_neumann_statio(f, border_batch, u, params, facet, dim_to_apply):
     return mse_u_boundary
 
 
-def boundary_dirichlet_nonstatio(
-    f, times_batch, omega_border_batch, u, params, dim_to_apply
-):
+def boundary_dirichlet_nonstatio(f, batch, u, params, facet, dim_to_apply):
     """
     This omega boundary condition enforces a solution that is equal to f
     at times_batch x omega borders
+
+    __Note__: if using a batch.param_batch_dict, we need to resolve the
+    vmapping axes here however params["eq_params"] has already been fed with
+    the batch in the `evaluate()` of `LossPDENonStatio`.
 
     Parameters
     ----------
     f
         the constraint function
-    times_batch
-        A mini-batch of time points
-    border_batch
-        A mini_batch of border points
+    batch : a PDENonStatioBatch object.
+        Such a named tuple is composed of a batch of points in
+        the domain, a batch of points in the domain
+        border, a batch of time points and an optional additional batch
+        of parameters (eg. for metamodeling)
     u
         The PINN
     params
@@ -288,9 +328,21 @@ def boundary_dirichlet_nonstatio(
         Typically, it is a dictionary of
         dictionaries: `eq_params` and `nn_params``, respectively the
         differential equation parameters and the neural network parameter
+    facet:
+        An integer which represents the id of the facet which is currently
+        considered (in the order provided wy the DataGenerator which is fixed)
     dim_to_apply
-        A jnp.s_ object. The dimension of u on which to apply the boundary condition
+        A jnp.s\_ object. The dimension of u on which to apply the boundary condition
     """
+    _, omega_border_batch, times_batch = (
+        batch.inside_batch,
+        batch.border_batch,
+        batch.temporal_batch,
+    )
+    nt = times_batch.shape[0]
+    times_batch = times_batch.reshape(nt, 1)
+    omega_border_batch = omega_border_batch[..., facet]
+
     if isinstance(u, PINN):
         tile_omega_border_batch = jnp.tile(
             omega_border_batch, reps=(times_batch.shape[0], 1)
@@ -299,19 +351,22 @@ def boundary_dirichlet_nonstatio(
         def rep_times(k):
             return jnp.repeat(times_batch, k, axis=0)
 
+        vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
+        vmap_in_axes_x_t = (0, 0)
+
         v_u_boundary = vmap(
-            lambda t, dx: u(
+            lambda t, dx, params: u(
                 t,
                 dx,
                 params,
             )[dim_to_apply]
             - f(t, dx),
-            (0, 0),
+            vmap_in_axes_x_t + vmap_in_axes_params,
             0,
         )
         res = v_u_boundary(
-            rep_times(omega_border_batch.shape[0]), tile_omega_border_batch
-        )  # TODO check if this cartesian product is always relevant
+            rep_times(omega_border_batch.shape[0]), tile_omega_border_batch, params
+        )
         mse_u_boundary = jnp.sum(
             res**2,
             axis=-1,
@@ -338,22 +393,26 @@ def boundary_dirichlet_nonstatio(
     return mse_u_boundary
 
 
-def boundary_neumann_nonstatio(
-    f, times_batch, omega_border_batch, u, params, facet, dim_to_apply
-):
+def boundary_neumann_nonstatio(f, batch, u, params, facet, dim_to_apply):
     r"""
     This omega boundary condition enforces a solution where :math:`\nabla u\cdot
     n` is equal to `f` at time_batch x omega borders. :math:`n` is the unitary
     outgoing vector normal at border :math:`\partial\Omega`.
 
+    __Note__: if using a batch.param_batch_dict, we need to resolve the
+    vmapping axes here however params["eq_params"] has already been fed with
+    the batch in the `evaluate()` of `LossPDENonStatio`.
+
     Parameters
     ----------
     f:
         the constraint function
-    times_batch
-        A mini-batch of time points
-    border_batch
-        A mini_batch of border points
+    batch
+        A PDENonStatioBatch object.
+        Such a named tuple is composed of a batch of points in
+        the domain, a batch of points in the domain
+        border, a batch of time points and an optional additional batch
+        of parameters (eg. for metamodeling)
     u
         The PINN
     params
@@ -365,8 +424,17 @@ def boundary_neumann_nonstatio(
         An integer which represents the id of the facet which is currently
         considered (in the order provided wy the DataGenerator which is fixed)
     dim_to_apply
-        A jnp.s_ object. The dimension of u on which to apply the boundary condition
+        A jnp.s\_ object. The dimension of u on which to apply the boundary condition
     """
+    _, omega_border_batch, times_batch = (
+        batch.inside_batch,
+        batch.border_batch,
+        batch.temporal_batch,
+    )
+    nt = times_batch.shape[0]
+    times_batch = times_batch.reshape(nt, 1)
+    omega_border_batch = omega_border_batch[..., facet]
+
     # We resort to the shape of the border_batch to determine the dimension as
     # described in the border_batch function
     if jnp.squeeze(omega_border_batch).ndim == 0:  # case 1D borders (just a scalar)
@@ -386,21 +454,30 @@ def boundary_neumann_nonstatio(
         def rep_times(k):
             return jnp.repeat(times_batch, k, axis=0)
 
+        vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
+        vmap_in_axes_x_t = (0, 0)
+
         u_ = lambda t, x, params: jnp.squeeze(u(t, x, params)[dim_to_apply])
         v_neumann = vmap(
-            lambda t, dx: jnp.dot(
+            lambda t, dx, params: jnp.dot(
                 grad(u_, 1)(t, dx, params),
                 n[..., facet],
             )
             - f(t, dx),
-            0,
+            vmap_in_axes_x_t + vmap_in_axes_params,
             0,
         )
         mse_u_boundary = jnp.sum(
-            (v_neumann(rep_times(omega_border_batch.shape[0]), tile_omega_border_batch))
+            (
+                v_neumann(
+                    rep_times(omega_border_batch.shape[0]),
+                    tile_omega_border_batch,
+                    params,
+                )
+            )
             ** 2,
             axis=-1,
-        )  # TODO check if this cartesian product is always relevant
+        )
 
     elif isinstance(u, SPINN):
         if omega_border_batch.shape[0] == 1:

@@ -138,7 +138,10 @@ class LossODE:
             dictionaries: `eq_params` and `nn_params``, respectively the
             differential equation parameters and the neural network parameter
         batch
-            A batch of time points at which to evaluate the loss
+            A ODEBatch object.
+            Such a named tuple is composed of a batch of time points
+            at which to evaluate an optional additional batch of parameters (eg. for
+            metamodeling)
         """
         temporal_batch = batch.temporal_batch
 
