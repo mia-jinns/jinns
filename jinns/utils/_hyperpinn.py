@@ -2,6 +2,7 @@
 Implements utility function to create HYPERPINNs
 https://arxiv.org/pdf/2111.01008.pdf
 """
+
 import copy
 from math import prod
 import numpy as onp
@@ -96,7 +97,13 @@ class HYPERPINN(PINN):
         )
         # NOTE will it be problematic to store the pinn parameters for bigger
         # network, or are we limited by the allocation on GPU anyway?
-        self.params = tree_map(
+        # self.params = tree_map(
+        #     lambda a, b: a.reshape(b.shape),
+        #     pinn_params_flat,
+        #     self.params,
+        #     is_leaf=lambda x: isinstance(x, jnp.ndarray),
+        # )
+        return tree_map(
             lambda a, b: a.reshape(b.shape),
             pinn_params_flat,
             self.params,
@@ -118,9 +125,9 @@ class HYPERPINN(PINN):
                 [params["eq_params"][k].flatten() for k in self.hyperparams], axis=0
             )
         )
-        self.hyper_to_pinn(hyper_output)  # in place transform
+        params = self.hyper_to_pinn(hyper_output)  # no in place transform (jit)
 
-        pinn = eqx.combine(self.params, self.static)
+        pinn = eqx.combine(params, self.static)
         res = output_transform(inputs, pinn(input_transform(inputs, params)).squeeze())
 
         if self.output_slice is not None:
