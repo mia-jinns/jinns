@@ -1,5 +1,5 @@
 """
-Implement diverse loss functions
+Interface for diverse loss functions to factorize code
 """
 
 import jax
@@ -8,6 +8,10 @@ from jax import vmap
 
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
+from jinns.loss._boundary_conditions import (
+    _compute_boundary_loss,
+)
+from jinns.utils._utils import _check_user_func_return, _get_grid
 
 
 def dynamic_loss_apply(dyn_loss, u, batches, params, vmap_axes, u_type=None):
@@ -26,3 +30,166 @@ def dynamic_loss_apply(dyn_loss, u, batches, params, vmap_axes, u_type=None):
         mse_dyn_loss = jnp.mean(jnp.sum(residuals**2, axis=-1))
 
     return mse_dyn_loss
+
+
+def normalization_loss_apply(u, batches, params, vmap_axes, int_length):
+    # TODO merge stationary and non stationary cases
+    if isinstance(u, PINN):
+        if len(batches) == 1:
+            v_u = vmap(
+                lambda *args: u(*args)[u.slice_solution],
+                vmap_axes,
+                0,
+            )
+            mse_norm_loss = jnp.mean(
+                jnp.abs(jnp.mean(v_u(*batches, params), axis=-1) * int_length - 1) ** 2
+            )
+        else:
+            v_u = vmap(
+                vmap(
+                    lambda t, x, params_: u(t, x, params_),
+                    in_axes=(None, 0) + vmap_axes[2:],
+                ),
+                in_axes=(0, None) + vmap_axes[2:],
+            )
+            res = v_u(*batches, params)
+            # the outer mean() below is for the times stamps
+            mse_norm_loss = jnp.mean(
+                jnp.abs(jnp.mean(res, axis=(-2, -1)) * int_length - 1) ** 2
+            )
+    elif isinstance(u, SPINN):
+        if len(batches) == 1:
+            res = u(*batches, params)
+            mse_norm_loss = (
+                jnp.abs(
+                    jnp.mean(
+                        jnp.mean(res, axis=-1),
+                        axis=tuple(range(res.ndim - 1)),
+                    )
+                    * int_length
+                    - 1
+                )
+                ** 2
+            )
+        else:
+            assert batches[1].shape[0] % batches[0].shape[0] == 0
+            rep_t = batches[1].shape[0] // batches[0].shape[0]
+            res = u(jnp.repeat(batches[0], rep_t, axis=0), batches[1], params)
+            # the outer mean() below is for the times stamps
+            mse_norm_loss = jnp.mean(
+                jnp.abs(
+                    jnp.mean(
+                        jnp.mean(res, axis=-1),
+                        axis=(d + 1 for d in range(res.ndim - 2)),
+                    )
+                    * int_length
+                    - 1
+                )
+                ** 2
+            )
+
+    return mse_norm_loss
+
+
+def boundary_condition_apply(
+    u, batch, params, omega_boundary_fun, omega_boundary_condition, omega_boundary_dim
+):
+    if isinstance(omega_boundary_fun, dict):
+        # means self.omega_boundary_condition is dict too because of
+        # check in init
+        mse_boundary_loss = 0
+        for idx, facet in enumerate(omega_boundary_fun.keys()):
+            if omega_boundary_condition[facet] is not None:
+                mse_boundary_loss += jnp.mean(
+                    _compute_boundary_loss(
+                        omega_boundary_condition[facet],
+                        omega_boundary_fun[facet],
+                        batch,
+                        u,
+                        params,
+                        idx,
+                        omega_boundary_dim[facet],
+                    )
+                )
+    else:
+        mse_boundary_loss = 0
+        for facet in range(batch[1].shape[-1]):
+            mse_boundary_loss += jnp.mean(
+                _compute_boundary_loss(
+                    omega_boundary_condition,
+                    omega_boundary_fun,
+                    batch,
+                    u,
+                    params,
+                    facet,
+                    omega_boundary_dim,
+                )
+            )
+
+    return mse_boundary_loss
+
+
+def observations_loss_apply(u, batches, params, vmap_axes, observed_values):
+    # TODO implement for SPINN
+    if isinstance(u, PINN):
+        v_u = vmap(
+            lambda *args: u(*args)[u.slice_solution],
+            vmap_axes,
+            0,
+        )
+        val = v_u(*batches, params)
+        mse_observation_loss = jnp.mean(
+            jnp.sum(
+                (val - _check_user_func_return(observed_values, val.shape)) ** 2,
+                # the reshape above avoids a potential missing (1,)
+                axis=-1,
+            )
+        )
+    elif isinstance(u, SPINN):
+        raise RuntimeError("observation loss term not yet implemented for SPINNs")
+    return mse_observation_loss
+
+
+def initial_condition_apply(
+    u, omega_batch, params, vmap_axes, initial_condition_fun, n
+):
+    if isinstance(u, PINN):
+        v_u_t0 = vmap(
+            lambda x, params: initial_condition_fun(x) - u(jnp.zeros((1,)), x, params),
+            vmap_axes,
+            0,
+        )
+        res = v_u_t0(omega_batch, params)  # NOTE take the tiled
+        # omega_batch (ie omega_batch_) to have the same batch
+        # dimension as params to be able to vmap.
+        # Recall that by convention:
+        # param_batch_dict = times_batch_size * omega_batch_size
+        mse_initial_condition = jnp.mean(jnp.sum(res**2, axis=-1))
+    elif isinstance(u, SPINN):
+        values = lambda x: u(
+            jnp.repeat(jnp.zeros((1, 1)), n, axis=0),
+            x,
+            params,
+        )[0]
+        omega_batch_grid = _get_grid(omega_batch)
+        v_ini = values(omega_batch)
+        ini = _check_user_func_return(
+            initial_condition_fun(omega_batch_grid), v_ini.shape
+        )
+        res = ini - v_ini
+        mse_initial_condition = jnp.mean(jnp.sum(res**2, axis=-1))
+    return mse_initial_condition
+
+
+def sobolev_reg_apply(u, batches, params, vmap_axes, sobolev_reg):
+    # TODO implement for SPINN
+    if isinstance(u, PINN):
+        v_sob_reg = vmap(
+            lambda *args: sobolev_reg(*args),  # pylint: disable=E1121
+            vmap_axes,
+            0,
+        )
+        mse_sobolev_loss = jnp.mean(v_sob_reg(*batches, params))
+    elif isinstance(u, SPINN):
+        raise RuntimeError("Sobolev loss term not yet implemented for SPINNs")
+    return mse_sobolev_loss

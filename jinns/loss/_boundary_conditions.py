@@ -10,24 +10,33 @@ from jinns.utils._utils import (
     _check_user_func_return,
     _get_vmap_in_axes_params,
 )
+from jinns.data._DataGenerators import PDEStatioBatch, PDENonStatioBatch
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
 
 
-def _compute_boundary_loss_statio(
-    boundary_condition_type, f, border_batch, u, params, facet, dim_to_apply
+def _compute_boundary_loss(
+    boundary_condition_type, f, batch, u, params, facet, dim_to_apply
 ):
     r"""A generic function that will compute the mini-batch MSE of a
-    boundary condition in the stationary case, given by:
+    boundary condition in the stationary case, resp. non-stationary, given by:
 
     .. math::
         D[u](\partial x) = f(\partial x), \forall \partial x \in \partial \Omega
+
+    resp.,
+
+    .. math::
+        D[u](t, \partial x) = f(\partial x), \forall t \in I, \forall \partial
+        x \in \partial \Omega
+
 
     Where :math:`D[\cdot]` is a differential operator, possibly identity.
 
     __Note__: if using a batch.param_batch_dict, we need to resolve the
     vmapping axes in the boundary functions,  however params["eq_params"]
-    has already been fed with the batch in the `evaluate()` of `LossPDEStatio`.
+    has already been fed with the batch in the `evaluate()` of `LossPDEStatio`,
+    resp. `LossPDENonStatio`.
 
     Parameters
     ----------
@@ -39,8 +48,12 @@ def _compute_boundary_loss_statio(
     f :
         the function to be matched in the boundary condition. It should have
         one argument only (other are ignored).
-    border_batch : jnp.array
-        the mini-batch on :math:`\partial \Omega`
+    batch : a PDEStatioBatch object or PDENonStatioBatch
+        Such a named tuple is composed of a batch of points in
+        the domain, a batch of points in the domain
+        border (a time point batch for NonStatioBatch)
+        and an optional additional batch
+        of parameters (eg. for metamodeling)
     u :
         a PINN
     params:
@@ -58,80 +71,27 @@ def _compute_boundary_loss_statio(
     Returns
     -------
     scalar
-        the MSE computed on `border_batch`
+        the MSE computed on `batch`
     """
-    if boundary_condition_type.lower() in "dirichlet":
-        mse = boundary_dirichlet_statio(f, border_batch, u, params, facet, dim_to_apply)
-    elif any(
-        boundary_condition_type.lower() in s
-        for s in ["von neumann", "vn", "vonneumann"]
-    ):
-        mse = boundary_neumann_statio(f, border_batch, u, params, facet, dim_to_apply)
-    return mse
 
-
-def _compute_boundary_loss_nonstatio(
-    boundary_condition_type,
-    f,
-    batch,
-    u,
-    params,
-    facet,
-    dim_to_apply,
-):
-    r"""A generic function that will compute the mini-batch MSE of a
-    boundary condition in the non-stationary case, given by:
-
-    .. math::
-        D[u](t, \partial x) = f(\partial x), \forall t \in I, \forall \partial
-        x \in \partial \Omega
-
-    Where :math:`D[\cdot]` is a differential operator, possibly identity.
-
-    __Note__: if using a batch.param_batch_dict, we need to resolve the
-    vmapping axes in the boundary functions,  however params["eq_params"]
-    has already been fed with the batch in the `evaluate()` of `LossPDENonStatio`.
-
-    Parameters
-    ----------
-    boundary_condition_type : a string
-        a string defining the differential operator :math:`D[\cdot]`.
-        Currently implements one of "Dirichlet" (:math:`D = Id`) and Von
-        Neuman (:math:`D[\cdot] = \nabla \cdot n`) where :math:`n` is the
-        outgoing unitary vector normal to :math:`\partial\Omega`
-    f : a callable
-        the function to be matched in the boundary condition. It should have
-        one argument only (other are ignored).
-    batch : a PDENonStatioBatch object.
-        Such a named tuple is composed of a batch of points in
-        the domain, a batch of points in the domain
-        border, a batch of time points and an optional additional batch
-        of parameters (eg. for metamodeling)
-    u :
-        a PINN
-    params
-        The dictionary of parameters of the model.
-        Typically, it is a dictionary of
-        dictionaries: `eq_params` and `nn_params``, respectively the
-        differential equation parameters and the neural network parameter
-    facet:
-        An integer which represents the id of the facet which is currently
-        considered (in the order provided by the DataGenerator which is fixed)
-    dim_to_apply
-        A jnp.s\_ object. The dimension of u on which to apply the boundary condition
-
-    Returns
-    -------
-    scalar
-        the MSE computed on `border_batch`
-    """
-    if boundary_condition_type.lower() in "dirichlet":
-        mse = boundary_dirichlet_nonstatio(f, batch, u, params, facet, dim_to_apply)
-    elif any(
-        boundary_condition_type.lower() in s
-        for s in ["von neumann", "vn", "vonneumann"]
-    ):
-        mse = boundary_neumann_nonstatio(f, batch, u, params, facet, dim_to_apply)
+    if isinstance(batch, PDEStatioBatch):
+        if boundary_condition_type.lower() in "dirichlet":
+            mse = boundary_dirichlet_statio(f, batch, u, params, facet, dim_to_apply)
+        elif any(
+            boundary_condition_type.lower() in s
+            for s in ["von neumann", "vn", "vonneumann"]
+        ):
+            mse = boundary_neumann_statio(f, batch, u, params, facet, dim_to_apply)
+    elif isinstance(batch, PDENonStatioBatch):
+        if boundary_condition_type.lower() in "dirichlet":
+            mse = boundary_dirichlet_nonstatio(f, batch, u, params, facet, dim_to_apply)
+        elif any(
+            boundary_condition_type.lower() in s
+            for s in ["von neumann", "vn", "vonneumann"]
+        ):
+            mse = boundary_neumann_nonstatio(f, batch, u, params, facet, dim_to_apply)
+    else:
+        raise ValueError("Wrong type of batch")
     return mse
 
 
