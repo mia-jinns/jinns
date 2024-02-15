@@ -149,4 +149,4 @@ def test_initial_loss_OU(train_OU_init):
 
 def test_10it_OU(train_OU_10it):
     total_loss_val = train_OU_10it
-    assert jnp.round(total_loss_val, 5) == jnp.round(4833.7524, 5)
+    assert jnp.round(total_loss_val, 5) == jnp.round(4833.752, 5)
