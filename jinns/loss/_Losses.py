@@ -95,37 +95,46 @@ def boundary_condition_apply(
     u, batch, params, omega_boundary_fun, omega_boundary_condition, omega_boundary_dim
 ):
     if isinstance(omega_boundary_fun, dict):
-        # means self.omega_boundary_condition is dict too because of
-        # check in init
-        mse_boundary_loss = 0
-        for idx, facet in enumerate(omega_boundary_fun.keys()):
-            if omega_boundary_condition[facet] is not None:
-                mse_boundary_loss += jnp.mean(
-                    _compute_boundary_loss(
-                        omega_boundary_condition[facet],
-                        omega_boundary_fun[facet],
-                        batch,
-                        u,
-                        params,
-                        idx,
-                        omega_boundary_dim[facet],
-                    )
-                )
+        # We must create the facet tree dictionary as we do not have the
+        # enumerate from the for loop to pass the id integer
+        if batch[1].shape[-1] == 2:
+            # 1D
+            facet_tree = {"xmin": 0, "xmax": 1}
+        elif batch[1].shape[-1] == 4:
+            # 2D
+            facet_tree = {"xmin": 0, "xmax": 1, "ymin": 2, "ymax": 3}
+        else:
+            raise ValueError("Other border batches are not implemented")
+        b_losses_by_facet = jax.tree_util.tree_map(
+            lambda c, f, fa, d: jnp.mean(
+                _compute_boundary_loss(c, f, batch, u, params, fa, d)
+            ),
+            omega_boundary_condition,
+            omega_boundary_fun,
+            facet_tree,
+            omega_boundary_dim,
+        )  # when exploring leaves with None value (no condition) the returned
+        # mse is None and we get rid of the None leaves of b_losses_by_facet
+        # with the tree_leaves below
     else:
-        mse_boundary_loss = 0
-        for facet in range(batch[1].shape[-1]):
-            mse_boundary_loss += jnp.mean(
+        facet_tuple = tuple(f for f in range(batch[1].shape[-1]))
+        b_losses_by_facet = jax.tree_util.tree_map(
+            lambda fa: jnp.mean(
                 _compute_boundary_loss(
                     omega_boundary_condition,
                     omega_boundary_fun,
                     batch,
                     u,
                     params,
-                    facet,
+                    fa,
                     omega_boundary_dim,
                 )
-            )
-
+            ),
+            facet_tuple,
+        )
+    mse_boundary_loss = jax.tree_util.tree_reduce(
+        lambda x, y: x + y, jax.tree_util.tree_leaves(b_losses_by_facet)
+    )
     return mse_boundary_loss
 
 

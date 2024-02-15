@@ -73,7 +73,7 @@ def _compute_boundary_loss(
     scalar
         the MSE computed on `batch`
     """
-
+    mse = None
     if isinstance(batch, PDEStatioBatch):
         if boundary_condition_type.lower() in "dirichlet":
             mse = boundary_dirichlet_statio(f, batch, u, params, facet, dim_to_apply)
@@ -264,7 +264,7 @@ def boundary_neumann_statio(f, batch, u, params, facet, dim_to_apply):
 
 
 def boundary_dirichlet_nonstatio(f, batch, u, params, facet, dim_to_apply):
-    """
+    r"""
     This omega boundary condition enforces a solution that is equal to f
     at times_batch x omega borders
 
