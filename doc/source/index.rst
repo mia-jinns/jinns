@@ -8,6 +8,10 @@ Welcome to jinn's documentation!
 
 Changelog:
 
+* v0.7.1:
+
+    - Refactoring and optimizing with `jax.tree_util.*` functions instead of `for` loops. Important speed improvement, in particular for SystemLossODE/SystemLossPDE which we recommend using instead of heavy vectorial LossODE/LossPDE.
+
 * v0.7.0:
 
     - We introduce HyperPINNs (*HyperPINN: Learning parameterized differential equations with physics-informed hypernetworks*, Avila Belbute-Peres et al., 2021) for a more efficient metamodeling, have a look at the notebook!
