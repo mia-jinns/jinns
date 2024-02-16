@@ -1305,6 +1305,15 @@ class SystemLossPDE:
         self._loss_weights = {}
         for k, v in value.items():
             if isinstance(v, dict):
+                for kk, vv in v.items():
+                    if not (isinstance(vv, int) or isinstance(vv, float)) and not (
+                        isinstance(vv, jnp.ndarray)
+                        and ((vv.shape == (1,) or len(vv.shape) == 0))
+                    ):
+                        # TODO improve that
+                        raise ValueError(
+                            f"loss values cannot be vectorial here, got {vv}"
+                        )
                 if k == "dyn_loss":
                     if v.keys() == self.dynamic_loss_dict.keys():
                         self._loss_weights[k] = v
@@ -1322,6 +1331,12 @@ class SystemLossPDE:
                             " do not match u_dict keys"
                         )
             else:
+                if not (isinstance(v, int) or isinstance(v, float)) and not (
+                    isinstance(v, jnp.ndarray)
+                    and ((v.shape == (1,) or len(v.shape) == 0))
+                ):
+                    # TODO improve that
+                    raise ValueError(f"loss values cannot be vectorial here, got {v}")
                 if k == "dyn_loss":
                     self._loss_weights[k] = {
                         kk: v for kk in self.dynamic_loss_dict.keys()
