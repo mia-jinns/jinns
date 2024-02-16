@@ -164,12 +164,13 @@ class LossODE:
         ## dynamic part
         params_ = _set_derivatives(params, "dyn_loss", self.derivative_keys)
         if self.dynamic_loss is not None:
-            mse_dyn_loss = self.loss_weights["dyn_loss"] * dynamic_loss_apply(
+            mse_dyn_loss = dynamic_loss_apply(
                 self.dynamic_loss.evaluate,
                 self.u,
                 (temporal_batch,),
                 params_,
                 vmap_in_axes_t + vmap_in_axes_params,
+                self.loss_weights["dyn_loss"],
             )
         else:
             mse_dyn_loss = jnp.array(0.0)
@@ -472,12 +473,13 @@ class SystemLossODE:
         def dyn_loss_for_one_key(dyn_loss, derivative_key, loss_weight):
             """This function is used in tree_map"""
             params_dict_ = _set_derivatives(params_dict, "dyn_loss", derivative_key)
-            return loss_weight * dynamic_loss_apply(
+            return dynamic_loss_apply(
                 dyn_loss.evaluate,
                 self.u_dict,
                 (temporal_batch,),
                 params_dict_,
                 vmap_in_axes_t + vmap_in_axes_params,
+                loss_weight,
                 u_type=PINN,
             )
 

@@ -526,12 +526,13 @@ class LossPDEStatio(LossPDEAbstract):
         # dynamic part
         params_ = _set_derivatives(params, "dyn_loss", self.derivative_keys)
         if self.dynamic_loss is not None:
-            mse_dyn_loss = self.loss_weights["dyn_loss"] * dynamic_loss_apply(
+            mse_dyn_loss = dynamic_loss_apply(
                 self.dynamic_loss.evaluate,
                 self.u,
                 (omega_batch,),
                 params_,
                 vmap_in_axes_x + vmap_in_axes_params,
+                self.loss_weights["dyn_loss"],
             )
         else:
             mse_dyn_loss = jnp.array(0.0)
@@ -539,12 +540,13 @@ class LossPDEStatio(LossPDEAbstract):
         # normalization part
         params_ = _set_derivatives(params, "norm_loss", self.derivative_keys)
         if self.normalization_loss is not None:
-            mse_norm_loss = self.loss_weights["norm_loss"] * normalization_loss_apply(
+            mse_norm_loss = normalization_loss_apply(
                 self.u,
                 (self.get_norm_samples(),),
                 params_,
                 vmap_in_axes_x + vmap_in_axes_params,
                 self.int_length,
+                self.loss_weights["norm_loss"],
             )
         else:
             mse_norm_loss = jnp.array(0.0)
@@ -553,15 +555,14 @@ class LossPDEStatio(LossPDEAbstract):
         # boundary part
         params_ = _set_derivatives(params, "boundary_loss", self.derivative_keys)
         if self.omega_boundary_condition is not None:
-            mse_boundary_loss = self.loss_weights[
-                "boundary_loss"
-            ] * boundary_condition_apply(
+            mse_boundary_loss = boundary_condition_apply(
                 self.u,
                 batch,
                 params_,
                 self.omega_boundary_fun,
                 self.omega_boundary_condition,
                 self.omega_boundary_dim,
+                self.loss_weights["boundary_loss"],
             )
         else:
             mse_boundary_loss = jnp.array(0.0)
@@ -569,14 +570,13 @@ class LossPDEStatio(LossPDEAbstract):
         # Observation MSE (if obs_batch provided)
         params_ = _set_derivatives(params, "observations", self.derivative_keys)
         if self.obs_batch is not None:
-            mse_observation_loss = self.loss_weights[
-                "observations"
-            ] * observations_loss_apply(
+            mse_observation_loss = observations_loss_apply(
                 self.u,
                 (self.obs_batch[0],),
                 params_,
                 vmap_in_axes_x + vmap_in_axes_params,
                 self.obs_batch[1],
+                self.loss_weights["observations"],
             )
         else:
             mse_observation_loss = jnp.array(0.0)
@@ -585,12 +585,13 @@ class LossPDEStatio(LossPDEAbstract):
         # Sobolev regularization
         params_ = _set_derivatives(params, "sobolev", self.derivative_keys)
         if self.sobolev_reg is not None:
-            mse_sobolev_loss = self.loss_weights["sobolev"] * sobolev_reg_apply(
+            mse_sobolev_loss = sobolev_reg_apply(
                 self.u,
                 (omega_batch,),
                 params_,
                 vmap_in_axes_x + vmap_in_axes_params,
                 self.sobolev_reg,
+                self.loss_weights["sobolev"],
             )
         else:
             mse_sobolev_loss = jnp.array(0.0)
@@ -879,12 +880,13 @@ class LossPDENonStatio(LossPDEStatio):
         # dynamic part
         params_ = _set_derivatives(params, "dyn_loss", self.derivative_keys)
         if self.dynamic_loss is not None:
-            mse_dyn_loss = self.loss_weights["dyn_loss"] * dynamic_loss_apply(
+            mse_dyn_loss = dynamic_loss_apply(
                 self.dynamic_loss.evaluate,
                 self.u,
                 (times_batch, omega_batch),
                 params_,
                 vmap_in_axes_x_t + vmap_in_axes_params,
+                self.loss_weights["dyn_loss"],
             )
         else:
             mse_dyn_loss = jnp.array(0.0)
@@ -892,12 +894,13 @@ class LossPDENonStatio(LossPDEStatio):
         # normalization part
         params_ = _set_derivatives(params, "norm_loss", self.derivative_keys)
         if self.normalization_loss is not None:
-            mse_norm_loss = self.loss_weights["norm_loss"] * normalization_loss_apply(
+            mse_norm_loss = normalization_loss_apply(
                 self.u,
                 (times_batch, self.get_norm_samples()),
                 params_,
                 vmap_in_axes_x_t + vmap_in_axes_params,
                 self.int_length,
+                self.loss_weights["norm_loss"],
             )
         else:
             mse_norm_loss = jnp.array(0.0)
@@ -905,15 +908,14 @@ class LossPDENonStatio(LossPDEStatio):
         # boundary part
         params_ = _set_derivatives(params, "boundary_loss", self.derivative_keys)
         if self.omega_boundary_fun is not None:
-            mse_boundary_loss = self.loss_weights[
-                "boundary_loss"
-            ] * boundary_condition_apply(
+            mse_boundary_loss = boundary_condition_apply(
                 self.u,
                 batch,
                 params_,
                 self.omega_boundary_fun,
                 self.omega_boundary_condition,
                 self.omega_boundary_dim,
+                self.loss_weights["boundary_loss"],
             )
         else:
             mse_boundary_loss = jnp.array(0.0)
@@ -921,15 +923,14 @@ class LossPDENonStatio(LossPDEStatio):
         # initial condition
         params_ = _set_derivatives(params, "initial_condition", self.derivative_keys)
         if self.initial_condition_fun is not None:
-            mse_initial_condition = self.loss_weights[
-                "initial_condition"
-            ] * initial_condition_apply(
+            mse_initial_condition = initial_condition_apply(
                 self.u,
                 omega_batch,
                 params_,
                 (0,) + vmap_in_axes_params,
                 self.initial_condition_fun,
                 n,
+                self.loss_weights["initial_condition"],
             )
         else:
             mse_initial_condition = jnp.array(0.0)
@@ -937,14 +938,13 @@ class LossPDENonStatio(LossPDEStatio):
         # Observation MSE (if obs_batch provided)
         params_ = _set_derivatives(params, "observations", self.derivative_keys)
         if self.obs_batch is not None:
-            mse_observation_loss = self.loss_weights[
-                "observations"
-            ] * observations_loss_apply(
+            mse_observation_loss = observations_loss_apply(
                 self.u,
                 (self.obs_batch[0][:, None], self.obs_batch[1]),
                 params_,
                 vmap_in_axes_x_t + vmap_in_axes_params,
                 self.obs_batch[2],
+                self.loss_weights["observations"],
             )
         else:
             mse_observation_loss = jnp.array(0.0)
@@ -953,12 +953,13 @@ class LossPDENonStatio(LossPDEStatio):
         # Sobolev regularization
         params_ = _set_derivatives(params, "sobolev", self.derivative_keys)
         if self.sobolev_reg is not None:
-            mse_sobolev_loss = self.loss_weights["sobolev"] * sobolev_reg_apply(
+            mse_sobolev_loss = sobolev_reg_apply(
                 self.u,
                 (omega_batch, times_batch),
                 params_,
                 vmap_in_axes_x_t + vmap_in_axes_params,
                 self.sobolev_reg,
+                self.loss_weights["sobolev"],
             )
         else:
             mse_sobolev_loss = jnp.array(0.0)
@@ -1420,12 +1421,13 @@ class SystemLossPDE:
         def dyn_loss_for_one_key(dyn_loss, derivative_key, loss_weight):
             """The function used in tree_map"""
             params_dict_ = _set_derivatives(params_dict, "dyn_loss", derivative_key)
-            return loss_weight * dynamic_loss_apply(
+            return dynamic_loss_apply(
                 dyn_loss.evaluate,
                 self.u_dict,
                 batches,
                 params_dict_,
                 vmap_in_axes_x_or_x_t + vmap_in_axes_params,
+                loss_weight,
                 u_type=type(list(self.u_dict.values())[0]),
             )
 
