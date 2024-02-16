@@ -13,6 +13,7 @@ from jinns.loss._Losses import (
     observations_loss_apply,
     sobolev_reg_apply,
     initial_condition_apply,
+    constraints_system_loss_apply,
 )
 from jinns.data._DataGenerators import PDEStatioBatch, PDENonStatioBatch
 from jinns.utils._utils import (
@@ -1433,7 +1434,6 @@ class SystemLossPDE:
             self.dynamic_loss_dict,
             self.derivative_keys_dyn_loss_dict,
             self._loss_weights["dyn_loss"],
-            is_leaf=lambda x: x is None,
         )
         mse_dyn_loss = jax.tree_util.tree_reduce(
             lambda x, y: x + y, jax.tree_util.tree_leaves(dyn_loss_mse_dict)
@@ -1442,93 +1442,20 @@ class SystemLossPDE:
         # boundary conditions, normalization conditions, observation_loss,
         # initial condition... loss this is done via the internal
         # LossPDEStatio and NonStatio
-
-        # Transpose so we have each u_dict as outer structure and the
-        # associated loss_weight as inner structure
-        loss_weights = jax.tree_util.tree_transpose(
-            jax.tree_util.tree_structure(
-                {
-                    "dyn_loss": "*",
-                    "norm_loss": "*",
-                    "boundary_loss": "*",
-                    "observations": "*",
-                    "initial_condition": "*",
-                    "sobolev": "*",
-                }
-            ),
-            jax.tree_util.tree_structure(self._loss_weights["initial_condition"]),
+        loss_weight_struct = {
+            "dyn_loss": "*",
+            "norm_loss": "*",
+            "boundary_loss": "*",
+            "observations": "*",
+            "initial_condition": "*",
+            "sobolev": "*",
+        }
+        total_loss, res_dict = constraints_system_loss_apply(
+            self.u_constraints_dict,
+            batch,
+            params_dict,
             self._loss_weights,
-        )
-
-        if isinstance(params_dict["nn_params"], dict):
-
-            def apply_u_constraint(u_constraint, nn_params, loss_weights_for_u):
-                res_dict_for_u = u_constraint.evaluate(
-                    {
-                        "nn_params": nn_params,
-                        "eq_params": params_dict["eq_params"],
-                    },
-                    batch,
-                )[1]
-                res_dict_ponderated = jax.tree_util.tree_map(
-                    lambda w, l: w * l, res_dict_for_u, loss_weights_for_u
-                )
-                return res_dict_ponderated
-
-            res_dict = jax.tree_util.tree_map(
-                apply_u_constraint,
-                self.u_constraints_dict,
-                params_dict["nn_params"],
-                loss_weights,
-                is_leaf=lambda x: not isinstance(x, dict),
-            )
-        else:
-            # TODO try to get rid of this condition?
-            def apply_u_constraint(u_constraint, loss_weights_for_u):
-                res_dict_for_u = u_constraint.evaluate(
-                    params_dict,
-                    batch,
-                )[1]
-                res_dict_ponderated = jax.tree_util.tree_map(
-                    lambda w, l: w * l, res_dict_for_u, loss_weights_for_u
-                )
-                return res_dict_ponderated
-
-            res_dict = jax.tree_util.tree_map(
-                apply_u_constraint, self.u_constraints_dict, loss_weights
-            )
-
-        # Transpose back so we have mses as outer structures and their values
-        # for each u_dict as inner structures. The tree_leaves transforms the
-        # inner structure into a list so we can catch is as leaf it the
-        # tree_map below
-        res_dict = jax.tree_util.tree_transpose(
-            jax.tree_util.tree_structure(
-                jax.tree_util.tree_leaves(self._loss_weights["initial_condition"])
-            ),
-            jax.tree_util.tree_structure(
-                {
-                    "dyn_loss": "*",
-                    "norm_loss": "*",
-                    "boundary_loss": "*",
-                    "observations": "*",
-                    "initial_condition": "*",
-                    "sobolev": "*",
-                }
-            ),
-            res_dict,
-        )
-        # For each mse, sum their values on each u_dict
-        res_dict = jax.tree_util.tree_map(
-            lambda mse: jax.tree_util.tree_reduce(
-                lambda x, y: x + y, jax.tree_util.tree_leaves(mse)
-            ),
-            res_dict,
-            is_leaf=lambda x: isinstance(x, list),
-        )
-        # Total loss
-        total_loss = jax.tree_util.tree_reduce(
-            lambda x, y: x + y, jax.tree_util.tree_leaves(res_dict)
+            loss_weight_struct,
         )
 
         # Add the mse_dyn_loss from the previous computations

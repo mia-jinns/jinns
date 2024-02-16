@@ -255,7 +255,8 @@ class GeneralizedLotkaVolterra(ODE):
         params_main = _extract_nn_params(params_dict, self.key_main)
 
         u = u_dict[self.key_main]
-        du_dt = grad(lambda t: jnp.log(u(t, params_main)), 0)(t)
+        # need to index with [0] since u output is nec (1,)
+        du_dt = grad(lambda t: jnp.log(u(t, params_main)[0]), 0)(t)
         carrying_term = params_main["eq_params"]["carrying_capacity"] * u(
             t, params_main
         )
@@ -263,6 +264,8 @@ class GeneralizedLotkaVolterra(ODE):
         interaction_terms = params_main["eq_params"]["interactions"][0] * u(
             t, params_main
         )
+
+        # TODO write this for loop with tree_util functions?
         for i, k in enumerate(self.keys_other):
             params_k = _extract_nn_params(params_dict, k)
             carrying_term += params_main["eq_params"]["carrying_capacity"] * u_dict[k](
