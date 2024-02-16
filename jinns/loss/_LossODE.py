@@ -7,6 +7,8 @@ import jax.numpy as jnp
 from jax import vmap
 from jax.tree_util import register_pytree_node_class
 from jinns.utils._utils import _get_vmap_in_axes_params, _set_derivatives
+from jinns.loss._Losses import dynamic_loss_apply, constraints_system_loss_apply
+from jinns.utils._pinn import PINN
 
 
 @register_pytree_node_class
@@ -162,14 +164,13 @@ class LossODE:
         ## dynamic part
         params_ = _set_derivatives(params, "dyn_loss", self.derivative_keys)
         if self.dynamic_loss is not None:
-            v_dyn_loss = vmap(
-                lambda t, params_: self.dynamic_loss.evaluate(t, self.u, params_),
+            mse_dyn_loss = dynamic_loss_apply(
+                self.dynamic_loss.evaluate,
+                self.u,
+                (temporal_batch,),
+                params_,
                 vmap_in_axes_t + vmap_in_axes_params,
-                0,
-            )
-            mse_dyn_loss = jnp.mean(
-                self.loss_weights["dyn_loss"]
-                * jnp.mean(v_dyn_loss(temporal_batch, params_) ** 2, axis=0)
+                self.loss_weights["dyn_loss"],
             )
         else:
             mse_dyn_loss = jnp.array(0.0)
@@ -375,6 +376,17 @@ class SystemLossODE:
                 obs_batch=self.obs_batch_dict[i],
             )
 
+        # for convenience in the tree_map of evaluate,
+        # we separate the two derivative keys dict
+        self.derivative_keys_dyn_loss_dict = {
+            k: self.derivative_keys_dict[k]
+            for k in self.dynamic_loss_dict.keys() & self.derivative_keys_dict.keys()
+        }
+        self.derivative_keys_u_dict = {
+            k: self.derivative_keys_dict[k]
+            for k in self.u_dict.keys() & self.derivative_keys_dict.keys()
+        }
+
     @property
     def loss_weights(self):
         return self._loss_weights
@@ -384,6 +396,15 @@ class SystemLossODE:
         self._loss_weights = {}
         for k, v in value.items():
             if isinstance(v, dict):
+                for kk, vv in v.items():
+                    if not (isinstance(vv, int) or isinstance(vv, float)) and not (
+                        isinstance(vv, jnp.ndarray)
+                        and ((vv.shape == (1,) or len(vv.shape) == 0))
+                    ):
+                        # TODO improve that
+                        raise ValueError(
+                            f"loss values cannot be vectorial here, got {vv}"
+                        )
                 if k == "dyn_loss":
                     if v.keys() == self.dynamic_loss_dict.keys():
                         self._loss_weights[k] = v
@@ -401,6 +422,12 @@ class SystemLossODE:
                             " do not match u_dict keys"
                         )
             else:
+                if not (isinstance(v, int) or isinstance(v, float)) and not (
+                    isinstance(v, jnp.ndarray)
+                    and ((v.shape == (1,) or len(v.shape) == 0))
+                ):
+                    # TODO improve that
+                    raise ValueError(f"loss values cannot be vectorial here, got {v}")
                 if k == "dyn_loss":
                     self._loss_weights[k] = {
                         kk: v for kk in self.dynamic_loss_dict.keys()
@@ -458,58 +485,48 @@ class SystemLossODE:
             batch.param_batch_dict, params_dict
         )
 
-        mse_dyn_loss = 0
-        mse_initial_condition = 0
-        mse_observation_loss = 0
-
-        for i in self.dynamic_loss_dict.keys():
-            # dynamic part
-            params_dict_ = _set_derivatives(
-                params_dict, "dyn_loss", self.derivative_keys_dict[i]
-            )
-            v_dyn_loss = vmap(
-                lambda t, params_dict_, key=i: self.dynamic_loss_dict[key].evaluate(
-                    t, self.u_dict, params_dict_
-                ),
+        def dyn_loss_for_one_key(dyn_loss, derivative_key, loss_weight):
+            """This function is used in tree_map"""
+            params_dict_ = _set_derivatives(params_dict, "dyn_loss", derivative_key)
+            return dynamic_loss_apply(
+                dyn_loss.evaluate,
+                self.u_dict,
+                (temporal_batch,),
+                params_dict_,
                 vmap_in_axes_t + vmap_in_axes_params,
-                0,
+                loss_weight,
+                u_type=PINN,
             )
-            mse_dyn_loss += jnp.mean(
-                self._loss_weights["dyn_loss"][i]
-                * jnp.mean(v_dyn_loss(temporal_batch, params_dict_) ** 2, axis=0)
-            )
+
+        dyn_loss_mse_dict = jax.tree_util.tree_map(
+            dyn_loss_for_one_key,
+            self.dynamic_loss_dict,
+            self.derivative_keys_dyn_loss_dict,
+            self._loss_weights["dyn_loss"],
+        )
+        mse_dyn_loss = jax.tree_util.tree_reduce(
+            lambda x, y: x + y, jax.tree_util.tree_leaves(dyn_loss_mse_dict)
+        )
 
         # initial conditions and observation_loss via the internal LossODE
-        for i in self.u_dict.keys():
-            _, res_dict = self.u_constraints_dict[i].evaluate(
-                {
-                    "nn_params": (
-                        params_dict["nn_params"][i]
-                        if isinstance(params_dict["nn_params"], dict)
-                        else params_dict["nn_params"]
-                    ),
-                    "eq_params": params_dict["eq_params"],
-                },
-                batch,
-            )
-            # note that the loss_weights are now included here
-            mse_initial_condition += (
-                self._loss_weights["initial_condition"][i]
-                * res_dict["initial_condition"]
-            )
-            mse_observation_loss += (
-                self._loss_weights["observations"][i] * res_dict["observations"]
-            )
-
-        # total loss
-        total_loss = mse_dyn_loss + mse_initial_condition + mse_observation_loss
-        return total_loss, (
-            {
-                "dyn_loss": mse_dyn_loss,
-                "initial_condition": mse_initial_condition,
-                "observations": mse_observation_loss,
-            }
+        loss_weight_struct = {
+            "dyn_loss": "*",
+            "observations": "*",
+            "initial_condition": "*",
+        }
+        total_loss, res_dict = constraints_system_loss_apply(
+            self.u_constraints_dict,
+            batch,
+            params_dict,
+            self._loss_weights,
+            loss_weight_struct,
         )
+
+        print(total_loss.shape)
+        # Add the mse_dyn_loss from the previous computations
+        total_loss += mse_dyn_loss
+        res_dict["dyn_loss"] += mse_dyn_loss
+        return total_loss, res_dict
 
     def tree_flatten(self):
         children = (
@@ -520,6 +537,7 @@ class SystemLossODE:
         aux_data = {
             "u_dict": self.u_dict,
             "dynamic_loss_dict": self.dynamic_loss_dict,
+            "derivative_keys_dict": self.derivative_keys_dict,
         }
         return (children, aux_data)
 

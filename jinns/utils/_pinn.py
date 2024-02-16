@@ -89,9 +89,7 @@ class PINN:
         if self.eq_type == "ODE":
             (t, params) = args
             t = t[None]  #  Add dimension which is lacking for the ODE batches
-            return self._eval_nn(
-                t, params, self.input_transform, self.output_transform
-            ).squeeze()
+            return self._eval_nn(t, params, self.input_transform, self.output_transform)
         if self.eq_type == "statio_PDE":
             (x, params) = args
             return self._eval_nn(x, params, self.input_transform, self.output_transform)
