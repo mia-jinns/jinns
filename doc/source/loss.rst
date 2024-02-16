@@ -7,6 +7,8 @@ The ``loss`` module is decomposed of different parts:
 
 * `Loss PDE` points to classes that implements the loss for solving PINN problems involving stationary and non stationary partial differential equations
 
+* `Losses` points to functions that are actually implement the computations required in the `Loss PDE` and `Loss ODE` classes
+
 * `Dynamic Loss` points to classes which implement the mechanistic part of the above mentioned losses. These classes have functions implementing the differential operator :math:`\mathcal{N}[u]`
 
 * `Operators` points to functions which help implementing differential operators
@@ -22,6 +24,7 @@ The ``loss`` module is decomposed of different parts:
 
    loss_ode.rst
    loss_pde.rst
+   losses.rst
    dynamic_loss.rst
    boundary_conditions.rst
    operators.rst
