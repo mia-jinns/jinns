@@ -15,6 +15,10 @@ from jinns.utils._utils import _check_user_func_return, _get_grid
 
 
 def dynamic_loss_apply(dyn_loss, u, batches, params, vmap_axes, u_type=None):
+    """
+    Sometimes when u is a lambda function a or dict we do not have access to
+    its type here, hence the last argument
+    """
     if u_type == PINN or isinstance(u, PINN):
         v_dyn_loss = vmap(
             lambda *args: dyn_loss(
