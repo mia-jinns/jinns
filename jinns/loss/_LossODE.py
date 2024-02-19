@@ -6,7 +6,11 @@ import jax
 import jax.numpy as jnp
 from jax import vmap
 from jax.tree_util import register_pytree_node_class
-from jinns.utils._utils import _get_vmap_in_axes_params, _set_derivatives
+from jinns.utils._utils import (
+    _get_vmap_in_axes_params,
+    _set_derivatives,
+    _check_user_func_return,
+)
 from jinns.loss._Losses import dynamic_loss_apply, constraints_system_loss_apply
 from jinns.utils._pinn import PINN
 
@@ -195,13 +199,10 @@ class LossODE:
                 0,
                 0,
             )
+            val = v_u(self.obs_batch[0])[:, self.obs_slice]
+            obs = _check_user_func_return(self.obs_batch[1], val.shape)
             mse_observation_loss = jnp.mean(
-                self.loss_weights["observations"]
-                * jnp.mean(
-                    (v_u(self.obs_batch[0])[:, self.obs_slice] - self.obs_batch[1])
-                    ** 2,
-                    axis=0,
-                )
+                self.loss_weights["observations"] * jnp.mean((val - obs) ** 2, axis=0)
             )
         else:
             mse_observation_loss = jnp.array(0.0)
