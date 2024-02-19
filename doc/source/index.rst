@@ -8,6 +8,10 @@ Welcome to jinn's documentation!
 
 Changelog:
 
+* v0.7.2:
+
+    - Add check to avoid tricky broadcasting bug in observation loss in ODEs
+
 * v0.7.1:
 
     - Refactoring and optimizing with `jax.tree_util.*` functions instead of `for` loops. Important speed improvement, in particular for SystemLossODE/SystemLossPDE which we recommend using instead of heavy vectorial LossODE/LossPDE.
