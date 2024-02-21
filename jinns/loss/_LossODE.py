@@ -193,14 +193,16 @@ class LossODE:
 
         # MSE loss wrt to an observed batch
         params_ = _set_derivatives(params, "observations", self.derivative_keys)
+        # feed the eq_params with the batch
+        for k in eq_params_batch_dict.keys():
+            params_["eq_params"][k] = self.obs_batch[k]
         if self.obs_batch is not None:
             v_u = vmap(
-                lambda t: self.u(t, params_),
-                0,
-                0,
+                lambda t, params_: self.u(t, params_),
+                vmap_in_axes_t + vmap_in_axes_params,
             )
-            val = v_u(self.obs_batch[0])[:, self.obs_slice]
-            obs = _check_user_func_return(self.obs_batch[1], val.shape)
+            val = v_u(self.obs_batch["0"], params_)[:, self.obs_slice]
+            obs = _check_user_func_return(self.obs_batch["1"], val.shape)
             mse_observation_loss = jnp.mean(
                 self.loss_weights["observations"] * jnp.mean((val - obs) ** 2, axis=0)
             )
