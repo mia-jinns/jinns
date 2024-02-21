@@ -3,7 +3,10 @@ from ._DataGenerators import (
     CubicMeshPDEStatio,
     CubicMeshPDENonStatio,
     DataGeneratorParameter,
+    DataGeneratorObservations,
+    DataGeneratorObservationsMultiPINNs,
     append_param_batch,
+    append_obs_batch,
 )
 from ._display import (
     plot2d,

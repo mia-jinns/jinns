@@ -20,6 +20,7 @@ from jinns.data._DataGenerators import (
     CubicMeshPDEStatio,
     CubicMeshPDENonStatio,
     append_param_batch,
+    append_obs_batch,
 )
 
 
@@ -34,6 +35,7 @@ def solve(
     seq2seq=None,
     tracked_params_key_list=None,
     param_data=None,
+    obs_data=None,
 ):
     """
     Performs the optimization process via stochastic gradient descent
@@ -88,7 +90,9 @@ def solve(
     param_data
         Default None. A DataGeneratorParameter object which can be used to
         sample equation parameters.
-
+    obs_data
+        Default None. A DataGeneratorObservations object which can be used to
+        sample minibatches of observations
 
     Returns
     -------
@@ -128,15 +132,19 @@ def solve(
             (
                 isinstance(data, DataGeneratorODE)
                 and param_data.param_batch_size != data.temporal_batch_size
+                and obs_data.obs_batch_size != data.temporal_batch_size
             )
             or (
                 isinstance(data, CubicMeshPDEStatio)
                 and not isinstance(data, CubicMeshPDENonStatio)
                 and param_data.param_batch_size != data.omega_batch_size
+                and obs_data.obs_batch_size != data.omega_batch_size
             )
             or (
                 isinstance(data, CubicMeshPDENonStatio)
                 and param_data.param_batch_size
+                != data.omega_batch_size * data.temporal_batch_size
+                and obs_data.obs_batch_size
                 != data.omega_batch_size * data.temporal_batch_size
             )
         ):
@@ -151,6 +159,8 @@ def solve(
         batch = data.get_batch()
         if param_data is not None:
             batch = append_param_batch(batch, param_data.get_batch())
+        if obs_data is not None:
+            batch = append_obs_batch(batch, obs_data.get_batch())
         opt_state = optimizer.init_state(params, batch=batch)
 
     curr_seq = 0
@@ -201,6 +211,8 @@ def solve(
         batch = carry["data"].get_batch()
         if carry["param_data"] is not None:
             batch = append_param_batch(batch, carry["param_data"].get_batch())
+        if carry["obs_data"] is not None:
+            batch = append_obs_batch(batch, carry["obs_data"].get_batch())
         carry["params"], carry["opt_state"] = optimizer.update(
             params=carry["params"], state=carry["opt_state"], batch=batch
         )
@@ -273,6 +285,7 @@ def solve(
             "stored_loss_terms": stored_loss_terms,
             "loss": loss,
             "param_data": param_data,
+            "obs_data": obs_data,
             "opt_state": opt_state,
         },
         jnp.arange(n_iter),

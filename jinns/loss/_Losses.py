@@ -237,32 +237,39 @@ def constraints_system_loss_apply(
 
     if isinstance(params_dict["nn_params"], dict):
 
-        def apply_u_constraint(u_constraint, nn_params, loss_weights_for_u):
+        def apply_u_constraint(
+            u_constraint, nn_params, loss_weights_for_u, obs_batch_u
+        ):
             res_dict_for_u = u_constraint.evaluate(
                 {
                     "nn_params": nn_params,
                     "eq_params": params_dict["eq_params"],
                 },
-                batch,
+                batch._replace(obs_batch_dict=obs_batch_u),
             )[1]
             res_dict_ponderated = jax.tree_util.tree_map(
                 lambda w, l: w * l, res_dict_for_u, loss_weights_for_u
             )
             return res_dict_ponderated
 
+        # Note in the case of multiple PINNs, batch.obs_batch_dict is a dict
+        # with keys corresponding to the PINN and value correspondinf to an
+        # original obs_batch_dict. Hence the tree mapping also interates over
+        # batch.obs_batch_dict
         res_dict = jax.tree_util.tree_map(
             apply_u_constraint,
             u_constraints_dict,
             params_dict["nn_params"],
             loss_weights_T,
+            batch.obs_batch_dict,
             is_leaf=lambda x: not isinstance(x, dict),
         )
     else:
         # TODO try to get rid of this condition?
-        def apply_u_constraint(u_constraint, loss_weights_for_u):
+        def apply_u_constraint(u_constraint, loss_weights_for_u, obs_batch_u):
             res_dict_for_u = u_constraint.evaluate(
                 params_dict,
-                batch,
+                batch._replace(obs_batch_dict=obs_batch_u),
             )[1]
             res_dict_ponderated = jax.tree_util.tree_map(
                 lambda w, l: w * l, res_dict_for_u, loss_weights_for_u
@@ -270,7 +277,7 @@ def constraints_system_loss_apply(
             return res_dict_ponderated
 
         res_dict = jax.tree_util.tree_map(
-            apply_u_constraint, u_constraints_dict, loss_weights_T
+            apply_u_constraint, u_constraints_dict, loss_weights_T, batch.obs_batch_dict
         )
 
     # Transpose back so we have mses as outer structures and their values

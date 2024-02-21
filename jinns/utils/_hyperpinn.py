@@ -2,6 +2,7 @@
 Implements utility function to create HYPERPINNs
 https://arxiv.org/pdf/2111.01008.pdf
 """
+from functools import partial
 import copy
 from math import prod
 import numpy as onp
@@ -94,9 +95,8 @@ class HYPERPINN(PINN):
                 for i in range(len(self.pinn_params_cumsum) - 1)
             ],
         )
-        # NOTE will it be problematic to store the pinn parameters for bigger
-        # network, or are we limited by the allocation on GPU anyway?
-        self.params = tree_map(
+
+        return tree_map(
             lambda a, b: a.reshape(b.shape),
             pinn_params_flat,
             self.params,
@@ -113,14 +113,15 @@ class HYPERPINN(PINN):
         except (KeyError, TypeError) as e:  # give more flexibility
             hyper = eqx.combine(params, self.static_hyper)
 
-        hyper_output = hyper(
-            jnp.concatenate(
-                [params["eq_params"][k].flatten() for k in self.hyperparams], axis=0
-            )
+        eq_params_batch = jnp.concatenate(
+            [params["eq_params"][k].flatten() for k in self.hyperparams], axis=0
         )
-        self.hyper_to_pinn(hyper_output)  # in place transform
 
-        pinn = eqx.combine(self.params, self.static)
+        hyper_output = hyper(eq_params_batch)
+
+        pinn_params = self.hyper_to_pinn(hyper_output)
+
+        pinn = eqx.combine(pinn_params, self.static)
         res = output_transform(inputs, pinn(input_transform(inputs, params)).squeeze())
 
         if self.output_slice is not None:
@@ -145,7 +146,7 @@ def create_HYPERPINN(
     shared_pinn_outputs=None,
     eqx_list_hyper=None,
 ):
-    """
+    r"""
     Utility function to create a standard PINN neural network with the equinox
     library.
 

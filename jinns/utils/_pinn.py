@@ -88,7 +88,10 @@ class PINN:
     def __call__(self, *args):
         if self.eq_type == "ODE":
             (t, params) = args
-            t = t[None]  #  Add dimension which is lacking for the ODE batches
+            if len(t.shape) == 0:
+                t = t[..., None]  #  Add mandatory dimension which can be lacking
+                # (eg. for the ODE batches) but this dimension can already
+                # exists (eg. for user provided observation times)
             return self._eval_nn(t, params, self.input_transform, self.output_transform)
         if self.eq_type == "statio_PDE":
             (x, params) = args
