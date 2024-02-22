@@ -262,10 +262,16 @@ def constraints_system_loss_apply(
             params_dict["nn_params"],
             loss_weights_T,
             batch.obs_batch_dict,
-            is_leaf=lambda x: not isinstance(x, dict),
+            is_leaf=lambda x: (
+                not isinstance(x, dict)  # to not traverse more than the first
+                # outer dict of the pytrees passed to the function. This will
+                # work because u_constraints_dict is a dict of Losses, and it
+                # thus stops the traversing of other dict too
+            ),
         )
+    # TODO try to get rid of this condition?
     else:
-        # TODO try to get rid of this condition?
+
         def apply_u_constraint(u_constraint, loss_weights_for_u, obs_batch_u):
             res_dict_for_u = u_constraint.evaluate(
                 params_dict,

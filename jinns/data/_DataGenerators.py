@@ -1325,6 +1325,8 @@ class DataGeneratorObservations:
             Must be left to `False` when created by the user. Avoids the
             resetting of curr_idx at each pytree flattening and unflattening.
         """
+        if observed_eq_params is None:
+            observed_eq_params = {}
         if observed_pinn_in.shape[0] != observed_values.shape[0]:
             raise ValueError(
                 "observed_pinn_in and observed_values must have" " same first axis"
@@ -1357,10 +1359,7 @@ class DataGeneratorObservations:
 
         self.observed_pinn_in = observed_pinn_in
         self.observed_values = observed_values
-        if observed_eq_params is None:
-            self.observed_eq_params = {}
-        else:
-            self.observed_eq_params = observed_eq_params
+        self.observed_eq_params = observed_eq_params
 
         self.data_exists = data_exists
         if not self.data_exists:
@@ -1484,12 +1483,21 @@ class DataGeneratorObservationsMultiPINNs:
         observed_pinn_in_dict
             A dict of observed_pinn_in as defined in DataGeneratorObservations.
             Keys must be that of `u_dict`.
+            If no observation exists for a particular entry of `u_dict` the
+            corresponding key must still exist in observed_pinn_in_dict with
+            value None
         observed_values_dict
             A dict of observed_values as defined in DataGeneratorObservations.
             Keys must be that of `u_dict`.
+            If no observation exists for a particular entry of `u_dict` the
+            corresponding key must still exist in observed_values_dict with
+            value None
         observed_eq_params_dict
             A dict of observed_eq_params as defined in DataGeneratorObservations.
             Keys must be that of `u_dict`.
+            If no observation exists for a particular entry of `u_dict` the
+            corresponding key must still exist in observed_eq_params_dict with
+            value None
         data_gen_obs_exists
             Must be left to `False` when created by the user. Avoids the
             regeneration the subclasses DataGeneratorObservations
@@ -1498,23 +1506,35 @@ class DataGeneratorObservationsMultiPINNs:
             Jax random key to sample new time points and to shuffle batches.
             Optional if data_gen_obs_exists is True
         """
-        if observed_pinn_in_dict.keys() != observed_values_dict.keys():
-            raise ValueError(
-                "Keys must be the same in observed_pinn_in_dict"
-                " and observed_values_dict"
-            )
         if (
-            observed_eq_params_dict is not None
-            and observed_pinn_in_dict.keys() != observed_eq_params_dict.keys()
-        ):
+            observed_pinn_in_dict is None or observed_values_dict is None
+        ) and not data_gen_obs_exists:
             raise ValueError(
-                "Keys must be the same in observed_eq_params_dict"
-                " and observed_pinn_in_dict and observed_values_dict"
+                "observed_pinn_in_dict and observed_values_dict "
+                "must be provided with data_gen_obs_exists is False"
             )
-
         self.obs_batch_size = obs_batch_size
         self.data_gen_obs_exists = data_gen_obs_exists
+
         if not self.data_gen_obs_exists:
+            if observed_pinn_in_dict.keys() != observed_values_dict.keys():
+                raise ValueError(
+                    "Keys must be the same in observed_pinn_in_dict"
+                    " and observed_values_dict"
+                )
+            if (
+                observed_eq_params_dict is not None
+                and observed_pinn_in_dict.keys() != observed_eq_params_dict.keys()
+            ):
+                raise ValueError(
+                    "Keys must be the same in observed_eq_params_dict"
+                    " and observed_pinn_in_dict and observed_values_dict"
+                )
+            if observed_eq_params_dict is None:
+                observed_eq_params_dict = {
+                    k: None for k in observed_pinn_in_dict.keys()
+                }
+
             keys = dict(
                 zip(
                     observed_pinn_in_dict.keys(),
@@ -1522,8 +1542,12 @@ class DataGeneratorObservationsMultiPINNs:
                 )
             )
             self.data_gen_obs = jax.tree_util.tree_map(
-                lambda k, pinn_in, val, eq_params: DataGeneratorObservations(
-                    k, obs_batch_size, pinn_in, val, eq_params
+                lambda k, pinn_in, val, eq_params: (
+                    DataGeneratorObservations(
+                        k, obs_batch_size, pinn_in, val, eq_params
+                    )
+                    if pinn_in is not None
+                    else None
                 ),
                 keys,
                 observed_pinn_in_dict,
@@ -1536,7 +1560,13 @@ class DataGeneratorObservationsMultiPINNs:
         Returns a dictionary of DataGeneratorObservations.obs_batch with keys
         from `u_dict`
         """
-        return jax.tree_util.tree_map(lambda a: a.get_batch(), self.data_gen_obs)
+        return jax.tree_util.tree_map(
+            lambda a: a.get_batch() if a is not None else {},
+            self.data_gen_obs,
+            is_leaf=lambda x: isinstance(x, DataGeneratorObservations),
+        )  # note the is_leaf note to traverse the DataGeneratorObservations and
+        # thus to be able to call the method on the element(s) of
+        # self.data_gen_obs which are not None
 
     def get_batch(self):
         """
@@ -1545,16 +1575,24 @@ class DataGeneratorObservationsMultiPINNs:
         return self.obs_batch()
 
     def tree_flatten(self):
-        children = self.data_gen_obs
-        aux_data = {"obs_batch_size": self.obs_batch_size}
+        # because a dict with "str" keys cannot go in the children (jittable)
+        # attributes, we need to separate it in two and recreate the zip in the
+        # tree_unflatten
+        children = self.data_gen_obs.values()
+        aux_data = {
+            "obs_batch_size": self.obs_batch_size,
+            "data_gen_obs_keys": self.data_gen_obs.keys(),
+        }
         return (children, aux_data)
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        (data_gen_obs) = children
+        (data_gen_obs_values) = children
         obj = cls(
+            observed_pinn_in_dict=None,
+            observed_values_dict=None,
             data_gen_obs_exists=True,
-            **aux_data,
+            obs_batch_size=aux_data["obs_batch_size"],
         )
-        obj.data_gen_obs = data_gen_obs
+        obj.data_gen_obs = dict(zip(aux_data["data_gen_obs_keys"], data_gen_obs_values))
         return obj

@@ -254,7 +254,7 @@ class SystemLossODE:
         dynamic_loss_dict,
         derivative_keys_dict=None,
         initial_condition_dict=None,
-        obs_batch_dict=None,
+        obs_slice_dict=None,
     ):
         r"""
         Parameters
@@ -290,7 +290,9 @@ class SystemLossODE:
         obs_slice_dict
             dict of obs_slice, with keys from `u_dict` to designate the
             output(s) channels that are forced to observed values, for each
-            PINNs
+            PINNs. Default is None. But if a value is given, all the entries of
+            `u_dict` must be represented here with default value `jnp.s_[...]`
+            if no particular slice is to be given
 
         Raises
         ------
@@ -300,22 +302,22 @@ class SystemLossODE:
             if the dictionaries that should share the keys of u_dict do not
         """
 
+        # a dictionary that will be useful at different places
+        self.u_dict_with_none = {k: None for k in u_dict.keys()}
         if initial_condition_dict is None:
-            self.initial_condition_dict = {k: None for k in u_dict.keys()}
+            self.initial_condition_dict = self.u_dict_with_none
         else:
             self.initial_condition_dict = initial_condition_dict
             if u_dict.keys() != initial_condition_dict.keys():
                 raise ValueError(
-                    "All the dicts (except dynamic_loss_dict) should have same keys"
+                    "initial_condition_dict should have same keys as u_dict"
                 )
         if obs_slice_dict is None:
             self.obs_slice_dict = {k: jnp.s_[...] for k in u_dict.keys()}
         else:
             self.obs_slice_dict = obs_slice_dict
             if u_dict.keys() != obs_slice_dict.keys():
-                raise ValueError(
-                    "All the dicts (except dynamic_loss_dict) should have same keys"
-                )
+                raise ValueError("obs_slice_dict should have same keys as u_dict")
 
         if derivative_keys_dict is None:
             self.derivative_keys_dict = {
@@ -420,6 +422,8 @@ class SystemLossODE:
                     self._loss_weights[k] = {kk: v for kk in self.u_dict.keys()}
         if all(v is None for k, v in self.initial_condition_dict.items()):
             self._loss_weights["initial_condition"] = {k: 0 for k in self.u_dict.keys()}
+        if "observations" not in value.keys():
+            self._loss_weights["observations"] = {k: 0 for k in self.u_dict.keys()}
 
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
@@ -495,6 +499,10 @@ class SystemLossODE:
             "observations": "*",
             "initial_condition": "*",
         }
+
+        # we need to do the following for the tree_mapping to work
+        if batch.obs_batch_dict is None:
+            batch = batch._replace(obs_batch_dict=self.u_dict_with_none)
         total_loss, res_dict = constraints_system_loss_apply(
             self.u_constraints_dict,
             batch,

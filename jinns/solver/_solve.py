@@ -184,6 +184,8 @@ def solve(
     batch = data.get_batch()
     if param_data is not None:
         batch = append_param_batch(batch, param_data.get_batch())
+    if obs_data is not None:
+        batch = append_obs_batch(batch, obs_data.get_batch())
     _, loss_terms = loss(params, batch)
 
     # initialize the dict for stored parameter values
@@ -191,9 +193,9 @@ def solve(
         tracked_params_key_list = []
     tracked_params = _tracked_parameters(params, tracked_params_key_list)
     stored_params = jax.tree_util.tree_map(
-        lambda tracked_param, param: jnp.zeros((n_iter,) + param.shape)
-        if tracked_param
-        else None,
+        lambda tracked_param, param: (
+            jnp.zeros((n_iter,) + param.shape) if tracked_param else None
+        ),
         tracked_params,
         params,
     )
