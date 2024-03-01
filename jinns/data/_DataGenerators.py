@@ -5,7 +5,7 @@ DataGenerators to generate batches of points in space, time and more
 from typing import NamedTuple
 from jax.typing import ArrayLike
 import jax.numpy as jnp
-from jax import random
+from jax import jit, random
 from jax.tree_util import register_pytree_node_class
 import jax.lax
 
@@ -31,6 +31,7 @@ class PDEStatioBatch(NamedTuple):
     obs_batch_dict: dict = None
 
 
+@jit
 def append_param_batch(batch, param_batch_dict):
     """
     Utility function that fill the param_batch_dict of a batch object with a
@@ -39,6 +40,7 @@ def append_param_batch(batch, param_batch_dict):
     return batch._replace(param_batch_dict=param_batch_dict)
 
 
+@jit
 def append_obs_batch(batch, obs_batch_dict):
     """
     Utility function that fill the obs_batch_dict of a batch object with a
@@ -270,6 +272,7 @@ class DataGeneratorODE:
             slice_sizes=(self.temporal_batch_size,),
         )
 
+    @jit
     def get_batch(self):
         """
         Generic method to return a batch. Here we call `self.temporal_batch()`
@@ -727,6 +730,7 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             slice_sizes=(self.omega_border_batch_size, self.dim, 2 * self.dim),
         )
 
+    @jit
     def get_batch(self):
         """
         Generic method to return a batch. Here we call `self.inside_batch()`
@@ -998,6 +1002,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             slice_sizes=(self.temporal_batch_size,),
         )
 
+    @jit
     def get_batch(self):
         """
         Generic method to return a batch. Here we call `self.inside_batch()`,
@@ -1233,6 +1238,7 @@ class DataGeneratorParameter:
             self.curr_param_idx,
         )
 
+    @jit
     def get_batch(self):
         """
         Generic method to return a batch
@@ -1288,6 +1294,7 @@ class DataGeneratorObservations:
         observed_values,
         observed_eq_params=None,
         data_exists=False,
+        sharding_device=None,
     ):
         r"""
         Parameters
@@ -1324,12 +1331,18 @@ class DataGeneratorObservations:
         data_exists
             Must be left to `False` when created by the user. Avoids the
             resetting of curr_idx at each pytree flattening and unflattening.
+        store_cpu_compute_gpu
+            A tuple of jax devices. Use this argument when handling large
+            observations arrays that hardly fit on GPU. First element is the
+            CPU device where to store the data and the second is the GPU device
+            where to perform the computations. Default is None when we do not
+            need such care
         """
         if observed_eq_params is None:
             observed_eq_params = {}
         if observed_pinn_in.shape[0] != observed_values.shape[0]:
             raise ValueError(
-                "observed_pinn_in and observed_values must have" " same first axis"
+                "observed_pinn_in and observed_values must have same first axis"
             )
         for _, v in observed_eq_params.items():
             if v.shape[0] != observed_pinn_in.shape[0]:
@@ -1350,23 +1363,40 @@ class DataGeneratorObservations:
                 observed_eq_params[k] = v[:, None]
             if len(v.shape) > 2:
                 raise ValueError(
-                    "Each value of observed_eq_params must have" " 2 dimensions"
+                    "Each value of observed_eq_params must have 2 dimensions"
                 )
 
         self.n = observed_pinn_in.shape[0]
         self._key = key
         self.obs_batch_size = obs_batch_size
 
-        self.observed_pinn_in = observed_pinn_in
-        self.observed_values = observed_values
-        self.observed_eq_params = observed_eq_params
-
         self.data_exists = data_exists
+        if not self.data_exists and sharding_device is not None:
+            self.observed_pinn_in = jax.lax.with_sharding_constraint(
+                observed_pinn_in, sharding_device
+            )
+            self.observed_values = jax.lax.with_sharding_constraint(
+                observed_values, sharding_device
+            )
+            self.observed_eq_params = jax.lax.with_sharding_constraint(
+                observed_eq_params, sharding_device
+            )
+        else:
+            self.observed_pinn_in = observed_pinn_in
+            self.observed_values = observed_values
+            self.observed_eq_params = observed_eq_params
+
         if not self.data_exists:
             self.curr_idx = 0
             # NOTE for speed and to avoid duplicating data what is really
             # shuffled is a vector of indices
-            self.indices = jnp.arange(self.n)
+            indices = jnp.arange(self.n)
+            if sharding_device is not None:
+                self.indices = jax.lax.with_sharding_constraint(
+                    indices, sharding_device
+                )
+            else:
+                self.indices = indices
             self._key, self.indices, _ = _reset_batch_idx_and_permute(
                 self._get_operands()
             )
@@ -1401,7 +1431,7 @@ class DataGeneratorObservations:
             slice_sizes=(self.obs_batch_size,),
         )
 
-        return {
+        obs_batch = {
             "pinn_in": jnp.take(
                 self.observed_pinn_in, minib_indices, unique_indices=True, axis=0
             ),
@@ -1413,7 +1443,9 @@ class DataGeneratorObservations:
                 self.observed_eq_params,
             ),
         }
+        return obs_batch
 
+    @jit
     def get_batch(self):
         """
         Generic method to return a batch
@@ -1439,7 +1471,10 @@ class DataGeneratorObservations:
         obj = cls(
             key=key,
             data_exists=True,
-            **aux_data,
+            obs_batch_size=aux_data["obs_batch_size"],
+            observed_pinn_in=aux_data["observed_pinn_in"],
+            observed_values=aux_data["observed_values"],
+            observed_eq_params=aux_data["observed_eq_params"],
         )
         obj.curr_idx = curr_idx
         obj.indices = indices
@@ -1568,6 +1603,7 @@ class DataGeneratorObservationsMultiPINNs:
         # thus to be able to call the method on the element(s) of
         # self.data_gen_obs which are not None
 
+    @jit
     def get_batch(self):
         """
         Generic method to return a batch

@@ -5,6 +5,7 @@ Main module to implement a PDE loss in jinns
 import warnings
 import jax
 import jax.numpy as jnp
+from jax import jit
 from jax.tree_util import register_pytree_node_class
 from jinns.loss._Losses import (
     dynamic_loss_apply,
@@ -485,9 +486,11 @@ class LossPDEStatio(LossPDEAbstract):
                 "self.omega_boundary_condition is dict, the other should be too."
             )
 
+    @jit
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
+    @jit
     def evaluate(self, params, batch):
         """
         Evaluate the loss function at a batch of points for given parameters.
@@ -820,9 +823,11 @@ class LossPDENonStatio(LossPDEStatio):
         if self.sobolev_reg is None:
             self.loss_weights["sobolev"] = 0
 
+    @jit
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
+    @jit
     def evaluate(
         self,
         params,
@@ -1361,9 +1366,11 @@ class SystemLossPDE:
         if all(v is None for k, v in self.initial_condition_fun_dict.items()):
             self._loss_weights["initial_condition"] = {k: 0 for k in self.u_dict.keys()}
 
+    @jit
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
+    @jit
     def evaluate(
         self,
         params_dict,

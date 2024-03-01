@@ -1,4 +1,5 @@
 import jax
+from jax import jit
 from jax import vmap
 import jax.numpy as jnp
 from jinns.data._DataGenerators import (
@@ -11,28 +12,29 @@ from jinns.loss._LossODE import LossODE, SystemLossODE
 from jinns.loss._DynamicLossAbstract import PDEStatio
 
 
-def _rar_step_triggerer(carry, i, _rar_step_true, _rar_step_false):
-    carry["data"] = jax.lax.cond(
+@jit
+def _rar_step_triggerer(loss, params, data, i, _rar_step_true, _rar_step_false):
+    data = jax.lax.cond(
         jnp.all(
             jnp.array(
                 [
                     # check if enough it since last points added
-                    carry["data"].rar_parameters["update_rate"]
-                    == carry["data"].rar_iter_from_last_sampling,
+                    data.rar_parameters["update_rate"]
+                    == data.rar_iter_from_last_sampling,
                     # check if burn in period has ended
-                    carry["data"].rar_parameters["start_iter"] < i,
+                    data.rar_parameters["start_iter"] < i,
                     # check if we still have room to append new
                     # collocation points in the allocated jnp array
-                    carry["data"].rar_parameters["selected_sample_size"]
-                    <= jnp.count_nonzero(carry["data"].p == 0),
+                    data.rar_parameters["selected_sample_size"]
+                    <= jnp.count_nonzero(data.p == 0),
                 ]
             )
         ),
         _rar_step_true,
         _rar_step_false,
-        (carry["loss"], carry["params"], carry["data"], i),
+        (loss, params, data, i),
     )
-    return carry
+    return loss, params, data
 
 
 def _rar_step_init(sample_size, selected_sample_size):

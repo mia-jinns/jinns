@@ -1,4 +1,6 @@
 import jax
+from jax import jit
+import jax.numpy as jnp
 from jinns.data._DataGenerators import (
     DataGeneratorODE,
     _reset_batch_idx_and_permute,
@@ -6,27 +8,34 @@ from jinns.data._DataGenerators import (
 from jinns.loss._LossODE import SystemLossODE, LossODE
 from jinns.loss._LossPDE import LossPDENonStatio, LossPDEStatio, SystemLossPDE
 
-import jax.numpy as jnp
 
-
-def _seq2seq_triggerer(carry, i, _update_seq2seq_true, _update_seq2seq_false):
-    carry["curr_seq"], carry["loss"], carry["data"], carry["opt_state"] = jax.lax.cond(
-        carry["curr_seq"] + 1
-        < jnp.sum(
-            carry["seq2seq"]["iter_steps"] < i
-        ),  # check if we fall in another time interval
+@jit
+def _seq2seq_triggerer(
+    loss,
+    params,
+    data,
+    opt_state,
+    curr_seq,
+    seq2seq,
+    i,
+    _update_seq2seq_true,
+    _update_seq2seq_false,
+):
+    curr_seq, loss, data, opt_state = jax.lax.cond(
+        curr_seq + 1 < jnp.sum(seq2seq["iter_steps"] < i),
+        # check if we fall in another time interval
         _update_seq2seq_true,
         _update_seq2seq_false,
         (
-            carry["loss"],
-            carry["seq2seq"],
-            carry["data"],
-            carry["params"],
-            carry["curr_seq"],
-            carry["opt_state"],
+            loss,
+            seq2seq,
+            data,
+            params,
+            curr_seq,
+            opt_state,
         ),
     )
-    return carry
+    return loss, params, data, opt_state, curr_seq, seq2seq
 
 
 def _initialize_seq2seq(loss, data, seq2seq, opt_state):

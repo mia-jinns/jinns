@@ -4,9 +4,10 @@ handles the optimization process
 """
 
 from jaxopt import OptaxSolver, LBFGS
-from optax import GradientTransformation
-from jax_tqdm import scan_tqdm
+import optax
+from tqdm import tqdm
 import jax
+from jax import jit
 import jax.numpy as jnp
 from jinns.solver._seq2seq import (
     _initialize_seq2seq,
@@ -36,6 +37,7 @@ def solve(
     tracked_params_key_list=None,
     param_data=None,
     obs_data=None,
+    obs_batch_sharding=None,
 ):
     """
     Performs the optimization process via stochastic gradient descent
@@ -62,12 +64,7 @@ def solve(
         object). It must be jittable (e.g. implements via a pytree
         registration)
     optimizer
-        Can be an `optax` optimizer (e.g. `optax.adam`).
-        In such case, it is wrapped in the `jaxopt.OptaxSolver` wrapper.
-        Can be a `jaxopt` optimizer (e.g. `jaxopt.BFGS`) which supports the
-        methods `init_state` and `update`.
-        Can be a string (currently only `bfgs`), in such case a `jaxopt`
-        optimizer is created with default parameters.
+        An `optax` optimizer (e.g. `optax.adam`).
     print_loss_every
         Integer. Default 100. The rate at which we print the loss value in the
         gradient step loop.
@@ -93,15 +90,20 @@ def solve(
     obs_data
         Default None. A DataGeneratorObservations object which can be used to
         sample minibatches of observations
+    obs_batch_sharding
+        Default None. An optional sharding object to constraint the obs_batch.
+        Typically, a SingleDeviceSharding(gpu_device) when obs_data has been
+        created with sharding_device=SingleDeviceSharding(cpu_device) to avoid
+        loading on GPU huge datasets of observations
 
     Returns
     -------
     params
         The last non NaN value of the dictionaries of parameters at then end of the
         optimization process
-    accu[0, :]
+    total_loss_values
         An array of the total loss term along the gradient steps
-    res["stored_loss_terms"]
+    stored_loss_terms
         A dictionary. At each key an array of the values of a given loss
         term is stored
     data
@@ -110,22 +112,12 @@ def solve(
         The input loss object
     opt_state
         The final optimized state
-    res["stored_params"]
+    stored_params
         A dictionary. At each key an array of the values of the parameters
         given in tracked_params_key_list is stored
     """
     params = init_params
-
-    if isinstance(optimizer, GradientTransformation):
-        optimizer = OptaxSolver(
-            opt=optimizer,
-            fun=loss,
-            has_aux=True,
-            maxiter=n_iter,
-        )
-    elif optimizer == "lbfgs":
-        optimizer = LBFGS(fun=loss, has_aux=True, maxiter=n_iter)
-    # else, we trust that the user has given a valid jaxopt optimizer
+    last_non_nan_params = init_params.copy()
 
     if param_data is not None:
         if (
@@ -156,12 +148,8 @@ def solve(
             )
 
     if opt_state is None:
-        batch = data.get_batch()
-        if param_data is not None:
-            batch = append_param_batch(batch, param_data.get_batch())
-        if obs_data is not None:
-            batch = append_obs_batch(batch, obs_data.get_batch())
-        opt_state = optimizer.init_state(params, batch=batch)
+        opt_state = optimizer.init(params)
+    value_grad_loss = jax.value_and_grad(loss, has_aux=True)
 
     curr_seq = 0
     if seq2seq is not None:
@@ -181,12 +169,29 @@ def solve(
         )
         data.rar_parameters["iter_from_last_sampling"] = 0
 
-    batch = data.get_batch()
-    if param_data is not None:
-        batch = append_param_batch(batch, param_data.get_batch())
-    if obs_data is not None:
-        batch = append_obs_batch(batch, obs_data.get_batch())
-    _, loss_terms = loss(params, batch)
+    def get_batch(data, param_data, obs_data):
+        """
+        This function is used at each loop but it cannot be jitted because of
+        device_put
+        """
+        batch = data.get_batch()
+        if param_data is not None:
+            batch = append_param_batch(batch, param_data.get_batch())
+        if obs_data is not None:
+            if obs_batch_sharding is not None:
+                # This is the part that motivated the transition from scan to for loop
+                # Indeed we need to be transit obs_batch from CPU to GPU when we have
+                # huge observations that cannot fit on GPU. Such transfer wasn't meant
+                # to be jitted, i.e. in a scan loop
+                obs_batch = jax.device_put(obs_data.get_batch(), obs_batch_sharding)
+            else:
+                obs_batch = obs_data.get_batch()
+            batch = append_obs_batch(batch, obs_batch)
+        return batch
+
+    # We need to get a loss_term to init stuff
+    batch_ini = get_batch(data, param_data, obs_data)
+    _, loss_terms = loss(params, batch_ini)
 
     # initialize the dict for stored parameter values
     if tracked_params_key_list is None:
@@ -205,31 +210,34 @@ def solve(
         lambda x: jnp.zeros((n_iter)), loss_terms
     )
 
-    @scan_tqdm(n_iter)
-    def scan_func_solve_one_iter(carry, i):
-        """
-        Main optimization loop
-        """
-        batch = carry["data"].get_batch()
-        if carry["param_data"] is not None:
-            batch = append_param_batch(batch, carry["param_data"].get_batch())
-        if carry["obs_data"] is not None:
-            batch = append_obs_batch(batch, carry["obs_data"].get_batch())
-        carry["params"], carry["opt_state"] = optimizer.update(
-            params=carry["params"], state=carry["opt_state"], batch=batch
-        )
+    total_loss_values = jnp.zeros((n_iter))
+
+    @jit
+    def gradient_step(batch, params, opt_state, last_non_nan_params):
+        (loss_val, loss_terms), grads = value_grad_loss(params, batch)
+        updates, opt_state = optimizer.update(grads, opt_state)
+        params = optax.apply_updates(params, updates)
 
         # check if any of the parameters is NaN
-        carry["last_non_nan_params"] = jax.lax.cond(
-            _check_nan_in_pytree(carry["params"]),
-            lambda _: carry["last_non_nan_params"],
-            lambda _: carry["params"],
+        last_non_nan_params = jax.lax.cond(
+            _check_nan_in_pytree(params),
+            lambda _: last_non_nan_params,
+            lambda _: params,
             None,
         )
 
-        total_loss_val, loss_terms = loss(carry["params"], batch)
+        return (
+            loss_val,
+            loss_terms,
+            params,
+            opt_state,
+            last_non_nan_params,
+        )
 
-        # Print loss during optimization
+    @jit
+    def print_fn(i, total_loss_val):
+        # note that if the following is not jitted in the main lor loop, it is
+        # super slow
         _ = jax.lax.cond(
             i % print_loss_every == 0,
             lambda _: jax.debug.print(
@@ -241,78 +249,103 @@ def solve(
             (None,),
         )
 
-        # optionnal seq2seq
-        if seq2seq is not None:
-            carry = _seq2seq_triggerer(
-                carry, i, _update_seq2seq_true, _update_seq2seq_false
-            )
-        else:
-            carry["curr_seq"] = -1
-
-        # optional residual adaptative refinement
-        if carry["data"].rar_parameters is not None:
-            carry = _rar_step_triggerer(carry, i, _rar_step_true, _rar_step_false)
-
-        # saving selected parameters values
-        carry["stored_params"] = jax.tree_util.tree_map(
+    @jit
+    def store_loss_and_params(
+        i,
+        params,
+        stored_params,
+        stored_loss_terms,
+        total_loss_values,
+        loss_val,
+        loss_terms,
+    ):
+        stored_params = jax.tree_util.tree_map(
             lambda stored_value, param, tracked_param: jax.lax.cond(
                 tracked_param,
                 lambda ope: ope[0].at[i].set(ope[1]),
                 lambda ope: ope[0],
                 (stored_value, param),
             ),
-            carry["stored_params"],
-            carry["params"],
+            stored_params,
+            params,
             tracked_params,
         )
-
-        # saving values of each loss term
-        carry["stored_loss_terms"] = jax.tree_util.tree_map(
+        stored_loss_terms = jax.tree_util.tree_map(
             lambda stored_term, loss_term: stored_term.at[i].set(loss_term),
-            carry["stored_loss_terms"],
+            stored_loss_terms,
             loss_terms,
         )
 
-        return carry, [total_loss_val]
+        total_loss_values = total_loss_values.at[i].set(loss_val)
+        return stored_params, stored_loss_terms, total_loss_values
 
-    res, accu = jax.lax.scan(
-        scan_func_solve_one_iter,
-        {
-            "params": init_params,
-            "last_non_nan_params": init_params.copy(),
-            "data": data,
-            "curr_seq": curr_seq,
-            "seq2seq": seq2seq,
-            "stored_params": stored_params,
-            "stored_loss_terms": stored_loss_terms,
-            "loss": loss,
-            "param_data": param_data,
-            "obs_data": obs_data,
-            "opt_state": opt_state,
-        },
-        jnp.arange(n_iter),
-    )
+    @jit
+    def trigger_rar_seq2seq(i, loss, params, data, opt_state, curr_seq, seq2seq):
+        if seq2seq is not None:
+            loss, params, data, opt_state, curr_seq, seq2seq = _seq2seq_triggerer(
+                loss,
+                params,
+                data,
+                opt_state,
+                curr_seq,
+                seq2seq,
+                i,
+                _update_seq2seq_true,
+                _update_seq2seq_false,
+            )
+        else:
+            curr_seq = -1
+
+        if data.rar_parameters is not None:
+            loss, params, data = _rar_step_triggerer(
+                loss, params, data, i, _rar_step_true, _rar_step_false
+            )
+
+        return loss, params, data, opt_state, curr_seq, seq2seq
+
+    # Main optimization loop
+    for i in tqdm(range(n_iter)):
+        batch = get_batch(data, param_data, obs_data)
+
+        (
+            loss_val,
+            loss_terms,
+            params,
+            opt_state,
+            last_non_nan_params,
+        ) = gradient_step(batch, params, opt_state, last_non_nan_params)
+
+        # Print loss during optimization
+        print_fn(i, loss_val)
+
+        # Trigger RAR or seq2seq
+        loss, params, data, opt_state, curr_seq, seq2seq = trigger_rar_seq2seq(
+            i, loss, params, data, opt_state, curr_seq, seq2seq
+        )
+
+        # save loss value and selected parameters
+        stored_params, stored_loss_terms, total_loss_values = store_loss_and_params(
+            i,
+            params,
+            stored_params,
+            stored_loss_terms,
+            total_loss_values,
+            loss_val,
+            loss_terms,
+        )
 
     jax.debug.print(
         "Iteration {i}: loss value = {total_loss_val}",
         i=n_iter,
-        total_loss_val=accu[-1][-1],
+        total_loss_val=total_loss_values[-1],
     )
-
-    params = res["params"]
-    last_non_nan_params = res["last_non_nan_params"]
-    opt_state = res["opt_state"]
-    data = res["data"]
-    loss = res["loss"]
-
-    accu = jnp.array(accu)
 
     return (
         last_non_nan_params,
-        accu[0, :],
-        res["stored_loss_terms"],
+        total_loss_values,
+        stored_loss_terms,
         data,
         loss,
         opt_state,
-        res["stored_params"],
+        stored_params,
     )
