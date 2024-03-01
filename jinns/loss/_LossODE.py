@@ -4,7 +4,7 @@ Main module to implement a ODE loss in jinns
 
 import jax
 import jax.numpy as jnp
-from jax import jit, vmap
+from jax import vmap
 from jax.tree_util import register_pytree_node_class
 from jinns.utils._utils import (
     _get_vmap_in_axes_params,
@@ -117,11 +117,9 @@ class LossODE:
         if self.obs_slice is None:
             self.obs_slice = jnp.s_[...]
 
-    @jit
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
-    @jit
     def evaluate(self, params, batch):
         """
         Evaluate the loss function at a batch of points for given parameters.
@@ -427,11 +425,9 @@ class SystemLossODE:
         if "observations" not in value.keys():
             self._loss_weights["observations"] = {k: 0 for k in self.u_dict.keys()}
 
-    @jit
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
-    @jit
     def evaluate(self, params_dict, batch):
         """
         Evaluate the loss function at a batch of points for given parameters.

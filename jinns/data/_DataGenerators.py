@@ -5,7 +5,7 @@ DataGenerators to generate batches of points in space, time and more
 from typing import NamedTuple
 from jax.typing import ArrayLike
 import jax.numpy as jnp
-from jax import jit, random
+from jax import random
 from jax.tree_util import register_pytree_node_class
 import jax.lax
 
@@ -31,7 +31,6 @@ class PDEStatioBatch(NamedTuple):
     obs_batch_dict: dict = None
 
 
-@jit
 def append_param_batch(batch, param_batch_dict):
     """
     Utility function that fill the param_batch_dict of a batch object with a
@@ -40,7 +39,6 @@ def append_param_batch(batch, param_batch_dict):
     return batch._replace(param_batch_dict=param_batch_dict)
 
 
-@jit
 def append_obs_batch(batch, obs_batch_dict):
     """
     Utility function that fill the obs_batch_dict of a batch object with a
@@ -272,7 +270,6 @@ class DataGeneratorODE:
             slice_sizes=(self.temporal_batch_size,),
         )
 
-    @jit
     def get_batch(self):
         """
         Generic method to return a batch. Here we call `self.temporal_batch()`
@@ -730,7 +727,6 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             slice_sizes=(self.omega_border_batch_size, self.dim, 2 * self.dim),
         )
 
-    @jit
     def get_batch(self):
         """
         Generic method to return a batch. Here we call `self.inside_batch()`
@@ -1002,7 +998,6 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             slice_sizes=(self.temporal_batch_size,),
         )
 
-    @jit
     def get_batch(self):
         """
         Generic method to return a batch. Here we call `self.inside_batch()`,
@@ -1238,7 +1233,6 @@ class DataGeneratorParameter:
             self.curr_param_idx,
         )
 
-    @jit
     def get_batch(self):
         """
         Generic method to return a batch
@@ -1445,7 +1439,6 @@ class DataGeneratorObservations:
         }
         return obs_batch
 
-    @jit
     def get_batch(self):
         """
         Generic method to return a batch
@@ -1603,7 +1596,6 @@ class DataGeneratorObservationsMultiPINNs:
         # thus to be able to call the method on the element(s) of
         # self.data_gen_obs which are not None
 
-    @jit
     def get_batch(self):
         """
         Generic method to return a batch
