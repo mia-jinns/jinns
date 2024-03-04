@@ -4,6 +4,7 @@ Main module to implement a ODE loss in jinns
 
 import jax
 import jax.numpy as jnp
+from jax import vmap
 from jax.tree_util import register_pytree_node_class
 from jinns.utils._utils import (
     _get_vmap_in_axes_params,
@@ -172,11 +173,13 @@ class LossODE:
         # initial condition
         params_ = _set_derivatives(params, "initial_condition", self.derivative_keys)
         if self.initial_condition is not None:
+            v_u = vmap(self.u, (None,) + vmap_in_axes_params)
             t0, u0 = self.initial_condition
             t0 = jnp.array(t0)
             u0 = jnp.array(u0)
             mse_initial_condition = jnp.mean(
-                self.loss_weights["initial_condition"] * (self.u(t0, params_) - u0) ** 2
+                self.loss_weights["initial_condition"]
+                * jnp.sum((v_u(t0, params_) - u0) ** 2, axis=-1)
             )
         else:
             mse_initial_condition = jnp.array(0.0)
