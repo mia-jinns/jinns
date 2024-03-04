@@ -4,14 +4,16 @@ Main module to implement a ODE loss in jinns
 
 import jax
 import jax.numpy as jnp
-from jax import vmap
 from jax.tree_util import register_pytree_node_class
 from jinns.utils._utils import (
     _get_vmap_in_axes_params,
     _set_derivatives,
-    _check_user_func_return,
 )
-from jinns.loss._Losses import dynamic_loss_apply, constraints_system_loss_apply
+from jinns.loss._Losses import (
+    dynamic_loss_apply,
+    constraints_system_loss_apply,
+    observations_loss_apply,
+)
 from jinns.utils._pinn import PINN
 
 
@@ -185,14 +187,14 @@ class LossODE:
                 params["eq_params"][k] = v
             # MSE loss wrt to an observed batch
             params_ = _set_derivatives(params, "observations", self.derivative_keys)
-            v_u = vmap(
-                lambda t, params_: self.u(t, params_),
+            mse_observation_loss = observations_loss_apply(
+                self.u,
+                (batch.obs_batch_dict["pinn_in"],),
+                params_,
                 vmap_in_axes_t + vmap_in_axes_params,
-            )
-            val = v_u(batch.obs_batch_dict["pinn_in"], params_)[:, self.obs_slice]
-            obs = _check_user_func_return(batch.obs_batch_dict["val"], val.shape)
-            mse_observation_loss = jnp.mean(
-                self.loss_weights["observations"] * jnp.mean((val - obs) ** 2, axis=0)
+                batch.obs_batch_dict["val"],
+                self.loss_weights["observations"],
+                self.obs_slice,
             )
         else:
             mse_observation_loss = jnp.array(0.0)
