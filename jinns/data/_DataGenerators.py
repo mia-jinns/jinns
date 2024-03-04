@@ -1308,7 +1308,10 @@ class DataGeneratorObservations:
             Observed values corresponding to the input of the PINN
             (eg. the time at which we recorded the observations). The first
             dimension must be aligned with observed_values and the values of
-            observed_eq_params
+            observed_eq_params. If we have observed_pinn_in for stationary
+            PINN, then this argument has shape (nb_obs, 1), with 1 begin for
+            the t dimensions. If we consider observed_pinn_in for non
+            stationary PINN, then this argument has shape (nb_obs, 1 + n_dim_x)
         observed_values
             A jnp.array with 2 dimensions.
             Observed values corresponding that the PINN should

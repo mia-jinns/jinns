@@ -40,23 +40,19 @@ def _compute_boundary_loss(
 
     Parameters
     ----------
-    boundary_condition_type : a string
+    boundary_condition_type
         a string defining the differential operator :math:`D[\cdot]`.
         Currently implements one of "Dirichlet" (:math:`D = Id`) and Von
         Neuman (:math:`D[\cdot] = \nabla \cdot n`) where :math:`n` is the
         unitary outgoing vector normal to :math:`\partial\Omega`
-    f :
+    f
         the function to be matched in the boundary condition. It should have
         one argument only (other are ignored).
-    batch : a PDEStatioBatch object or PDENonStatioBatch
-        Such a named tuple is composed of a batch of points in
-        the domain, a batch of points in the domain
-        border (a time point batch for NonStatioBatch)
-        and an optional additional batch
-        of parameters (eg. for metamodeling)
-    u :
+    batch
+        a PDEStatioBatch object or PDENonStatioBatch
+    u
         a PINN
-    params:
+    params
         The dictionary of parameters of the model.
         Typically, it is a dictionary of
         dictionaries: `eq_params` and `nn_params``, respectively the
@@ -110,10 +106,6 @@ def boundary_dirichlet_statio(f, batch, u, params, facet, dim_to_apply):
         the constraint function
     batch
         A PDEStatioBatch object.
-        Such a named tuple is composed of a batch of points in the
-        domain, a batch of points in the domain
-        border and an optional additional batch of parameters (eg. for
-        metamodeling)
     u
         The PINN
     params
@@ -166,10 +158,6 @@ def boundary_neumann_statio(f, batch, u, params, facet, dim_to_apply):
         the constraint function
     batch
         A PDEStatioBatch object.
-        Such a named tuple is composed of a batch of points in the
-        domain, a batch of points in the domain
-        border and an optional additional batch of parameters (eg. for
-        metamodeling)
     u
         The PINN
     params
@@ -276,11 +264,8 @@ def boundary_dirichlet_nonstatio(f, batch, u, params, facet, dim_to_apply):
     ----------
     f
         the constraint function
-    batch : a PDENonStatioBatch object.
-        Such a named tuple is composed of a batch of points in
-        the domain, a batch of points in the domain
-        border, a batch of time points and an optional additional batch
-        of parameters (eg. for metamodeling)
+    batch
+        A PDENonStatioBatch object.
     u
         The PINN
     params
@@ -369,10 +354,6 @@ def boundary_neumann_nonstatio(f, batch, u, params, facet, dim_to_apply):
         the constraint function
     batch
         A PDENonStatioBatch object.
-        Such a named tuple is composed of a batch of points in
-        the domain, a batch of points in the domain
-        border, a batch of time points and an optional additional batch
-        of parameters (eg. for metamodeling)
     u
         The PINN
     params

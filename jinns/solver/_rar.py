@@ -12,7 +12,6 @@ from jinns.loss._LossODE import LossODE, SystemLossODE
 from jinns.loss._DynamicLossAbstract import PDEStatio
 
 
-@jit
 def _rar_step_triggerer(loss, params, data, i, _rar_step_true, _rar_step_false):
     data = jax.lax.cond(
         jnp.all(
@@ -334,7 +333,7 @@ def _rar_step_init(sample_size, selected_sample_size):
             return data
 
     def rar_step_false(operands):
-        loss_evaluate_fun, params, data, i = operands
+        _, _, data, i = operands
 
         # Add 1 only if we are after the burn in period
         data.rar_iter_from_last_sampling = jax.lax.cond(

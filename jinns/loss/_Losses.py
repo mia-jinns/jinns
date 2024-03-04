@@ -155,6 +155,9 @@ def boundary_condition_apply(
 def observations_loss_apply(
     u, batches, params, vmap_axes, observed_values, loss_weight
 ):
+    print(batches[0].shape)
+    print(observed_values.shape)
+    print(vmap_axes)
     # TODO implement for SPINN
     if isinstance(u, PINN):
         v_u = vmap(

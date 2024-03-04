@@ -136,7 +136,8 @@ class LossODE:
             A ODEBatch object.
             Such a named tuple is composed of a batch of time points
             at which to evaluate an optional additional batch of parameters (eg. for
-            metamodeling)
+            metamodeling) and an optional additional batch of observed
+            inputs/outputs/parameters
         """
         temporal_batch = batch.temporal_batch
 
@@ -146,11 +147,9 @@ class LossODE:
         # and update eq_params with the latter
         # and update vmap_in_axes
         if batch.param_batch_dict is not None:
-            eq_params_batch_dict = batch.param_batch_dict
-
             # feed the eq_params with the batch
-            for k in eq_params_batch_dict.keys():
-                params["eq_params"][k] = eq_params_batch_dict[k]
+            for k, v in batch.param_batch_dict.items():
+                params["eq_params"][k] = v
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
@@ -182,8 +181,8 @@ class LossODE:
 
         if batch.obs_batch_dict is not None:
             # feed the eq_params with the batch
-            for k in batch.obs_batch_dict["eq_params"].keys():
-                params["eq_params"][k] = batch.obs_batch_dict["eq_params"][k]
+            for k, v in batch.obs_batch_dict["eq_params"].items():
+                params["eq_params"][k] = v
             # MSE loss wrt to an observed batch
             params_ = _set_derivatives(params, "observations", self.derivative_keys)
             v_u = vmap(
@@ -383,7 +382,7 @@ class SystemLossODE:
         for k, v in value.items():
             if isinstance(v, dict):
                 for kk, vv in v.items():
-                    if not (isinstance(vv, int) or isinstance(vv, float)) and not (
+                    if not isinstance(vv, (int, float)) and not (
                         isinstance(vv, jnp.ndarray)
                         and ((vv.shape == (1,) or len(vv.shape) == 0))
                     ):
@@ -408,7 +407,7 @@ class SystemLossODE:
                             " do not match u_dict keys"
                         )
             else:
-                if not (isinstance(v, int) or isinstance(v, float)) and not (
+                if not isinstance(v, (int, float)) and not (
                     isinstance(v, jnp.ndarray)
                     and ((v.shape == (1,) or len(v.shape) == 0))
                 ):
@@ -444,7 +443,11 @@ class SystemLossODE:
             but can directly be the parameters. It is useful when working with
             neural networks sharing the same parameters
         batch
-            A batch of time points at which to evaluate the loss
+            A ODEBatch object.
+            Such a named tuple is composed of a batch of time points
+            at which to evaluate an optional additional batch of parameters (eg. for
+            metamodeling) and an optional additional batch of observed
+            inputs/outputs/parameters
         """
         if (
             isinstance(params_dict["nn_params"], dict)
@@ -460,11 +463,9 @@ class SystemLossODE:
         # and update eq_params with the latter
         # and update vmap_in_axes
         if batch.param_batch_dict is not None:
-            eq_params_batch_dict = batch.param_batch_dict
-
             # feed the eq_params with the batch
-            for k in eq_params_batch_dict.keys():
-                params_dict["eq_params"][k] = eq_params_batch_dict[k]
+            for k, v in batch.param_batch_dict.items():
+                params_dict["eq_params"][k] = v
 
         vmap_in_axes_params = _get_vmap_in_axes_params(
             batch.param_batch_dict, params_dict

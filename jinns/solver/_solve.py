@@ -315,7 +315,7 @@ def get_gradient_step_for_loss(optimizer, loss):
     def gradient_step(batch, params, opt_state, last_non_nan_params):
         value_grad_loss = jax.value_and_grad(loss, has_aux=True)
         (loss_val, loss_terms), grads = value_grad_loss(params, batch)
-        updates, opt_state = optimizer.update(grads, opt_state)
+        updates, opt_state = optimizer.update(grads, opt_state, params)
         params = optax.apply_updates(params, updates)
 
         # check if any of the parameters is NaN
