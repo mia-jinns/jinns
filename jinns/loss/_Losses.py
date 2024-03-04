@@ -164,9 +164,9 @@ def observations_loss_apply(
         )
         val = v_u(*batches, params)[:, obs_slice]
         mse_observation_loss = jnp.mean(
-            loss_weight
-            * jnp.sum(
-                (val - _check_user_func_return(observed_values, val.shape)) ** 2,
+            jnp.sum(
+                loss_weight
+                * (val - _check_user_func_return(observed_values, val.shape)) ** 2,
                 # the reshape above avoids a potential missing (1,)
                 axis=-1,
             )
