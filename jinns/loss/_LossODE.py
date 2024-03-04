@@ -526,6 +526,7 @@ class SystemLossODE:
             "u_dict": self.u_dict,
             "dynamic_loss_dict": self.dynamic_loss_dict,
             "derivative_keys_dict": self.derivative_keys_dict,
+            "obs_slice_dict": self.obs_slice_dict,
         }
         return (children, aux_data)
 

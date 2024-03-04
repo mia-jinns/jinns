@@ -153,7 +153,7 @@ def boundary_condition_apply(
 
 
 def observations_loss_apply(
-    u, batches, params, vmap_axes, observed_values, loss_weight
+    u, batches, params, vmap_axes, observed_values, loss_weight, obs_slice
 ):
     # TODO implement for SPINN
     if isinstance(u, PINN):
@@ -162,7 +162,7 @@ def observations_loss_apply(
             vmap_axes,
             0,
         )
-        val = v_u(*batches, params)
+        val = v_u(*batches, params)[:, obs_slice]
         mse_observation_loss = jnp.mean(
             loss_weight
             * jnp.sum(

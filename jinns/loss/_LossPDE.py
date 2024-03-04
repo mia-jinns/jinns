@@ -259,6 +259,7 @@ class LossPDEStatio(LossPDEAbstract):
         norm_borders=None,
         norm_samples=None,
         sobolev_m=None,
+        obs_slice=None,
     ):
         r"""
         Parameters
@@ -331,6 +332,10 @@ class LossPDEStatio(LossPDEAbstract):
             It corresponds to the Sobolev regularization order as proposed in
             *Convergence and error analysis of PINNs*,
             Doumeche et al., 2023, https://arxiv.org/pdf/2305.01240.pdf
+        obs_slice
+            slice object specifying the begininning/ending
+            slice of u output(s) that is observed (this is then useful for
+            multidim PINN). Default is None.
 
 
         Raises
@@ -460,6 +465,10 @@ class LossPDEStatio(LossPDEAbstract):
                 "self.omega_boundary_condition is dict, the other should be too."
             )
 
+        self.obs_slice = obs_slice
+        if self.obs_slice is None:
+            self.obs_slice = jnp.s_[...]
+
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
@@ -553,6 +562,7 @@ class LossPDEStatio(LossPDEAbstract):
                 vmap_in_axes_x + vmap_in_axes_params,
                 batch.obs_batch_dict["val"],
                 self.loss_weights["observations"],
+                self.obs_slice,
             )
         else:
             mse_observation_loss = jnp.array(0.0)
@@ -604,6 +614,7 @@ class LossPDEStatio(LossPDEAbstract):
             "omega_boundary_dim": self.omega_boundary_dim,
             "norm_borders": self.norm_borders,
             "sobolev_m": self.sobolev_m,
+            "obs_slice": self.obs_slice,
         }
         return (children, aux_data)
 
@@ -622,6 +633,7 @@ class LossPDEStatio(LossPDEAbstract):
             aux_data["norm_borders"],
             norm_samples,
             aux_data["sobolev_m"],
+            aux_data["obs_slice"],
         )
         return pls
 
@@ -659,6 +671,7 @@ class LossPDENonStatio(LossPDEStatio):
         norm_borders=None,
         norm_samples=None,
         sobolev_m=None,
+        obs_slice=None,
     ):
         r"""
         Parameters
@@ -731,6 +744,11 @@ class LossPDENonStatio(LossPDEStatio):
             It corresponds to the Sobolev regularization order as proposed in
             *Convergence and error analysis of PINNs*,
             Doumeche et al., 2023, https://arxiv.org/pdf/2305.01240.pdf
+        obs_slice
+            slice object specifying the begininning/ending
+            slice of u output(s) that is observed (this is then useful for
+            multidim PINN). Default is None.
+
 
         """
 
@@ -746,6 +764,7 @@ class LossPDENonStatio(LossPDEStatio):
             norm_borders,
             norm_samples,
             sobolev_m=sobolev_m,
+            obs_slice=obs_slice,
         )
         self.initial_condition_fun = initial_condition_fun
 
@@ -894,6 +913,7 @@ class LossPDENonStatio(LossPDEStatio):
                 vmap_in_axes_x_t + vmap_in_axes_params,
                 batch.obs_batch_dict["val"],
                 self.loss_weights["observations"],
+                self.obs_slice,
             )
         else:
             mse_observation_loss = jnp.array(0.0)
@@ -947,6 +967,7 @@ class LossPDENonStatio(LossPDEStatio):
             "initial_condition_fun": self.initial_condition_fun,
             "norm_borders": self.norm_borders,
             "sobolev_m": self.sobolev_m,
+            "obs_slice": self.obs_slice,
         }
         return (children, aux_data)
 
@@ -966,6 +987,7 @@ class LossPDENonStatio(LossPDEStatio):
             aux_data["norm_borders"],
             norm_samples,
             aux_data["sobolev_m"],
+            aux_data["obs_slice"],
         )
         return pls
 
@@ -1005,6 +1027,7 @@ class SystemLossPDE:
         norm_borders_dict=None,
         norm_samples_dict=None,
         sobolev_m_dict=None,
+        obs_slice_dict=None,
     ):
         r"""
         Parameters
@@ -1070,6 +1093,12 @@ class SystemLossPDE:
             It corresponds to the Sobolev regularization order as proposed in
             *Convergence and error analysis of PINNs*,
             Doumeche et al., 2023, https://arxiv.org/pdf/2305.01240.pdf
+        obs_slice_dict
+            dict of obs_slice, with keys from `u_dict` to designate the
+            output(s) channels that are forced to observed values, for each
+            PINNs. Default is None. But if a value is given, all the entries of
+            `u_dict` must be represented here with default value `jnp.s_[...]`
+            if no particular slice is to be given
 
 
         Raises
@@ -1118,6 +1147,12 @@ class SystemLossPDE:
             self.sobolev_m_dict = self.u_dict_with_none
         else:
             self.sobolev_m_dict = sobolev_m_dict
+        if obs_slice_dict is None:
+            self.obs_slice_dict = {k: jnp.s_[...] for k in u_dict.keys()}
+        else:
+            self.obs_slice_dict = obs_slice_dict
+            if u_dict.keys() != obs_slice_dict.keys():
+                raise ValueError("obs_slice_dict should have same keys as u_dict")
         if derivative_keys_dict is None:
             self.derivative_keys_dict = {
                 k: None
@@ -1183,6 +1218,7 @@ class SystemLossPDE:
                     norm_borders=self.norm_borders_dict[i],
                     norm_samples=self.norm_samples_dict[i],
                     sobolev_m=self.sobolev_m_dict[i],
+                    obs_slice=self.obs_slice_dict[i],
                 )
             elif self.nn_type_dict[i] == "nn_nonstatio":
                 self.u_constraints_dict[i] = LossPDENonStatio(
@@ -1436,6 +1472,7 @@ class SystemLossPDE:
             "nn_type_dict": self.nn_type_dict,
             "sobolev_m_dict": self.sobolev_m_dict,
             "derivative_keys_dict": self.derivative_keys_dict,
+            "obs_slice_dict": self.obs_slice_dict,
         }
         return (children, aux_data)
 
