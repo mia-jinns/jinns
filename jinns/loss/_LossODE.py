@@ -173,7 +173,13 @@ class LossODE:
         # initial condition
         params_ = _set_derivatives(params, "initial_condition", self.derivative_keys)
         if self.initial_condition is not None:
-            v_u = vmap(self.u, (None,) + vmap_in_axes_params)
+            vmap_in_axes = (None,) + vmap_in_axes_params
+            if not jax.tree_util.tree_leaves(vmap_in_axes):
+                # test if only None in vmap_in_axes to avoid the value error:
+                # `vmap must have at least one non-None value in in_axes`
+                v_u = self.u
+            else:
+                v_u = vmap(self.u, (None,) + vmap_in_axes_params)
             t0, u0 = self.initial_condition
             t0 = jnp.array(t0)
             u0 = jnp.array(u0)
