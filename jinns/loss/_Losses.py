@@ -8,6 +8,7 @@ from jax import vmap
 
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
+from jinns.utils._hyperpinn import HYPERPINN
 from jinns.loss._boundary_conditions import (
     _compute_boundary_loss,
 )
@@ -21,7 +22,7 @@ def dynamic_loss_apply(
     Sometimes when u is a lambda function a or dict we do not have access to
     its type here, hence the last argument
     """
-    if u_type == PINN or isinstance(u, PINN):
+    if u_type == PINN or u_type == HYPERPINN or isinstance(u, (PINN, HYPERPINN)):
         v_dyn_loss = vmap(
             lambda *args: dyn_loss(
                 *args[:-1], u, args[-1]  # we must place the params at the end
