@@ -41,7 +41,7 @@ def dynamic_loss_apply(
 
 def normalization_loss_apply(u, batches, params, vmap_axes, int_length, loss_weight):
     # TODO merge stationary and non stationary cases
-    if isinstance(u, PINN):
+    if isinstance(u, (PINN, HYPERPINN)):
         if len(batches) == 1:
             v_u = vmap(
                 lambda *args: u(*args)[u.slice_solution],
@@ -157,7 +157,7 @@ def observations_loss_apply(
     u, batches, params, vmap_axes, observed_values, loss_weight, obs_slice
 ):
     # TODO implement for SPINN
-    if isinstance(u, PINN):
+    if isinstance(u, (PINN, HYPERPINN)):
         v_u = vmap(
             lambda *args: u(*args)[u.slice_solution],
             vmap_axes,
@@ -180,7 +180,7 @@ def observations_loss_apply(
 def initial_condition_apply(
     u, omega_batch, params, vmap_axes, initial_condition_fun, n, loss_weight
 ):
-    if isinstance(u, PINN):
+    if isinstance(u, (PINN, HYPERPINN)):
         v_u_t0 = vmap(
             lambda x, params: initial_condition_fun(x) - u(jnp.zeros((1,)), x, params),
             vmap_axes,
@@ -210,7 +210,7 @@ def initial_condition_apply(
 
 def sobolev_reg_apply(u, batches, params, vmap_axes, sobolev_reg, loss_weight):
     # TODO implement for SPINN
-    if isinstance(u, PINN):
+    if isinstance(u, (PINN, HYPERPINN)):
         v_sob_reg = vmap(
             lambda *args: sobolev_reg(*args),  # pylint: disable=E1121
             vmap_axes,
