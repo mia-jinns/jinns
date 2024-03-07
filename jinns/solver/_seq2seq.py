@@ -1,3 +1,4 @@
+from functools import partial
 import jax
 from jax import jit
 import jax.numpy as jnp
@@ -9,7 +10,7 @@ from jinns.loss._LossODE import SystemLossODE, LossODE
 from jinns.loss._LossPDE import LossPDENonStatio, LossPDEStatio, SystemLossPDE
 
 
-@jit
+@partial(jit, static_argnums=(7, 8))
 def _seq2seq_triggerer(
     loss,
     params,
@@ -95,9 +96,7 @@ def _initialize_seq2seq(loss, data, seq2seq, opt_state):
         data._key, data.times, _ = _reset_batch_idx_and_permute(
             (data._key, data.times, data.curr_omega_idx, None, data.p)
         )
-        opt_state.internal_state.hyperparams["learning_rate"] = seq2seq[
-            "learning_rate"
-        ][curr_seq]
+        opt_state.hyperparams["learning_rate"] = seq2seq["learning_rate"][curr_seq]
 
     elif isinstance(loss, (LossPDENonStatio, LossPDEStatio, SystemLossPDE)):
         raise RuntimeError("Not implemented")
@@ -150,9 +149,7 @@ def _update_seq2seq_SystemLossODE(operands):
     data._key, data.times, _ = _reset_batch_idx_and_permute(
         (data._key, data.times, data.curr_omega_idx, None, data.p)
     )
-    opt_state.internal_state.hyperparams["learning_rate"] = seq2seq["learning_rate"][
-        curr_seq
-    ]
+    opt_state.hyperparams["learning_rate"] = seq2seq["learning_rate"][curr_seq]
     return curr_seq, loss, data, opt_state
 
 
