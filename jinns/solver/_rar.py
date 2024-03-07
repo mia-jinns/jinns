@@ -1,5 +1,4 @@
 import jax
-from jax import jit
 from jax import vmap
 import jax.numpy as jnp
 from jinns.data._DataGenerators import (
