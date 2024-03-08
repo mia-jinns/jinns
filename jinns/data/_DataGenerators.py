@@ -1307,24 +1307,18 @@ class DataGeneratorObservations:
             A jnp.array with 2 dimensions.
             Observed values corresponding to the input of the PINN
             (eg. the time at which we recorded the observations). The first
-            dimension must be aligned with observed_values and the values of
-            observed_eq_params. If we have observed_pinn_in for stationary
-            PINN, then this argument has shape (nb_obs, 1), with 1 begin for
-            the t dimensions. If we consider observed_pinn_in for non
-            stationary PINN, then this argument has shape (nb_obs, 1 + n_dim_x)
+            dimension must corresponds to the number of observed_values and
+            observed_eq_params. The second dimension depends on the input dimension of the PINN, that is `1` for ODE, `n_dim_x` for stationnary PDE and `n_dim_x + 1` for non-stationnary PDE.
         observed_values
             A jnp.array with 2 dimensions.
-            Observed values corresponding that the PINN should
-            learn to fit. The first dimension must be aligned with
-            observed_pinn_in and the values of observed_eq_params
+            Observed values that the PINN should learn to fit. The first dimension must be aligned with observed_pinn_in and the values of observed_eq_params.
         observed_eq_params
             Optional. Default is None. A dict with keys corresponding to the
-            parameter name. The keys must match the keys in `params["eq_params"]`.
-            The values are jnp.array with 2 dimensions
-            with values corresponding to the parameter
-            value for which we also have observed_pinn_in and observed_values.
-            Hence the first dimension must be aligned with observed_pinn_in and
-            observed_values
+            parameter name. The keys must match the keys in
+            `params["eq_params"]`. The values are jnp.array with 2 dimensions
+            with values corresponding to the parameter value for which we also
+            have observed_pinn_in and observed_values. Hence the first
+            dimension must be aligned with observed_pinn_in and observed_values.
         data_exists
             Must be left to `False` when created by the user. Avoids the
             resetting of curr_idx at each pytree flattening and unflattening.
@@ -1333,7 +1327,7 @@ class DataGeneratorObservations:
             observations arrays that hardly fit on GPU. First element is the
             CPU device where to store the data and the second is the GPU device
             where to perform the computations. Default is None when we do not
-            need such care
+            need such care.
         """
         if observed_eq_params is None:
             observed_eq_params = {}
@@ -1412,10 +1406,11 @@ class DataGeneratorObservations:
         Return a dictionary with (keys, values): (pinn_in, a mini batch of pinn
         inputs), (obs, a mini batch of corresponding observations), (eq_params,
         a dictionary with entry names found in `params["eq_params"]` and values
-        giving the correspond parameter value for the couple (input, observation)
-        mentioned before)
-        Or a dictionary of dictionaries as described above if observed_pinn_in,
-        observed_values, etc. are dictionaries with keys representing the PINNs
+        giving the correspond parameter value for the couple
+        (input, observation) mentioned before).
+        It can also be a dictionary of dictionaries as described above if
+        observed_pinn_in, observed_values, etc. are dictionaries with keys
+        representing the PINNs.
         """
 
         (self._key, self.indices, self.curr_idx) = _reset_or_increment(
