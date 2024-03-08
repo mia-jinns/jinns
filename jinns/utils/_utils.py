@@ -127,9 +127,11 @@ def _set_derivatives(params, loss_term, derivative_keys):
     """
     try:
         params = {
-            k: value
-            if k in derivative_keys[loss_term]
-            else jax.lax.stop_gradient(value)
+            k: (
+                value
+                if k in derivative_keys[loss_term]
+                else jax.lax.stop_gradient(value)
+            )
             for k, value in params.items()
         }
     except KeyError:  # if the loss_term key has not been specified we

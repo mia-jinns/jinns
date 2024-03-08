@@ -2,6 +2,7 @@
 Implements utility function to create HYPERPINNs
 https://arxiv.org/pdf/2111.01008.pdf
 """
+
 from functools import partial
 import copy
 from math import prod
