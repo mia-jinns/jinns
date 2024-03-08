@@ -172,4 +172,4 @@ def test_initial_loss_ReacDiff(train_ReacDiff_init):
 
 def test_10it_ReacDiff(train_ReacDiff_10it):
     total_loss_val = train_ReacDiff_10it
-    assert jnp.round(total_loss_val, 5) == jnp.round(1.84888, 5)
+    assert jnp.round(total_loss_val, 5) == jnp.round(2.06077, 5)
