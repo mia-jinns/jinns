@@ -3,7 +3,6 @@ This modules implements the main `solve()` function of jinns which
 handles the optimization process
 """
 
-from jaxopt import OptaxSolver, LBFGS
 import optax
 from tqdm import tqdm
 from jax_tqdm import scan_tqdm
@@ -15,7 +14,7 @@ from jinns.solver._seq2seq import (
     _seq2seq_triggerer,
     _update_seq2seq_false,
 )
-from jinns.solver._rar import _rar_step_init, _rar_step_triggerer
+from jinns.solver._rar import init_rar, trigger_rar
 from jinns.utils._utils import _check_nan_in_pytree, _tracked_parameters
 from jinns.data._DataGenerators import (
     DataGeneratorODE,
@@ -151,6 +150,11 @@ def solve(
     if opt_state is None:
         opt_state = optimizer.init(params)
 
+    # RAR sampling init (ouside scanned function to avoid dynamic slice error)
+    # If RAR is not used it will managed on its own
+    data, _rar_step_true, _rar_step_false = init_rar(data)
+
+    # Seq2seq
     curr_seq = 0
     if seq2seq is not None:
         assert (
@@ -158,7 +162,6 @@ def solve(
         ), "data.method must be uniform if using seq2seq learning !"
 
     gradient_step = get_gradient_step_for_loss(optimizer, loss)
-    trigger_rar = get_rar_triggerer(data)
     total_loss_values = jnp.zeros((n_iter))
     # depending on obs_batch_sharding we will get the simple get_batch or the
     # get_batch with device_put, the latter is not jittable
@@ -228,7 +231,9 @@ def solve(
         print_fn(i, loss_val, print_loss_every)
 
         # Trigger RAR
-        loss, params, data = trigger_rar(i, loss, params, data)
+        loss, params, data = trigger_rar(
+            i, loss, params, data, _rar_step_true, _rar_step_false
+        )
 
         # Trigger seq2seq
         loss, params, data, opt_state, curr_seq, seq2seq = trigger_seq2seq(
@@ -383,29 +388,6 @@ def store_loss_and_params(
 
     total_loss_values = total_loss_values.at[i].set(loss_val)
     return stored_params, stored_loss_terms, total_loss_values
-
-
-def get_rar_triggerer(data):
-    """
-    A wrapper because the initialization to get _true and _false cannot be
-    jitted
-    """
-    if data.rar_parameters is not None:
-        _rar_step_true, _rar_step_false = _rar_step_init(
-            data.rar_parameters["sample_size"],
-            data.rar_parameters["selected_sample_size"],
-        )
-        data.rar_parameters["iter_from_last_sampling"] = 0
-
-    @jit
-    def trigger_rar(i, loss, params, data):
-        if data.rar_parameters is not None:
-            loss, params, data = _rar_step_triggerer(
-                loss, params, data, i, _rar_step_true, _rar_step_false
-            )
-        return loss, params, data
-
-    return trigger_rar
 
 
 @jit
