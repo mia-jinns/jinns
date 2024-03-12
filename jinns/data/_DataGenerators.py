@@ -1322,12 +1322,15 @@ class DataGeneratorObservations:
         data_exists
             Must be left to `False` when created by the user. Avoids the
             resetting of curr_idx at each pytree flattening and unflattening.
-        store_cpu_compute_gpu
-            A tuple of jax devices. Use this argument when handling large
-            observations arrays that hardly fit on GPU. First element is the
-            CPU device where to store the data and the second is the GPU device
-            where to perform the computations. Default is None when we do not
-            need such care.
+        sharding_device
+            Default None. An optional sharding object to constraint the storage
+            of observed inputs, values and parameters. Typically, a
+            SingleDeviceSharding(cpu_device) to avoid loading on GPU huge
+            datasets of observations. Note that computations for **batches**
+            can still be performed on other devices (*e.g.* GPU, TPU or
+            any pre-defined Sharding) thanks to the `obs_batch_sharding`
+            arguments of `jinns.solve()`. Read the docs for more info.
+
         """
         if observed_eq_params is None:
             observed_eq_params = {}
