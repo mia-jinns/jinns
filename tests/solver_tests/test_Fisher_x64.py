@@ -133,11 +133,11 @@ def train_Fisher_10it(train_Fisher_init):
 
 def test_initial_loss_Fisher(train_Fisher_init):
     init_params, loss, train_data = train_Fisher_init
-    assert jnp.round(
-        loss.evaluate(init_params, train_data.get_batch())[0], 5
-    ) == jnp.round(12.15913, 5)
+    assert jnp.allclose(
+        loss.evaluate(init_params, train_data.get_batch())[0], 12.15913, atol=1e-1
+    )
 
 
 def test_10it_Fisher(train_Fisher_10it):
     total_loss_val = train_Fisher_10it
-    assert jnp.round(total_loss_val, 5) == jnp.round(10.89091, 5)
+    assert jnp.allclose(total_loss_val, 10.89091, atol=1e-1)

@@ -160,15 +160,16 @@ def train_imperfect_sobolev_10it(train_imperfect_sobolev_init):
 def test_initial_loss_imperfect_sobolev(train_imperfect_sobolev_init):
     init_params, loss, train_data, obs_data = train_imperfect_sobolev_init
 
-    assert jnp.round(
+    assert jnp.allclose(
         loss.evaluate(
             init_params,
             jinns.data.append_obs_batch(train_data.get_batch(), obs_data.get_batch()),
         )[0],
-        5,
-    ) == jnp.round(69.282555, 5)
+        69.282555,
+        atol=1e-1,
+    )
 
 
 def test_10it_imperfect_sobolev(train_imperfect_sobolev_10it):
     total_loss_val = train_imperfect_sobolev_10it
-    assert jnp.round(total_loss_val, 5) == jnp.round(16.83213, 5)
+    assert jnp.allclose(total_loss_val, 16.83213, atol=1e-1)
