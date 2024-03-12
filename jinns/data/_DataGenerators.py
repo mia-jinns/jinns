@@ -1334,11 +1334,17 @@ class DataGeneratorObservations:
         """
         if observed_eq_params is None:
             observed_eq_params = {}
+        elif not data_exists:
+            self.observed_eq_params = observed_eq_params.copy()
+        else:
+            # avoid copying when in flatten/unflatten
+            self.observed_eq_params = observed_eq_params
+
         if observed_pinn_in.shape[0] != observed_values.shape[0]:
             raise ValueError(
                 "observed_pinn_in and observed_values must have same first axis"
             )
-        for _, v in observed_eq_params.items():
+        for _, v in self.observed_eq_params.items():
             if v.shape[0] != observed_pinn_in.shape[0]:
                 raise ValueError(
                     "observed_pinn_in and the values of"
@@ -1352,9 +1358,9 @@ class DataGeneratorObservations:
             observed_values = observed_values[:, None]
         if len(observed_values.shape) > 2:
             raise ValueError("observed_values must have 2 dimensions")
-        for k, v in observed_eq_params.items():
+        for k, v in self.observed_eq_params.items():
             if len(v.shape) == 1:
-                observed_eq_params[k] = v[:, None]
+                self.observed_eq_params[k] = v[:, None]
             if len(v.shape) > 2:
                 raise ValueError(
                     "Each value of observed_eq_params must have 2 dimensions"
@@ -1373,12 +1379,11 @@ class DataGeneratorObservations:
                 observed_values, sharding_device
             )
             self.observed_eq_params = jax.lax.with_sharding_constraint(
-                observed_eq_params, sharding_device
+                self.observed_eq_params, sharding_device
             )
         else:
             self.observed_pinn_in = observed_pinn_in
             self.observed_values = observed_values
-            self.observed_eq_params = observed_eq_params
 
         if not self.data_exists:
             self.curr_idx = 0
