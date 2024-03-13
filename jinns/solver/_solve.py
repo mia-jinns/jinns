@@ -9,11 +9,7 @@ from jax_tqdm import scan_tqdm
 import jax
 from jax import jit
 import jax.numpy as jnp
-from jinns.solver._seq2seq import (
-    _initialize_seq2seq,
-    _seq2seq_triggerer,
-    _update_seq2seq_false,
-)
+from jinns.solver._seq2seq import trigger_seq2seq, initialize_seq2seq
 from jinns.solver._rar import init_rar, trigger_rar
 from jinns.utils._utils import _check_nan_in_pytree, _tracked_parameters
 from jinns.data._DataGenerators import (
@@ -151,7 +147,7 @@ def solve(
         opt_state = optimizer.init(params)
 
     # RAR sampling init (ouside scanned function to avoid dynamic slice error)
-    # If RAR is not used it will managed on its own
+    # If RAR is not used the _rar_step_*() are juste None and data is unchanged
     data, _rar_step_true, _rar_step_false = init_rar(data)
 
     # Seq2seq
@@ -160,7 +156,9 @@ def solve(
         assert (
             data.method == "uniform"
         ), "data.method must be uniform if using seq2seq learning !"
+        data, opt_state = initialize_seq2seq(loss, data, seq2seq, opt_state)
 
+    # Init gradient step according to optimizer
     gradient_step = get_gradient_step_for_loss(optimizer, loss)
     total_loss_values = jnp.zeros((n_iter))
     # depending on obs_batch_sharding we will get the simple get_batch or the
@@ -388,26 +386,6 @@ def store_loss_and_params(
 
     total_loss_values = total_loss_values.at[i].set(loss_val)
     return stored_params, stored_loss_terms, total_loss_values
-
-
-@jit
-def trigger_seq2seq(i, loss, params, data, opt_state, curr_seq, seq2seq):
-    if seq2seq is not None:
-        loss, params, data, opt_state, curr_seq, seq2seq = _seq2seq_triggerer(
-            loss,
-            params,
-            data,
-            opt_state,
-            curr_seq,
-            seq2seq,
-            i,
-            _initialize_seq2seq(loss, data, seq2seq, opt_state),
-            _update_seq2seq_false,
-        )
-    else:
-        curr_seq = -1
-
-    return loss, params, data, opt_state, curr_seq, seq2seq
 
 
 def get_get_batch(obs_batch_sharding):
