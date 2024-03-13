@@ -79,7 +79,6 @@ def _rar_step_init(sample_size, selected_sample_size):
         operations which definitly kills gradient flows
         """
         loss, params, data, i = operands
-        # jax.debug.print("True at {x}, {p}", x=i, p=jnp.count_nonzero(data.p == 0))
 
         if isinstance(data, DataGeneratorODE):
             s = data.sample_in_time_domain(sample_size)
@@ -350,8 +349,6 @@ def _rar_step_init(sample_size, selected_sample_size):
             data.rar_iter_nb += 1
 
             data.p = jax.lax.fori_loop(0, data.rar_iter_nb, update_slices, data.p)
-
-            # jax.debug.print("True at {x}, {p}", x=i, p=jnp.count_nonzero(data.p == 0))
 
             # NOTE must return data to be correctly updated because we cannot
             # have side effects in this function that will be jitted
