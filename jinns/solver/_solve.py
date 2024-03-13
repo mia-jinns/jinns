@@ -20,6 +20,8 @@ from jinns.data._DataGenerators import (
     append_obs_batch,
 )
 
+from functools import partial
+
 
 def solve(
     n_iter,
@@ -158,8 +160,6 @@ def solve(
         ), "data.method must be uniform if using seq2seq learning !"
         data, opt_state = initialize_seq2seq(loss, data, seq2seq, opt_state)
 
-    # Init gradient step according to optimizer
-    gradient_step = get_gradient_step_for_loss(optimizer, loss)
     total_loss_values = jnp.zeros((n_iter))
     # depending on obs_batch_sharding we will get the simple get_batch or the
     # get_batch with device_put, the latter is not jittable
@@ -223,7 +223,9 @@ def solve(
             params,
             opt_state,
             last_non_nan_params,
-        ) = gradient_step(batch, params, opt_state, last_non_nan_params)
+        ) = gradient_step(
+            loss, optimizer, batch, params, opt_state, last_non_nan_params
+        )
 
         # Print loss during optimization
         print_fn(i, loss_val, print_loss_every)
@@ -309,35 +311,31 @@ def solve(
     )
 
 
-def get_gradient_step_for_loss(optimizer, loss):
+@partial(jit, static_argnames=["loss", "optimizer"])
+def gradient_step(loss, optimizer, batch, params, opt_state, last_non_nan_params):
     """
-    A wrapper for loss and optimizer that cannot be jitted
+    loss and optimizer cannot be jit-ted.
     """
+    value_grad_loss = jax.value_and_grad(loss, has_aux=True)
+    (loss_val, loss_terms), grads = value_grad_loss(params, batch)
+    updates, opt_state = optimizer.update(grads, opt_state, params)
+    params = optax.apply_updates(params, updates)
 
-    @jit
-    def gradient_step(batch, params, opt_state, last_non_nan_params):
-        value_grad_loss = jax.value_and_grad(loss, has_aux=True)
-        (loss_val, loss_terms), grads = value_grad_loss(params, batch)
-        updates, opt_state = optimizer.update(grads, opt_state, params)
-        params = optax.apply_updates(params, updates)
+    # check if any of the parameters is NaN
+    last_non_nan_params = jax.lax.cond(
+        _check_nan_in_pytree(params),
+        lambda _: last_non_nan_params,
+        lambda _: params,
+        None,
+    )
 
-        # check if any of the parameters is NaN
-        last_non_nan_params = jax.lax.cond(
-            _check_nan_in_pytree(params),
-            lambda _: last_non_nan_params,
-            lambda _: params,
-            None,
-        )
-
-        return (
-            loss_val,
-            loss_terms,
-            params,
-            opt_state,
-            last_non_nan_params,
-        )
-
-    return gradient_step
+    return (
+        loss_val,
+        loss_terms,
+        params,
+        opt_state,
+        last_non_nan_params,
+    )
 
 
 @jit
