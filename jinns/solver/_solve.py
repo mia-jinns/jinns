@@ -421,7 +421,7 @@ def get_get_batch(obs_batch_sharding):
         This function is used at each loop but it cannot be jitted because of
         device_put
 
-        /!\ Return all that's modified or unwanted dirty undefined behaviour
+        Note: return all that's modified or unwanted dirty undefined behaviour
         """
         batch = data.get_batch()
         if param_data is not None:
@@ -440,7 +440,7 @@ def get_get_batch(obs_batch_sharding):
         """
         Original get_batch with not sharding
 
-        /!\ Return all that's modified or unwanted dirty undefined behaviour
+        Note: return all that's modified or unwanted dirty undefined behaviour
         """
         batch = data.get_batch()
         if param_data is not None:
