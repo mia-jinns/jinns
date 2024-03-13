@@ -102,12 +102,15 @@ def train_NSPipeFlow_init():
 
     loss_weights = {"dyn_loss": 1.0}
 
-    loss = jinns.loss.SystemLossPDE(
-        u_dict={"u": u, "p": p},
-        loss_weights=loss_weights,
-        dynamic_loss_dict={"mass_conservation": mc_loss, "navier_stokes": ns_loss},
-        nn_type_dict={"u": "nn_statio", "p": "nn_statio"},
-    )
+    # Catching an expected UserWarning since no border condition is given
+    # for this specific PDE (Fokker-Planck).
+    with pytest.warns(UserWarning):
+        loss = jinns.loss.SystemLossPDE(
+            u_dict={"u": u, "p": p},
+            loss_weights=loss_weights,
+            dynamic_loss_dict={"mass_conservation": mc_loss, "navier_stokes": ns_loss},
+            nn_type_dict={"u": "nn_statio", "p": "nn_statio"},
+        )
 
     return init_params, loss, train_data
 
@@ -127,9 +130,13 @@ def train_NSPipeFlow_10it(train_NSPipeFlow_init):
 
     tx = optax.adam(learning_rate=1e-4)
     n_iter = 10
-    params, total_loss_list, loss_by_term_dict, _, _, _, _ = jinns.solve(
-        init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
-    )
+
+    # Catching an expected UserWarning since no border condition is given
+    # for this specific PDE (Fokker-Planck).
+    with pytest.warns(UserWarning):
+        params, total_loss_list, loss_by_term_dict, _, _, _, _ = jinns.solve(
+            init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
+        )
     return total_loss_list[9]
 
 
