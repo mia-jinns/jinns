@@ -1334,7 +1334,8 @@ class DataGeneratorObservations:
         """
         if observed_eq_params is None:
             observed_eq_params = {}
-        elif not data_exists:
+
+        if not data_exists:
             self.observed_eq_params = observed_eq_params.copy()
         else:
             # avoid copying when in flatten/unflatten
