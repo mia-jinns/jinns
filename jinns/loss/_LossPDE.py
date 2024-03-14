@@ -766,6 +766,11 @@ class LossPDENonStatio(LossPDEStatio):
             sobolev_m=sobolev_m,
             obs_slice=obs_slice,
         )
+        if initial_condition_fun is None:
+            warnings.warn(
+                "Initial condition wasn't provided. Be sure to cover for that"
+                "case (e.g by. hardcoding it into the PINN output)."
+            )
         self.initial_condition_fun = initial_condition_fun
 
         self.sobolev_m = sobolev_m

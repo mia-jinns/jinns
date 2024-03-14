@@ -2,6 +2,7 @@
 Main module to implement a ODE loss in jinns
 """
 
+import warnings
 import jax
 import jax.numpy as jnp
 from jax import vmap
@@ -109,7 +110,13 @@ class LossODE:
             }
 
         self.derivative_keys = derivative_keys
-        if initial_condition is not None:
+
+        if initial_condition is None:
+            warnings.warn(
+                "Initial condition wasn't provided. Be sure to cover for that"
+                "case (e.g by. hardcoding it into the PINN output)."
+            )
+        else:
             if not isinstance(initial_condition, tuple) or len(initial_condition) != 2:
                 raise ValueError(
                     f"Initial condition should be a tuple of len 2 with (t0, u0), {initial_condition} was passed."
