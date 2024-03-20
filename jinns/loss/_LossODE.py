@@ -158,8 +158,20 @@ class LossODE:
         # and update vmap_in_axes
         if batch.param_batch_dict is not None:
             # feed the eq_params with the batch
-            for k, v in batch.param_batch_dict.items():
-                params["eq_params"][k] = v
+            # for k, v in batch.param_batch_dict.items():
+            #    params["eq_params"][k] = v
+            param_batch_dict_ = batch.param_batch_dict | {
+                k: None
+                for k in set(params["eq_params"].keys())
+                - set(batch.param_batch_dict.keys())
+            }
+            params = {"nn_params": params["nn_params"]} | {
+                "eq_params": jax.tree_util.tree_map(
+                    lambda p, q: q if q is not None else p,
+                    params["eq_params"],
+                    param_batch_dict_,
+                )
+            }
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
@@ -201,6 +213,18 @@ class LossODE:
             # feed the eq_params with the batch
             for k, v in batch.obs_batch_dict["eq_params"].items():
                 params["eq_params"][k] = v
+            obs_batch_dict_ = batch.obs_batch_dict["eq_params"] | {
+                k: None
+                for k in set(params["eq_params"].keys())
+                - set(batch.obs_batch_dict["eq_params"].keys())
+            }
+            params = {"nn_params": params["nn_params"]} | {
+                "eq_params": jax.tree_util.tree_map(
+                    lambda p, q: q if q is not None else p,
+                    params["eq_params"],
+                    obs_batch_dict_,
+                )
+            }
             # MSE loss wrt to an observed batch
             params_ = _set_derivatives(params, "observations", self.derivative_keys)
             mse_observation_loss = observations_loss_apply(
