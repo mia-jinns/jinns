@@ -10,29 +10,55 @@ from jinns.loss._LossPDE import LossPDEStatio, LossPDENonStatio, SystemLossPDE
 from jinns.loss._LossODE import LossODE, SystemLossODE
 from jinns.loss._DynamicLossAbstract import PDEStatio
 
+from functools import partial
 
-def _rar_step_triggerer(carry, i, _rar_step_true, _rar_step_false):
-    carry["data"] = jax.lax.cond(
-        jnp.all(
-            jnp.array(
-                [
-                    # check if enough it since last points added
-                    carry["data"].rar_parameters["update_rate"]
-                    == carry["data"].rar_iter_from_last_sampling,
-                    # check if burn in period has ended
-                    carry["data"].rar_parameters["start_iter"] < i,
-                    # check if we still have room to append new
-                    # collocation points in the allocated jnp array
-                    carry["data"].rar_parameters["selected_sample_size"]
-                    <= jnp.count_nonzero(carry["data"].p == 0),
-                ]
-            )
-        ),
-        _rar_step_true,
-        _rar_step_false,
-        (carry["loss"], carry["params"], carry["data"], i),
-    )
-    return carry
+
+@partial(jax.jit, static_argnames=["_rar_step_true", "_rar_step_false"])
+def trigger_rar(i, loss, params, data, _rar_step_true, _rar_step_false):
+
+    if data.rar_parameters is None:
+        # do nothing.
+        return loss, params, data
+    else:
+        # update `data` according to rar scheme.
+        data = jax.lax.cond(
+            jnp.all(
+                jnp.array(
+                    [
+                        # check if enough it since last points added
+                        data.rar_parameters["update_rate"]
+                        == data.rar_iter_from_last_sampling,
+                        # check if burn in period has ended
+                        data.rar_parameters["start_iter"] < i,
+                        # check if we still have room to append new
+                        # collocation points in the allocated jnp array
+                        data.rar_parameters["selected_sample_size"]
+                        <= jnp.count_nonzero(data.p == 0),
+                    ]
+                )
+            ),
+            _rar_step_true,
+            _rar_step_false,
+            (loss, params, data, i),
+        )
+        return loss, params, data
+
+
+def init_rar(data):
+    """
+    Separated from the main rar, because the initialization to get _true and
+    _false cannot be jit-ted.
+    """
+    if data.rar_parameters is None:
+        _rar_step_true, _rar_step_false = None, None
+    else:
+        _rar_step_true, _rar_step_false = _rar_step_init(
+            data.rar_parameters["sample_size"],
+            data.rar_parameters["selected_sample_size"],
+        )
+        data.rar_parameters["iter_from_last_sampling"] = 0
+
+    return data, _rar_step_true, _rar_step_false
 
 
 def _rar_step_init(sample_size, selected_sample_size):
@@ -53,7 +79,6 @@ def _rar_step_init(sample_size, selected_sample_size):
         operations which definitly kills gradient flows
         """
         loss, params, data, i = operands
-        # jax.debug.print("True at {x}, {p}", x=i, p=jnp.count_nonzero(data.p == 0))
 
         if isinstance(data, DataGeneratorODE):
             s = data.sample_in_time_domain(sample_size)
@@ -325,14 +350,12 @@ def _rar_step_init(sample_size, selected_sample_size):
 
             data.p = jax.lax.fori_loop(0, data.rar_iter_nb, update_slices, data.p)
 
-            # jax.debug.print("True at {x}, {p}", x=i, p=jnp.count_nonzero(data.p == 0))
-
             # NOTE must return data to be correctly updated because we cannot
             # have side effects in this function that will be jitted
             return data
 
     def rar_step_false(operands):
-        loss_evaluate_fun, params, data, i = operands
+        _, _, data, i = operands
 
         # Add 1 only if we are after the burn in period
         data.rar_iter_from_last_sampling = jax.lax.cond(

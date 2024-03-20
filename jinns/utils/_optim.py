@@ -69,14 +69,14 @@ def alternate_optimizer(list_first_params, list_second_params, n_iter, evry, tx1
         tx1,
         optax.maybe_update(
             optax.scale(0.0), should_update_1
-        )  # We add an update (a GradientTransform if should_update is True) i.e. we mult the update by 0.
+        ),  # We add an update (a GradientTransform if should_update is True) i.e. we mult the update by 0.
         # not to take a step
     )
     second_adam = optax.chain(
         tx2,
         optax.maybe_update(
             optax.scale(0.0), should_update_2
-        )  # We add an update (a GradientTransform if should_update is True) i.e. we mult the update by 0.
+        ),  # We add an update (a GradientTransform if should_update is True) i.e. we mult the update by 0.
         # not to take a step
     )
 
@@ -134,7 +134,7 @@ def delayed_optimizer(list_first_params, list_second_params, delay_steps, tx1, t
         tx2,
         optax.maybe_update(
             optax.scale(0.0), should_update_2
-        )  # We add an update (a GradientTransform if should_update is True) i.e. we mult the update by 0.
+        ),  # We add an update (a GradientTransform if should_update is True) i.e. we mult the update by 0.
         # not to take a step
     )
 

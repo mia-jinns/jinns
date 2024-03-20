@@ -19,6 +19,7 @@ from jinns.data._DataGenerators import PDEStatioBatch, PDENonStatioBatch
 from jinns.utils._utils import (
     _get_vmap_in_axes_params,
     _set_derivatives,
+    _update_eq_params_dict,
 )
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
@@ -258,8 +259,8 @@ class LossPDEStatio(LossPDEAbstract):
         norm_key=None,
         norm_borders=None,
         norm_samples=None,
-        obs_batch=None,
         sobolev_m=None,
+        obs_slice=None,
     ):
         r"""
         Parameters
@@ -327,42 +328,23 @@ class LossPDEStatio(LossPDEAbstract):
         norm_samples
             Fixed sample point in the space over which to compute the
             normalization constant. Default is None
-        obs_batch:
-            A list containing 2 jnp.array of the same size (on their first
-            axis) encoding for observations [:math:`x_i, u(x_i)`] for
-            computing a MSE. Default is None.
         sobolev_m
             An integer. Default is None.
             It corresponds to the Sobolev regularization order as proposed in
             *Convergence and error analysis of PINNs*,
             Doumeche et al., 2023, https://arxiv.org/pdf/2305.01240.pdf
+        obs_slice
+            slice object specifying the begininning/ending
+            slice of u output(s) that is observed (this is then useful for
+            multidim PINN). Default is None.
 
 
         Raises
         ------
         ValueError
-            If conditions on obs_batch are not respected
-        ValueError
             If conditions on omega_boundary_condition and omega_boundary_fun
             are not respected
         """
-
-        if obs_batch is not None:
-            if len(obs_batch) != 2:
-                raise ValueError(
-                    f"obs_batch must be a list of size 2. You gave {len(obs_batch)}"
-                )
-            if not all(isinstance(b, jnp.ndarray) for b in obs_batch):
-                raise ValueError("Every element of obs_batch should be a jnp.array.")
-            n_obs = obs_batch[0].shape[0]
-            if any(b.shape[0] != n_obs for b in obs_batch):
-                raise ValueError(
-                    "Every jnp array should have the same size of the first axis (number of observations)."
-                )
-            if obs_batch[1].ndim == 1:
-                # if omega domain is unidimensional make sure that the x
-                # obs_batch is (nb_obs, 1)
-                obs_batch[1] = obs_batch[1][:, None]
 
         super().__init__(
             u, loss_weights, derivative_keys, norm_key, norm_borders, norm_samples
@@ -451,7 +433,6 @@ class LossPDEStatio(LossPDEAbstract):
                 raise ValueError("self.omega_boundary_dim must be a jnp.s_" " object")
 
         self.dynamic_loss = dynamic_loss
-        self.obs_batch = obs_batch
 
         self.sobolev_m = sobolev_m
         if self.sobolev_m is not None:
@@ -485,6 +466,10 @@ class LossPDEStatio(LossPDEAbstract):
                 "self.omega_boundary_condition is dict, the other should be too."
             )
 
+        self.obs_slice = obs_slice
+        if self.obs_slice is None:
+            self.obs_slice = jnp.s_[...]
+
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
@@ -505,7 +490,8 @@ class LossPDEStatio(LossPDEAbstract):
             Such a named tuple is composed of a batch of points in the
             domain, a batch of points in the domain
             border and an optional additional batch of parameters (eg. for
-            metamodeling)
+            metamodeling) and an optional additional batch of observed
+            inputs/outputs/parameters
         """
         omega_batch, _ = batch.inside_batch, batch.border_batch
 
@@ -515,11 +501,8 @@ class LossPDEStatio(LossPDEAbstract):
         # and update eq_params with the latter
         # and update vmap_in_axes
         if batch.param_batch_dict is not None:
-            eq_params_batch_dict = batch.param_batch_dict
-
-            # feed the eq_params with the batch
-            for k in eq_params_batch_dict.keys():
-                params["eq_params"][k] = eq_params_batch_dict[k]
+            # update eq_params with the batches of generated params
+            params = _update_eq_params_dict(params, batch.param_batch_dict)
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
@@ -567,16 +550,20 @@ class LossPDEStatio(LossPDEAbstract):
         else:
             mse_boundary_loss = jnp.array(0.0)
 
-        # Observation MSE (if obs_batch provided)
-        params_ = _set_derivatives(params, "observations", self.derivative_keys)
-        if self.obs_batch is not None:
+        # Observation mse
+        if batch.obs_batch_dict is not None:
+            # update params with the batches of observed params
+            params = _update_eq_params_dict(params, batch.obs_batch_dict["eq_params"])
+
+            params_ = _set_derivatives(params, "observations", self.derivative_keys)
             mse_observation_loss = observations_loss_apply(
                 self.u,
-                (self.obs_batch[0],),
+                (batch.obs_batch_dict["pinn_in"],),
                 params_,
                 vmap_in_axes_x + vmap_in_axes_params,
-                self.obs_batch[1],
+                batch.obs_batch_dict["val"],
                 self.loss_weights["observations"],
+                self.obs_slice,
             )
         else:
             mse_observation_loss = jnp.array(0.0)
@@ -618,7 +605,7 @@ class LossPDEStatio(LossPDEAbstract):
         )
 
     def tree_flatten(self):
-        children = (self.norm_key, self.norm_samples, self.obs_batch, self.loss_weights)
+        children = (self.norm_key, self.norm_samples, self.loss_weights)
         aux_data = {
             "u": self.u,
             "dynamic_loss": self.dynamic_loss,
@@ -628,12 +615,13 @@ class LossPDEStatio(LossPDEAbstract):
             "omega_boundary_dim": self.omega_boundary_dim,
             "norm_borders": self.norm_borders,
             "sobolev_m": self.sobolev_m,
+            "obs_slice": self.obs_slice,
         }
         return (children, aux_data)
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        (norm_key, norm_samples, obs_batch, loss_weights) = children
+        (norm_key, norm_samples, loss_weights) = children
         pls = cls(
             aux_data["u"],
             loss_weights,
@@ -645,8 +633,8 @@ class LossPDEStatio(LossPDEAbstract):
             norm_key,
             aux_data["norm_borders"],
             norm_samples,
-            obs_batch,
             aux_data["sobolev_m"],
+            aux_data["obs_slice"],
         )
         return pls
 
@@ -683,8 +671,8 @@ class LossPDENonStatio(LossPDEStatio):
         norm_key=None,
         norm_borders=None,
         norm_samples=None,
-        obs_batch=None,
         sobolev_m=None,
+        obs_slice=None,
     ):
         r"""
         Parameters
@@ -752,40 +740,18 @@ class LossPDENonStatio(LossPDEStatio):
         norm_samples
             Fixed sample point in the space over which to compute the
             normalization constant. Default is None
-        obs_batch
-            A list of 3 jnp.array of the same size (on their 1st axis) encoding
-            for observations [:math:`t_i, x_i, u(t_i, x_i)`] for computing a
-            MSE. Default is None: no MSE term in the global loss.
         sobolev_m
             An integer. Default is None.
             It corresponds to the Sobolev regularization order as proposed in
             *Convergence and error analysis of PINNs*,
             Doumeche et al., 2023, https://arxiv.org/pdf/2305.01240.pdf
+        obs_slice
+            slice object specifying the begininning/ending
+            slice of u output(s) that is observed (this is then useful for
+            multidim PINN). Default is None.
 
 
-        Raises
-        ------
-        ValueError
-            If conditions on obs_batch are not respected
         """
-
-        # If given, test that obs_batch is in the correct format
-        if obs_batch is not None:
-            if len(obs_batch) != 3:
-                raise ValueError(
-                    f"obs_batch must be a list of size 3. You gave {len(obs_batch)}"
-                )
-            if not all(isinstance(b, jnp.ndarray) for b in obs_batch):
-                raise ValueError("Every element of obs_batch should be a jnp.array.")
-            n_obs = obs_batch[0].shape[0]
-            if any(b.shape[0] != n_obs for b in obs_batch):
-                raise ValueError(
-                    "Every jnp array should have the same size of the first axis (number of observations)."
-                )
-            if obs_batch[1].ndim == 1:
-                # if omega domain is unidimensional make sure that the x
-                # obs_batch is (nb_obs, 1)
-                obs_batch[1] = obs_batch[1][:, None]
 
         super().__init__(
             u,
@@ -798,13 +764,15 @@ class LossPDENonStatio(LossPDEStatio):
             norm_key,
             norm_borders,
             norm_samples,
-            obs_batch=None,
-            # must be set to None because the set up performed
-            # in the super class does not match
             sobolev_m=sobolev_m,
+            obs_slice=obs_slice,
         )
+        if initial_condition_fun is None:
+            warnings.warn(
+                "Initial condition wasn't provided. Be sure to cover for that"
+                "case (e.g by. hardcoding it into the PINN output)."
+            )
         self.initial_condition_fun = initial_condition_fun
-        self.obs_batch = obs_batch  # Set after call to super()
 
         self.sobolev_m = sobolev_m
         if self.sobolev_m is not None:
@@ -844,7 +812,8 @@ class LossPDENonStatio(LossPDEStatio):
             Such a named tuple is composed of a batch of points in
             the domain, a batch of points in the domain
             border, a batch of time points and an optional additional batch
-            of parameters (eg. for metamodeling)
+            of parameters (eg. for metamodeling) and an optional additional batch of observed
+            inputs/outputs/parameters
         """
 
         omega_batch, omega_border_batch, times_batch = (
@@ -935,16 +904,23 @@ class LossPDENonStatio(LossPDEStatio):
         else:
             mse_initial_condition = jnp.array(0.0)
 
-        # Observation MSE (if obs_batch provided)
-        params_ = _set_derivatives(params, "observations", self.derivative_keys)
-        if self.obs_batch is not None:
+        # Observation mse
+        if batch.obs_batch_dict is not None:
+            # update params with the batches of observed params
+            params = _update_eq_params_dict(params, batch.obs_batch_dict["eq_params"])
+
+            params_ = _set_derivatives(params, "observations", self.derivative_keys)
             mse_observation_loss = observations_loss_apply(
                 self.u,
-                (self.obs_batch[0][:, None], self.obs_batch[1]),
+                (
+                    batch.obs_batch_dict["pinn_in"][:, 0:1],
+                    batch.obs_batch_dict["pinn_in"][:, 1:],
+                ),
                 params_,
                 vmap_in_axes_x_t + vmap_in_axes_params,
-                self.obs_batch[2],
+                batch.obs_batch_dict["val"],
                 self.loss_weights["observations"],
+                self.obs_slice,
             )
         else:
             mse_observation_loss = jnp.array(0.0)
@@ -987,7 +963,7 @@ class LossPDENonStatio(LossPDEStatio):
         )
 
     def tree_flatten(self):
-        children = (self.norm_key, self.norm_samples, self.obs_batch, self.loss_weights)
+        children = (self.norm_key, self.norm_samples, self.loss_weights)
         aux_data = {
             "u": self.u,
             "dynamic_loss": self.dynamic_loss,
@@ -998,12 +974,13 @@ class LossPDENonStatio(LossPDEStatio):
             "initial_condition_fun": self.initial_condition_fun,
             "norm_borders": self.norm_borders,
             "sobolev_m": self.sobolev_m,
+            "obs_slice": self.obs_slice,
         }
         return (children, aux_data)
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        (norm_key, norm_samples, obs_batch, loss_weights) = children
+        (norm_key, norm_samples, loss_weights) = children
         pls = cls(
             aux_data["u"],
             loss_weights,
@@ -1016,8 +993,8 @@ class LossPDENonStatio(LossPDEStatio):
             norm_key,
             aux_data["norm_borders"],
             norm_samples,
-            obs_batch,
             aux_data["sobolev_m"],
+            aux_data["obs_slice"],
         )
         return pls
 
@@ -1056,8 +1033,8 @@ class SystemLossPDE:
         norm_key_dict=None,
         norm_borders_dict=None,
         norm_samples_dict=None,
-        obs_batch_dict=None,
         sobolev_m_dict=None,
+        obs_slice_dict=None,
     ):
         r"""
         Parameters
@@ -1117,19 +1094,18 @@ class SystemLossPDE:
             A dict of fixed sample point in the space over which to compute the
             normalization constant. Default is None
             Must share the keys of `u_dict`
-        obs_batch_dict
-            Default is None.
-            A dictionary, a key per element of `u_dict`, with value being a tuple
-            containing 2 jnp.array of the same size (on their first
-            axis) encoding the timestep and the observations [:math:`x_i, u(x_i)`].
-            A particular key can be None.
-            Must share the keys of `u_dict`
         sobolev_m
             Default is None. A dictionary of integers, one per key which must
             match `u_dict`.
             It corresponds to the Sobolev regularization order as proposed in
             *Convergence and error analysis of PINNs*,
             Doumeche et al., 2023, https://arxiv.org/pdf/2305.01240.pdf
+        obs_slice_dict
+            dict of obs_slice, with keys from `u_dict` to designate the
+            output(s) channels that are forced to observed values, for each
+            PINNs. Default is None. But if a value is given, all the entries of
+            `u_dict` must be represented here with default value `jnp.s_[...]`
+            if no particular slice is to be given
 
 
         Raises
@@ -1139,47 +1115,51 @@ class SystemLossPDE:
         ValueError
             if the dictionaries that should share the keys of u_dict do not
         """
+        # a dictionary that will be useful at different places
+        self.u_dict_with_none = {k: None for k in u_dict.keys()}
         # First, for all the optional dict,
         # if the user did not provide at all this optional argument,
         # we make sure there is a null ponderating loss_weight and we
         # create a dummy dict with the required keys and all the values to
         # None
-        if obs_batch_dict is None:
-            self.obs_batch_dict = {k: None for k in u_dict.keys()}
-        else:
-            self.obs_batch_dict = obs_batch_dict
         if omega_boundary_fun_dict is None:
-            self.omega_boundary_fun_dict = {k: None for k in u_dict.keys()}
+            self.omega_boundary_fun_dict = self.u_dict_with_none
         else:
             self.omega_boundary_fun_dict = omega_boundary_fun_dict
         if omega_boundary_condition_dict is None:
-            self.omega_boundary_condition_dict = {k: None for k in u_dict.keys()}
+            self.omega_boundary_condition_dict = self.u_dict_with_none
         else:
             self.omega_boundary_condition_dict = omega_boundary_condition_dict
         if omega_boundary_dim_dict is None:
-            self.omega_boundary_dim_dict = {k: None for k in u_dict.keys()}
+            self.omega_boundary_dim_dict = self.u_dict_with_none
         else:
             self.omega_boundary_dim_dict = omega_boundary_dim_dict
         if initial_condition_fun_dict is None:
-            self.initial_condition_fun_dict = {k: None for k in u_dict.keys()}
+            self.initial_condition_fun_dict = self.u_dict_with_none
         else:
             self.initial_condition_fun_dict = initial_condition_fun_dict
         if norm_key_dict is None:
-            self.norm_key_dict = {k: None for k in u_dict.keys()}
+            self.norm_key_dict = self.u_dict_with_none
         else:
             self.norm_key_dict = norm_key_dict
         if norm_borders_dict is None:
-            self.norm_borders_dict = {k: None for k in u_dict.keys()}
+            self.norm_borders_dict = self.u_dict_with_none
         else:
             self.norm_borders_dict = norm_borders_dict
         if norm_samples_dict is None:
-            self.norm_samples_dict = {k: None for k in u_dict.keys()}
+            self.norm_samples_dict = self.u_dict_with_none
         else:
             self.norm_samples_dict = norm_samples_dict
         if sobolev_m_dict is None:
-            self.sobolev_m_dict = {k: None for k in u_dict.keys()}
+            self.sobolev_m_dict = self.u_dict_with_none
         else:
             self.sobolev_m_dict = sobolev_m_dict
+        if obs_slice_dict is None:
+            self.obs_slice_dict = {k: jnp.s_[...] for k in u_dict.keys()}
+        else:
+            self.obs_slice_dict = obs_slice_dict
+            if u_dict.keys() != obs_slice_dict.keys():
+                raise ValueError("obs_slice_dict should have same keys as u_dict")
         if derivative_keys_dict is None:
             self.derivative_keys_dict = {
                 k: None
@@ -1201,7 +1181,6 @@ class SystemLossPDE:
         # Second we make sure that all the dicts (except dynamic_loss_dict) have the same keys
         if (
             u_dict.keys() != nn_type_dict.keys()
-            or u_dict.keys() != self.obs_batch_dict.keys()
             or u_dict.keys() != self.omega_boundary_fun_dict.keys()
             or u_dict.keys() != self.omega_boundary_condition_dict.keys()
             or u_dict.keys() != self.omega_boundary_dim_dict.keys()
@@ -1245,8 +1224,8 @@ class SystemLossPDE:
                     norm_key=self.norm_key_dict[i],
                     norm_borders=self.norm_borders_dict[i],
                     norm_samples=self.norm_samples_dict[i],
-                    obs_batch=self.obs_batch_dict[i],
                     sobolev_m=self.sobolev_m_dict[i],
+                    obs_slice=self.obs_slice_dict[i],
                 )
             elif self.nn_type_dict[i] == "nn_nonstatio":
                 self.u_constraints_dict[i] = LossPDENonStatio(
@@ -1268,7 +1247,6 @@ class SystemLossPDE:
                     norm_key=self.norm_key_dict[i],
                     norm_borders=self.norm_borders_dict[i],
                     norm_samples=self.norm_samples_dict[i],
-                    obs_batch=self.obs_batch_dict[i],
                     sobolev_m=self.sobolev_m_dict[i],
                 )
             else:
@@ -1306,7 +1284,7 @@ class SystemLossPDE:
         for k, v in value.items():
             if isinstance(v, dict):
                 for kk, vv in v.items():
-                    if not (isinstance(vv, int) or isinstance(vv, float)) and not (
+                    if not isinstance(vv, (int, float)) and not (
                         isinstance(vv, jnp.ndarray)
                         and ((vv.shape == (1,) or len(vv.shape) == 0))
                     ):
@@ -1331,7 +1309,7 @@ class SystemLossPDE:
                             " do not match u_dict keys"
                         )
             else:
-                if not (isinstance(v, int) or isinstance(v, float)) and not (
+                if not isinstance(v, (int, float)) and not (
                     isinstance(v, jnp.ndarray)
                     and ((v.shape == (1,) or len(v.shape) == 0))
                 ):
@@ -1346,7 +1324,7 @@ class SystemLossPDE:
         # Some special checks below
         if all(v is None for k, v in self.sobolev_m_dict.items()):
             self._loss_weights["sobolev"] = {k: 0 for k in self.u_dict.keys()}
-        if all(v is None for k, v in self.obs_batch_dict.items()):
+        if "observations" not in value.keys():
             self._loss_weights["observations"] = {k: 0 for k in self.u_dict.keys()}
         if all(v is None for k, v in self.omega_boundary_fun_dict.items()) or all(
             v is None for k, v in self.omega_boundary_condition_dict.items()
@@ -1386,6 +1364,8 @@ class SystemLossPDE:
             domain, a batch of points in the domain
             border, (a batch of time points a for PDENonStatioBatch) and an
             optional additional batch of parameters (eg. for metamodeling)
+            and an optional additional batch of observed
+            inputs/outputs/parameters
         """
         if self.u_dict.keys() != params_dict["nn_params"].keys():
             raise ValueError("u_dict and params_dict[nn_params] should have same keys ")
@@ -1467,6 +1447,9 @@ class SystemLossPDE:
             "initial_condition": "*",
             "sobolev": "*",
         }
+        # we need to do the following for the tree_mapping to work
+        if batch.obs_batch_dict is None:
+            batch = batch._replace(obs_batch_dict=self.u_dict_with_none)
         total_loss, res_dict = constraints_system_loss_apply(
             self.u_constraints_dict,
             batch,
@@ -1482,7 +1465,6 @@ class SystemLossPDE:
 
     def tree_flatten(self):
         children = (
-            self.obs_batch_dict,
             self.norm_key_dict,
             self.norm_samples_dict,
             self.initial_condition_fun_dict,
@@ -1497,13 +1479,13 @@ class SystemLossPDE:
             "nn_type_dict": self.nn_type_dict,
             "sobolev_m_dict": self.sobolev_m_dict,
             "derivative_keys_dict": self.derivative_keys_dict,
+            "obs_slice_dict": self.obs_slice_dict,
         }
         return (children, aux_data)
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
         (
-            obs_batch_dict,
             norm_key_dict,
             norm_samples_dict,
             initial_condition_fun_dict,
@@ -1511,7 +1493,6 @@ class SystemLossPDE:
         ) = children
         loss_ode = cls(
             loss_weights=loss_weights,
-            obs_batch_dict=obs_batch_dict,
             norm_key_dict=norm_key_dict,
             norm_samples_dict=norm_samples_dict,
             initial_condition_fun_dict=initial_condition_fun_dict,

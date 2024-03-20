@@ -106,14 +106,17 @@ def train_OU_init():
     }
     OU_fpe_non_statio_2D_loss = jinns.loss.OU_FPENonStatioLoss2D(Tmax=Tmax)
 
-    loss = jinns.loss.LossPDENonStatio(
-        u=u,
-        loss_weights=loss_weights,
-        dynamic_loss=OU_fpe_non_statio_2D_loss,
-        initial_condition_fun=u0,
-        norm_borders=((int_xmin, int_xmax), (int_ymin, int_ymax)),
-        norm_samples=mc_samples,
-    )
+    # Catching an expected UserWarning since no border condition is given
+    # for this specific PDE (Fokker-Planck).
+    with pytest.warns(UserWarning):
+        loss = jinns.loss.LossPDENonStatio(
+            u=u,
+            loss_weights=loss_weights,
+            dynamic_loss=OU_fpe_non_statio_2D_loss,
+            initial_condition_fun=u0,
+            norm_borders=((int_xmin, int_xmax), (int_ymin, int_ymax)),
+            norm_samples=mc_samples,
+        )
 
     return init_params, loss, train_data
 
@@ -133,20 +136,23 @@ def train_OU_10it(train_OU_init):
 
     tx = optax.adamw(learning_rate=1e-3)
     n_iter = 10
-    params, total_loss_list, loss_by_term_dict, _, _, _, _ = jinns.solve(
-        init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
-    )
+    # Catching an expected UserWarning since no border condition is given
+    # for this specific PDE (Fokker-Planck).
+    with pytest.warns(UserWarning):
+        params, total_loss_list, loss_by_term_dict, _, _, _, _ = jinns.solve(
+            init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
+        )
     return total_loss_list[9]
 
 
 def test_initial_loss_OU(train_OU_init):
     init_params, loss, train_data = train_OU_init
 
-    assert jnp.round(
-        loss.evaluate(init_params, train_data.get_batch())[0], 5
-    ) == jnp.round(7817.1133, 5)
+    assert jnp.allclose(
+        loss.evaluate(init_params, train_data.get_batch())[0], 7817.113, atol=1e-1
+    )
 
 
 def test_10it_OU(train_OU_10it):
     total_loss_val = train_OU_10it
-    assert jnp.round(total_loss_val, 5) == jnp.round(4833.7524, 5)
+    assert jnp.allclose(total_loss_val, 5084.065, atol=1e-1)

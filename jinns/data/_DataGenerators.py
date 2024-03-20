@@ -13,6 +13,7 @@ import jax.lax
 class ODEBatch(NamedTuple):
     temporal_batch: ArrayLike
     param_batch_dict: dict = None
+    obs_batch_dict: dict = None
 
 
 class PDENonStatioBatch(NamedTuple):
@@ -20,12 +21,14 @@ class PDENonStatioBatch(NamedTuple):
     border_batch: ArrayLike
     temporal_batch: ArrayLike
     param_batch_dict: dict = None
+    obs_batch_dict: dict = None
 
 
 class PDEStatioBatch(NamedTuple):
     inside_batch: ArrayLike
     border_batch: ArrayLike
     param_batch_dict: dict = None
+    obs_batch_dict: dict = None
 
 
 def append_param_batch(batch, param_batch_dict):
@@ -34,6 +37,14 @@ def append_param_batch(batch, param_batch_dict):
     param_batch_dict
     """
     return batch._replace(param_batch_dict=param_batch_dict)
+
+
+def append_obs_batch(batch, obs_batch_dict):
+    """
+    Utility function that fill the obs_batch_dict of a batch object with a
+    obs_batch_dict
+    """
+    return batch._replace(obs_batch_dict=obs_batch_dict)
 
 
 def _reset_batch_idx_and_permute(operands):
@@ -1259,4 +1270,364 @@ class DataGeneratorParameter:
         )
         obj.param_n_samples = param_n_samples
         obj.curr_param_idx = curr_param_idx
+        return obj
+
+
+@register_pytree_node_class
+class DataGeneratorObservations:
+    """
+    Despite the class name, it is rather a dataloader from user provided
+    observations that will be used for the observations loss
+    """
+
+    def __init__(
+        self,
+        key,
+        obs_batch_size,
+        observed_pinn_in,
+        observed_values,
+        observed_eq_params=None,
+        data_exists=False,
+        sharding_device=None,
+    ):
+        r"""
+        Parameters
+        ----------
+        key
+            Jax random key to sample new time points and to shuffle batches
+        obs_batch_size
+            An integer. The size of the batch of randomly selected observations
+            `obs_batch_size` will be the same for all the
+            elements of the obs dict. `obs_batch_size` must be
+            equal to `temporal_batch_size` or `omega_batch_size` or the product
+            of both whether the present DataGeneratorParameter instance
+            complements and ODEBatch, a PDEStatioBatch or a PDENonStatioBatch,
+            respectively.
+        observed_pinn_in
+            A jnp.array with 2 dimensions.
+            Observed values corresponding to the input of the PINN
+            (eg. the time at which we recorded the observations). The first
+            dimension must corresponds to the number of observed_values and
+            observed_eq_params. The second dimension depends on the input dimension of the PINN, that is `1` for ODE, `n_dim_x` for stationnary PDE and `n_dim_x + 1` for non-stationnary PDE.
+        observed_values
+            A jnp.array with 2 dimensions.
+            Observed values that the PINN should learn to fit. The first dimension must be aligned with observed_pinn_in and the values of observed_eq_params.
+        observed_eq_params
+            Optional. Default is None. A dict with keys corresponding to the
+            parameter name. The keys must match the keys in
+            `params["eq_params"]`. The values are jnp.array with 2 dimensions
+            with values corresponding to the parameter value for which we also
+            have observed_pinn_in and observed_values. Hence the first
+            dimension must be aligned with observed_pinn_in and observed_values.
+        data_exists
+            Must be left to `False` when created by the user. Avoids the
+            resetting of curr_idx at each pytree flattening and unflattening.
+        sharding_device
+            Default None. An optional sharding object to constraint the storage
+            of observed inputs, values and parameters. Typically, a
+            SingleDeviceSharding(cpu_device) to avoid loading on GPU huge
+            datasets of observations. Note that computations for **batches**
+            can still be performed on other devices (*e.g.* GPU, TPU or
+            any pre-defined Sharding) thanks to the `obs_batch_sharding`
+            arguments of `jinns.solve()`. Read the docs for more info.
+
+        """
+        if observed_eq_params is None:
+            observed_eq_params = {}
+
+        if not data_exists:
+            self.observed_eq_params = observed_eq_params.copy()
+        else:
+            # avoid copying when in flatten/unflatten
+            self.observed_eq_params = observed_eq_params
+
+        if observed_pinn_in.shape[0] != observed_values.shape[0]:
+            raise ValueError(
+                "observed_pinn_in and observed_values must have same first axis"
+            )
+        for _, v in self.observed_eq_params.items():
+            if v.shape[0] != observed_pinn_in.shape[0]:
+                raise ValueError(
+                    "observed_pinn_in and the values of"
+                    " observed_eq_params must have the same first axis"
+                )
+        if len(observed_pinn_in.shape) == 1:
+            observed_pinn_in = observed_pinn_in[:, None]
+        if len(observed_pinn_in.shape) > 2:
+            raise ValueError("observed_pinn_in must have 2 dimensions")
+        if len(observed_values.shape) == 1:
+            observed_values = observed_values[:, None]
+        if len(observed_values.shape) > 2:
+            raise ValueError("observed_values must have 2 dimensions")
+        for k, v in self.observed_eq_params.items():
+            if len(v.shape) == 1:
+                self.observed_eq_params[k] = v[:, None]
+            if len(v.shape) > 2:
+                raise ValueError(
+                    "Each value of observed_eq_params must have 2 dimensions"
+                )
+
+        self.n = observed_pinn_in.shape[0]
+        self._key = key
+        self.obs_batch_size = obs_batch_size
+
+        self.data_exists = data_exists
+        if not self.data_exists and sharding_device is not None:
+            self.observed_pinn_in = jax.lax.with_sharding_constraint(
+                observed_pinn_in, sharding_device
+            )
+            self.observed_values = jax.lax.with_sharding_constraint(
+                observed_values, sharding_device
+            )
+            self.observed_eq_params = jax.lax.with_sharding_constraint(
+                self.observed_eq_params, sharding_device
+            )
+        else:
+            self.observed_pinn_in = observed_pinn_in
+            self.observed_values = observed_values
+
+        if not self.data_exists:
+            self.curr_idx = 0
+            # NOTE for speed and to avoid duplicating data what is really
+            # shuffled is a vector of indices
+            indices = jnp.arange(self.n)
+            if sharding_device is not None:
+                self.indices = jax.lax.with_sharding_constraint(
+                    indices, sharding_device
+                )
+            else:
+                self.indices = indices
+            self._key, self.indices, _ = _reset_batch_idx_and_permute(
+                self._get_operands()
+            )
+
+    def _get_operands(self):
+        return (
+            self._key,
+            self.indices,
+            self.curr_idx,
+            self.obs_batch_size,
+            None,
+        )
+
+    def obs_batch(self):
+        """
+        Return a dictionary with (keys, values): (pinn_in, a mini batch of pinn
+        inputs), (obs, a mini batch of corresponding observations), (eq_params,
+        a dictionary with entry names found in `params["eq_params"]` and values
+        giving the correspond parameter value for the couple
+        (input, observation) mentioned before).
+        It can also be a dictionary of dictionaries as described above if
+        observed_pinn_in, observed_values, etc. are dictionaries with keys
+        representing the PINNs.
+        """
+
+        (self._key, self.indices, self.curr_idx) = _reset_or_increment(
+            self.curr_idx + self.obs_batch_size, self.n, self._get_operands()
+        )
+
+        minib_indices = jax.lax.dynamic_slice(
+            self.indices,
+            start_indices=(self.curr_idx,),
+            slice_sizes=(self.obs_batch_size,),
+        )
+
+        obs_batch = {
+            "pinn_in": jnp.take(
+                self.observed_pinn_in, minib_indices, unique_indices=True, axis=0
+            ),
+            "val": jnp.take(
+                self.observed_values, minib_indices, unique_indices=True, axis=0
+            ),
+            "eq_params": jax.tree_util.tree_map(
+                lambda a: jnp.take(a, minib_indices, unique_indices=True, axis=0),
+                self.observed_eq_params,
+            ),
+        }
+        return obs_batch
+
+    def get_batch(self):
+        """
+        Generic method to return a batch
+        """
+        return self.obs_batch()
+
+    def tree_flatten(self):
+        children = (self._key, self.curr_idx, self.indices)
+        aux_data = {
+            k: vars(self)[k]
+            for k in [
+                "obs_batch_size",
+                "observed_pinn_in",
+                "observed_values",
+                "observed_eq_params",
+            ]
+        }
+        return (children, aux_data)
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        (key, curr_idx, indices) = children
+        obj = cls(
+            key=key,
+            data_exists=True,
+            obs_batch_size=aux_data["obs_batch_size"],
+            observed_pinn_in=aux_data["observed_pinn_in"],
+            observed_values=aux_data["observed_values"],
+            observed_eq_params=aux_data["observed_eq_params"],
+        )
+        obj.curr_idx = curr_idx
+        obj.indices = indices
+        return obj
+
+
+@register_pytree_node_class
+class DataGeneratorObservationsMultiPINNs:
+    """
+    Despite the class name, it is rather a dataloader from user provided
+    observations that will be used for the observations loss.
+    This is the DataGenerator to use when dealing with multiple PINNs
+    (`u_dict`) in SystemLossODE/SystemLossPDE
+
+    Technically, the constraint on the observations in SystemLossXDE are
+    applied in `constraints_system_loss_apply` and in this case the
+    batch.obs_batch_dict is a dict of obs_batch_dict over which the tree_map
+    applies (we select the obs_batch_dict corresponding to its `u_dict` entry)
+    """
+
+    def __init__(
+        self,
+        obs_batch_size,
+        observed_pinn_in_dict,
+        observed_values_dict,
+        observed_eq_params_dict=None,
+        data_gen_obs_exists=False,
+        key=None,
+    ):
+        r"""
+        Parameters
+        ----------
+        obs_batch_size
+            An integer. The size of the batch of randomly selected observations
+            `obs_batch_size` will be the same for all the
+            elements of the obs dict. `obs_batch_size` must be
+            equal to `temporal_batch_size` or `omega_batch_size` or the product
+            of both whether the present DataGeneratorParameter instance
+            complements and ODEBatch, a PDEStatioBatch or a PDENonStatioBatch,
+            respectively.
+        observed_pinn_in_dict
+            A dict of observed_pinn_in as defined in DataGeneratorObservations.
+            Keys must be that of `u_dict`.
+            If no observation exists for a particular entry of `u_dict` the
+            corresponding key must still exist in observed_pinn_in_dict with
+            value None
+        observed_values_dict
+            A dict of observed_values as defined in DataGeneratorObservations.
+            Keys must be that of `u_dict`.
+            If no observation exists for a particular entry of `u_dict` the
+            corresponding key must still exist in observed_values_dict with
+            value None
+        observed_eq_params_dict
+            A dict of observed_eq_params as defined in DataGeneratorObservations.
+            Keys must be that of `u_dict`.
+            If no observation exists for a particular entry of `u_dict` the
+            corresponding key must still exist in observed_eq_params_dict with
+            value None
+        data_gen_obs_exists
+            Must be left to `False` when created by the user. Avoids the
+            regeneration the subclasses DataGeneratorObservations
+            at each pytree flattening and unflattening.
+        key
+            Jax random key to sample new time points and to shuffle batches.
+            Optional if data_gen_obs_exists is True
+        """
+        if (
+            observed_pinn_in_dict is None or observed_values_dict is None
+        ) and not data_gen_obs_exists:
+            raise ValueError(
+                "observed_pinn_in_dict and observed_values_dict "
+                "must be provided with data_gen_obs_exists is False"
+            )
+        self.obs_batch_size = obs_batch_size
+        self.data_gen_obs_exists = data_gen_obs_exists
+
+        if not self.data_gen_obs_exists:
+            if observed_pinn_in_dict.keys() != observed_values_dict.keys():
+                raise ValueError(
+                    "Keys must be the same in observed_pinn_in_dict"
+                    " and observed_values_dict"
+                )
+            if (
+                observed_eq_params_dict is not None
+                and observed_pinn_in_dict.keys() != observed_eq_params_dict.keys()
+            ):
+                raise ValueError(
+                    "Keys must be the same in observed_eq_params_dict"
+                    " and observed_pinn_in_dict and observed_values_dict"
+                )
+            if observed_eq_params_dict is None:
+                observed_eq_params_dict = {
+                    k: None for k in observed_pinn_in_dict.keys()
+                }
+
+            keys = dict(
+                zip(
+                    observed_pinn_in_dict.keys(),
+                    jax.random.split(key, len(observed_pinn_in_dict)),
+                )
+            )
+            self.data_gen_obs = jax.tree_util.tree_map(
+                lambda k, pinn_in, val, eq_params: (
+                    DataGeneratorObservations(
+                        k, obs_batch_size, pinn_in, val, eq_params
+                    )
+                    if pinn_in is not None
+                    else None
+                ),
+                keys,
+                observed_pinn_in_dict,
+                observed_values_dict,
+                observed_eq_params_dict,
+            )
+
+    def obs_batch(self):
+        """
+        Returns a dictionary of DataGeneratorObservations.obs_batch with keys
+        from `u_dict`
+        """
+        return jax.tree_util.tree_map(
+            lambda a: a.get_batch() if a is not None else {},
+            self.data_gen_obs,
+            is_leaf=lambda x: isinstance(x, DataGeneratorObservations),
+        )  # note the is_leaf note to traverse the DataGeneratorObservations and
+        # thus to be able to call the method on the element(s) of
+        # self.data_gen_obs which are not None
+
+    def get_batch(self):
+        """
+        Generic method to return a batch
+        """
+        return self.obs_batch()
+
+    def tree_flatten(self):
+        # because a dict with "str" keys cannot go in the children (jittable)
+        # attributes, we need to separate it in two and recreate the zip in the
+        # tree_unflatten
+        children = self.data_gen_obs.values()
+        aux_data = {
+            "obs_batch_size": self.obs_batch_size,
+            "data_gen_obs_keys": self.data_gen_obs.keys(),
+        }
+        return (children, aux_data)
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        (data_gen_obs_values) = children
+        obj = cls(
+            observed_pinn_in_dict=None,
+            observed_values_dict=None,
+            data_gen_obs_exists=True,
+            obs_batch_size=aux_data["obs_batch_size"],
+        )
+        obj.data_gen_obs = dict(zip(aux_data["data_gen_obs_keys"], data_gen_obs_values))
         return obj

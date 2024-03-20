@@ -8,6 +8,7 @@ from jax import vmap
 
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
+from jinns.utils._hyperpinn import HYPERPINN
 from jinns.loss._boundary_conditions import (
     _compute_boundary_loss,
 )
@@ -21,7 +22,7 @@ def dynamic_loss_apply(
     Sometimes when u is a lambda function a or dict we do not have access to
     its type here, hence the last argument
     """
-    if u_type == PINN or isinstance(u, PINN):
+    if u_type == PINN or u_type == HYPERPINN or isinstance(u, (PINN, HYPERPINN)):
         v_dyn_loss = vmap(
             lambda *args: dyn_loss(
                 *args[:-1], u, args[-1]  # we must place the params at the end
@@ -40,7 +41,7 @@ def dynamic_loss_apply(
 
 def normalization_loss_apply(u, batches, params, vmap_axes, int_length, loss_weight):
     # TODO merge stationary and non stationary cases
-    if isinstance(u, PINN):
+    if isinstance(u, (PINN, HYPERPINN)):
         if len(batches) == 1:
             v_u = vmap(
                 lambda *args: u(*args)[u.slice_solution],
@@ -153,20 +154,20 @@ def boundary_condition_apply(
 
 
 def observations_loss_apply(
-    u, batches, params, vmap_axes, observed_values, loss_weight
+    u, batches, params, vmap_axes, observed_values, loss_weight, obs_slice
 ):
     # TODO implement for SPINN
-    if isinstance(u, PINN):
+    if isinstance(u, (PINN, HYPERPINN)):
         v_u = vmap(
             lambda *args: u(*args)[u.slice_solution],
             vmap_axes,
             0,
         )
-        val = v_u(*batches, params)
+        val = v_u(*batches, params)[:, obs_slice]
         mse_observation_loss = jnp.mean(
-            loss_weight
-            * jnp.sum(
-                (val - _check_user_func_return(observed_values, val.shape)) ** 2,
+            jnp.sum(
+                loss_weight
+                * (val - _check_user_func_return(observed_values, val.shape)) ** 2,
                 # the reshape above avoids a potential missing (1,)
                 axis=-1,
             )
@@ -179,7 +180,7 @@ def observations_loss_apply(
 def initial_condition_apply(
     u, omega_batch, params, vmap_axes, initial_condition_fun, n, loss_weight
 ):
-    if isinstance(u, PINN):
+    if isinstance(u, (PINN, HYPERPINN)):
         v_u_t0 = vmap(
             lambda x, params: initial_condition_fun(x) - u(jnp.zeros((1,)), x, params),
             vmap_axes,
@@ -209,7 +210,7 @@ def initial_condition_apply(
 
 def sobolev_reg_apply(u, batches, params, vmap_axes, sobolev_reg, loss_weight):
     # TODO implement for SPINN
-    if isinstance(u, PINN):
+    if isinstance(u, (PINN, HYPERPINN)):
         v_sob_reg = vmap(
             lambda *args: sobolev_reg(*args),  # pylint: disable=E1121
             vmap_axes,
@@ -237,32 +238,45 @@ def constraints_system_loss_apply(
 
     if isinstance(params_dict["nn_params"], dict):
 
-        def apply_u_constraint(u_constraint, nn_params, loss_weights_for_u):
+        def apply_u_constraint(
+            u_constraint, nn_params, loss_weights_for_u, obs_batch_u
+        ):
             res_dict_for_u = u_constraint.evaluate(
                 {
                     "nn_params": nn_params,
                     "eq_params": params_dict["eq_params"],
                 },
-                batch,
+                batch._replace(obs_batch_dict=obs_batch_u),
             )[1]
             res_dict_ponderated = jax.tree_util.tree_map(
                 lambda w, l: w * l, res_dict_for_u, loss_weights_for_u
             )
             return res_dict_ponderated
 
+        # Note in the case of multiple PINNs, batch.obs_batch_dict is a dict
+        # with keys corresponding to the PINN and value correspondinf to an
+        # original obs_batch_dict. Hence the tree mapping also interates over
+        # batch.obs_batch_dict
         res_dict = jax.tree_util.tree_map(
             apply_u_constraint,
             u_constraints_dict,
             params_dict["nn_params"],
             loss_weights_T,
-            is_leaf=lambda x: not isinstance(x, dict),
+            batch.obs_batch_dict,
+            is_leaf=lambda x: (
+                not isinstance(x, dict)  # to not traverse more than the first
+                # outer dict of the pytrees passed to the function. This will
+                # work because u_constraints_dict is a dict of Losses, and it
+                # thus stops the traversing of other dict too
+            ),
         )
+    # TODO try to get rid of this condition?
     else:
-        # TODO try to get rid of this condition?
-        def apply_u_constraint(u_constraint, loss_weights_for_u):
+
+        def apply_u_constraint(u_constraint, loss_weights_for_u, obs_batch_u):
             res_dict_for_u = u_constraint.evaluate(
                 params_dict,
-                batch,
+                batch._replace(obs_batch_dict=obs_batch_u),
             )[1]
             res_dict_ponderated = jax.tree_util.tree_map(
                 lambda w, l: w * l, res_dict_for_u, loss_weights_for_u
@@ -270,7 +284,7 @@ def constraints_system_loss_apply(
             return res_dict_ponderated
 
         res_dict = jax.tree_util.tree_map(
-            apply_u_constraint, u_constraints_dict, loss_weights_T
+            apply_u_constraint, u_constraints_dict, loss_weights_T, batch.obs_batch_dict
         )
 
     # Transpose back so we have mses as outer structures and their values

@@ -2,6 +2,7 @@
 Main module to implement a ODE loss in jinns
 """
 
+import warnings
 import jax
 import jax.numpy as jnp
 from jax import vmap
@@ -9,9 +10,13 @@ from jax.tree_util import register_pytree_node_class
 from jinns.utils._utils import (
     _get_vmap_in_axes_params,
     _set_derivatives,
-    _check_user_func_return,
+    _update_eq_params_dict,
 )
-from jinns.loss._Losses import dynamic_loss_apply, constraints_system_loss_apply
+from jinns.loss._Losses import (
+    dynamic_loss_apply,
+    constraints_system_loss_apply,
+    observations_loss_apply,
+)
 from jinns.utils._pinn import PINN
 
 
@@ -37,7 +42,6 @@ class LossODE:
         dynamic_loss,
         derivative_keys=None,
         initial_condition=None,
-        obs_batch=None,
         obs_slice=None,
     ):
         r"""
@@ -72,13 +76,6 @@ class LossODE:
             tuple of length 2 with initial condition :math:`(t0, u0)`.
             Can be None in order to
             access only some part of the evaluate call results.
-        obs_batch :
-            Default is None.
-            A fixed batch of the observations that we have from the
-            process and their corresponding timesteps. It is implemented as a
-            list containing: 2 jnp.array of the same size (on their first
-            axis) encoding for observations [:math:`x_i, u(x_i)`] for
-            computing a MSE. Default is None
         obs_slice:
             slice object specifying the begininning/ending
             slice of u output(s) that is observed (this is then useful for
@@ -114,17 +111,20 @@ class LossODE:
             }
 
         self.derivative_keys = derivative_keys
-        if initial_condition is not None:
+
+        if initial_condition is None:
+            warnings.warn(
+                "Initial condition wasn't provided. Be sure to cover for that"
+                "case (e.g by. hardcoding it into the PINN output)."
+            )
+        else:
             if not isinstance(initial_condition, tuple) or len(initial_condition) != 2:
                 raise ValueError(
                     f"Initial condition should be a tuple of len 2 with (t0, u0), {initial_condition} was passed."
                 )
         self.initial_condition = initial_condition
         self.loss_weights = loss_weights
-        self.obs_batch = obs_batch
         self.obs_slice = obs_slice
-        if self.obs_batch is None:
-            self.loss_weights["observations"] = 0
         if self.obs_slice is None:
             self.obs_slice = jnp.s_[...]
 
@@ -147,7 +147,8 @@ class LossODE:
             A ODEBatch object.
             Such a named tuple is composed of a batch of time points
             at which to evaluate an optional additional batch of parameters (eg. for
-            metamodeling)
+            metamodeling) and an optional additional batch of observed
+            inputs/outputs/parameters
         """
         temporal_batch = batch.temporal_batch
 
@@ -157,11 +158,8 @@ class LossODE:
         # and update eq_params with the latter
         # and update vmap_in_axes
         if batch.param_batch_dict is not None:
-            eq_params_batch_dict = batch.param_batch_dict
-
-            # feed the eq_params with the batch
-            for k in eq_params_batch_dict.keys():
-                params["eq_params"][k] = eq_params_batch_dict[k]
+            # update params with the batches of generated params
+            params = _update_eq_params_dict(params, batch.param_batch_dict)
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
@@ -182,27 +180,37 @@ class LossODE:
         # initial condition
         params_ = _set_derivatives(params, "initial_condition", self.derivative_keys)
         if self.initial_condition is not None:
+            vmap_in_axes = (None,) + vmap_in_axes_params
+            if not jax.tree_util.tree_leaves(vmap_in_axes):
+                # test if only None in vmap_in_axes to avoid the value error:
+                # `vmap must have at least one non-None value in in_axes`
+                v_u = self.u
+            else:
+                v_u = vmap(self.u, (None,) + vmap_in_axes_params)
             t0, u0 = self.initial_condition
             t0 = jnp.array(t0)
             u0 = jnp.array(u0)
             mse_initial_condition = jnp.mean(
-                self.loss_weights["initial_condition"] * (self.u(t0, params_) - u0) ** 2
+                self.loss_weights["initial_condition"]
+                * jnp.sum((v_u(t0, params_) - u0) ** 2, axis=-1)
             )
         else:
             mse_initial_condition = jnp.array(0.0)
 
-        # MSE loss wrt to an observed batch
-        params_ = _set_derivatives(params, "observations", self.derivative_keys)
-        if self.obs_batch is not None:
-            v_u = vmap(
-                lambda t: self.u(t, params_),
-                0,
-                0,
-            )
-            val = v_u(self.obs_batch[0])[:, self.obs_slice]
-            obs = _check_user_func_return(self.obs_batch[1], val.shape)
-            mse_observation_loss = jnp.mean(
-                self.loss_weights["observations"] * jnp.mean((val - obs) ** 2, axis=0)
+        if batch.obs_batch_dict is not None:
+            # update params with the batches of observed params
+            params = _update_eq_params_dict(params, batch.obs_batch_dict["eq_params"])
+
+            # MSE loss wrt to an observed batch
+            params_ = _set_derivatives(params, "observations", self.derivative_keys)
+            mse_observation_loss = observations_loss_apply(
+                self.u,
+                (batch.obs_batch_dict["pinn_in"],),
+                params_,
+                vmap_in_axes_t + vmap_in_axes_params,
+                batch.obs_batch_dict["val"],
+                self.loss_weights["observations"],
+                self.obs_slice,
             )
         else:
             mse_observation_loss = jnp.array(0.0)
@@ -218,7 +226,7 @@ class LossODE:
         )
 
     def tree_flatten(self):
-        children = (self.initial_condition, self.obs_batch, self.loss_weights)
+        children = (self.initial_condition, self.loss_weights)
         aux_data = {
             "u": self.u,
             "dynamic_loss": self.dynamic_loss,
@@ -228,11 +236,10 @@ class LossODE:
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        (initial_condition, obs_batch, loss_weights) = children
+        (initial_condition, loss_weights) = children
         loss_ode = cls(
             loss_weights=loss_weights,
             initial_condition=initial_condition,
-            obs_batch=obs_batch,
             **aux_data,
         )
         return loss_ode
@@ -264,7 +271,7 @@ class SystemLossODE:
         dynamic_loss_dict,
         derivative_keys_dict=None,
         initial_condition_dict=None,
-        obs_batch_dict=None,
+        obs_slice_dict=None,
     ):
         r"""
         Parameters
@@ -297,12 +304,12 @@ class SystemLossODE:
             dict of dynamic part of the loss, basically the differential
             operator :math:`\mathcal{N}[u](t)`. Should implement a method
             `dynamic_loss.evaluate(t, u, params)`
-        obs_batch_dict
-            Default is None.
-            A dictionary, a key per element of `u_dict`, with value being a tuple
-            containing 2 jnp.array of the same size (on their first
-            axis) encoding the timestep and the observations [:math:`x_i, u(x_i)`].
-            A particular key can be None.
+        obs_slice_dict
+            dict of obs_slice, with keys from `u_dict` to designate the
+            output(s) channels that are forced to observed values, for each
+            PINNs. Default is None. But if a value is given, all the entries of
+            `u_dict` must be represented here with default value `jnp.s_[...]`
+            if no particular slice is to be given
 
         Raises
         ------
@@ -312,27 +319,22 @@ class SystemLossODE:
             if the dictionaries that should share the keys of u_dict do not
         """
 
-        if obs_batch_dict is None:
-            # if the user did not provide at all this optional argument,
-            # we make sure there is a null ponderating loss_weight and we
-            # create a dummy dict with the required keys and all the values to
-            # None
-            self.obs_batch_dict = {k: None for k in u_dict.keys()}
-        else:
-            self.obs_batch_dict = obs_batch_dict
-            if u_dict.keys() != obs_batch_dict.keys():
-                raise ValueError(
-                    "All the dicts (except dynamic_loss_dict) should have same keys"
-                )
-
+        # a dictionary that will be useful at different places
+        self.u_dict_with_none = {k: None for k in u_dict.keys()}
         if initial_condition_dict is None:
-            self.initial_condition_dict = {k: None for k in u_dict.keys()}
+            self.initial_condition_dict = self.u_dict_with_none
         else:
             self.initial_condition_dict = initial_condition_dict
             if u_dict.keys() != initial_condition_dict.keys():
                 raise ValueError(
-                    "All the dicts (except dynamic_loss_dict) should have same keys"
+                    "initial_condition_dict should have same keys as u_dict"
                 )
+        if obs_slice_dict is None:
+            self.obs_slice_dict = {k: jnp.s_[...] for k in u_dict.keys()}
+        else:
+            self.obs_slice_dict = obs_slice_dict
+            if u_dict.keys() != obs_slice_dict.keys():
+                raise ValueError("obs_slice_dict should have same keys as u_dict")
 
         if derivative_keys_dict is None:
             self.derivative_keys_dict = {
@@ -357,7 +359,7 @@ class SystemLossODE:
         self.u_dict = u_dict
 
         self.loss_weights = loss_weights  # We call the setter
-        # note that self.obs_batch_dict and self.initial_condition_dict must be
+        # note that self.initial_condition_dict must be
         # initialized beforehand
 
         # The constaints on the solutions will be implemented by reusing a
@@ -374,7 +376,7 @@ class SystemLossODE:
                 dynamic_loss=None,
                 derivative_keys=self.derivative_keys_dict[i],
                 initial_condition=self.initial_condition_dict[i],
-                obs_batch=self.obs_batch_dict[i],
+                obs_slice=self.obs_slice_dict[i],
             )
 
         # for convenience in the tree_map of evaluate,
@@ -398,7 +400,7 @@ class SystemLossODE:
         for k, v in value.items():
             if isinstance(v, dict):
                 for kk, vv in v.items():
-                    if not (isinstance(vv, int) or isinstance(vv, float)) and not (
+                    if not isinstance(vv, (int, float)) and not (
                         isinstance(vv, jnp.ndarray)
                         and ((vv.shape == (1,) or len(vv.shape) == 0))
                     ):
@@ -423,7 +425,7 @@ class SystemLossODE:
                             " do not match u_dict keys"
                         )
             else:
-                if not (isinstance(v, int) or isinstance(v, float)) and not (
+                if not isinstance(v, (int, float)) and not (
                     isinstance(v, jnp.ndarray)
                     and ((v.shape == (1,) or len(v.shape) == 0))
                 ):
@@ -435,11 +437,10 @@ class SystemLossODE:
                     }
                 else:
                     self._loss_weights[k] = {kk: v for kk in self.u_dict.keys()}
-        # Some special checks below
-        if all(v is None for k, v in self.obs_batch_dict.items()):
-            self._loss_weights["observations"] = {k: 0 for k in self.u_dict.keys()}
         if all(v is None for k, v in self.initial_condition_dict.items()):
             self._loss_weights["initial_condition"] = {k: 0 for k in self.u_dict.keys()}
+        if "observations" not in value.keys():
+            self._loss_weights["observations"] = {k: 0 for k in self.u_dict.keys()}
 
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
@@ -460,7 +461,11 @@ class SystemLossODE:
             but can directly be the parameters. It is useful when working with
             neural networks sharing the same parameters
         batch
-            A batch of time points at which to evaluate the loss
+            A ODEBatch object.
+            Such a named tuple is composed of a batch of time points
+            at which to evaluate an optional additional batch of parameters (eg. for
+            metamodeling) and an optional additional batch of observed
+            inputs/outputs/parameters
         """
         if (
             isinstance(params_dict["nn_params"], dict)
@@ -476,11 +481,8 @@ class SystemLossODE:
         # and update eq_params with the latter
         # and update vmap_in_axes
         if batch.param_batch_dict is not None:
-            eq_params_batch_dict = batch.param_batch_dict
-
-            # feed the eq_params with the batch
-            for k in eq_params_batch_dict.keys():
-                params_dict["eq_params"][k] = eq_params_batch_dict[k]
+            # update params with the batches of generated params
+            params = _update_eq_params_dict(params, batch.param_batch_dict)
 
         vmap_in_axes_params = _get_vmap_in_axes_params(
             batch.param_batch_dict, params_dict
@@ -515,6 +517,10 @@ class SystemLossODE:
             "observations": "*",
             "initial_condition": "*",
         }
+
+        # we need to do the following for the tree_mapping to work
+        if batch.obs_batch_dict is None:
+            batch = batch._replace(obs_batch_dict=self.u_dict_with_none)
         total_loss, res_dict = constraints_system_loss_apply(
             self.u_constraints_dict,
             batch,
@@ -523,7 +529,6 @@ class SystemLossODE:
             loss_weight_struct,
         )
 
-        print(total_loss.shape)
         # Add the mse_dyn_loss from the previous computations
         total_loss += mse_dyn_loss
         res_dict["dyn_loss"] += mse_dyn_loss
@@ -532,23 +537,22 @@ class SystemLossODE:
     def tree_flatten(self):
         children = (
             self.initial_condition_dict,
-            self.obs_batch_dict,
             self._loss_weights,
         )
         aux_data = {
             "u_dict": self.u_dict,
             "dynamic_loss_dict": self.dynamic_loss_dict,
             "derivative_keys_dict": self.derivative_keys_dict,
+            "obs_slice_dict": self.obs_slice_dict,
         }
         return (children, aux_data)
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        (initial_condition_dict, obs_batch_dict, loss_weights) = children
+        (initial_condition_dict, loss_weights) = children
         loss_ode = cls(
             loss_weights=loss_weights,
             initial_condition_dict=initial_condition_dict,
-            obs_batch_dict=obs_batch_dict,
             **aux_data,
         )
 

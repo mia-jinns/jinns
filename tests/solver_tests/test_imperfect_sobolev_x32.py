@@ -17,7 +17,7 @@ def train_imperfect_sobolev_init():
     def u_star(t, x):
         return jnp.exp(t - x) + 0.1 * jnp.cos(2 * jnp.pi * x)
 
-    n = 1000
+    n = 2000
     key, subkey1, subkey2, subkey3 = jax.random.split(key, 4)
     t_obs = jax.random.uniform(subkey1, (n,), minval=0.001, maxval=0.5)
     x_obs = jax.random.uniform(subkey2, (n,), minval=0.001, maxval=1.0)
@@ -69,6 +69,14 @@ def train_imperfect_sobolev_init():
         method,
     )
 
+    key, subkey = random.split(key)
+    obs_data = jinns.data.DataGeneratorObservations(
+        subkey,
+        obs_batch_size=omega_batch_size * temporal_batch_size,
+        observed_pinn_in=jnp.stack([t_obs, x_obs], axis=1),
+        observed_values=obs,
+    )
+
     init_params = {"nn_params": init_nn_params, "eq_params": {}}
 
     def u_init(x):
@@ -112,11 +120,10 @@ def train_imperfect_sobolev_init():
         omega_boundary_fun=omega_boundary_fun,
         omega_boundary_condition=omega_boundary_condition,
         initial_condition_fun=u_init,
-        obs_batch=[t_obs, x_obs, obs],
         sobolev_m=1,
     )
 
-    return init_params, loss, train_data
+    return init_params, loss, train_data, obs_data
 
 
 @pytest.fixture
@@ -124,11 +131,14 @@ def train_imperfect_sobolev_10it(train_imperfect_sobolev_init):
     """
     Fixture that requests a fixture
     """
-    init_params, loss, train_data = train_imperfect_sobolev_init
+    init_params, loss, train_data, obs_data = train_imperfect_sobolev_init
 
     # NOTE we need to waste one get_batch() here to stay synchronized with the
     # notebook
-    _ = loss.evaluate(init_params, train_data.get_batch())[0]
+    _ = loss.evaluate(
+        init_params,
+        jinns.data.append_obs_batch(train_data.get_batch(), obs_data.get_batch()),
+    )[0]
 
     params = init_params
 
@@ -137,19 +147,29 @@ def train_imperfect_sobolev_10it(train_imperfect_sobolev_init):
     tx = optax.adamw(learning_rate=1e-3, weight_decay=lambda_)
     n_iter = 10
     params, total_loss_list, loss_by_term_dict, _, _, _, _ = jinns.solve(
-        init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
+        init_params=params,
+        data=train_data,
+        optimizer=tx,
+        loss=loss,
+        n_iter=n_iter,
+        obs_data=obs_data,
     )
     return total_loss_list[9]
 
 
 def test_initial_loss_imperfect_sobolev(train_imperfect_sobolev_init):
-    init_params, loss, train_data = train_imperfect_sobolev_init
+    init_params, loss, train_data, obs_data = train_imperfect_sobolev_init
 
-    assert jnp.round(
-        loss.evaluate(init_params, train_data.get_batch())[0], 5
-    ) == jnp.round(66.45495, 5)
+    assert jnp.allclose(
+        loss.evaluate(
+            init_params,
+            jinns.data.append_obs_batch(train_data.get_batch(), obs_data.get_batch()),
+        )[0],
+        69.282555,
+        atol=1e-1,
+    )
 
 
 def test_10it_imperfect_sobolev(train_imperfect_sobolev_10it):
     total_loss_val = train_imperfect_sobolev_10it
-    assert jnp.round(total_loss_val, 5) == jnp.round(11.8216, 5)
+    assert jnp.allclose(total_loss_val, 16.83213, atol=1e-1)

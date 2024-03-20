@@ -127,9 +127,11 @@ def _set_derivatives(params, loss_term, derivative_keys):
     """
     try:
         params = {
-            k: value
-            if k in derivative_keys[loss_term]
-            else jax.lax.stop_gradient(value)
+            k: (
+                value
+                if k in derivative_keys[loss_term]
+                else jax.lax.stop_gradient(value)
+            )
             for k, value in params.items()
         }
     except KeyError:  # if the loss_term key has not been specified we
@@ -200,3 +202,22 @@ def euler_maruyama(x0, alpha, mu, sigma, T, N):
         )
 
     return time_steps, np.stack(path)
+
+
+def _update_eq_params_dict(params, param_batch_dict):
+    # update params["eq_params"] with a batch of eq_params
+    # we avoid side_effect by recreating the dict `params`
+    # TODO transform `params` in a NamedTuple to be able to use _replace
+    # see Issue #1
+    param_batch_dict_ = param_batch_dict | {
+        k: None for k in set(params["eq_params"].keys()) - set(param_batch_dict.keys())
+    }
+    params = {"nn_params": params["nn_params"]} | {
+        "eq_params": jax.tree_util.tree_map(
+            lambda p, q: q if q is not None else p,
+            params["eq_params"],
+            param_batch_dict_,
+        )
+    }
+
+    return params

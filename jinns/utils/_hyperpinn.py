@@ -2,6 +2,8 @@
 Implements utility function to create HYPERPINNs
 https://arxiv.org/pdf/2111.01008.pdf
 """
+
+from functools import partial
 import copy
 from math import prod
 import numpy as onp
@@ -94,9 +96,8 @@ class HYPERPINN(PINN):
                 for i in range(len(self.pinn_params_cumsum) - 1)
             ],
         )
-        # NOTE will it be problematic to store the pinn parameters for bigger
-        # network, or are we limited by the allocation on GPU anyway?
-        self.params = tree_map(
+
+        return tree_map(
             lambda a, b: a.reshape(b.shape),
             pinn_params_flat,
             self.params,
@@ -113,14 +114,15 @@ class HYPERPINN(PINN):
         except (KeyError, TypeError) as e:  # give more flexibility
             hyper = eqx.combine(params, self.static_hyper)
 
-        hyper_output = hyper(
-            jnp.concatenate(
-                [params["eq_params"][k].flatten() for k in self.hyperparams], axis=0
-            )
+        eq_params_batch = jnp.concatenate(
+            [params["eq_params"][k].flatten() for k in self.hyperparams], axis=0
         )
-        self.hyper_to_pinn(hyper_output)  # in place transform
 
-        pinn = eqx.combine(self.params, self.static)
+        hyper_output = hyper(eq_params_batch)
+
+        pinn_params = self.hyper_to_pinn(hyper_output)
+
+        pinn = eqx.combine(pinn_params, self.static)
         res = output_transform(inputs, pinn(input_transform(inputs, params)).squeeze())
 
         if self.output_slice is not None:
@@ -145,7 +147,7 @@ def create_HYPERPINN(
     shared_pinn_outputs=None,
     eqx_list_hyper=None,
 ):
-    """
+    r"""
     Utility function to create a standard PINN neural network with the equinox
     library.
 
@@ -203,12 +205,14 @@ def create_HYPERPINN(
         Note that it must be a slice and not an integer (a preprocessing of the
         user provided argument takes care of it)
     shared_pinn_outputs
+        Default is None, for a stantard PINN.
         A tuple of jnp.s_[] (slices) to determine the different output for each
         network. In this case we return a list of PINNs, one for each output in
         shared_pinn_outputs. This is useful to create PINNs that share the
-        same network and same parameters; __the user must then use the same
-        parameter set in their manipulation__.
-        Default is None, we only return one stantard PINN.
+        same network and same parameters; **the user must then use the same
+        parameter set in their manipulation**.
+        See the notebook 2D Navier Stokes in pipeflow with metamodel for an
+        example using this option.
     eqx_list_hyper
         Same as eqx_list but for the hypernetwork. Default is None, i.e., we
         use the same architecture as the PINN, up to the number of inputs and

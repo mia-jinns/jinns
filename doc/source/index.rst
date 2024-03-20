@@ -8,6 +8,12 @@ Welcome to jinn's documentation!
 
 Changelog:
 
+* v0.8.0:
+
+    - Many performance optimizations and code improvements. All notebooks have been updated with much reduced computations times.
+
+    - New way to handle observations with `DataGeneratorObservations` that behaves like traditional dataloaders in machine learning. Checkout the documentation and the various notebooks that use observations. The previous ways to handle observations is not supported anymore.
+
 * v0.7.2:
 
     - Add check to avoid tricky broadcasting bug in observation loss in ODEs
