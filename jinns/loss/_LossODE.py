@@ -507,10 +507,22 @@ class SystemLossODE:
         # and update eq_params with the latter
         # and update vmap_in_axes
         if batch.param_batch_dict is not None:
-            # feed the eq_params with the batch
-            for k, v in batch.param_batch_dict.items():
-                params_dict["eq_params"][k] = v
-
+            # update params with the batches of params
+            # we avoid side_effect by recreating the dict
+            # TODO transform params in a NamedTuple to be able to use _replace
+            # see Issue #1
+            param_batch_dict_ = batch.param_batch_dict | {
+                k: None
+                for k in set(params["eq_params"].keys())
+                - set(batch.param_batch_dict.keys())
+            }
+            params = {"nn_params": params["nn_params"]} | {
+                "eq_params": jax.tree_util.tree_map(
+                    lambda p, q: q if q is not None else p,
+                    params["eq_params"],
+                    param_batch_dict_,
+                )
+            }
         vmap_in_axes_params = _get_vmap_in_axes_params(
             batch.param_batch_dict, params_dict
         )
