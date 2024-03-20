@@ -99,10 +99,15 @@ class ODE(DynamicLoss):
 
         def wrapper(*args):
             self, t, u, params = args
-            params["eq_params"] = self.eval_heterogeneous_parameters(
-                t, u, params, self.eq_params_heterogeneity
-            )
-            new_args = args[:-1] + (params,)
+            # avoid side effect with in-place modif of param["eq_params"]
+            # TODO NamedTuple for params and use _replace() see Issue 1
+            _params = {
+                "nn_params": params["nn_params"],
+                "eq_params": self.eval_heterogeneous_parameters(
+                    t, u, params, self.eq_params_heterogeneity
+                ),
+            }
+            new_args = args[:-1] + (_params,)
             res = evaluate(*new_args)
             return res
 
@@ -144,10 +149,15 @@ class PDEStatio(DynamicLoss):
 
         def wrapper(*args):
             self, x, u, params = args
-            params["eq_params"] = self.eval_heterogeneous_parameters(
-                x, u, params, self.eq_params_heterogeneity
-            )
-            new_args = args[:-1] + (params,)
+            # avoid side effect with in-place modif of param["eq_params"]
+            # TODO NamedTuple for params and use _replace() see Issue 1
+            _params = {
+                "nn_params": params["nn_params"],
+                "eq_params": self.eval_heterogeneous_parameters(
+                    t, u, params, self.eq_params_heterogeneity
+                ),
+            }
+            new_args = args[:-1] + (_params,)
             res = evaluate(*new_args)
             return res
 
@@ -195,10 +205,15 @@ class PDENonStatio(DynamicLoss):
 
         def wrapper(*args):
             self, t, x, u, params = args
-            params["eq_params"] = self.eval_heterogeneous_parameters(
-                t, x, u, params, self.eq_params_heterogeneity
-            )
-            new_args = args[:-1] + (params,)
+            # avoid side effect with in-place modif of param["eq_params"]
+            # TODO NamedTuple for params and use _replace() see Issue 1
+            _params = {
+                "nn_params": params["nn_params"],
+                "eq_params": self.eval_heterogeneous_parameters(
+                    t, x, u, params, self.eq_params_heterogeneity
+                ),
+            }
+            new_args = args[:-1] + (_params,)
             res = evaluate(*new_args)
             return res
 
