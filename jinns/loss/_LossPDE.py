@@ -19,6 +19,7 @@ from jinns.data._DataGenerators import PDEStatioBatch, PDENonStatioBatch
 from jinns.utils._utils import (
     _get_vmap_in_axes_params,
     _set_derivatives,
+    _update_eq_params_dict,
 )
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
@@ -500,9 +501,8 @@ class LossPDEStatio(LossPDEAbstract):
         # and update eq_params with the latter
         # and update vmap_in_axes
         if batch.param_batch_dict is not None:
-            # feed the eq_params with the batch
-            for k, v in batch.param_batch_dict.items():
-                params["eq_params"][k] = v
+            # update eq_params with the batches of generated params
+            params = _update_eq_params_dict(params, batch.param_batch_dict)
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
@@ -552,8 +552,9 @@ class LossPDEStatio(LossPDEAbstract):
 
         # Observation mse
         if batch.obs_batch_dict is not None:
-            for k, v in batch.obs_batch_dict["eq_params"].items():
-                params["eq_params"][k] = v
+            # update params with the batches of observed params
+            params = _update_eq_params_dict(params, batch.obs_batch_dict["eq_params"])
+
             params_ = _set_derivatives(params, "observations", self.derivative_keys)
             mse_observation_loss = observations_loss_apply(
                 self.u,
@@ -905,8 +906,9 @@ class LossPDENonStatio(LossPDEStatio):
 
         # Observation mse
         if batch.obs_batch_dict is not None:
-            for k, v in batch.obs_batch_dict["eq_params"].items():
-                params["eq_params"][k] = v
+            # update params with the batches of observed params
+            params = _update_eq_params_dict(params, batch.obs_batch_dict["eq_params"])
+
             params_ = _set_derivatives(params, "observations", self.derivative_keys)
             mse_observation_loss = observations_loss_apply(
                 self.u,

@@ -10,6 +10,7 @@ from jax.tree_util import register_pytree_node_class
 from jinns.utils._utils import (
     _get_vmap_in_axes_params,
     _set_derivatives,
+    _update_eq_params_dict,
 )
 from jinns.loss._Losses import (
     dynamic_loss_apply,
@@ -157,22 +158,8 @@ class LossODE:
         # and update eq_params with the latter
         # and update vmap_in_axes
         if batch.param_batch_dict is not None:
-            # update params with the batches of params
-            # we avoid side_effect by recreating the dict
-            # TODO transform params in a NamedTuple to be able to use _replace
-            # see Issue #1
-            param_batch_dict_ = batch.param_batch_dict | {
-                k: None
-                for k in set(params["eq_params"].keys())
-                - set(batch.param_batch_dict.keys())
-            }
-            params = {"nn_params": params["nn_params"]} | {
-                "eq_params": jax.tree_util.tree_map(
-                    lambda p, q: q if q is not None else p,
-                    params["eq_params"],
-                    param_batch_dict_,
-                )
-            }
+            # update params with the batches of generated params
+            params = _update_eq_params_dict(params, batch.param_batch_dict)
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
@@ -212,21 +199,8 @@ class LossODE:
 
         if batch.obs_batch_dict is not None:
             # update params with the batches of observed params
-            # we avoid side_effect by recreating the dict
-            # TODO transform params in a NamedTuple to be able to use _replace
-            # see Issue #1
-            obs_batch_dict_ = batch.obs_batch_dict["eq_params"] | {
-                k: None
-                for k in set(params["eq_params"].keys())
-                - set(batch.obs_batch_dict["eq_params"].keys())
-            }
-            params = {"nn_params": params["nn_params"]} | {
-                "eq_params": jax.tree_util.tree_map(
-                    lambda p, q: q if q is not None else p,
-                    params["eq_params"],
-                    obs_batch_dict_,
-                )
-            }
+            params = _update_eq_params_dict(params, batch.obs_batch_dict["eq_params"])
+
             # MSE loss wrt to an observed batch
             params_ = _set_derivatives(params, "observations", self.derivative_keys)
             mse_observation_loss = observations_loss_apply(
@@ -507,22 +481,9 @@ class SystemLossODE:
         # and update eq_params with the latter
         # and update vmap_in_axes
         if batch.param_batch_dict is not None:
-            # update params with the batches of params
-            # we avoid side_effect by recreating the dict
-            # TODO transform params in a NamedTuple to be able to use _replace
-            # see Issue #1
-            param_batch_dict_ = batch.param_batch_dict | {
-                k: None
-                for k in set(params["eq_params"].keys())
-                - set(batch.param_batch_dict.keys())
-            }
-            params = {"nn_params": params["nn_params"]} | {
-                "eq_params": jax.tree_util.tree_map(
-                    lambda p, q: q if q is not None else p,
-                    params["eq_params"],
-                    param_batch_dict_,
-                )
-            }
+            # update params with the batches of generated params
+            params = _update_eq_params_dict(params, batch.param_batch_dict)
+
         vmap_in_axes_params = _get_vmap_in_axes_params(
             batch.param_batch_dict, params_dict
         )
