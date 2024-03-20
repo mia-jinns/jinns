@@ -157,9 +157,10 @@ class LossODE:
         # and update eq_params with the latter
         # and update vmap_in_axes
         if batch.param_batch_dict is not None:
-            # feed the eq_params with the batch
-            # for k, v in batch.param_batch_dict.items():
-            #    params["eq_params"][k] = v
+            # update params with the batches of params
+            # we avoid side_effect by recreating the dict
+            # TODO transform params in a NamedTuple to be able to use _replace
+            # see Issue #1
             param_batch_dict_ = batch.param_batch_dict | {
                 k: None
                 for k in set(params["eq_params"].keys())
@@ -210,9 +211,10 @@ class LossODE:
             mse_initial_condition = jnp.array(0.0)
 
         if batch.obs_batch_dict is not None:
-            # feed the eq_params with the batch
-            for k, v in batch.obs_batch_dict["eq_params"].items():
-                params["eq_params"][k] = v
+            # update params with the batches of observed params
+            # we avoid side_effect by recreating the dict
+            # TODO transform params in a NamedTuple to be able to use _replace
+            # see Issue #1
             obs_batch_dict_ = batch.obs_batch_dict["eq_params"] | {
                 k: None
                 for k in set(params["eq_params"].keys())
