@@ -4,6 +4,8 @@ Implements utility function to create PINNs
 
 import jax
 import jax.numpy as jnp
+from jax.typing import ArrayLike
+from typing import Callable
 import equinox as eqx
 
 
@@ -39,17 +41,33 @@ class _MLP(eqx.Module):
         """
 
         self.layers = []
-        # TODO we are limited currently in the number of layer type we can
-        # parse and we lack some safety checks
         for l in eqx_list:
             if len(l) == 1:
-                self.layers.append(l[0])
+                if isinstance(l[0], str):
+                    # we need to pass by strings if we want to pickle
+                    try:
+                        try:
+                            self.layers.append(getattr(jax.nn, l[0]))
+                        except AttributeError:
+                            self.layers.append(getattr(jax.numpy, l[0]))
+                    except ValueError as exc:
+                        raise ValueError(
+                            "Activation functions must be from" " jax.nn or jax.numpy"
+                        ) from exc
+                else:
+                    # or we can pass directly functions
+                    self.layers.append(l[0])
             else:
-                # By default we append a random key at the end of the
-                # arguments fed into a layer module call
                 key, subkey = jax.random.split(key, 2)
-                # the argument key is keyword only
-                self.layers.append(l[0](*l[1:], key=subkey))
+                if isinstance(l[0], str):
+                    # we need to pass by strings if we want to pickle
+                    try:
+                        self.layers.append(getattr(eqx.nn, l[0])(*l[1:], key=subkey))
+                    except AttributeError as exc:
+                        raise ValueError("Layers must be eqx.nn layers") from exc
+                else:
+                    # or we can pass directly functions
+                    self.layers.append(l[0](*l[1:], key=subkey))
 
     def __call__(self, t):
         for layer in self.layers:
@@ -57,25 +75,31 @@ class _MLP(eqx.Module):
         return t
 
 
-class PINN:
+class PINN(eqx.Module):
     """
     Basically a wrapper around the `__call__` function to be able to give a type to
     our former `self.u`
     The function create_PINN has the role to population the `__call__` function
     """
 
+    slice_solution: ArrayLike
+    eq_type: str = eqx.field(static=True)
+    input_transform: Callable = eqx.field(static=True)
+    output_transform: Callable = eqx.field(static=True)
+    output_slice: ArrayLike
+    params: eqx.Module
+    static: eqx.Module
+
     def __init__(
         self,
-        key,
-        eqx_list,
+        mlp,
         slice_solution,
         eq_type,
         input_transform,
         output_transform,
-        output_slice=None,
+        output_slice,
     ):
-        _pinn = _MLP(key, eqx_list)
-        self.params, self.static = eqx.partition(_pinn, eqx.is_inexact_array)
+        self.params, self.static = eqx.partition(mlp, eqx.is_inexact_array)
         self.slice_solution = slice_solution
         self.eq_type = eq_type
         self.input_transform = input_transform
@@ -246,13 +270,14 @@ def create_PINN(
         def output_transform(_in_pinn, _out_pinn):
             return _out_pinn
 
+    mlp = _MLP(key, eqx_list)
+
     if shared_pinn_outputs is not None:
         pinns = []
         static = None
         for output_slice in shared_pinn_outputs:
             pinn = PINN(
-                key,
-                eqx_list,
+                mlp,
                 slice_solution,
                 eq_type,
                 input_transform,
@@ -266,7 +291,5 @@ def create_PINN(
                 pinn.static = static
             pinns.append(pinn)
         return pinns
-    pinn = PINN(
-        key, eqx_list, slice_solution, eq_type, input_transform, output_transform
-    )
+    pinn = PINN(mlp, slice_solution, eq_type, input_transform, output_transform, None)
     return pinn
