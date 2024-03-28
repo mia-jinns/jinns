@@ -14,10 +14,11 @@ from jinns.utils._hyperpinn import create_HYPERPINN
 def save_pinn(filename, u, params, kwargs_creation):
     """
     Save a PINN / HyperPINN / SPINN model
-    Creates an eqx file to save the eqx.Module (the PINN, HyperPINN, ...)
-    Creates a pickle file for the parameters
-    Creates a pickle file for the arguments that have been used at PINN
-    creation and that we need to reconstruct the eqx.module later on
+    This function creates 3 files, beggining by `filename`
+     1. an eqx file to save the eqx.Module (the PINN, HyperPINN, ...)
+     2. a pickle file for the parameters
+     3. a pickle file for the arguments that have been used at PINN
+     creation and that we need to reconstruct the eqx.module later on.
 
     Parameters
     ----------
@@ -31,7 +32,8 @@ def save_pinn(filename, u, params, kwargs_creation):
         dictionaries: `eq_params` and `nn_params``, respectively the
         differential equation parameters and the neural network parameter
     kwargs_creation
-        The dictionary of arguments that were used to create the PINN
+        The dictionary of arguments that were used to create the PINN, e.g.
+        the layers list, O/PDE type, etc.
     """
     eqx.tree_serialise_leaves(filename + "-module.eqx", u)
     with open(filename + "-parameters.pkl", "wb") as f:
@@ -50,18 +52,21 @@ def save_pinn(filename, u, params, kwargs_creation):
 
 def load_pinn(filename, type_):
     """
-    Load a PINN model. This function needs to access `{filename}-module.eqx`,
-    `{filename}-parameters.pkl` and `{filename}-arguments.pkl`
+    Load a PINN model. This function needs to access 3 files :
+    `{filename}-module.eqx`, `{filename}-parameters.pkl` and
+    `{filename}-arguments.pkl`.
+
+    These files are created by `jinns.utils.save_pinn`.
 
     Note that this requires equinox v0.11.3 (currently latest version) for the
-    `eqx.filter_eval_shape` to work
+    `eqx.filter_eval_shape` to work.
 
     Parameters
     ----------
     filename
         Filename (prefix) without extension.
     type_
-        Type of model to load. Must be in ["pinn", "hyperpinn", "spinn"]
+        Type of model to load. Must be in ["pinn", "hyperpinn", "spinn"].
 
     Returns
     -------
