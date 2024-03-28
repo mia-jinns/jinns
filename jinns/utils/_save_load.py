@@ -1,0 +1,92 @@
+"""
+Implements save and load functions
+"""
+
+import pickle
+import jax
+import equinox as eqx
+
+from jinns.utils._pinn import create_PINN
+from jinns.utils._spinn import create_SPINN
+from jinns.utils._hyperpinn import create_HYPERPINN
+
+
+def save_pinn(filename, u, params, kwargs_creation):
+    """
+    Save a PINN / HyperPINN / SPINN model
+    Creates an eqx file to save the eqx.Module (the PINN, HyperPINN, ...)
+    Creates a pickle file for the parameters
+    Creates a pickle file for the arguments that have been used at PINN
+    creation and that we need to reconstruct the eqx.module later on
+
+    Parameters
+    ----------
+    filename
+        Filename (prefix) without extension
+    u
+        The PINN
+    params
+        The dictionary of parameters of the model.
+        Typically, it is a dictionary of
+        dictionaries: `eq_params` and `nn_params``, respectively the
+        differential equation parameters and the neural network parameter
+    kwargs_creation
+        The dictionary of arguments that were used to create the PINN
+    """
+    eqx.tree_serialise_leaves(filename + "-module.eqx", u)
+    with open(filename + "-parameters.pkl", "wb") as f:
+        pickle.dump(params, f)
+    kwargs_creation = kwargs_creation.copy()  # avoid side-effect that would be
+    # very probably harmless anyway
+    # we now need to transform the functions in eqx_list into strings otherwise
+    # it could not be pickled
+    kwargs_creation["eqx_list"] = jax.tree_util.tree_map(
+        lambda x: x.__name__ if hasattr(x, "__call__") else x,
+        kwargs_creation["eqx_list"],
+    )
+    with open(filename + "-arguments.pkl", "wb") as f:
+        pickle.dump(kwargs_creation, f)
+
+
+def load_pinn(filename, type_):
+    """
+    Load a PINN model. This function needs to access `{filename}-module.eqx`,
+    `{filename}-parameters.pkl` and `{filename}-arguments.pkl`
+
+    Note that this requires equinox v0.11.3 (currently latest version) for the
+    `eqx.filter_eval_shape` to work
+
+    Parameters
+    ----------
+    filename
+        Filename (prefix) without extension.
+    type_
+        Type of model to load. Must be in ["pinn", "hyperpinn", "spinn"]
+
+    Returns
+    -------
+    u_reloaded
+        The reloaded PINN
+    params_reloaded
+        The reloaded parameters
+    """
+    with open(filename + "-arguments.pkl", "rb") as f:
+        kwargs_reloaded = pickle.load(f)
+    with open(filename + "-parameters.pkl", "rb") as f:
+        params_reloaded = pickle.load(f)
+    if type_ == "pinn":
+        # next line creates a shallow model, the jax arrays are just shapes and
+        # not populated, this just recreates the correct pytree structure
+        u_reloaded_shallow = eqx.filter_eval_shape(create_PINN, **kwargs_reloaded)
+    elif type_ == "spinn":
+        u_reloaded_shallow = eqx.filter_eval_shape(create_SPINN, **kwargs_reloaded)
+    elif type_ == "hyperpinn":
+        u_reloaded_shallow = eqx.filter_eval_shape(create_HYPERPINN, **kwargs_reloaded)
+    else:
+        raise ValueError(f"{type_} is not valid")
+    # now the empty structure is populated with the actual saved array values
+    # stored in the eqx file
+    u_reloaded = eqx.tree_deserialise_leaves(
+        filename + "-module.eqx", u_reloaded_shallow
+    )
+    return u_reloaded, params_reloaded
