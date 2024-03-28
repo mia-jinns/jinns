@@ -43,31 +43,10 @@ class _MLP(eqx.Module):
         self.layers = []
         for l in eqx_list:
             if len(l) == 1:
-                if isinstance(l[0], str):
-                    # we need to pass by strings if we want to pickle
-                    try:
-                        try:
-                            self.layers.append(getattr(jax.nn, l[0]))
-                        except AttributeError:
-                            self.layers.append(getattr(jax.numpy, l[0]))
-                    except ValueError as exc:
-                        raise ValueError(
-                            "Activation functions must be from" " jax.nn or jax.numpy"
-                        ) from exc
-                else:
-                    # or we can pass directly functions
-                    self.layers.append(l[0])
+                self.layers.append(l[0])
             else:
                 key, subkey = jax.random.split(key, 2)
-                if isinstance(l[0], str):
-                    # we need to pass by strings if we want to pickle
-                    try:
-                        self.layers.append(getattr(eqx.nn, l[0])(*l[1:], key=subkey))
-                    except AttributeError as exc:
-                        raise ValueError("Layers must be eqx.nn layers") from exc
-                else:
-                    # or we can pass directly functions
-                    self.layers.append(l[0](*l[1:], key=subkey))
+                self.layers.append(l[0](*l[1:], key=subkey))
 
     def __call__(self, t):
         for layer in self.layers:
