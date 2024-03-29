@@ -13,6 +13,8 @@ from jinns.utils._hyperpinn import create_HYPERPINN
 
 def function_to_string(eqx_list):
     """
+    We need this transformation for eqx_list to be pickle
+
     From `[[eqx.nn.Linear, 2, 20],
             [jax.nn.tanh],
             [eqx.nn.Linear, 20, 20],
@@ -35,6 +37,8 @@ def function_to_string(eqx_list):
 
 def string_to_function(eqx_list_with_string):
     """
+    We need this transformation for eqx_list at the unpickling operation
+
     From `[["Linear", 2, 20],
                 ["tanh"],
                 ["Linear", 20, 20],
@@ -58,13 +62,13 @@ def string_to_function(eqx_list_with_string):
                     return getattr(jax.nn, l)
                 except AttributeError:
                     return getattr(jax.numpy, l)
-            except:
+            except AttributeError:
                 return getattr(eqx.nn, l)
-        except:
+        except AttributeError as exc:
             raise ValueError(
                 "Activation functions must be from jax.nn or jax.numpy"
                 + "or layers must be eqx.nn layers"
-            )
+            ) from exc
 
     return jax.tree_util.tree_map(
         lambda x: _str_to_fun(x) if isinstance(x, str) else x, eqx_list_with_string
