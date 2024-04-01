@@ -104,9 +104,19 @@ def save_pinn(filename, u, params, kwargs_creation):
         pickle.dump(params, f)
     kwargs_creation = kwargs_creation.copy()  # avoid side-effect that would be
     # very probably harmless anyway
+
     # we now need to transform the functions in eqx_list into strings otherwise
     # it could not be pickled
     kwargs_creation["eqx_list"] = function_to_string(kwargs_creation["eqx_list"])
+
+    # same thing if there is an hypernetwork:
+    try:
+        kwargs_creation["eqx_list_hyper"] = function_to_string(
+            kwargs_creation["eqx_list_hyper"]
+        )
+    except KeyError:
+        pass
+
     with open(filename + "-arguments.pkl", "wb") as f:
         pickle.dump(kwargs_creation, f)
 
@@ -148,6 +158,9 @@ def load_pinn(filename, type_):
     elif type_ == "spinn":
         u_reloaded_shallow = eqx.filter_eval_shape(create_SPINN, **kwargs_reloaded)
     elif type_ == "hyperpinn":
+        kwargs_reloaded["eqx_list_hyper"] = string_to_function(
+            kwargs_reloaded["eqx_list_hyper"]
+        )
         u_reloaded_shallow = eqx.filter_eval_shape(create_HYPERPINN, **kwargs_reloaded)
     else:
         raise ValueError(f"{type_} is not valid")

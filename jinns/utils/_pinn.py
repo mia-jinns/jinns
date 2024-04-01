@@ -2,10 +2,10 @@
 Implements utility function to create PINNs
 """
 
+from typing import Callable
 import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
-from typing import Callable
 import equinox as eqx
 
 
@@ -137,7 +137,7 @@ def create_PINN(
     shared_pinn_outputs=None,
     slice_solution=None,
 ):
-    """
+    r"""
     Utility function to create a standard PINN neural network with the equinox
     library.
 
