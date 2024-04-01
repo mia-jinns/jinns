@@ -79,9 +79,11 @@ def save_pinn(filename, u, params, kwargs_creation):
     """
     Save a PINN / HyperPINN / SPINN model
     This function creates 3 files, beggining by `filename`
+
      1. an eqx file to save the eqx.Module (the PINN, HyperPINN, ...)
      2. a pickle file for the parameters
      3. a pickle file for the arguments that have been used at PINN
+
      creation and that we need to reconstruct the eqx.module later on.
 
     Parameters
