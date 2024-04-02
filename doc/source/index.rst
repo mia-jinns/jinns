@@ -8,6 +8,11 @@ Welcome to jinn's documentation!
 
 Changelog:
 
+* v0.8.1:
+
+    - New feature: `save_pinn` and `load_pinn` in `jinns.utils` for pre-trained
+    PINN models.
+
 * v0.8.0:
 
     - Many performance optimizations and code improvements. All notebooks have been updated with much reduced computations times.
