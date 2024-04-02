@@ -76,17 +76,23 @@ class _SPINN(eqx.Module):
         return jnp.asarray(outputs)
 
 
-class SPINN:
+class SPINN(eqx.Module):
     """
     Basically a wrapper around the `__call__` function to be able to give a type to
     our former `self.u`
     The function create_SPINN has the role to population the `__call__` function
     """
 
-    def __init__(self, key, d, r, eqx_list, eq_type, m=1):
+    d: int
+    r: int
+    eq_type: str = eqx.field(static=True)
+    m: int
+    params: eqx.Module
+    static: eqx.Module
+
+    def __init__(self, spinn_mlp, d, r, eq_type, m):
         self.d, self.r, self.m = d, r, m
-        _spinn = _SPINN(key, d, r, eqx_list, m)
-        self.params, self.static = eqx.partition(_spinn, eqx.is_inexact_array)
+        self.params, self.static = eqx.partition(spinn_mlp, eqx.is_inexact_array)
         self.eq_type = eq_type
 
     def init_params(self):
@@ -229,6 +235,7 @@ def create_SPINN(key, d, r, eqx_list, eq_type, m=1):
             "Too many dimensions, not enough letters available in jnp.einsum"
         )
 
-    spinn = SPINN(key, d, r, eqx_list, eq_type, m)
+    spinn_mlp = _SPINN(key, d, r, eqx_list, m)
+    spinn = SPINN(spinn_mlp, d, r, eq_type, m)
 
     return spinn

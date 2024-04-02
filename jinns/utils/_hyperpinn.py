@@ -3,13 +3,13 @@ Implements utility function to create HYPERPINNs
 https://arxiv.org/pdf/2111.01008.pdf
 """
 
-from functools import partial
 import copy
 from math import prod
 import numpy as onp
 import jax
 import jax.numpy as jnp
 from jax.tree_util import tree_leaves, tree_map
+from jax.typing import ArrayLike
 import equinox as eqx
 
 from jinns.utils._pinn import PINN, _MLP
@@ -35,47 +35,39 @@ class HYPERPINN(PINN):
     Composed of a PINN and an hypernetwork
     """
 
+    params_hyper: eqx.Module
+    static_hyper: eqx.Module
+    hyperparams: list = eqx.field(static=True)
+    hypernet_input_size: int
+    pinn_params_sum: ArrayLike
+    pinn_params_cumsum: ArrayLike
+
     def __init__(
         self,
-        key,
-        eqx_list,
-        eqx_list_hyper,
+        mlp,
+        hyper_mlp,
         slice_solution,
         eq_type,
         input_transform,
         output_transform,
         hyperparams,
         hypernet_input_size,
-        output_slice=None,
+        output_slice,
     ):
-        key, subkey = jax.random.split(key, 2)
         super().__init__(
-            subkey,
-            eqx_list,
+            mlp,
             slice_solution,
             eq_type,
             input_transform,
             output_transform,
             output_slice,
         )
-        self.pinn_params_sum, self.pinn_params_cumsum = _get_param_nb(self.params)
-        # the number of parameters for the pinn will be the number of ouputs
-        # for the hypetnetwork
+        self.params_hyper, self.static_hyper = eqx.partition(
+            hyper_mlp, eqx.is_inexact_array
+        )
         self.hyperparams = hyperparams
         self.hypernet_input_size = hypernet_input_size
-        key, subkey = jax.random.split(key, 2)
-        try:
-            eqx_list_hyper[-1][2] = self.pinn_params_sum
-        except IndexError:
-            eqx_list_hyper[-2][2] = self.pinn_params_sum
-        try:
-            eqx_list_hyper[0][1] = self.hypernet_input_size
-        except IndexError:
-            eqx_list_hyper[0][1] = self.hypernet_input_size
-        _hyper = _MLP(subkey, eqx_list_hyper)
-        self.params_hyper, self.static_hyper = eqx.partition(
-            _hyper, eqx.is_inexact_array
-        )
+        self.pinn_params_sum, self.pinn_params_cumsum = _get_param_nb(self.params)
 
     def init_params(self):
         return self.params_hyper
@@ -276,14 +268,32 @@ def create_HYPERPINN(
         def output_transform(_in_pinn, _out_pinn):
             return _out_pinn
 
+    key, subkey = jax.random.split(key, 2)
+    mlp = _MLP(subkey, eqx_list)
+    # quick partitioning to get the params to get the correct number of neurons
+    # for the last layer of hyper network
+    params_mlp, _ = eqx.partition(mlp, eqx.is_inexact_array)
+    pinn_params_sum, _ = _get_param_nb(params_mlp)
+    # the number of parameters for the pinn will be the number of ouputs
+    # for the hyper network
+    try:
+        eqx_list_hyper[-1][2] = pinn_params_sum
+    except IndexError:
+        eqx_list_hyper[-2][2] = pinn_params_sum
+    try:
+        eqx_list_hyper[0][1] = hypernet_input_size
+    except IndexError:
+        eqx_list_hyper[1][1] = hypernet_input_size
+    key, subkey = jax.random.split(key, 2)
+    hyper_mlp = _MLP(subkey, eqx_list_hyper)
+
     if shared_pinn_outputs is not None:
         hyperpinns = []
         static = None
         for output_slice in shared_pinn_outputs:
             hyperpinn = HYPERPINN(
-                key,
-                eqx_list,
-                eqx_list_hyper,
+                mlp,
+                hyper_mlp,
                 slice_solution,
                 eq_type,
                 input_transform,
@@ -300,14 +310,14 @@ def create_HYPERPINN(
             hyperpinns.append(hyperpinn)
         return hyperpinns
     hyperpinn = HYPERPINN(
-        key,
-        eqx_list,
-        eqx_list_hyper,
+        mlp,
+        hyper_mlp,
         slice_solution,
         eq_type,
         input_transform,
         output_transform,
         hyperparams,
         hypernet_input_size,
+        None,
     )
     return hyperpinn
