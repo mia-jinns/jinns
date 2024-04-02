@@ -13,7 +13,7 @@ from jinns.utils._hyperpinn import create_HYPERPINN
 
 def function_to_string(eqx_list):
     """
-    We need this transformation for eqx_list to be pickle
+    We need this transformation for eqx_list to be pickled
 
     From `[[eqx.nn.Linear, 2, 20],
             [jax.nn.tanh],
@@ -37,7 +37,8 @@ def function_to_string(eqx_list):
 
 def string_to_function(eqx_list_with_string):
     """
-    We need this transformation for eqx_list at the unpickling operation
+    We need this transformation for eqx_list at the loading ("unpickling")
+    operation.
 
     From `[["Linear", 2, 20],
                 ["tanh"],
@@ -66,7 +67,7 @@ def string_to_function(eqx_list_with_string):
                 return getattr(eqx.nn, l)
         except AttributeError as exc:
             raise ValueError(
-                "Activation functions must be from jax.nn or jax.numpy"
+                "Activation functions must be from jax.nn or jax.numpy,"
                 + "or layers must be eqx.nn layers"
             ) from exc
 
@@ -95,7 +96,7 @@ def save_pinn(filename, u, params, kwargs_creation):
     params
         The dictionary of parameters of the model.
         Typically, it is a dictionary of
-        dictionaries: `eq_params` and `nn_params``, respectively the
+        dictionaries: `eq_params` and `nn_params`, respectively the
         differential equation parameters and the neural network parameter
     kwargs_creation
         The dictionary of arguments that were used to create the PINN, e.g.
