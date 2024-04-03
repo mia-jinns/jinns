@@ -9,7 +9,7 @@ from jinns.utils import save_pinn, load_pinn
 
 
 @pytest.fixture
-def save_reload():
+def save_reload(tmpdir):
     jax.config.update("jax_enable_x64", False)
     key = random.PRNGKey(2)
 
@@ -73,7 +73,7 @@ def save_reload():
     }
 
     # Save
-    filename = "./test"
+    filename = str(tmpdir.join("test"))
     kwargs_creation = {
         "key": subkey,
         "eqx_list": eqx_list,
