@@ -68,7 +68,7 @@ def test_jitting_reloaded_pinn(save_reload):
     This tests is here for testimony.
     """
 
-    key, params, u, params_reloaded, u_reloaded = save_reload
+    key, _, _, params_reloaded, u_reloaded = save_reload
 
     key, subkey = jax.random.split(key, 2)
     test_points = jax.random.normal(subkey, shape=(10, 2))

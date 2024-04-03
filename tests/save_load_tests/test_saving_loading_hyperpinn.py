@@ -118,7 +118,7 @@ def test_jitting_reloaded_hyperpinn(save_reload):
     This tests is here for testimony.
     """
 
-    key, params, u, params_reloaded, u_reloaded = save_reload
+    key, _, _, params_reloaded, u_reloaded = save_reload
 
     v_u_reloaded = jax.vmap(
         u_reloaded, (0, 0, {"nn_params": None, "eq_params": {"D": 0, "r": 0}})

@@ -69,10 +69,10 @@ def test_jitting_reloaded_spinn(save_reload):
     This tests is here for testimony.
     """
 
-    key, params, u, params_reloaded, u_reloaded = save_reload
+    key, _, _, params_reloaded, u_reloaded = save_reload
 
     key, subkey = jax.random.split(key, 2)
     test_points = jax.random.normal(subkey, shape=(10, 2))
 
-    u_reloaded_jitted = jax.jit(u_reloaded)
+    u_reloaded_jitted = jax.jit(u_reloaded.__call__)
     u_reloaded_jitted(test_points[:, 0:1], test_points[:, 1:], params_reloaded)
