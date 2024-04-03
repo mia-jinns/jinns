@@ -39,8 +39,8 @@ class HYPERPINN(PINN):
     static_hyper: eqx.Module
     hyperparams: list = eqx.field(static=True)
     hypernet_input_size: int
-    pinn_params_sum: ArrayLike
-    pinn_params_cumsum: ArrayLike
+    pinn_params_sum: ArrayLike = eqx.field(static=True)
+    pinn_params_cumsum: ArrayLike = eqx.field(static=True)
 
     def __init__(
         self,

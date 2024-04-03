@@ -8,6 +8,10 @@ Welcome to jinn's documentation!
 
 Changelog:
 
+* v0.8.2:
+
+    - Fix a bug: it was not possible to jit a reloaded HyperPINN model
+
 * v0.8.1:
 
     - New feature: `save_pinn` and `load_pinn` in `jinns.utils` for pre-trained
