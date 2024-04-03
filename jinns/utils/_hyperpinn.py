@@ -9,6 +9,7 @@ import numpy as onp
 import jax
 import jax.numpy as jnp
 from jax.tree_util import tree_leaves, tree_map
+from jax.typing import ArrayLike
 import equinox as eqx
 
 from jinns.utils._pinn import PINN, _MLP
@@ -38,8 +39,8 @@ class HYPERPINN(PINN):
     static_hyper: eqx.Module
     hyperparams: list = eqx.field(static=True)
     hypernet_input_size: int
-    pinn_params_sum: onp.ndarray = eqx.field(static=True)
-    pinn_params_cumsum: onp.ndarray = eqx.field(static=True)
+    pinn_params_sum: ArrayLike = eqx.field(static=True)
+    pinn_params_cumsum: ArrayLike = eqx.field(static=True)
 
     def __init__(
         self,
