@@ -1103,8 +1103,8 @@ class DataGeneratorParameter:
         param_batch_size,
         param_ranges=None,
         method="grid",
+        user_data=None,
         data_exists=False,
-        user_data=None
     ):
         r"""
         Parameters
@@ -1142,8 +1142,14 @@ class DataGeneratorParameter:
             regeneration of :math:`\Omega`, :math:`\partial\Omega` and
             time points at each pytree flattening and unflattening.
         user_data
-            A dictionary containing user-provided data for parameters. Defaults to None.
-       
+            A dictionary containing user-provided data for parameters.
+            As for `param_ranges`, the key corresponds to the parameter name,
+            the keys must match the keys in `params["eq_params"]` and only
+            unidimensional arrays are supported. Therefore, the jnp arrays
+            found at `user_data[k]` must have shape `(n, 1)` or `(n,)`.
+            Note that if the same key appears in `param_ranges` and `user_data`
+            priority goes for the content in `user_data`.
+            Defaults to None.
         """
         self.data_exists = data_exists
         self.method = method
@@ -1156,9 +1162,10 @@ class DataGeneratorParameter:
         self.n = n
         self.param_batch_size = param_batch_size
         self.param_ranges = param_ranges
+        self.user_data = user_data
 
         if not self.data_exists:
-            self.generate_data()
+            self.generate_data(user_data=user_data)
             # The previous call to self.generate_data() has created
             # the dict self.param_n_samples
             self.curr_param_idx = {}
@@ -1176,20 +1183,37 @@ class DataGeneratorParameter:
 
         Parameters
         ----------
-        user_data : dict, optional
+        user_data
             A dictionary containing user-provided data for parameters.
+            As for `param_ranges`, the key corresponds to the parameter name,
+            the keys must match the keys in `params["eq_params"]` and only
+            unidimensional arrays are supported. Therefore, the jnp arrays
+            found at `user_data[k]` must have shape `(n, 1)` or `(n,)`.
+            Note that if the same key appears in `param_ranges` and `user_data`
+            priority goes for the content in `user_data`.
+            Defaults to None.
         """
         self.param_n_samples = {}
 
         for k, e in self.param_ranges.items():
-            if user_data and k in user_data:
-                self.param_n_samples[k] = user_data[k]
+            if user_data is not None and k in user_data:
+                if user_data[k].shape == (self.n, 1):
+                    self.param_n_samples[k] = user_data[k]
+                if user_data[k].shape == (self.n,):
+                    self.param_n_samples[k] = user_data[k][:, None]
+                else:
+                    raise ValueError(
+                        "Wrong shape for user provided parameters"
+                        f" in user_data dictionary as key {k}"
+                    )
             else:
                 if self.method == "grid":
                     xmin, xmax = e[0], e[1]
                     self.partial = (xmax - xmin) / self.n
                     # shape (n, 1)
-                    self.param_n_samples[k] = jnp.arange(xmin, xmax, self.partial)[:, None]
+                    self.param_n_samples[k] = jnp.arange(xmin, xmax, self.partial)[
+                        :, None
+                    ]
                 elif self.method == "uniform":
                     xmin, xmax = e[0], e[1]
                     self._keys[k], subkey = random.split(self._keys[k], 2)
@@ -1286,7 +1310,6 @@ class DataGeneratorParameter:
         obj.param_n_samples = param_n_samples
         obj.curr_param_idx = curr_param_idx
         return obj
-
 
 
 @register_pytree_node_class
