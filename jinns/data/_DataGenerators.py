@@ -1153,6 +1153,10 @@ class DataGeneratorParameter:
         """
         self.data_exists = data_exists
         self.method = method
+        if user_data is None:
+            user_data = {}
+        if param_ranges is None:
+            param_ranges = {}
         if not isinstance(key, dict):
             all_keys = set().union(param_ranges, user_data)
             self._keys = dict(zip(all_keys, jax.random.split(key, len(all_keys))))
@@ -1187,7 +1191,7 @@ class DataGeneratorParameter:
 
         all_keys = set().union(self.param_ranges, self.user_data)
         for k in all_keys:
-            if self.user_data is not None and k in self.user_data:
+            if self.user_data and k in self.user_data:
                 if self.user_data[k].shape == (self.n, 1):
                     self.param_n_samples[k] = self.user_data[k]
                 if self.user_data[k].shape == (self.n,):
