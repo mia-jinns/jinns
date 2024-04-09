@@ -13,7 +13,7 @@ def create_DataGeneratorParameter():
 
     param_batch_size = 64
     method = "uniform"
-    param_ranges = {"nu": (0.0, 1.0), "theta": (10.0, 11.0)}
+    param_ranges = {"theta": (10.0, 11.0)}
     user_data = {"nu": jnp.arange(n)}
 
     return jinns.data.DataGeneratorParameter(
