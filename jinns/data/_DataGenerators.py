@@ -1101,8 +1101,9 @@ class DataGeneratorParameter:
         key,
         n,
         param_batch_size,
-        param_ranges,
+        param_ranges=None,
         method="grid",
+        user_data=None,
         data_exists=False,
     ):
         r"""
@@ -1140,25 +1141,47 @@ class DataGeneratorParameter:
             Must be left to `False` when created by the user. Avoids the
             regeneration of :math:`\Omega`, :math:`\partial\Omega` and
             time points at each pytree flattening and unflattening.
+        user_data
+            A dictionary containing user-provided data for parameters.
+            As for `param_ranges`, the key corresponds to the parameter name,
+            the keys must match the keys in `params["eq_params"]` and only
+            unidimensional arrays are supported. Therefore, the jnp arrays
+            found at `user_data[k]` must have shape `(n, 1)` or `(n,)`.
+            Note that if the same key appears in `param_ranges` and `user_data`
+            priority goes for the content in `user_data`.
+            Defaults to None.
         """
         self.data_exists = data_exists
         self.method = method
-        if not isinstance(key, dict):
-            self._keys = dict(
-                zip(param_ranges.keys(), jax.random.split(key, len(param_ranges)))
+
+        if n < param_batch_size:
+            raise ValueError(
+                f"Number of data points ({n}) is smaller than the"
+                f"number of batch points ({param_batch_size})."
             )
+
+        if user_data is None:
+            user_data = {}
+        if param_ranges is None:
+            param_ranges = {}
+        if not isinstance(key, dict):
+            all_keys = set().union(param_ranges, user_data)
+            self._keys = dict(zip(all_keys, jax.random.split(key, len(all_keys))))
         else:
             self._keys = key
         self.n = n
         self.param_batch_size = param_batch_size
         self.param_ranges = param_ranges
+        self.user_data = user_data
 
         if not self.data_exists:
             self.generate_data()
             # The previous call to self.generate_data() has created
-            # the dict self.param_n_samples
+            # the dict self.param_n_samples and then we will only use this one
+            # because it has merged the scattered data between `user_data` and
+            # `param_ranges`
             self.curr_param_idx = {}
-            for k in self.param_ranges.keys():
+            for k in self.param_n_samples.keys():
                 self.curr_param_idx[k] = 0
                 (
                     self._keys[k],
@@ -1167,22 +1190,40 @@ class DataGeneratorParameter:
                 ) = _reset_batch_idx_and_permute(self._get_param_operands(k))
 
     def generate_data(self):
-        # Generate param n samples
+        """
+        Generate parameter samples, either through generation
+        or using user-provided data.
+        """
         self.param_n_samples = {}
-        for k, e in self.param_ranges.items():
-            if self.method == "grid":
-                xmin, xmax = e[0], e[1]
-                self.partial = (xmax - xmin) / self.n
-                # shape (n, 1)
-                self.param_n_samples[k] = jnp.arange(xmin, xmax, self.partial)[:, None]
-            elif self.method == "uniform":
-                xmin, xmax = e[0], e[1]
-                self._keys[k], subkey = random.split(self._keys[k], 2)
-                self.param_n_samples[k] = random.uniform(
-                    subkey, shape=(self.n, 1), minval=xmin, maxval=xmax
-                )
+
+        all_keys = set().union(self.param_ranges, self.user_data)
+        for k in all_keys:
+            if self.user_data and k in self.user_data:
+                if self.user_data[k].shape == (self.n, 1):
+                    self.param_n_samples[k] = self.user_data[k]
+                if self.user_data[k].shape == (self.n,):
+                    self.param_n_samples[k] = self.user_data[k][:, None]
+                else:
+                    raise ValueError(
+                        "Wrong shape for user provided parameters"
+                        f" in user_data dictionary at key='{k}'"
+                    )
             else:
-                raise ValueError("Method " + self.method + " is not implemented.")
+                if self.method == "grid":
+                    xmin, xmax = self.param_ranges[k][0], self.param_ranges[k][1]
+                    self.partial = (xmax - xmin) / self.n
+                    # shape (n, 1)
+                    self.param_n_samples[k] = jnp.arange(xmin, xmax, self.partial)[
+                        :, None
+                    ]
+                elif self.method == "uniform":
+                    xmin, xmax = self.param_ranges[k][0], self.param_ranges[k][1]
+                    self._keys[k], subkey = random.split(self._keys[k], 2)
+                    self.param_n_samples[k] = random.uniform(
+                        subkey, shape=(self.n, 1), minval=xmin, maxval=xmax
+                    )
+                else:
+                    raise ValueError("Method " + self.method + " is not implemented.")
 
     def _get_param_operands(self, k):
         return (
@@ -1247,12 +1288,7 @@ class DataGeneratorParameter:
         )
         aux_data = {
             k: vars(self)[k]
-            for k in [
-                "n",
-                "param_batch_size",
-                "method",
-                "param_ranges",
-            ]
+            for k in ["n", "param_batch_size", "method", "param_ranges", "user_data"]
         }
         return (children, aux_data)
 

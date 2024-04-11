@@ -8,9 +8,13 @@ Welcome to jinn's documentation!
 
 Changelog:
 
+* v0.8.3:
+
+    - Add the possibility to load user-provided tables of parameters in DataGeneratorParameter and not only to randomly sample them.
+
 * v0.8.2:
 
-    - Fix a bug: it was not possible to jit a reloaded HyperPINN model
+    - Fix a bug: it was not possible to jit a reloaded HyperPINN model.
 
 * v0.8.1:
 
