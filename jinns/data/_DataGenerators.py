@@ -1199,7 +1199,7 @@ class DataGeneratorParameter:
                 else:
                     raise ValueError(
                         "Wrong shape for user provided parameters"
-                        f" in user_data dictionary as key {k}"
+                        f" in user_data dictionary at key='{k}'"
                     )
             else:
                 if self.method == "grid":
