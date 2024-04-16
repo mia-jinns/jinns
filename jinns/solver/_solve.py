@@ -3,12 +3,15 @@ This modules implements the main `solve()` function of jinns which
 handles the optimization process
 """
 
+from functools import partial
+from typing import NamedTuple, Union
 import optax
 from tqdm import tqdm
 from jax_tqdm import scan_tqdm
 import jax
 from jax import jit
 import jax.numpy as jnp
+from jax.typing import ArrayLike
 from jinns.solver._seq2seq import trigger_seq2seq, initialize_seq2seq
 from jinns.solver._rar import init_rar, trigger_rar
 from jinns.utils._utils import _check_nan_in_pytree, _tracked_parameters
@@ -16,11 +19,37 @@ from jinns.data._DataGenerators import (
     DataGeneratorODE,
     CubicMeshPDEStatio,
     CubicMeshPDENonStatio,
+    DataGeneratorParameter,
+    DataGeneratorObservations,
+    DataGeneratorObservationsMultiPINNs,
     append_param_batch,
     append_obs_batch,
 )
 
-from functools import partial
+
+class DataGeneratorContainer(NamedTuple):
+    data: Union[DataGeneratorODE, CubicMeshPDEStatio, CubicMeshPDENonStatio]
+    param_data: Union[DataGeneratorParameter, None] = None
+    obs_data: Union[
+        DataGeneratorObservations, DataGeneratorObservationsMultiPINNs, None
+    ] = None
+
+
+class OptimizationContainer(NamedTuple):
+    params: dict
+    last_non_nan_params: dict
+    opt_state: optax.OptState
+
+
+class OptimizationExtraContainer(NamedTuple):
+    curr_seq: int
+    seq2seq: Union[dict, None]
+
+
+class StoredObjectContainer(NamedTuple):
+    stored_params: Union[list, None]
+    stored_loss_terms: dict
+    total_loss_values: ArrayLike
 
 
 def solve(
@@ -35,6 +64,7 @@ def solve(
     tracked_params_key_list=None,
     param_data=None,
     obs_data=None,
+    validation_data=None,
     obs_batch_sharding=None,
 ):
     """
@@ -88,6 +118,9 @@ def solve(
     obs_data
         Default None. A DataGeneratorObservations object which can be used to
         sample minibatches of observations
+    validation_data
+        Default None. A DataGenerator of the same type of data for validation
+        dataset for the collocation points
     obs_batch_sharding
         Default None. An optional sharding object to constraint the obs_batch.
         Typically, a SingleDeviceSharding(gpu_device) when obs_data has been
@@ -114,27 +147,20 @@ def solve(
         A dictionary. At each key an array of the values of the parameters
         given in tracked_params_key_list is stored
     """
-    params = init_params
-    last_non_nan_params = init_params.copy()
-
     if param_data is not None:
         if (
             (
                 isinstance(data, DataGeneratorODE)
                 and param_data.param_batch_size != data.temporal_batch_size
-                and obs_data.obs_batch_size != data.temporal_batch_size
             )
             or (
                 isinstance(data, CubicMeshPDEStatio)
                 and not isinstance(data, CubicMeshPDENonStatio)
                 and param_data.param_batch_size != data.omega_batch_size
-                and obs_data.obs_batch_size != data.omega_batch_size
             )
             or (
                 isinstance(data, CubicMeshPDENonStatio)
                 and param_data.param_batch_size
-                != data.omega_batch_size * data.temporal_batch_size
-                and obs_data.obs_batch_size
                 != data.omega_batch_size * data.temporal_batch_size
             )
         ):
@@ -145,8 +171,32 @@ def solve(
                 " datagenerator"
             )
 
+    if obs_data is not None:
+        if (
+            (
+                isinstance(data, DataGeneratorODE)
+                and obs_data.obs_batch_size != data.temporal_batch_size
+            )
+            or (
+                isinstance(data, CubicMeshPDEStatio)
+                and not isinstance(data, CubicMeshPDENonStatio)
+                and obs_data.obs_batch_size != data.omega_batch_size
+            )
+            or (
+                isinstance(data, CubicMeshPDENonStatio)
+                and obs_data.obs_batch_size
+                != data.omega_batch_size * data.temporal_batch_size
+            )
+        ):
+            raise ValueError(
+                "Optional obs_data.param_batch_size must be"
+                " equal to data.temporal_batch_size or data.omega_batch_size or"
+                " the product of both dependeing on the type of the main"
+                " datagenerator"
+            )
+
     if opt_state is None:
-        opt_state = optimizer.init(params)
+        opt_state = optimizer.init(init_params)
 
     # RAR sampling init (ouside scanned function to avoid dynamic slice error)
     # If RAR is not used the _rar_step_*() are juste None and data is unchanged
@@ -168,16 +218,16 @@ def solve(
     # initialize the dict for stored parameter values
     # we need to get a loss_term to init stuff
     batch_ini, data, param_data, obs_data = get_batch(data, param_data, obs_data)
-    _, loss_terms = loss(params, batch_ini)
+    _, loss_terms = loss(init_params, batch_ini)
     if tracked_params_key_list is None:
         tracked_params_key_list = []
-    tracked_params = _tracked_parameters(params, tracked_params_key_list)
+    tracked_params = _tracked_parameters(init_params, tracked_params_key_list)
     stored_params = jax.tree_util.tree_map(
         lambda tracked_param, param: (
             jnp.zeros((n_iter,) + param.shape) if tracked_param else None
         ),
         tracked_params,
-        params,
+        init_params,
     )
 
     # initialize the dict for stored loss values
@@ -185,46 +235,59 @@ def solve(
         lambda x: jnp.zeros((n_iter)), loss_terms
     )
 
-    carry = (
-        init_params,
-        init_params.copy(),
-        data,
-        curr_seq,
-        seq2seq,
-        stored_params,
-        stored_loss_terms,
-        loss,
-        param_data,
-        obs_data,
-        opt_state,
-        total_loss_values,
+    train_data = DataGeneratorContainer(data, param_data, obs_data)
+    validation_data = DataGeneratorContainer(validation_data)
+    optimization = OptimizationContainer(init_params, init_params.copy(), opt_state)
+    optimization_extra = OptimizationExtraContainer(curr_seq, seq2seq)
+    stored_objects = StoredObjectContainer(
+        stored_params, stored_loss_terms, total_loss_values
     )
 
-    def one_iteration(carry, i):
-        (
-            params,
-            last_non_nan_params,
-            data,
-            curr_seq,
-            seq2seq,
-            stored_params,
-            stored_loss_terms,
-            loss,
-            param_data,
-            obs_data,
-            opt_state,
-            total_loss_values,
-        ) = carry
-        batch, data, param_data, obs_data = get_batch(data, param_data, obs_data)
+    def break_fun(carry):
+        """
+        Function to break from the main optimization loop
+        Currently it only checks if we have reached the number of iterations
+        required. But it will then be composing other stopping criteria as
+        early stopping
+        """
+        i = carry[0]
+        return jax.lax.cond(
+            i >= n_iter,
+            lambda _: False,  # do not continue the while loop
+            lambda _: True,  # continue the while loop
+            (None,),
+        )
+
+    iteration = 0
+    carry = (
+        iteration,
+        loss,
+        optimization,
+        optimization_extra,
+        train_data,
+        stored_objects,
+    )
+
+    def one_iteration(carry):
+        (i, loss, optimization, optimization_extra, train_data, stored_objects) = carry
+        batch, data, param_data, obs_data = get_batch(
+            train_data.data, train_data.param_data, train_data.obs_data
+        )
 
         (
+            loss,
             loss_val,
             loss_terms,
             params,
             opt_state,
             last_non_nan_params,
         ) = gradient_step(
-            loss, optimizer, batch, params, opt_state, last_non_nan_params
+            loss,
+            optimizer,
+            batch,
+            optimization.params,
+            optimization.opt_state,
+            optimization.last_non_nan_params,
         )
 
         # Print loss during optimization
@@ -237,84 +300,69 @@ def solve(
 
         # Trigger seq2seq
         loss, params, data, opt_state, curr_seq, seq2seq = trigger_seq2seq(
-            i, loss, params, data, opt_state, curr_seq, seq2seq
+            i,
+            loss,
+            params,
+            data,
+            opt_state,
+            optimization_extra.curr_seq,
+            optimization_extra.seq2seq,
         )
 
         # save loss value and selected parameters
         stored_params, stored_loss_terms, total_loss_values = store_loss_and_params(
             i,
             params,
-            stored_params,
-            stored_loss_terms,
-            total_loss_values,
+            stored_objects.stored_params,
+            stored_objects.stored_loss_terms,
+            stored_objects.total_loss_values,
             loss_val,
             loss_terms,
             tracked_params,
         )
-        return (
-            params,
-            last_non_nan_params,
-            data,
-            curr_seq,
-            seq2seq,
-            stored_params,
-            stored_loss_terms,
-            loss,
-            param_data,
-            obs_data,
-            opt_state,
-            total_loss_values,
-        ), None
+        i += 1
 
-    # Main optimization loop. We use the fully scanned (fully jitted) version
-    # if no mixing devices. Otherwise we use the for loop. Here devices only
-    # concern obs_batch, but it could lead to more complex scheme in the future
-    if obs_batch_sharding is not None:
-        for i in tqdm(range(n_iter)):
-            carry, _ = one_iteration(carry, i)
-    else:
-        carry, _ = jax.lax.scan(
-            scan_tqdm(n_iter)(one_iteration),
-            carry,
-            jnp.arange(n_iter),
+        return (
+            i,
+            loss,
+            OptimizationContainer(params, last_non_nan_params, opt_state),
+            OptimizationExtraContainer(curr_seq, seq2seq),
+            DataGeneratorContainer(data, param_data, obs_data),
+            StoredObjectContainer(stored_params, stored_loss_terms, total_loss_values),
         )
 
-    (
-        init_params,
-        last_non_nan_params,
-        data,
-        curr_seq,
-        seq2seq,
-        stored_params,
-        stored_loss_terms,
-        loss,
-        param_data,
-        obs_data,
-        opt_state,
-        total_loss_values,
-    ) = carry
+    # Main optimization loop. We use the LAX while loop (fully jitted) version
+    # if no mixing devices. Otherwise we use the standard while loop. Here devices only
+    # concern obs_batch, but it could lead to more complex scheme in the future
+    if obs_batch_sharding is not None:
+        while break_fun(carry):
+            carry = one_iteration(carry)
+    else:
+        carry = jax.lax.while_loop(break_fun, one_iteration, carry)
+
+    (i, loss, optimization, optimization_extra, train_data, stored_objects) = carry
 
     jax.debug.print(
         "Iteration {i}: loss value = {total_loss_val}",
-        i=n_iter,
+        i=i,
         total_loss_val=total_loss_values[-1],
     )
 
     return (
-        last_non_nan_params,
-        total_loss_values,
-        stored_loss_terms,
-        data,
+        optimization.last_non_nan_params,
+        stored_objects.total_loss_values,
+        stored_objects.stored_loss_terms,
+        train_data.data,
         loss,
-        opt_state,
-        stored_params,
+        optimization.opt_state,
+        stored_objects.stored_params,
     )
 
 
-@partial(jit, static_argnames=["loss", "optimizer"])
+@partial(jit, static_argnames=["optimizer"])
 def gradient_step(loss, optimizer, batch, params, opt_state, last_non_nan_params):
     """
-    loss and optimizer cannot be jit-ted.
+    optimizer cannot be jit-ted.
     """
     value_grad_loss = jax.value_and_grad(loss, has_aux=True)
     (loss_val, loss_terms), grads = value_grad_loss(params, batch)
@@ -330,6 +378,7 @@ def gradient_step(loss, optimizer, batch, params, opt_state, last_non_nan_params
     )
 
     return (
+        loss,
         loss_val,
         loss_terms,
         params,
