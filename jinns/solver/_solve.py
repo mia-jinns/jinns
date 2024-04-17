@@ -4,10 +4,9 @@ handles the optimization process
 """
 
 from functools import partial
-from typing import NamedTuple, Union
+from typing import NamedTuple, Union, Callable
+from jaxtyping import PyTree
 import optax
-from tqdm import tqdm
-from jax_tqdm import scan_tqdm
 import jax
 from jax import jit
 import jax.numpy as jnp
@@ -27,12 +26,43 @@ from jinns.data._DataGenerators import (
 )
 
 
+def check_batch_size(other_data, main_data):
+    if (
+        (
+            isinstance(main_data, DataGeneratorODE)
+            and other_data.param_batch_size != main_data.temporal_batch_size
+        )
+        or (
+            isinstance(main_data, CubicMeshPDEStatio)
+            and not isinstance(main_data, CubicMeshPDENonStatio)
+            and other_data.param_batch_size != main_data.omega_batch_size
+        )
+        or (
+            isinstance(main_data, CubicMeshPDENonStatio)
+            and other_data.param_batch_size
+            != main_data.omega_batch_size * main_data.temporal_batch_size
+        )
+    ):
+        raise ValueError(
+            "Optional other_data.param_batch_size must be"
+            " equal to main_data.temporal_batch_size or main_data.omega_batch_size or"
+            " the product of both dependeing on the type of the main"
+            " datagenerator"
+        )
+
+
 class DataGeneratorContainer(NamedTuple):
     data: Union[DataGeneratorODE, CubicMeshPDEStatio, CubicMeshPDENonStatio]
     param_data: Union[DataGeneratorParameter, None] = None
     obs_data: Union[
         DataGeneratorObservations, DataGeneratorObservationsMultiPINNs, None
     ] = None
+
+
+class ValidationContainer(NamedTuple):
+    data: DataGeneratorContainer
+    fun: Callable = None
+    hyperparams: PyTree = None
 
 
 class OptimizationContainer(NamedTuple):
@@ -44,12 +74,17 @@ class OptimizationContainer(NamedTuple):
 class OptimizationExtraContainer(NamedTuple):
     curr_seq: int
     seq2seq: Union[dict, None]
+    early_stopping: bool = False
+
+
+class LossContainer(NamedTuple):
+    stored_loss_terms: dict
+    train_loss_values: ArrayLike
+    validation_loss_values: Union[ArrayLike, None] = None
 
 
 class StoredObjectContainer(NamedTuple):
     stored_params: Union[list, None]
-    stored_loss_terms: dict
-    total_loss_values: ArrayLike
 
 
 def solve(
@@ -64,7 +99,7 @@ def solve(
     tracked_params_key_list=None,
     param_data=None,
     obs_data=None,
-    validation_data=None,
+    validation=None,
     obs_batch_sharding=None,
 ):
     """
@@ -118,9 +153,38 @@ def solve(
     obs_data
         Default None. A DataGeneratorObservations object which can be used to
         sample minibatches of observations
-    validation_data
-        Default None. A DataGenerator of the same type of data for validation
-        dataset for the collocation points
+    validation
+        Default None. Otherwise a tuple that enables the set up of a validation
+        procedure. The tuple is composed of 5 elements:
+            - validation_data: a DataGenerator of the same type of data for validation
+            dataset for the collocation points. Can be None
+            depending on the validation loss that is used
+            - validation_param_data: a DataGenerator of the same type of param_data
+            for validation dataset for the collocation points. Can be None
+            depending on the validation loss that is used
+            - validation_obs_data: a DataGenerator of the same type of obs_data
+            for validation dataset for the collocation points. Can be None
+            depending on the validation loss that is used
+            - fun: a function that is called after every gradient step to
+            compute validation quantities with the validation DataGenerator.
+            fun must take as arguments:
+                - the iteration number
+                - a new hyperparams pytree
+                - the loss.evaluate() function of the argument loss defined
+                  above
+                - params (as init_params defined above)
+                - a validation_data
+                - a validation_param_data
+                - a validation_obs_data
+            fun must return 6 variables:
+                - a boolean that trigger early stopping if True
+                - a float for the validation loss value
+                - a validation_data
+                - a validation_param_data
+                - a validation_obs_data
+                - a new hyperparams pytree (see below)
+            - hyperparams: a pytree which contains the validation parameters
+            that fun needs to function
     obs_batch_sharding
         Default None. An optional sharding object to constraint the obs_batch.
         Typically, a SingleDeviceSharding(gpu_device) when obs_data has been
@@ -148,52 +212,12 @@ def solve(
         given in tracked_params_key_list is stored
     """
     if param_data is not None:
-        if (
-            (
-                isinstance(data, DataGeneratorODE)
-                and param_data.param_batch_size != data.temporal_batch_size
-            )
-            or (
-                isinstance(data, CubicMeshPDEStatio)
-                and not isinstance(data, CubicMeshPDENonStatio)
-                and param_data.param_batch_size != data.omega_batch_size
-            )
-            or (
-                isinstance(data, CubicMeshPDENonStatio)
-                and param_data.param_batch_size
-                != data.omega_batch_size * data.temporal_batch_size
-            )
-        ):
-            raise ValueError(
-                "Optional param_data.param_batch_size must be"
-                " equal to data.temporal_batch_size or data.omega_batch_size or"
-                " the product of both dependeing on the type of the main"
-                " datagenerator"
-            )
+        check_batch_size(param_data, data)
 
     if obs_data is not None:
-        if (
-            (
-                isinstance(data, DataGeneratorODE)
-                and obs_data.obs_batch_size != data.temporal_batch_size
-            )
-            or (
-                isinstance(data, CubicMeshPDEStatio)
-                and not isinstance(data, CubicMeshPDENonStatio)
-                and obs_data.obs_batch_size != data.omega_batch_size
-            )
-            or (
-                isinstance(data, CubicMeshPDENonStatio)
-                and obs_data.obs_batch_size
-                != data.omega_batch_size * data.temporal_batch_size
-            )
-        ):
-            raise ValueError(
-                "Optional obs_data.param_batch_size must be"
-                " equal to data.temporal_batch_size or data.omega_batch_size or"
-                " the product of both dependeing on the type of the main"
-                " datagenerator"
-            )
+        check_batch_size(obs_data, data)
+
+    # TODO add checks for the validation tuple
 
     if opt_state is None:
         opt_state = optimizer.init(init_params)
@@ -210,7 +234,9 @@ def solve(
         ), "data.method must be uniform if using seq2seq learning !"
         data, opt_state = initialize_seq2seq(loss, data, seq2seq, opt_state)
 
-    total_loss_values = jnp.zeros((n_iter))
+    train_loss_values = jnp.zeros((n_iter))
+    if validation is not None:
+        validation_loss_values = jnp.zeros((n_iter))
     # depending on obs_batch_sharding we will get the simple get_batch or the
     # get_batch with device_put, the latter is not jittable
     get_batch = get_get_batch(obs_batch_sharding)
@@ -235,27 +261,71 @@ def solve(
         lambda x: jnp.zeros((n_iter)), loss_terms
     )
 
-    train_data = DataGeneratorContainer(data, param_data, obs_data)
-    validation_data = DataGeneratorContainer(validation_data)
-    optimization = OptimizationContainer(init_params, init_params.copy(), opt_state)
-    optimization_extra = OptimizationExtraContainer(curr_seq, seq2seq)
+    train_data = DataGeneratorContainer(
+        data=data, param_data=param_data, obs_data=obs_data
+    )
+    if validation is not None:
+        validation = ValidationContainer(
+            data=DataGeneratorContainer(
+                data=validation[0], param_data=validation[1], obs_data=validation[2]
+            ),
+            fun=validation[3],
+            hyperparams=validation[4],
+        )
+    optimization = OptimizationContainer(
+        params=init_params, last_non_nan_params=init_params.copy(), opt_state=opt_state
+    )
+    optimization_extra = OptimizationExtraContainer(
+        curr_seq=curr_seq,
+        seq2seq=seq2seq,
+        early_stopping=False,
+    )
+    loss_container = LossContainer(
+        stored_loss_terms=stored_loss_terms,
+        train_loss_values=train_loss_values,
+        validation_loss_values=validation_loss_values,
+    )
     stored_objects = StoredObjectContainer(
-        stored_params, stored_loss_terms, total_loss_values
+        stored_params=stored_params,
     )
 
     def break_fun(carry):
         """
         Function to break from the main optimization loop
-        Currently it only checks if we have reached the number of iterations
-        required. But it will then be composing other stopping criteria as
-        early stopping
+        We check several conditions
         """
-        i = carry[0]
-        return jax.lax.cond(
+
+        def stop_while_loop(msg):
+            jax.debug.print(f"Stopping main optimization loop, cause: {msg}")
+            return False
+
+        (i, _, optimization, optimization_extra, _, _, _) = carry
+
+        # Condition 1
+        bool_max_iter = jax.lax.cond(
             i >= n_iter,
-            lambda _: False,  # do not continue the while loop
+            stop_while_loop,
             lambda _: True,  # continue the while loop
-            (None,),
+            ("max iteration is reached"),
+        )
+        # Condition 2
+        bool_nan_in_params = jax.lax.cond(
+            _check_nan_in_pytree(optimization.params),
+            stop_while_loop,
+            lambda _: True,  # continue the while loop
+            ("NaN values in parameters (returning last non NaN values)"),
+        )
+        # Condition 3
+        bool_early_stopping = jax.lax.cond(
+            optimization_extra.early_stopping,
+            stop_while_loop,
+            lambda _: True,  # continue the while loop
+            ("early stopping"),
+        )
+
+        return jax.tree_util.tree_reduce(
+            lambda x, y: x and y,  # stop when one cond to continue is False
+            (bool_max_iter, bool_nan_in_params, bool_early_stopping),
         )
 
     iteration = 0
@@ -265,18 +335,29 @@ def solve(
         optimization,
         optimization_extra,
         train_data,
+        validation,
+        loss_container,
         stored_objects,
     )
 
     def one_iteration(carry):
-        (i, loss, optimization, optimization_extra, train_data, stored_objects) = carry
+        (
+            i,
+            loss,
+            optimization,
+            optimization_extra,
+            train_data,
+            validation,
+            loss_container,
+            stored_objects,
+        ) = carry
         batch, data, param_data, obs_data = get_batch(
             train_data.data, train_data.param_data, train_data.obs_data
         )
 
         (
             loss,
-            loss_val,
+            train_loss_value,
             loss_terms,
             params,
             opt_state,
@@ -290,8 +371,32 @@ def solve(
             optimization.last_non_nan_params,
         )
 
-        # Print loss during optimization
-        print_fn(i, loss_val, print_loss_every)
+        # Print train loss value during optimization
+        print_fn(i, train_loss_value, print_loss_every, prefix="[train]")
+
+        # Validation loss
+        if validation is not None:
+            (
+                early_stopping,
+                validation_loss_value,
+                validation_data,
+                validation_param_data,
+                validation_obs_data,
+                validation_hyperparams,
+            ) = validation.fun(
+                i,
+                validation.hyperparams,
+                loss.evaluate,
+                params,
+                validation.data.data,
+                validation.data.param_data,
+                validation.data.obs_data,
+            )
+            # Print validation loss value during optimization
+            print_fn(i, validation_loss_value, print_loss_every, prefix="[validation]")
+        else:
+            early_stopping = False
+            validation_loss_value = None
 
         # Trigger RAR
         loss, params, data = trigger_rar(
@@ -310,15 +415,19 @@ def solve(
         )
 
         # save loss value and selected parameters
-        stored_params, stored_loss_terms, total_loss_values = store_loss_and_params(
-            i,
-            params,
-            stored_objects.stored_params,
-            stored_objects.stored_loss_terms,
-            stored_objects.total_loss_values,
-            loss_val,
-            loss_terms,
-            tracked_params,
+        stored_params, stored_loss_terms, train_loss_values, validation_loss_values = (
+            store_loss_and_params(
+                i,
+                params,
+                stored_objects.stored_params,
+                loss_container.stored_loss_terms,
+                loss_container.train_loss_values,
+                loss_container.validation_loss_values,
+                train_loss_value,
+                validation_loss_value,
+                loss_terms,
+                tracked_params,
+            )
         )
         i += 1
 
@@ -326,9 +435,23 @@ def solve(
             i,
             loss,
             OptimizationContainer(params, last_non_nan_params, opt_state),
-            OptimizationExtraContainer(curr_seq, seq2seq),
+            OptimizationExtraContainer(curr_seq, seq2seq, early_stopping),
             DataGeneratorContainer(data, param_data, obs_data),
-            StoredObjectContainer(stored_params, stored_loss_terms, total_loss_values),
+            (
+                ValidationContainer(
+                    DataGeneratorContainer(
+                        data=validation_data,
+                        param_data=validation_param_data,
+                        obs_data=validation_obs_data,
+                    ),
+                    validation.fun,
+                    validation_hyperparams,
+                )
+                if validation is not None
+                else validation
+            ),
+            LossContainer(stored_loss_terms, train_loss_values, validation_loss_values),
+            StoredObjectContainer(stored_params),
         )
 
     # Main optimization loop. We use the LAX while loop (fully jitted) version
@@ -340,18 +463,29 @@ def solve(
     else:
         carry = jax.lax.while_loop(break_fun, one_iteration, carry)
 
-    (i, loss, optimization, optimization_extra, train_data, stored_objects) = carry
+    (
+        i,
+        loss,
+        optimization,
+        optimization_extra,
+        train_data,
+        validation,
+        loss_container,
+        stored_objects,
+    ) = carry
 
     jax.debug.print(
-        "Iteration {i}: loss value = {total_loss_val}",
+        "Iteration {i}: train loss value = {train_loss_val} "
+        + "validation loss value = {validation_loss_val}",
         i=i,
-        total_loss_val=total_loss_values[-1],
+        train_loss_val=train_loss_values[-1],
+        validation_loss_val=validation_loss_values[-1],
     )
 
     return (
         optimization.last_non_nan_params,
-        stored_objects.total_loss_values,
-        stored_objects.stored_loss_terms,
+        loss_container.train_loss_values,
+        loss_container.stored_loss_terms,
         train_data.data,
         loss,
         optimization.opt_state,
@@ -387,14 +521,14 @@ def gradient_step(loss, optimizer, batch, params, opt_state, last_non_nan_params
     )
 
 
-@jit
-def print_fn(i, loss_val, print_loss_every):
+@partial(jit, static_argnames=["prefix"])
+def print_fn(i, loss_val, print_loss_every, prefix=""):
     # note that if the following is not jitted in the main lor loop, it is
     # super slow
     _ = jax.lax.cond(
         i % print_loss_every == 0,
         lambda _: jax.debug.print(
-            "Iteration {i}: loss value = {loss_val}",
+            prefix + "Iteration {i}: loss value = {loss_val}",
             i=i,
             loss_val=loss_val,
         ),
@@ -409,8 +543,10 @@ def store_loss_and_params(
     params,
     stored_params,
     stored_loss_terms,
-    total_loss_values,
-    loss_val,
+    train_loss_values,
+    validation_loss_values,
+    train_loss_val,
+    validation_loss_val,
     loss_terms,
     tracked_params,
 ):
@@ -431,8 +567,10 @@ def store_loss_and_params(
         loss_terms,
     )
 
-    total_loss_values = total_loss_values.at[i].set(loss_val)
-    return stored_params, stored_loss_terms, total_loss_values
+    train_loss_values = train_loss_values.at[i].set(train_loss_val)
+    if validation_loss_values is not None:
+        validation_loss_values = validation_loss_values.at[i].set(validation_loss_val)
+    return (stored_params, stored_loss_terms, train_loss_values, validation_loss_val)
 
 
 def get_get_batch(obs_batch_sharding):
