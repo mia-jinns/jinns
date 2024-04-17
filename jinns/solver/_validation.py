@@ -35,7 +35,8 @@ def eval_validation_loss_and_early_stopping(
 
     (hyperparams.counter, hyperparams.best_val_loss) = jax.lax.cond(
         jnp.logical_and(
-            jnp.array([i > 0, validation_loss_value < hyperparams.best_val_loss])
+            jnp.array(i > 0),
+            jnp.array(validation_loss_value < hyperparams.best_val_loss),
         ),
         lambda operands: (0, validation_loss_value),
         lambda operands: operands,
