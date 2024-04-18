@@ -8,6 +8,10 @@ Welcome to jinn's documentation!
 
 Changelog:
 
+* v0.8.4:
+
+    - Fix a bug: wrong argument in the wrapper function for heterogeneous parameter evaluation of a PDEStatio
+
 * v0.8.3:
 
     - Add the possibility to load user-provided tables of parameters in DataGeneratorParameter and not only to randomly sample them.
