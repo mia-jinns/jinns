@@ -154,7 +154,7 @@ class PDEStatio(DynamicLoss):
             _params = {
                 "nn_params": params["nn_params"],
                 "eq_params": self.eval_heterogeneous_parameters(
-                    t, u, params, self.eq_params_heterogeneity
+                    x, u, params, self.eq_params_heterogeneity
                 ),
             }
             new_args = args[:-1] + (_params,)
