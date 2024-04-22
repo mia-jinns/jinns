@@ -218,6 +218,7 @@ def solve(
         batch, data, param_data, obs_data = get_batch(data, param_data, obs_data)
 
         (
+            loss,
             loss_val,
             loss_terms,
             params,
@@ -311,7 +312,7 @@ def solve(
     )
 
 
-@partial(jit, static_argnames=["loss", "optimizer"])
+@partial(jit, static_argnames=["optimizer"])
 def gradient_step(loss, optimizer, batch, params, opt_state, last_non_nan_params):
     """
     loss and optimizer cannot be jit-ted.
@@ -330,6 +331,7 @@ def gradient_step(loss, optimizer, batch, params, opt_state, last_non_nan_params
     )
 
     return (
+        loss,
         loss_val,
         loss_terms,
         params,
