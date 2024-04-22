@@ -8,6 +8,10 @@ Welcome to jinn's documentation!
 
 Changelog:
 
+* v0.8.5:
+
+    - Merge [!36](https://gitlab.com/mia_jinns/jinns/-/merge_requests/36)
+
 * v0.8.4:
 
     - Fix a bug: wrong argument in the wrapper function for heterogeneous parameter evaluation of a PDEStatio
