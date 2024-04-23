@@ -337,7 +337,7 @@ def solve(
             _,
         )
 
-        # stop when one cond to continue is False
+        # stop when one of the cond to continue is False
         return jax.tree_util.tree_reduce(
             lambda x, y: jnp.logical_and(jnp.array(x), jnp.array(y)),
             (bool_max_iter, bool_nan_in_params, bool_early_stopping),
