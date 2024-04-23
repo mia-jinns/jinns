@@ -289,7 +289,6 @@ def create_HYPERPINN(
 
     if shared_pinn_outputs is not None:
         hyperpinns = []
-        static = None
         for output_slice in shared_pinn_outputs:
             hyperpinn = HYPERPINN(
                 mlp,
@@ -302,11 +301,6 @@ def create_HYPERPINN(
                 hypernet_input_size,
                 output_slice,
             )
-            # all the pinns are in fact the same so we share the same static
-            if static is None:
-                static = hyperpinn.static
-            else:
-                hyperpinn.static = static
             hyperpinns.append(hyperpinn)
         return hyperpinns
     hyperpinn = HYPERPINN(
