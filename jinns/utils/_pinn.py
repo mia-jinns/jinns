@@ -253,7 +253,6 @@ def create_PINN(
 
     if shared_pinn_outputs is not None:
         pinns = []
-        static = None
         for output_slice in shared_pinn_outputs:
             pinn = PINN(
                 mlp,
@@ -263,11 +262,6 @@ def create_PINN(
                 output_transform,
                 output_slice,
             )
-            # all the pinns are in fact the same so we share the same static
-            if static is None:
-                static = pinn.static
-            else:
-                pinn.static = static
             pinns.append(pinn)
         return pinns
     pinn = PINN(mlp, slice_solution, eq_type, input_transform, output_transform, None)
