@@ -269,14 +269,14 @@ def solve(
     train_data = DataGeneratorContainer(
         data=data, param_data=param_data, obs_data=obs_data
     )
-    if validation is not None:
-        validation_step = validation[3]  # grab the validation fun argument
-        validation = ValidationContainer(
-            data=DataGeneratorContainer(
-                data=validation[0], param_data=validation[1], obs_data=validation[2]
-            ),
-            hyperparams=validation[4],
-        )
+    # if validation is not None:
+    #     validation_step = validation[3]  # grab the validation fun argument
+    #     validation = ValidationContainer(
+    #         data=DataGeneratorContainer(
+    #             data=validation[0], param_data=validation[1], obs_data=validation[2]
+    #         ),
+    #         hyperparams=validation[4],
+    #     )
     optimization = OptimizationContainer(
         params=init_params, last_non_nan_params=init_params.copy(), opt_state=opt_state
     )
@@ -308,16 +308,13 @@ def solve(
             jax.debug.print(f"Stopping main optimization loop, cause: {msg}")
             return False
 
-        def continue_while_loop(_):
-            return True
-
         (i, _, optimization, optimization_extra, _, _, _, _) = carry
 
         # Condition 1
         bool_max_iter = jax.lax.cond(
             i >= n_iter,
             lambda _: stop_while_loop("max iteration is reached"),
-            continue_while_loop,
+            lambda _: True,  # continue while loop
             None,
         )
         # Condition 2
@@ -326,14 +323,14 @@ def solve(
             lambda _: stop_while_loop(
                 "NaN values in parameters " "(returning last non NaN values)"
             ),
-            continue_while_loop,
+            lambda _: True,  # continue while loop
             None,
         )
         # Condition 3
         bool_early_stopping = jax.lax.cond(
             optimization_extra.early_stopping,
             lambda _: stop_while_loop("early stopping"),
-            continue_while_loop,
+            lambda _: True,  # continue while loop
             _,
         )
 
@@ -398,32 +395,17 @@ def solve(
             (
                 early_stopping,
                 validation_loss_value,
-                validation_data,
-                validation_param_data,
-                validation_obs_data,
-                validation_hyperparams,
             ) = jax.lax.cond(
-                i % validation.hyperparams.call_every == 0,
-                lambda operands: validation_step(*operands),
+                i % validation.call_every == 0,
+                lambda operands: validation(*operands),  # validation.__call__()
                 lambda _: (
-                    optimization_extra.early_stopping,
+                    False,
                     loss_container.validation_loss_values[i - 1],
-                    *validation.data,
-                    validation.hyperparams,
                 ),
-                (
-                    i,
-                    validation.hyperparams,
-                    loss,
-                    params,
-                    *validation.data,
-                ),
+                (params,),
             )
             # Print validation loss value during optimization
             print_fn(i, validation_loss_value, print_loss_every, prefix="[validation] ")
-        else:
-            early_stopping = False
-            validation_loss_value = None
 
         # Trigger RAR
         loss, params, data = trigger_rar(
@@ -464,18 +446,7 @@ def solve(
             OptimizationContainer(params, last_non_nan_params, opt_state),
             OptimizationExtraContainer(curr_seq, seq2seq, early_stopping),
             DataGeneratorContainer(data, param_data, obs_data),
-            (
-                ValidationContainer(
-                    DataGeneratorContainer(
-                        data=validation_data,
-                        param_data=validation_param_data,
-                        obs_data=validation_obs_data,
-                    ),
-                    validation_hyperparams,
-                )
-                if validation is not None
-                else validation
-            ),
+            validation,
             LossContainer(stored_loss_terms, train_loss_values, validation_loss_values),
             StoredObjectContainer(stored_params),
         )
