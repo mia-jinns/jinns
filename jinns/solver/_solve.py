@@ -220,16 +220,14 @@ def solve(
     train_data = DataGeneratorContainer(
         data=data, param_data=param_data, obs_data=obs_data
     )
-    if validation is not None:
-        validation_step = validation[3]  # grab the validation fun argument
-        validation = ValidationContainer(
-            loss=validation_loss,
-            data=DataGeneratorContainer(
-                data=validation[0], param_data=validation[1], obs_data=validation[2]
-            ),
-            hyperparams=validation[4],
-            loss_values=validation_loss_values,
-        )
+    # if validation is not None:
+    #     validation_step = validation[3]  # grab the validation fun argument
+    #     validation = ValidationContainer(
+    #         data=DataGeneratorContainer(
+    #             data=validation[0], param_data=validation[1], obs_data=validation[2]
+    #         ),
+    #         hyperparams=validation[4],
+    #     )
     optimization = OptimizationContainer(
         params=init_params, last_non_nan_params=init_params.copy(), opt_state=opt_state
     )
@@ -298,15 +296,17 @@ def solve(
         if validation is not None:
             # there is a jax.lax.cond because we do not necesarily call the
             # validation step every iteration
-            (early_stopping, validation) = jax.lax.cond(
-                i % validation.hyperparams.call_every == 0,
-                lambda operands: validation_step(*operands),
-                lambda _: (optimization_extra.early_stopping, validation),
-                (
-                    i,
-                    params,
-                    validation,
+            (
+                early_stopping,
+                validation_loss_value,
+            ) = jax.lax.cond(
+                i % validation.call_every == 0,
+                lambda operands: validation(*operands),  # validation.__call__()
+                lambda _: (
+                    False,
+                    loss_container.validation_loss_values[i - 1],
                 ),
+                (params,),
             )
             # Print validation loss value during optimization
             print_fn(
