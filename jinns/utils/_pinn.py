@@ -200,13 +200,7 @@ def create_PINN(
 
     Returns
     -------
-    init_fn
-        A function which (re-)initializes the PINN parameters with the provided
-        jax random key
-    apply_fn
-        A function to apply the neural network on given inputs for given
-        parameters. A typical call will be of the form `u(t, params)` for
-        ODE or `u(t, x, params)` for nD PDEs (`x` being multidimensional)
+    `u`, a :class:`.PINN` object which inherits from `eqx.Module` (hence callable). This comes with a bound method :func:`u.init_params() <PINN.init_params>`. When `shared_pinn_ouput` is not None, a list of :class:`.PINN` with the same structure is returned, only differing by there final slicing of the network output.
 
     Raises
     ------
@@ -253,7 +247,6 @@ def create_PINN(
 
     if shared_pinn_outputs is not None:
         pinns = []
-        static = None
         for output_slice in shared_pinn_outputs:
             pinn = PINN(
                 mlp,
@@ -263,11 +256,6 @@ def create_PINN(
                 output_transform,
                 output_slice,
             )
-            # all the pinns are in fact the same so we share the same static
-            if static is None:
-                static = pinn.static
-            else:
-                pinn.static = static
             pinns.append(pinn)
         return pinns
     pinn = PINN(mlp, slice_solution, eq_type, input_transform, output_transform, None)
