@@ -100,7 +100,6 @@ def solve(
     obs_data=None,
     validation=None,
     obs_batch_sharding=None,
-    return_validation_loss=False,
 ):
     """
     Performs the optimization process via stochastic gradient descent
@@ -189,10 +188,6 @@ def solve(
         Typically, a SingleDeviceSharding(gpu_device) when obs_data has been
         created with sharding_device=SingleDeviceSharding(cpu_device) to avoid
         loading on GPU huge datasets of observations
-    return_validation_loss
-        Default False. If true we also return the validation loss values. This
-        argument is here not to break all preivous code. This argument might
-        be temporary
 
     Returns
     -------
@@ -511,7 +506,7 @@ def solve(
             validation_loss_val=loss_container.validation_loss_values[i - 1],
         )
 
-    if not return_validation_loss:
+    if validation is None:
         return (
             optimization.last_non_nan_params,
             loss_container.train_loss_values,
