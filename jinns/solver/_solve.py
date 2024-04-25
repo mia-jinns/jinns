@@ -289,54 +289,7 @@ def solve(
         stored_params=stored_params,
     )
 
-    def break_fun(carry):
-        """
-        Function to break from the main optimization loop
-        We check several conditions
-        """
-
-        def stop_while_loop(msg):
-            """
-            Note that the message is wrapped in the jax.lax.cond because a
-            string is not a valid JAX type that can be fed into the operands
-            """
-            jax.debug.print(f"Stopping main optimization loop, cause: {msg}")
-            return False
-
-        def continue_while_loop(_):
-            return True
-
-        (i, _, optimization, optimization_extra, _, _, _, _) = carry
-
-        # Condition 1
-        bool_max_iter = jax.lax.cond(
-            i >= n_iter,
-            lambda _: stop_while_loop("max iteration is reached"),
-            continue_while_loop,
-            None,
-        )
-        # Condition 2
-        bool_nan_in_params = jax.lax.cond(
-            _check_nan_in_pytree(optimization.params),
-            lambda _: stop_while_loop(
-                "NaN values in parameters " "(returning last non NaN values)"
-            ),
-            continue_while_loop,
-            None,
-        )
-        # Condition 3
-        bool_early_stopping = jax.lax.cond(
-            optimization_extra.early_stopping,
-            lambda _: stop_while_loop("early stopping"),
-            continue_while_loop,
-            _,
-        )
-
-        # stop when one of the cond to continue is False
-        return jax.tree_util.tree_reduce(
-            lambda x, y: jnp.logical_and(jnp.array(x), jnp.array(y)),
-            (bool_max_iter, bool_nan_in_params, bool_early_stopping),
-        )
+    break_fun = get_break_fun(n_iter)
 
     iteration = 0
     carry = (
@@ -607,6 +560,64 @@ def store_loss_and_params(
     if validation_loss_values is not None:
         validation_loss_values = validation_loss_values.at[i].set(validation_loss_val)
     return (stored_params, stored_loss_terms, train_loss_values, validation_loss_values)
+
+
+def get_break_fun(n_iter):
+    """
+    Wrapper to get the break_fun with appropriate `n_iter`
+    """
+
+    @jit
+    def break_fun(carry):
+        """
+        Function to break from the main optimization loop
+        We check several conditions
+        """
+
+        def stop_while_loop(msg):
+            """
+            Note that the message is wrapped in the jax.lax.cond because a
+            string is not a valid JAX type that can be fed into the operands
+            """
+            jax.debug.print(f"Stopping main optimization loop, cause: {msg}")
+            return False
+
+        def continue_while_loop(_):
+            return True
+
+        (i, _, optimization, optimization_extra, _, _, _, _) = carry
+
+        # Condition 1
+        bool_max_iter = jax.lax.cond(
+            i >= n_iter,
+            lambda _: stop_while_loop("max iteration is reached"),
+            continue_while_loop,
+            None,
+        )
+        # Condition 2
+        bool_nan_in_params = jax.lax.cond(
+            _check_nan_in_pytree(optimization.params),
+            lambda _: stop_while_loop(
+                "NaN values in parameters " "(returning last non NaN values)"
+            ),
+            continue_while_loop,
+            None,
+        )
+        # Condition 3
+        bool_early_stopping = jax.lax.cond(
+            optimization_extra.early_stopping,
+            lambda _: stop_while_loop("early stopping"),
+            continue_while_loop,
+            _,
+        )
+
+        # stop when one of the cond to continue is False
+        return jax.tree_util.tree_reduce(
+            lambda x, y: jnp.logical_and(jnp.array(x), jnp.array(y)),
+            (bool_max_iter, bool_nan_in_params, bool_early_stopping),
+        )
+
+    return break_fun
 
 
 def get_get_batch(obs_batch_sharding):
