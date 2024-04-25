@@ -35,6 +35,9 @@ def eval_validation_loss_and_early_stopping(
     """
     The simplest validation loss to implement early stopping
 
+    NB loss is the loss.evaluate() method! This is to avoid customized
+    validation to modify the loss
+
     hyperparams is of type ValidationLossEarlyStoppingHyperparams
     """
     val_batch = validation_data.get_batch()

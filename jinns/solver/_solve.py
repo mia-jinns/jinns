@@ -169,7 +169,10 @@ def solve(
             fun must take as arguments:
                 - the iteration number
                 - a new hyperparams pytree
-                - the loss: the argument loss defined above
+                - the loss evaluate function: the evaluate bound method to the
+                  argument loss defined above. We pass the method and not the
+                  object to avoid custom validation loss to modify the loss
+                  object
                 - params (as init_params defined above)
                 - a validation_data
                 - a validation_param_data
@@ -352,7 +355,9 @@ def solve(
                 validation_hyperparams,
             ) = jax.lax.cond(
                 i % validation.hyperparams.call_every == 0,
-                lambda operands: validation_step(*operands),
+                lambda operands: validation_step(
+                    *operands[:2], loss.evaluate, *operands[2:]
+                ),
                 lambda _: (
                     optimization_extra.early_stopping,
                     loss_container.validation_loss_values[i - 1],
@@ -362,7 +367,6 @@ def solve(
                 (
                     i,
                     validation.hyperparams,
-                    loss,
                     params,
                     *validation.data,
                 ),
