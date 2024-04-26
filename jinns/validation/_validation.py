@@ -5,10 +5,12 @@ Implements some validation functions and their associated hyperparameter
 from typing import NamedTuple, Union
 import jax
 import jax.numpy as jnp
+from jax.typing import ArrayLike
 from jinns.data._DataGenerators import (
     append_param_batch,
     append_obs_batch,
 )
+from jinns.utils._containers import ValidationContainer
 
 
 class ValidationLossEarlyStoppingHyperparams(NamedTuple):
@@ -24,29 +26,23 @@ class ValidationLossEarlyStoppingHyperparams(NamedTuple):
 
 
 def eval_validation_loss_and_early_stopping(
-    i,
-    hyperparams,
-    loss,
-    params,
-    validation_data,
-    validation_param_data,
-    validation_obs_data,
+    i: int, params: dict, validation: ValidationContainer
 ):
     """
     The simplest validation loss to implement early stopping
 
-    NB loss is the loss.evaluate() method! This is to avoid customized
-    validation to modify the loss
-
     hyperparams is of type ValidationLossEarlyStoppingHyperparams
     """
-    val_batch = validation_data.get_batch()
-    if validation_param_data is not None:
-        val_batch = append_param_batch(val_batch, validation_param_data.get_batch())
-    if validation_obs_data is not None:
-        val_batch = append_obs_batch(val_batch, validation_obs_data.get_batch())
-    validation_loss_value, _ = loss(params, val_batch)
+    val_batch = validation.data.data.get_batch()
+    if validation.data.param_data is not None:
+        val_batch = append_param_batch(
+            val_batch, validation.data.param_data.get_batch()
+        )
+    if validation.data.obs_data is not None:
+        val_batch = append_obs_batch(val_batch, validation.data.obs_data.get_batch())
+    validation_loss_value, _ = validation.loss(params, val_batch)
 
+    hyperparams = validation.hyperparams
     (counter, best_val_loss) = jax.lax.cond(
         jnp.logical_and(
             jnp.array(i > 0),
@@ -58,6 +54,11 @@ def eval_validation_loss_and_early_stopping(
     )
     hyperparams = hyperparams._replace(counter=counter)
     hyperparams = hyperparams._replace(best_val_loss=best_val_loss)
+    validation = validation._replace(hyperparams=hyperparams)
+
+    validation = validation._replace(
+        loss_values=validation.loss_values.at[i].set(validation_loss_value)
+    )
 
     bool_early_stopping = jax.lax.cond(
         hyperparams.counter == hyperparams.patience,
@@ -66,11 +67,4 @@ def eval_validation_loss_and_early_stopping(
         None,
     )
 
-    return (
-        bool_early_stopping,
-        validation_loss_value,
-        validation_data,
-        validation_param_data,
-        validation_obs_data,
-        hyperparams,
-    )
+    return bool_early_stopping, validation

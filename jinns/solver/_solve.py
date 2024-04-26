@@ -3,14 +3,12 @@ This modules implements the main `solve()` function of jinns which
 handles the optimization process
 """
 
+import copy
 from functools import partial
-from typing import NamedTuple, Union
-from jaxtyping import PyTree
 import optax
 import jax
 from jax import jit
 import jax.numpy as jnp
-from jax.typing import ArrayLike
 from jinns.solver._seq2seq import trigger_seq2seq, initialize_seq2seq
 from jinns.solver._rar import init_rar, trigger_rar
 from jinns.utils._utils import _check_nan_in_pytree, _tracked_parameters
@@ -18,12 +16,10 @@ from jinns.data._DataGenerators import (
     DataGeneratorODE,
     CubicMeshPDEStatio,
     CubicMeshPDENonStatio,
-    DataGeneratorParameter,
-    DataGeneratorObservations,
-    DataGeneratorObservationsMultiPINNs,
     append_param_batch,
     append_obs_batch,
 )
+from jinns.utils._containers import *
 
 
 def check_batch_size(other_data, main_data, attr_name):
@@ -49,41 +45,6 @@ def check_batch_size(other_data, main_data, attr_name):
             " the product of both dependeing on the type of the main"
             " datagenerator"
         )
-
-
-class DataGeneratorContainer(NamedTuple):
-    data: Union[DataGeneratorODE, CubicMeshPDEStatio, CubicMeshPDENonStatio]
-    param_data: Union[DataGeneratorParameter, None] = None
-    obs_data: Union[
-        DataGeneratorObservations, DataGeneratorObservationsMultiPINNs, None
-    ] = None
-
-
-class ValidationContainer(NamedTuple):
-    data: DataGeneratorContainer
-    hyperparams: PyTree = None
-
-
-class OptimizationContainer(NamedTuple):
-    params: dict
-    last_non_nan_params: dict
-    opt_state: optax.OptState
-
-
-class OptimizationExtraContainer(NamedTuple):
-    curr_seq: int
-    seq2seq: Union[dict, None]
-    early_stopping: bool = False
-
-
-class LossContainer(NamedTuple):
-    stored_loss_terms: dict
-    train_loss_values: ArrayLike
-    validation_loss_values: Union[ArrayLike, None] = None
-
-
-class StoredObjectContainer(NamedTuple):
-    stored_params: Union[list, None]
 
 
 def solve(
@@ -168,22 +129,11 @@ def solve(
             compute validation quantities with the validation DataGenerator.
             fun must take as arguments:
                 - the iteration number
-                - a new hyperparams pytree
-                - the loss evaluate function: the evaluate bound method to the
-                  argument loss defined above. We pass the method and not the
-                  object to avoid custom validation loss to modify the loss
-                  object
                 - params (as init_params defined above)
-                - a validation_data
-                - a validation_param_data
-                - a validation_obs_data
-            fun must return 6 variables:
+                - a ValidationContainer
+            fun must return 2 variables:
                 - a boolean that trigger early stopping if True
-                - a float for the validation loss value
-                - a validation_data
-                - a validation_param_data
-                - a validation_obs_data
-                - a new hyperparams pytree (see below)
+                - a ValidationContainer
             - hyperparams: a pytree which contains the validation parameters
             that fun needs to function
     obs_batch_sharding
@@ -236,13 +186,16 @@ def solve(
         data, opt_state = initialize_seq2seq(loss, data, seq2seq, opt_state)
 
     train_loss_values = jnp.zeros((n_iter))
-    if validation is not None:
-        validation_loss_values = jnp.zeros((n_iter))
-    else:
-        validation_loss_values = None
     # depending on obs_batch_sharding we will get the simple get_batch or the
     # get_batch with device_put, the latter is not jittable
     get_batch = get_get_batch(obs_batch_sharding)
+
+    if validation is not None:
+        validation_loss = copy.deepcopy(loss)
+        validation_loss_values = jnp.zeros((n_iter))
+    else:
+        validation_loss = None
+        validation_loss_values = None
 
     # initialize the dict for stored parameter values
     # we need to get a loss_term to init stuff
@@ -270,10 +223,12 @@ def solve(
     if validation is not None:
         validation_step = validation[3]  # grab the validation fun argument
         validation = ValidationContainer(
+            loss=validation_loss,
             data=DataGeneratorContainer(
                 data=validation[0], param_data=validation[1], obs_data=validation[2]
             ),
             hyperparams=validation[4],
+            loss_values=validation_loss_values,
         )
     optimization = OptimizationContainer(
         params=init_params, last_non_nan_params=init_params.copy(), opt_state=opt_state
@@ -281,12 +236,10 @@ def solve(
     optimization_extra = OptimizationExtraContainer(
         curr_seq=curr_seq,
         seq2seq=seq2seq,
-        early_stopping=False,
     )
     loss_container = LossContainer(
         stored_loss_terms=stored_loss_terms,
         train_loss_values=train_loss_values,
-        validation_loss_values=validation_loss_values,
     )
     stored_objects = StoredObjectContainer(
         stored_params=stored_params,
@@ -342,40 +295,25 @@ def solve(
         # Print train loss value during optimization
         print_fn(i, train_loss_value, print_loss_every, prefix="[train] ")
 
-        # Validation step
         if validation is not None:
             # there is a jax.lax.cond because we do not necesarily call the
             # validation step every iteration
-            (
-                early_stopping,
-                validation_loss_value,
-                validation_data,
-                validation_param_data,
-                validation_obs_data,
-                validation_hyperparams,
-            ) = jax.lax.cond(
+            (early_stopping, validation) = jax.lax.cond(
                 i % validation.hyperparams.call_every == 0,
-                lambda operands: validation_step(
-                    *operands[:2], loss.evaluate, *operands[2:]
-                ),
-                lambda _: (
-                    optimization_extra.early_stopping,
-                    loss_container.validation_loss_values[i - 1],
-                    *validation.data,
-                    validation.hyperparams,
-                ),
+                lambda operands: validation_step(*operands),
+                lambda _: (optimization_extra.early_stopping, validation),
                 (
                     i,
-                    validation.hyperparams,
                     params,
-                    *validation.data,
+                    validation,
                 ),
             )
             # Print validation loss value during optimization
-            print_fn(i, validation_loss_value, print_loss_every, prefix="[validation] ")
+            print_fn(
+                i, validation.loss_values[i], print_loss_every, prefix="[validation] "
+            )
         else:
             early_stopping = False
-            validation_loss_value = None
 
         # Trigger RAR
         loss, params, data = trigger_rar(
@@ -394,19 +332,15 @@ def solve(
         )
 
         # save loss value and selected parameters
-        stored_params, stored_loss_terms, train_loss_values, validation_loss_values = (
-            store_loss_and_params(
-                i,
-                params,
-                stored_objects.stored_params,
-                loss_container.stored_loss_terms,
-                loss_container.train_loss_values,
-                loss_container.validation_loss_values,
-                train_loss_value,
-                validation_loss_value,
-                loss_terms,
-                tracked_params,
-            )
+        stored_params, stored_loss_terms, train_loss_values = store_loss_and_params(
+            i,
+            params,
+            stored_objects.stored_params,
+            loss_container.stored_loss_terms,
+            loss_container.train_loss_values,
+            train_loss_value,
+            loss_terms,
+            tracked_params,
         )
         i += 1
 
@@ -416,19 +350,8 @@ def solve(
             OptimizationContainer(params, last_non_nan_params, opt_state),
             OptimizationExtraContainer(curr_seq, seq2seq, early_stopping),
             DataGeneratorContainer(data, param_data, obs_data),
-            (
-                ValidationContainer(
-                    DataGeneratorContainer(
-                        data=validation_data,
-                        param_data=validation_param_data,
-                        obs_data=validation_obs_data,
-                    ),
-                    validation_hyperparams,
-                )
-                if validation is not None
-                else validation
-            ),
-            LossContainer(stored_loss_terms, train_loss_values, validation_loss_values),
+            validation,
+            LossContainer(stored_loss_terms, train_loss_values),
             StoredObjectContainer(stored_params),
         )
 
@@ -457,10 +380,10 @@ def solve(
         i=i,
         train_loss_val=loss_container.train_loss_values[i - 1],
     )
-    if validation_loss_values is not None:
+    if validation is not None:
         jax.debug.print(
             "validation loss value = {validation_loss_val}",
-            validation_loss_val=loss_container.validation_loss_values[i - 1],
+            validation_loss_val=validation.loss_values[i - 1],
         )
 
     if validation is None:
@@ -473,17 +396,16 @@ def solve(
             optimization.opt_state,
             stored_objects.stored_params,
         )
-    else:
-        return (
-            optimization.last_non_nan_params,
-            loss_container.train_loss_values,
-            loss_container.stored_loss_terms,
-            train_data.data,
-            loss,
-            optimization.opt_state,
-            stored_objects.stored_params,
-            loss_container.validation_loss_values,
-        )
+    return (
+        optimization.last_non_nan_params,
+        loss_container.train_loss_values,
+        loss_container.stored_loss_terms,
+        train_data.data,
+        loss,
+        optimization.opt_state,
+        stored_objects.stored_params,
+        validation.loss_values,
+    )
 
 
 @partial(jit, static_argnames=["optimizer"])
@@ -537,9 +459,7 @@ def store_loss_and_params(
     stored_params,
     stored_loss_terms,
     train_loss_values,
-    validation_loss_values,
     train_loss_val,
-    validation_loss_val,
     loss_terms,
     tracked_params,
 ):
@@ -561,9 +481,7 @@ def store_loss_and_params(
     )
 
     train_loss_values = train_loss_values.at[i].set(train_loss_val)
-    if validation_loss_values is not None:
-        validation_loss_values = validation_loss_values.at[i].set(validation_loss_val)
-    return (stored_params, stored_loss_terms, train_loss_values, validation_loss_values)
+    return (stored_params, stored_loss_terms, train_loss_values)
 
 
 def get_break_fun(n_iter):
