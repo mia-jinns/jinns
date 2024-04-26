@@ -451,7 +451,6 @@ class LossPDEStatio(LossPDEAbstract):
             )  # we return a function, that way
             # the order of sobolev_m is static and the conditional in the recursive
             # function is properly set
-            self.sobolev_m = self.sobolev_m
         else:
             self.sobolev_reg = None
 
