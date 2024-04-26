@@ -190,13 +190,6 @@ def solve(
     # get_batch with device_put, the latter is not jittable
     get_batch = get_get_batch(obs_batch_sharding)
 
-    if validation is not None:
-        validation_loss = copy.deepcopy(loss)
-        validation_loss_values = jnp.zeros((n_iter))
-    else:
-        validation_loss = None
-        validation_loss_values = None
-
     # initialize the dict for stored parameter values
     # we need to get a loss_term to init stuff
     batch_ini, data, param_data, obs_data = get_batch(data, param_data, obs_data)
@@ -214,20 +207,12 @@ def solve(
 
     # initialize the dict for stored loss values
     stored_loss_terms = jax.tree_util.tree_map(
-        lambda x: jnp.zeros((n_iter)), loss_terms
+        lambda _: jnp.zeros((n_iter)), loss_terms
     )
 
     train_data = DataGeneratorContainer(
         data=data, param_data=param_data, obs_data=obs_data
     )
-    # if validation is not None:
-    #     validation_step = validation[3]  # grab the validation fun argument
-    #     validation = ValidationContainer(
-    #         data=DataGeneratorContainer(
-    #             data=validation[0], param_data=validation[1], obs_data=validation[2]
-    #         ),
-    #         hyperparams=validation[4],
-    #     )
     optimization = OptimizationContainer(
         params=init_params, last_non_nan_params=init_params.copy(), opt_state=opt_state
     )
@@ -298,7 +283,7 @@ def solve(
             # validation step every iteration
             (
                 early_stopping,
-                validation_loss_value,
+                validation_criterion,
             ) = jax.lax.cond(
                 i % validation.call_every == 0,
                 lambda operands: validation(*operands),  # validation.__call__()
@@ -309,9 +294,7 @@ def solve(
                 (params,),
             )
             # Print validation loss value during optimization
-            print_fn(
-                i, validation.loss_values[i], print_loss_every, prefix="[validation] "
-            )
+            print_fn(i, validation_criterion, print_loss_every, prefix="[validation] ")
         else:
             early_stopping = False
 
