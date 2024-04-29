@@ -42,18 +42,20 @@ class VanillaValidation(BaseValidationModule):
 
     loss: Union[callable, LossODE, LossPDEStatio, LossPDENonStatio]
     patience: Union[int, None]
-    best_val_loss: jax.Array
-    counter: jax.Array  # counts the number of times we did not improve validation loss
+    best_val_loss: jax.Array = eqx.field(converter=jax.numpy.asarray)
+    counter: jax.Array = eqx.field(
+        converter=jax.numpy.asarray
+    )  # counts the number of times we did not improve validation loss
 
     def __init__(
         self,
         loss,
         validation_data,
-        validation_param_data,
-        validation_obs_data,
+        validation_param_data=None,
+        validation_obs_data=None,
         call_every=250,
         early_stopping=True,
-        patience=1,
+        patience=10,
         counter=None,
         best_val_loss=None,
     ):
@@ -89,18 +91,16 @@ class VanillaValidation(BaseValidationModule):
             )
 
         validation_loss_value, _ = self.loss(params, val_batch)
-        print("In-place modif of self.loss.norm_key !")
-        # self.loss.norm_key, _ = jax.random.split(self.loss.norm_key)
         (counter, best_val_loss) = jax.lax.cond(
             validation_loss_value < self.best_val_loss,
             lambda _: (jnp.zeros(1), validation_loss_value),  # reset
             lambda operands: (operands[0] + 1, operands[1]),  # increment
             (self.counter, self.best_val_loss),
         )
-        print(counter)
         # use eqx.tree_at to update self
         self = eqx.tree_at(lambda t: t.counter, self, counter)
         self = eqx.tree_at(lambda t: t.best_val_loss, self, best_val_loss)
+
         bool_early_stopping = jax.lax.cond(
             jnp.logical_and(
                 jnp.array(self.counter == self.patience)[0],
@@ -110,7 +110,7 @@ class VanillaValidation(BaseValidationModule):
             lambda _: False,
             None,
         )
-
+        # return `self` cause no in-place modification of the eqx.Module
         return (self, bool_early_stopping, validation_loss_value)
 
 
@@ -187,11 +187,11 @@ if __name__ == "__main__":
         call_every=250,
         early_stopping=True,
         patience=1000,
-        loss=loss,
+        loss=copy.deepcopy(loss),
         validation_data=val_data,
         validation_param_data=None,
         validation_obs_data=None,
-        counter=jnp.zeros(1),
+        counter=None,
     )
     init_params = {"nn_params": init_nn_params, "eq_params": {"nu": 1.0}}
 
@@ -215,3 +215,19 @@ if __name__ == "__main__":
     print(f"{new_val.loss.norm_key == validation.loss.norm_key=}")
     print(new_val.counter)
     print(validation.counter)
+
+    validation.validation_data._key
+
+    def scan_fn(v, x):
+
+        v, bool, crit = jax.lax.cond(
+            x % 10 == 0,
+            lambda params: v(params),
+            lambda _: (v, False, None),
+            init_params,
+        )
+        return v, (bool, crit)
+
+    validation, accu = jax.lax.scan(scan_fn, validation, jnp.arange(1e2))
+
+    validation.validation_data._key

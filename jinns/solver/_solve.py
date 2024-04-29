@@ -228,6 +228,11 @@ def solve(
         stored_params=stored_params,
     )
 
+    if validation is not None:
+        validation_crit_values = jnp.zeros(n_iter)
+    else:
+        validation_crit_values = None
+
     break_fun = get_break_fun(n_iter)
 
     iteration = 0
@@ -240,6 +245,7 @@ def solve(
         validation,
         loss_container,
         stored_objects,
+        validation_crit_values,
     )
 
     def one_iteration(carry):
@@ -252,6 +258,7 @@ def solve(
             validation,
             loss_container,
             stored_objects,
+            validation_crit_values,
         ) = carry
 
         batch, data, param_data, obs_data = get_batch(
@@ -282,19 +289,24 @@ def solve(
             # there is a jax.lax.cond because we do not necesarily call the
             # validation step every iteration
             (
+                validation,  # always return `validation` for in-place mutation
                 early_stopping,
                 validation_criterion,
             ) = jax.lax.cond(
                 i % validation.call_every == 0,
                 lambda operands: validation(*operands),  # validation.__call__()
                 lambda _: (
+                    validation,
                     False,
-                    loss_container.validation_loss_values[i - 1],
+                    validation_crit_values[i - 1],
                 ),
                 (params,),
             )
             # Print validation loss value during optimization
             print_fn(i, validation_criterion, print_loss_every, prefix="[validation] ")
+            validation_crit_values = validation_crit_values.at[i].set(
+                validation_criterion
+            )
         else:
             early_stopping = False
 
@@ -336,6 +348,7 @@ def solve(
             validation,
             LossContainer(stored_loss_terms, train_loss_values),
             StoredObjectContainer(stored_params),
+            validation_crit_values,
         )
 
     # Main optimization loop. We use the LAX while loop (fully jitted) version
@@ -356,6 +369,7 @@ def solve(
         validation,
         loss_container,
         stored_objects,
+        validation_crit_values,
     ) = carry
 
     jax.debug.print(
@@ -366,7 +380,7 @@ def solve(
     if validation is not None:
         jax.debug.print(
             "validation loss value = {validation_loss_val}",
-            validation_loss_val=validation.loss_values[i - 1],
+            validation_loss_val=validation_crit_values[i - 1],
         )
 
     if validation is None:
@@ -387,7 +401,7 @@ def solve(
         loss,
         optimization.opt_state,
         stored_objects.stored_params,
-        validation.loss_values,
+        validation_crit_values,
     )
 
 
@@ -490,7 +504,7 @@ def get_break_fun(n_iter):
         def continue_while_loop(_):
             return True
 
-        (i, _, optimization, optimization_extra, _, _, _, _) = carry
+        (i, _, optimization, optimization_extra, _, _, _, _, _) = carry
 
         # Condition 1
         bool_max_iter = jax.lax.cond(
