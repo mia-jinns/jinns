@@ -3,7 +3,7 @@ Implements some validation functions and their associated hyperparameter
 """
 
 import copy
-from typing import Dict, Union, NamedTuple
+from typing import Dict, Union
 import equinox as eqx
 import jax
 import jax.numpy as jnp
