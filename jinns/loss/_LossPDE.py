@@ -31,6 +31,16 @@ _IMPLEMENTED_BOUNDARY_CONDITIONS = [
     "vonneumann",
 ]
 
+_LOSS_WEIGHT_KEYS_PDESTATIO = [
+    "sobolev",
+    "observations",
+    "norm_loss",
+    "boundary_loss",
+    "dyn_loss",
+]
+
+_LOSS_WEIGHT_KEYS_PDENONSTATIO = _LOSS_WEIGHT_KEYS_PDESTATIO + ["initial_condition"]
+
 
 @register_pytree_node_class
 class LossPDEAbstract:
@@ -269,8 +279,8 @@ class LossPDEStatio(LossPDEAbstract):
             the PINN object
         loss_weights
             a dictionary with values used to ponderate each term in the loss
-            function. Valid keys are `dyn_loss`, `norm_loss`, `boundary_loss`
-            and `observations`.
+            function. Valid keys are `dyn_loss`, `norm_loss`, `boundary_loss`,
+            `observations` and `sobolev`.
             Note that we can have jnp.arrays with the same dimension of
             `u` which then ponderates each output of `u`
         dynamic_loss
@@ -441,18 +451,12 @@ class LossPDEStatio(LossPDEAbstract):
             )  # we return a function, that way
             # the order of sobolev_m is static and the conditional in the recursive
             # function is properly set
-            self.sobolev_m = self.sobolev_m
         else:
             self.sobolev_reg = None
 
-        if self.normalization_loss is None:
-            self.loss_weights["norm_loss"] = 0
-
-        if self.omega_boundary_fun is None:
-            self.loss_weights["boundary_loss"] = 0
-
-        if self.sobolev_reg is None:
-            self.loss_weights["sobolev"] = 0
+        for k in _LOSS_WEIGHT_KEYS_PDESTATIO:
+            if k not in self.loss_weights.keys():
+                self.loss_weights[k] = 0
 
         if (
             isinstance(self.omega_boundary_fun, dict)
@@ -533,7 +537,6 @@ class LossPDEStatio(LossPDEAbstract):
             )
         else:
             mse_norm_loss = jnp.array(0.0)
-            self.loss_weights["norm_loss"] = 0
 
         # boundary part
         params_ = _set_derivatives(params, "boundary_loss", self.derivative_keys)
@@ -567,7 +570,6 @@ class LossPDEStatio(LossPDEAbstract):
             )
         else:
             mse_observation_loss = jnp.array(0.0)
-            self.loss_weights["observations"] = 0
 
         # Sobolev regularization
         params_ = _set_derivatives(params, "sobolev", self.derivative_keys)
@@ -582,7 +584,6 @@ class LossPDEStatio(LossPDEAbstract):
             )
         else:
             mse_sobolev_loss = jnp.array(0.0)
-            self.loss_weights["sobolev"] = 0
 
         # total loss
         total_loss = (
@@ -785,8 +786,9 @@ class LossPDENonStatio(LossPDEStatio):
         else:
             self.sobolev_reg = None
 
-        if self.sobolev_reg is None:
-            self.loss_weights["sobolev"] = 0
+        for k in _LOSS_WEIGHT_KEYS_PDENONSTATIO:
+            if k not in self.loss_weights.keys():
+                self.loss_weights[k] = 0
 
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
@@ -924,7 +926,6 @@ class LossPDENonStatio(LossPDEStatio):
             )
         else:
             mse_observation_loss = jnp.array(0.0)
-            self.loss_weights["observations"] = 0
 
         # Sobolev regularization
         params_ = _set_derivatives(params, "sobolev", self.derivative_keys)
@@ -939,7 +940,6 @@ class LossPDENonStatio(LossPDEStatio):
             )
         else:
             mse_sobolev_loss = jnp.array(0.0)
-            self.loss_weights["sobolev"] = 0.0
 
         # total loss
         total_loss = (

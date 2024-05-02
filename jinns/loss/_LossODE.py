@@ -19,6 +19,8 @@ from jinns.loss._Losses import (
 )
 from jinns.utils._pinn import PINN
 
+_LOSS_WEIGHT_KEYS_ODE = ["observations", "dyn_loss", "initial_condition"]
+
 
 @register_pytree_node_class
 class LossODE:
@@ -127,6 +129,10 @@ class LossODE:
         self.obs_slice = obs_slice
         if self.obs_slice is None:
             self.obs_slice = jnp.s_[...]
+
+        for k in _LOSS_WEIGHT_KEYS_ODE:
+            if k not in self.loss_weights.keys():
+                self.loss_weights[k] = 0
 
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)

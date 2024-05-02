@@ -3,14 +3,12 @@ This modules implements the main `solve()` function of jinns which
 handles the optimization process
 """
 
+import copy
 from functools import partial
-from typing import NamedTuple, Union
-from jaxtyping import PyTree
 import optax
 import jax
 from jax import jit
 import jax.numpy as jnp
-from jax.typing import ArrayLike
 from jinns.solver._seq2seq import trigger_seq2seq, initialize_seq2seq
 from jinns.solver._rar import init_rar, trigger_rar
 from jinns.utils._utils import _check_nan_in_pytree, _tracked_parameters
@@ -18,12 +16,10 @@ from jinns.data._DataGenerators import (
     DataGeneratorODE,
     CubicMeshPDEStatio,
     CubicMeshPDENonStatio,
-    DataGeneratorParameter,
-    DataGeneratorObservations,
-    DataGeneratorObservationsMultiPINNs,
     append_param_batch,
     append_obs_batch,
 )
+from jinns.utils._containers import *
 
 
 def check_batch_size(other_data, main_data, attr_name):
@@ -51,41 +47,6 @@ def check_batch_size(other_data, main_data, attr_name):
         )
 
 
-class DataGeneratorContainer(NamedTuple):
-    data: Union[DataGeneratorODE, CubicMeshPDEStatio, CubicMeshPDENonStatio]
-    param_data: Union[DataGeneratorParameter, None] = None
-    obs_data: Union[
-        DataGeneratorObservations, DataGeneratorObservationsMultiPINNs, None
-    ] = None
-
-
-class ValidationContainer(NamedTuple):
-    data: DataGeneratorContainer
-    hyperparams: PyTree = None
-
-
-class OptimizationContainer(NamedTuple):
-    params: dict
-    last_non_nan_params: dict
-    opt_state: optax.OptState
-
-
-class OptimizationExtraContainer(NamedTuple):
-    curr_seq: int
-    seq2seq: Union[dict, None]
-    early_stopping: bool = False
-
-
-class LossContainer(NamedTuple):
-    stored_loss_terms: dict
-    train_loss_values: ArrayLike
-    validation_loss_values: Union[ArrayLike, None] = None
-
-
-class StoredObjectContainer(NamedTuple):
-    stored_params: Union[list, None]
-
-
 def solve(
     n_iter,
     init_params,
@@ -100,7 +61,6 @@ def solve(
     obs_data=None,
     validation=None,
     obs_batch_sharding=None,
-    return_validation_loss=False,
 ):
     """
     Performs the optimization process via stochastic gradient descent
@@ -169,19 +129,11 @@ def solve(
             compute validation quantities with the validation DataGenerator.
             fun must take as arguments:
                 - the iteration number
-                - a new hyperparams pytree
-                - the loss: the argument loss defined above
                 - params (as init_params defined above)
-                - a validation_data
-                - a validation_param_data
-                - a validation_obs_data
-            fun must return 6 variables:
+                - a ValidationContainer
+            fun must return 2 variables:
                 - a boolean that trigger early stopping if True
-                - a float for the validation loss value
-                - a validation_data
-                - a validation_param_data
-                - a validation_obs_data
-                - a new hyperparams pytree (see below)
+                - a ValidationContainer
             - hyperparams: a pytree which contains the validation parameters
             that fun needs to function
     obs_batch_sharding
@@ -189,10 +141,6 @@ def solve(
         Typically, a SingleDeviceSharding(gpu_device) when obs_data has been
         created with sharding_device=SingleDeviceSharding(cpu_device) to avoid
         loading on GPU huge datasets of observations
-    return_validation_loss
-        Default False. If true we also return the validation loss values. This
-        argument is here not to break all preivous code. This argument might
-        be temporary
 
     Returns
     -------
@@ -238,10 +186,6 @@ def solve(
         data, opt_state = initialize_seq2seq(loss, data, seq2seq, opt_state)
 
     train_loss_values = jnp.zeros((n_iter))
-    if validation is not None:
-        validation_loss_values = jnp.zeros((n_iter))
-    else:
-        validation_loss_values = None
     # depending on obs_batch_sharding we will get the simple get_batch or the
     # get_batch with device_put, the latter is not jittable
     get_batch = get_get_batch(obs_batch_sharding)
@@ -263,82 +207,33 @@ def solve(
 
     # initialize the dict for stored loss values
     stored_loss_terms = jax.tree_util.tree_map(
-        lambda x: jnp.zeros((n_iter)), loss_terms
+        lambda _: jnp.zeros((n_iter)), loss_terms
     )
 
     train_data = DataGeneratorContainer(
         data=data, param_data=param_data, obs_data=obs_data
     )
-    # if validation is not None:
-    #     validation_step = validation[3]  # grab the validation fun argument
-    #     validation = ValidationContainer(
-    #         data=DataGeneratorContainer(
-    #             data=validation[0], param_data=validation[1], obs_data=validation[2]
-    #         ),
-    #         hyperparams=validation[4],
-    #     )
     optimization = OptimizationContainer(
         params=init_params, last_non_nan_params=init_params.copy(), opt_state=opt_state
     )
     optimization_extra = OptimizationExtraContainer(
         curr_seq=curr_seq,
         seq2seq=seq2seq,
-        early_stopping=False,
     )
     loss_container = LossContainer(
         stored_loss_terms=stored_loss_terms,
         train_loss_values=train_loss_values,
-        validation_loss_values=validation_loss_values,
     )
     stored_objects = StoredObjectContainer(
         stored_params=stored_params,
     )
 
-    def break_fun(carry):
-        """
-        Function to break from the main optimization loop
-        We check several conditions
-        """
+    if validation is not None:
+        validation_crit_values = jnp.zeros(n_iter)
+    else:
+        validation_crit_values = None
 
-        def stop_while_loop(msg):
-            """
-            Note that the message is wrapped in the jax.lax.cond because a
-            string is not a valid JAX type that can be fed into the operands
-            """
-            jax.debug.print(f"Stopping main optimization loop, cause: {msg}")
-            return False
-
-        (i, _, optimization, optimization_extra, _, _, _, _) = carry
-
-        # Condition 1
-        bool_max_iter = jax.lax.cond(
-            i >= n_iter,
-            lambda _: stop_while_loop("max iteration is reached"),
-            lambda _: True,  # continue while loop
-            None,
-        )
-        # Condition 2
-        bool_nan_in_params = jax.lax.cond(
-            _check_nan_in_pytree(optimization.params),
-            lambda _: stop_while_loop(
-                "NaN values in parameters " "(returning last non NaN values)"
-            ),
-            lambda _: True,  # continue while loop
-            None,
-        )
-        # Condition 3
-        bool_early_stopping = jax.lax.cond(
-            optimization_extra.early_stopping,
-            lambda _: stop_while_loop("early stopping"),
-            lambda _: True,  # continue while loop
-            _,
-        )
-
-        # stop when one of the cond to continue is False
-        return jax.tree_util.tree_reduce(
-            lambda x, y: jnp.logical_and(jnp.array(x), jnp.array(y)),
-            (bool_max_iter, bool_nan_in_params, bool_early_stopping),
-        )
+    break_fun = get_break_fun(n_iter)
 
     iteration = 0
     carry = (
@@ -350,6 +245,7 @@ def solve(
         validation,
         loss_container,
         stored_objects,
+        validation_crit_values,
     )
 
     def one_iteration(carry):
@@ -362,6 +258,7 @@ def solve(
             validation,
             loss_container,
             stored_objects,
+            validation_crit_values,
         ) = carry
 
         batch, data, param_data, obs_data = get_batch(
@@ -388,24 +285,30 @@ def solve(
         # Print train loss value during optimization
         print_fn(i, train_loss_value, print_loss_every, prefix="[train] ")
 
-        # Validation step
         if validation is not None:
             # there is a jax.lax.cond because we do not necesarily call the
             # validation step every iteration
             (
+                validation,  # always return `validation` for in-place mutation
                 early_stopping,
-                validation_loss_value,
+                validation_criterion,
             ) = jax.lax.cond(
                 i % validation.call_every == 0,
                 lambda operands: validation(*operands),  # validation.__call__()
                 lambda _: (
+                    validation,
                     False,
-                    loss_container.validation_loss_values[i - 1],
+                    validation_crit_values[i - 1],
                 ),
                 (params,),
             )
             # Print validation loss value during optimization
-            print_fn(i, validation_loss_value, print_loss_every, prefix="[validation] ")
+            print_fn(i, validation_criterion, print_loss_every, prefix="[validation] ")
+            validation_crit_values = validation_crit_values.at[i].set(
+                validation_criterion
+            )
+        else:
+            early_stopping = False
 
         # Trigger RAR
         loss, params, data = trigger_rar(
@@ -424,19 +327,15 @@ def solve(
         )
 
         # save loss value and selected parameters
-        stored_params, stored_loss_terms, train_loss_values, validation_loss_values = (
-            store_loss_and_params(
-                i,
-                params,
-                stored_objects.stored_params,
-                loss_container.stored_loss_terms,
-                loss_container.train_loss_values,
-                loss_container.validation_loss_values,
-                train_loss_value,
-                validation_loss_value,
-                loss_terms,
-                tracked_params,
-            )
+        stored_params, stored_loss_terms, train_loss_values = store_loss_and_params(
+            i,
+            params,
+            stored_objects.stored_params,
+            loss_container.stored_loss_terms,
+            loss_container.train_loss_values,
+            train_loss_value,
+            loss_terms,
+            tracked_params,
         )
         i += 1
 
@@ -447,8 +346,9 @@ def solve(
             OptimizationExtraContainer(curr_seq, seq2seq, early_stopping),
             DataGeneratorContainer(data, param_data, obs_data),
             validation,
-            LossContainer(stored_loss_terms, train_loss_values, validation_loss_values),
+            LossContainer(stored_loss_terms, train_loss_values),
             StoredObjectContainer(stored_params),
+            validation_crit_values,
         )
 
     # Main optimization loop. We use the LAX while loop (fully jitted) version
@@ -469,6 +369,7 @@ def solve(
         validation,
         loss_container,
         stored_objects,
+        validation_crit_values,
     ) = carry
 
     jax.debug.print(
@@ -476,13 +377,13 @@ def solve(
         i=i,
         train_loss_val=loss_container.train_loss_values[i - 1],
     )
-    if validation_loss_values is not None:
+    if validation is not None:
         jax.debug.print(
             "validation loss value = {validation_loss_val}",
-            validation_loss_val=loss_container.validation_loss_values[i - 1],
+            validation_loss_val=validation_crit_values[i - 1],
         )
 
-    if not return_validation_loss:
+    if validation is None:
         return (
             optimization.last_non_nan_params,
             loss_container.train_loss_values,
@@ -492,17 +393,16 @@ def solve(
             optimization.opt_state,
             stored_objects.stored_params,
         )
-    else:
-        return (
-            optimization.last_non_nan_params,
-            loss_container.train_loss_values,
-            loss_container.stored_loss_terms,
-            train_data.data,
-            loss,
-            optimization.opt_state,
-            stored_objects.stored_params,
-            loss_container.validation_loss_values,
-        )
+    return (
+        optimization.last_non_nan_params,
+        loss_container.train_loss_values,
+        loss_container.stored_loss_terms,
+        train_data.data,
+        loss,
+        optimization.opt_state,
+        stored_objects.stored_params,
+        validation_crit_values,
+    )
 
 
 @partial(jit, static_argnames=["optimizer"])
@@ -556,9 +456,7 @@ def store_loss_and_params(
     stored_params,
     stored_loss_terms,
     train_loss_values,
-    validation_loss_values,
     train_loss_val,
-    validation_loss_val,
     loss_terms,
     tracked_params,
 ):
@@ -580,9 +478,65 @@ def store_loss_and_params(
     )
 
     train_loss_values = train_loss_values.at[i].set(train_loss_val)
-    if validation_loss_values is not None:
-        validation_loss_values = validation_loss_values.at[i].set(validation_loss_val)
-    return (stored_params, stored_loss_terms, train_loss_values, validation_loss_values)
+    return (stored_params, stored_loss_terms, train_loss_values)
+
+
+def get_break_fun(n_iter):
+    """
+    Wrapper to get the break_fun with appropriate `n_iter`
+    """
+
+    @jit
+    def break_fun(carry):
+        """
+        Function to break from the main optimization loop
+        We check several conditions
+        """
+
+        def stop_while_loop(msg):
+            """
+            Note that the message is wrapped in the jax.lax.cond because a
+            string is not a valid JAX type that can be fed into the operands
+            """
+            jax.debug.print(f"Stopping main optimization loop, cause: {msg}")
+            return False
+
+        def continue_while_loop(_):
+            return True
+
+        (i, _, optimization, optimization_extra, _, _, _, _, _) = carry
+
+        # Condition 1
+        bool_max_iter = jax.lax.cond(
+            i >= n_iter,
+            lambda _: stop_while_loop("max iteration is reached"),
+            continue_while_loop,
+            None,
+        )
+        # Condition 2
+        bool_nan_in_params = jax.lax.cond(
+            _check_nan_in_pytree(optimization.params),
+            lambda _: stop_while_loop(
+                "NaN values in parameters " "(returning last non NaN values)"
+            ),
+            continue_while_loop,
+            None,
+        )
+        # Condition 3
+        bool_early_stopping = jax.lax.cond(
+            optimization_extra.early_stopping,
+            lambda _: stop_while_loop("early stopping"),
+            continue_while_loop,
+            _,
+        )
+
+        # stop when one of the cond to continue is False
+        return jax.tree_util.tree_reduce(
+            lambda x, y: jnp.logical_and(jnp.array(x), jnp.array(y)),
+            (bool_max_iter, bool_nan_in_params, bool_early_stopping),
+        )
+
+    return break_fun
 
 
 def get_get_batch(obs_batch_sharding):

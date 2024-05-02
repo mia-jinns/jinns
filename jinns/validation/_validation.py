@@ -2,11 +2,12 @@
 Implements some validation functions and their associated hyperparameter
 """
 
+import copy
 from typing import Dict, Union, NamedTuple
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array, ArrayLike, PyTree, Bool, Int
+from jaxtyping import Array, ArrayLike, PyTree, Bool, Int, Float
 import jinns
 import jinns.data
 from jinns.loss import LossODE, LossPDENonStatio, LossPDEStatio
@@ -20,6 +21,7 @@ from jinns.data._DataGenerators import (
     append_obs_batch,
     append_param_batch,
 )
+import jinns.loss
 
 
 class BaseValidationModule(eqx.Module):
@@ -35,20 +37,46 @@ class BaseValidationModule(eqx.Module):
     ]
     early_stopping: Bool  # globally control if early stopping happen
 
-    def __call__(self, params):
-        # template method
-        # no **kwargs allowed in this API
-        early_stop = None  # a Boolean
-        val_criterion = None  # a Float
-        return (early_stop, val_criterion)
 
-
-class VanillaValidation(BaseValidationModule, eqx.Module):
+class VanillaValidation(BaseValidationModule):
 
     loss: Union[callable, LossODE, LossPDEStatio, LossPDENonStatio]
     patience: Union[int, None]
-    best_val_loss: float = jnp.inf
-    counter: int = 0  # counts the number of times we did not improve validation loss
+    best_val_loss: jax.Array = eqx.field(converter=jax.numpy.asarray)
+    counter: jax.Array = eqx.field(
+        converter=jax.numpy.asarray
+    )  # counts the number of times we did not improve validation loss
+
+    def __init__(
+        self,
+        loss,
+        validation_data,
+        validation_param_data=None,
+        validation_obs_data=None,
+        call_every=250,
+        early_stopping=True,
+        patience=10,
+        counter=None,
+        best_val_loss=None,
+    ):
+        super().__init__(
+            call_every,
+            validation_data,
+            validation_param_data,
+            validation_obs_data,
+            early_stopping,
+        )
+        self.loss = loss
+        self.call_every = call_every
+        self.patience = patience
+        if best_val_loss is None:
+            self.best_val_loss = jnp.array(-jnp.inf)
+        else:
+            self.best_val_loss = best_val_loss
+        if counter is None:
+            self.counter = jnp.zeros(1)
+        else:
+            self.counter = counter
 
     def __call__(self, params):
         # do in-place mutation
@@ -61,11 +89,11 @@ class VanillaValidation(BaseValidationModule, eqx.Module):
             val_batch = append_obs_batch(
                 val_batch, self.validation_obs_data.get_batch()
             )
-        validation_loss_value, _ = self.loss(params, val_batch)
 
+        validation_loss_value, _ = self.loss(params, val_batch)
         (counter, best_val_loss) = jax.lax.cond(
             validation_loss_value < self.best_val_loss,
-            lambda operands: (0, validation_loss_value),  # reset
+            lambda _: (jnp.zeros(1), validation_loss_value),  # reset
             lambda operands: (operands[0] + 1, operands[1]),  # increment
             (self.counter, self.best_val_loss),
         )
@@ -75,70 +103,15 @@ class VanillaValidation(BaseValidationModule, eqx.Module):
 
         bool_early_stopping = jax.lax.cond(
             jnp.logical_and(
-                jnp.array(self.counter == self.patience), jnp.array(self.early_stopping)
+                jnp.array(self.counter == self.patience)[0],
+                jnp.array(self.early_stopping),
             ),
             lambda _: True,
             lambda _: False,
             None,
         )
-
-        return (bool_early_stopping, validation_loss_value)
-
-
-class ValidationLossEarlyStoppingHyperparams(NamedTuple):
-    """
-    User must set the patience value and the call_every attributes only
-    """
-
-
-def eval_validation_loss_and_early_stopping(
-    i,
-    hyperparams,
-    loss,
-    params,
-    validation_data,
-    validation_param_data,
-    validation_obs_data,
-):
-    """
-    The simplest validation loss to implement early stopping
-
-    hyperparams is of type ValidationLossEarlyStoppingHyperparams
-    """
-    val_batch = validation_data.get_batch()
-    if validation_param_data is not None:
-        val_batch = append_param_batch(val_batch, validation_param_data.get_batch())
-    if validation_obs_data is not None:
-        val_batch = append_obs_batch(val_batch, validation_obs_data.get_batch())
-    validation_loss_value, _ = loss(params, val_batch)
-
-    (counter, best_val_loss) = jax.lax.cond(
-        jnp.logical_and(
-            jnp.array(i > 0),
-            jnp.array(validation_loss_value < hyperparams.best_val_loss),
-        ),
-        lambda operands: (0, validation_loss_value),
-        lambda operands: (operands[0] + 1, operands[1]),
-        (hyperparams.counter, hyperparams.best_val_loss),
-    )
-    hyperparams = hyperparams._replace(counter=counter)
-    hyperparams = hyperparams._replace(best_val_loss=best_val_loss)
-
-    bool_early_stopping = jax.lax.cond(
-        hyperparams.counter == hyperparams.patience,
-        lambda _: True,
-        lambda _: False,
-        None,
-    )
-
-    return (
-        bool_early_stopping,
-        validation_loss_value,
-        validation_data,
-        validation_param_data,
-        validation_obs_data,
-        hyperparams,
-    )
+        # return `self` cause no in-place modification of the eqx.Module
+        return (self, bool_early_stopping, validation_loss_value)
 
 
 if __name__ == "__main__":
@@ -152,22 +125,29 @@ if __name__ == "__main__":
 
     n = 50
     nb = 2 * 2 * 10
+    nt = 10
     omega_batch_size = 10
     omega_border_batch_size = 10
-    dim = 2
+    temporal_batch_size = 4
+    dim = 1
     xmin = 0
     xmax = 1
+    tmin, tmax = 0, 1
     method = "uniform"
 
-    val_data = jinns.data.CubicMeshPDEStatio(
+    val_data = jinns.data.CubicMeshPDENonStatio(
         subkey,
         n,
         nb,
+        nt,
         omega_batch_size,
         omega_border_batch_size,
+        temporal_batch_size,
         dim,
-        (xmin, xmin),
-        (xmax, xmax),
+        (xmin,),
+        (xmax,),
+        tmin,
+        tmax,
         method,
     )
 
@@ -187,7 +167,7 @@ if __name__ == "__main__":
 
     key, subkey = random.split(key)
     u = jinns.utils.create_PINN(
-        subkey, eqx_list, "statio_PDE", 2, slice_solution=jnp.s_[:1]
+        subkey, eqx_list, "nonstatio_PDE", 2, slice_solution=jnp.s_[:1]
     )
     init_nn_params = u.init_params()
 
@@ -195,7 +175,7 @@ if __name__ == "__main__":
     loss_weights = {"dyn_loss": 1, "boundary_loss": 10, "observations": 10}
 
     key, subkey = random.split(key)
-    loss = jinns.loss.LossPDEStatio(
+    loss = jinns.loss.LossPDENonStatio(
         u=u,
         loss_weights=loss_weights,
         dynamic_loss=dyn_loss,
@@ -204,12 +184,50 @@ if __name__ == "__main__":
     )
 
     validation = VanillaValidation(
-        counter=jnp.zeros(1),
         call_every=250,
         early_stopping=True,
-        patience=10,
-        loss=loss,
+        patience=1000,
+        loss=copy.deepcopy(loss),
         validation_data=val_data,
         validation_param_data=None,
         validation_obs_data=None,
+        counter=None,
     )
+    init_params = {"nn_params": init_nn_params, "eq_params": {"nu": 1.0}}
+
+    print(validation.loss is loss)
+    loss.evaluate(init_params, val_data.get_batch())
+    print(loss.norm_key)
+    print("Call validation once")
+    validation, _, _ = validation(init_params)
+    print(validation.loss is loss)
+    print(validation.loss.norm_key == loss.norm_key)
+    print("Crate new pytree from validation and call it once")
+    new_val = eqx.tree_at(lambda t: t.counter, validation, jnp.array([3.0]))
+    print(validation.loss is new_val.loss)  # FALSE
+    # test if attribute have been modified
+    new_val, _, _ = new_val(init_params)
+    print(f"{new_val.loss is loss=}")
+    print(f"{loss.norm_key=}")
+    print(f"{validation.loss.norm_key=}")
+    print(f"{new_val.loss.norm_key=}")
+    print(f"{new_val.loss.norm_key == loss.norm_key=}")
+    print(f"{new_val.loss.norm_key == validation.loss.norm_key=}")
+    print(new_val.counter)
+    print(validation.counter)
+
+    validation.validation_data._key
+
+    def scan_fn(v, x):
+
+        v, bool, crit = jax.lax.cond(
+            x % 10 == 0,
+            lambda params: v(params),
+            lambda _: (v, False, None),
+            init_params,
+        )
+        return v, (bool, crit)
+
+    validation, accu = jax.lax.scan(scan_fn, validation, jnp.arange(1e2))
+
+    validation.validation_data._key
