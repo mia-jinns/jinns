@@ -294,13 +294,16 @@ def solve(
                 validation_criterion,
             ) = jax.lax.cond(
                 i % validation.call_every == 0,
-                lambda operands: validation(*operands),  # validation.__call__()
-                lambda _: (
-                    validation,
+                lambda operands: operands[0](*operands[1:]),  # validation.__call__()
+                lambda operands: (
+                    operands[0],
                     False,
                     validation_crit_values[i - 1],
                 ),
-                (params,),
+                (
+                    validation,
+                    params,
+                ),
             )
             # Print validation loss value during optimization
             print_fn(i, validation_criterion, print_loss_every, prefix="[validation] ")
