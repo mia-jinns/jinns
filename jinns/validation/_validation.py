@@ -56,8 +56,6 @@ class VanillaValidation(BaseValidationModule):
         call_every=250,
         early_stopping=True,
         patience=10,
-        counter=None,
-        best_val_loss=None,
     ):
         super().__init__(
             call_every,
@@ -66,17 +64,11 @@ class VanillaValidation(BaseValidationModule):
             validation_obs_data,
             early_stopping,
         )
-        self.loss = loss
+        self.loss = copy.deepcopy(loss)
         self.call_every = call_every
         self.patience = patience
-        if best_val_loss is None:
-            self.best_val_loss = jnp.array(-jnp.inf)
-        else:
-            self.best_val_loss = best_val_loss
-        if counter is None:
-            self.counter = jnp.zeros(1)
-        else:
-            self.counter = counter
+        self.best_val_loss = jnp.array(jnp.inf)
+        self.counter = jnp.array(0.0)
 
     def __call__(self, params):
         # do in-place mutation
@@ -93,17 +85,19 @@ class VanillaValidation(BaseValidationModule):
         validation_loss_value, _ = self.loss(params, val_batch)
         (counter, best_val_loss) = jax.lax.cond(
             validation_loss_value < self.best_val_loss,
-            lambda _: (jnp.zeros(1), validation_loss_value),  # reset
+            lambda _: (jnp.array(0.0), validation_loss_value),  # reset
             lambda operands: (operands[0] + 1, operands[1]),  # increment
             (self.counter, self.best_val_loss),
         )
-        # use eqx.tree_at to update self
+
+        # use eqx.tree_at to update attributes
+        # (https://github.com/patrick-kidger/equinox/issues/94)
         self = eqx.tree_at(lambda t: t.counter, self, counter)
         self = eqx.tree_at(lambda t: t.best_val_loss, self, best_val_loss)
 
         bool_early_stopping = jax.lax.cond(
             jnp.logical_and(
-                jnp.array(self.counter == self.patience)[0],
+                jnp.array(self.counter == self.patience),
                 jnp.array(self.early_stopping),
             ),
             lambda _: True,
