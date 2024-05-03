@@ -301,7 +301,14 @@ def solve(
             (early_stopping, validation) = jax.lax.cond(
                 i % validation.hyperparams.call_every == 0,
                 lambda operands: validation_step(*operands),
-                lambda _: (optimization_extra.early_stopping, validation),
+                lambda operands: (
+                    optimization_extra.early_stopping,
+                    operands[2]._replace(
+                        loss_values=operands[2]
+                        .loss_values.at[i]
+                        .set(operands[2].loss_values[i - 1])
+                    ),
+                ),
                 (
                     i,
                     params,
