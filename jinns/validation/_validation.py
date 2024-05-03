@@ -91,9 +91,9 @@ class VanillaValidation(BaseValidationModule):
         )
 
         # use eqx.tree_at to update attributes
-        # (https://github.com/patrick-kidger/equinox/issues/94)
-        self = eqx.tree_at(lambda t: t.counter, self, counter)
-        self = eqx.tree_at(lambda t: t.best_val_loss, self, best_val_loss)
+        # (https://github.com/patrick-kidger/equinox/issues/396)
+        new = eqx.tree_at(lambda t: t.counter, self, counter)
+        new = eqx.tree_at(lambda t: t.best_val_loss, new, best_val_loss)
 
         bool_early_stopping = jax.lax.cond(
             jnp.logical_and(
@@ -104,8 +104,8 @@ class VanillaValidation(BaseValidationModule):
             lambda _: False,
             None,
         )
-        # return `self` cause no in-place modification of the eqx.Module
-        return (self, bool_early_stopping, validation_loss_value)
+        # return `new` cause no in-place modification of the eqx.Module
+        return (new, bool_early_stopping, validation_loss_value)
 
 
 if __name__ == "__main__":
