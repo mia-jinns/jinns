@@ -3,11 +3,12 @@ Implements some validation functions and their associated hyperparameter
 """
 
 import copy
-from typing import Dict, Union
+import abc
+from typing import Union
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array, ArrayLike, PyTree, Bool, Int, Float
+from jaxtyping import Array, Bool, PyTree, Int
 import jinns
 import jinns.data
 from jinns.loss import LossODE, LossPDENonStatio, LossPDEStatio
@@ -23,54 +24,51 @@ from jinns.data._DataGenerators import (
 )
 import jinns.loss
 
+# Using eqx Module for the DataClass + Pytree inheritance
+# Abstract class and abstract/final pattern is used
+# see : https://docs.kidger.site/equinox/pattern/
 
-class BaseValidationModule(eqx.Module):
-    # Using eqx Module for the DataClass + Pytree inheritance
 
-    call_every: int  # Mandatory for all validation step, tells that the
-    # validation step is performed every call_every iterations
-    # might be better to expose and use a DataContainer here
+class AbstractValidationModule(eqx.Module):
+    """Abstract class for any validation module. It must
+    1. have a `call_every` attribute.
+    2. implement a __call__ returning (AbstractValidationModule, Bool, Array)
+    """
+
+    call_every: eqx.AbstractVar[Int]  # Mandatory for all validation step,
+    # it tells that the validation step is performed every call_every
+    # iterations.
+
+    @abc.abstractmethod
+    def __call__(
+        self, params: PyTree
+    ) -> tuple["AbstractValidationModule", Bool, Array]:
+        raise NotImplementedError
+
+
+class VanillaValidation(AbstractValidationModule):
+
+    loss: Union[callable, LossODE, LossPDEStatio, LossPDENonStatio] = eqx.field(
+        converter=copy.deepcopy
+    )
     validation_data: Union[DataGeneratorODE, CubicMeshPDEStatio, CubicMeshPDENonStatio]
-    validation_param_data: Union[DataGeneratorParameter, None]
+    validation_param_data: Union[DataGeneratorParameter, None] = None
     validation_obs_data: Union[
         DataGeneratorObservations, DataGeneratorObservationsMultiPINNs, None
-    ]
-    early_stopping: Bool  # globally control if early stopping happen
+    ] = None
+    call_every: Int = 250  # concrete typing
+    early_stopping: Bool = True  # globally control if early stopping happens
 
+    patience: Union[Int] = 10
+    best_val_loss: Array = eqx.field(
+        converter=jnp.asarray, default_factory=lambda: jnp.array(jnp.inf)
+    )
 
-class VanillaValidation(BaseValidationModule):
+    counter: Array = eqx.field(
+        converter=jnp.asarray, default_factory=lambda: jnp.array(0.0)
+    )
 
-    loss: Union[callable, LossODE, LossPDEStatio, LossPDENonStatio]
-    patience: Union[int, None]
-    best_val_loss: jax.Array = eqx.field(converter=jax.numpy.asarray)
-    counter: jax.Array = eqx.field(
-        converter=jax.numpy.asarray
-    )  # counts the number of times we did not improve validation loss
-
-    def __init__(
-        self,
-        loss,
-        validation_data,
-        validation_param_data=None,
-        validation_obs_data=None,
-        call_every=250,
-        early_stopping=True,
-        patience=10,
-    ):
-        super().__init__(
-            call_every,
-            validation_data,
-            validation_param_data,
-            validation_obs_data,
-            early_stopping,
-        )
-        self.loss = copy.deepcopy(loss)
-        self.call_every = call_every
-        self.patience = patience
-        self.best_val_loss = jnp.array(jnp.inf)
-        self.counter = jnp.array(0.0)
-
-    def __call__(self, params):
+    def __call__(self, params) -> tuple["VanillaValidation", Bool, Array]:
         # do in-place mutation
         val_batch = self.validation_data.get_batch()
         if self.validation_param_data is not None:
@@ -176,17 +174,17 @@ if __name__ == "__main__":
         norm_key=subkey,
         norm_borders=(-1, 1),
     )
-
+    print(id(loss))
     validation = VanillaValidation(
         call_every=250,
         early_stopping=True,
         patience=1000,
-        loss=copy.deepcopy(loss),
+        loss=loss,
         validation_data=val_data,
         validation_param_data=None,
-        validation_obs_data=None,
-        counter=None,
     )
+    print(id(validation.loss) is not id(loss))  # should be True (deepcopy)
+
     init_params = {"nn_params": init_nn_params, "eq_params": {"nu": 1.0}}
 
     print(validation.loss is loss)
@@ -197,7 +195,7 @@ if __name__ == "__main__":
     print(validation.loss is loss)
     print(validation.loss.norm_key == loss.norm_key)
     print("Crate new pytree from validation and call it once")
-    new_val = eqx.tree_at(lambda t: t.counter, validation, jnp.array([3.0]))
+    new_val = eqx.tree_at(lambda t: t.counter, validation, jnp.array(3.0))
     print(validation.loss is new_val.loss)  # FALSE
     # test if attribute have been modified
     new_val, _, _ = new_val(init_params)
@@ -209,19 +207,3 @@ if __name__ == "__main__":
     print(f"{new_val.loss.norm_key == validation.loss.norm_key=}")
     print(new_val.counter)
     print(validation.counter)
-
-    validation.validation_data._key
-
-    def scan_fn(v, x):
-
-        v, bool, crit = jax.lax.cond(
-            x % 10 == 0,
-            lambda params: v(params),
-            lambda _: (v, False, None),
-            init_params,
-        )
-        return v, (bool, crit)
-
-    validation, accu = jax.lax.scan(scan_fn, validation, jnp.arange(1e2))
-
-    validation.validation_data._key

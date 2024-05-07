@@ -1,1 +1,1 @@
-from ._validation import BaseValidationModule, VanillaValidation
+from ._validation import AbstractValidationModule, VanillaValidation
