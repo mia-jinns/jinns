@@ -114,28 +114,18 @@ def solve(
         Default None. A DataGeneratorObservations object which can be used to
         sample minibatches of observations
     validation
-        Default None. Otherwise a tuple that enables the set up of a validation
-        procedure. The tuple is composed of 5 elements:
-            - validation_data: a DataGenerator of the same type of data for validation
-            dataset for the collocation points. Can be None
-            depending on the validation loss that is used
-            - validation_param_data: a DataGenerator of the same type of param_data
-            for validation dataset for the collocation points. Can be None
-            depending on the validation loss that is used
-            - validation_obs_data: a DataGenerator of the same type of obs_data
-            for validation dataset for the collocation points. Can be None
-            depending on the validation loss that is used
-            - fun: a function that is called after every gradient step to
-            compute validation quantities with the validation DataGenerator.
-            fun must take as arguments:
-                - the iteration number
-                - params (as init_params defined above)
-                - a ValidationContainer
-            fun must return 2 variables:
-                - a boolean that trigger early stopping if True
-                - a ValidationContainer
-            - hyperparams: a pytree which contains the validation parameters
-            that fun needs to function
+        Default None. Otherwise, a callable `eqx.Module` which implements a
+        validation strategy. See documentation of :obj:`~jinns.validation.
+        _validation.AbstractValidationModule` for the general interface, and
+        :obj:`~jinns.validation._validation.ValidationLoss` for a practical
+        implementation of a vanilla validation stategy on a validation set of
+        collocation points.
+        **Note**: The `__call__(self, params)` method should have
+        the latter prescribed signature and return `(validation [eqx.Module],
+        early_stop [bool], validation_criterion [Array])`. It is called every
+        `validation.call_every` iteration. Users are free to design any
+        validation strategy of there choice, and to decide on the early
+        stopping criterion.
     obs_batch_sharding
         Default None. An optional sharding object to constraint the obs_batch.
         Typically, a SingleDeviceSharding(gpu_device) when obs_data has been
@@ -301,7 +291,7 @@ def solve(
                     validation_crit_values[i - 1],
                 ),
                 (
-                    validation,
+                    validation,  # validation must be in operands
                     params,
                 ),
             )

@@ -30,7 +30,7 @@ import jinns.loss
 
 
 class AbstractValidationModule(eqx.Module):
-    """Abstract class for any validation module. It must
+    """Abstract class representing interface for any validation module. It must
     1. have a `call_every` attribute.
     2. implement a __call__ returning (AbstractValidationModule, Bool, Array)
     """
@@ -46,7 +46,12 @@ class AbstractValidationModule(eqx.Module):
         raise NotImplementedError
 
 
-class VanillaValidation(AbstractValidationModule):
+class ValidationLoss(AbstractValidationModule):
+    """
+    Implementation of a vanilla validation module returning the PINN loss
+    on a validation set of collocation points. This can be used as a baseline
+    for more complicated validation strategy.
+    """
 
     loss: Union[callable, LossODE, LossPDEStatio, LossPDENonStatio] = eqx.field(
         converter=copy.deepcopy
@@ -68,7 +73,7 @@ class VanillaValidation(AbstractValidationModule):
         converter=jnp.asarray, default_factory=lambda: jnp.array(0.0)
     )
 
-    def __call__(self, params) -> tuple["VanillaValidation", Bool, Array]:
+    def __call__(self, params) -> tuple["ValidationLoss", Bool, Array]:
         # do in-place mutation
         val_batch = self.validation_data.get_batch()
         if self.validation_param_data is not None:
@@ -175,7 +180,7 @@ if __name__ == "__main__":
         norm_borders=(-1, 1),
     )
     print(id(loss))
-    validation = VanillaValidation(
+    validation = ValidationLoss(
         call_every=250,
         early_stopping=True,
         patience=1000,
