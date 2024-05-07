@@ -114,17 +114,18 @@ def solve(
         Default None. A DataGeneratorObservations object which can be used to
         sample minibatches of observations
     validation
-        Default None. Otherwise, a callable `eqx.Module` which implements a
+        Default None. Otherwise, a callable ``eqx.Module`` which implements a
         validation strategy. See documentation of :obj:`~jinns.validation.
         _validation.AbstractValidationModule` for the general interface, and
         :obj:`~jinns.validation._validation.ValidationLoss` for a practical
         implementation of a vanilla validation stategy on a validation set of
         collocation points.
-        **Note**: The `__call__(self, params)` method should have
-        the latter prescribed signature and return `(validation [eqx.Module],
-        early_stop [bool], validation_criterion [Array])`. It is called every
-        `validation.call_every` iteration. Users are free to design any
-        validation strategy of there choice, and to decide on the early
+
+        **Note**: The ``__call__(self, params)`` method should have
+        the latter prescribed signature and return ``(validation [eqx.Module],
+        early_stop [bool], validation_criterion [Array])``. It is called every
+        ``validation.call_every`` iteration. Users are free to design any
+        validation strategy of their choice, and to decide on the early
         stopping criterion.
     obs_batch_sharding
         Default None. An optional sharding object to constraint the obs_batch.

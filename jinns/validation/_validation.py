@@ -31,8 +31,8 @@ import jinns.loss
 
 class AbstractValidationModule(eqx.Module):
     """Abstract class representing interface for any validation module. It must
-    1. have a `call_every` attribute.
-    2. implement a __call__ returning (AbstractValidationModule, Bool, Array)
+    1. have a ``call_every`` attribute.
+    2. implement a ``__call__`` returning ``(AbstractValidationModule, Bool, Array)``
     """
 
     call_every: eqx.AbstractVar[Int]  # Mandatory for all validation step,
