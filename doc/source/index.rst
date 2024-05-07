@@ -8,6 +8,17 @@ Welcome to jinn's documentation!
 
 Changelog:
 
+* v0.8.7:
+    - Merge [!38](https://gitlab.com/mia_jinns/jinns/-/merge_requests/38)
+    Introduces `validation` argument in `solve()` for user-defined validation
+    strategy with possible early stopping. The validation strategy are expected
+    to be `eqx.Module`, and we implement the vanilla validation loss in `jinns.
+    validation.ValidationLoss`. Users are free to develop their own validation
+    modules inheriting from `jinns.validation.AbstractValidationModule`.
+    See the tutorial notebook.
+
+* v0.8.6:
+
 * v0.8.5:
 
     - Merge [!36](https://gitlab.com/mia_jinns/jinns/-/merge_requests/36)
@@ -168,6 +179,7 @@ Changelog:
    data.rst
    utils.rst
    experimental.rst
+   validation.rst
 
 .. toctree::
    :glob:
