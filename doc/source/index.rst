@@ -20,11 +20,9 @@ Changelog:
 * v0.8.6:
  - Merge `[!37] <https://gitlab.com/mia_jinns/jinns/-/merge_requests/37>`_
 
-* v0.8.6:
-
 * v0.8.5:
 
-    - Merge [!36](https://gitlab.com/mia_jinns/jinns/-/merge_requests/36)
+    - Merge `[!36] <https://gitlab.com/mia_jinns/jinns/-/merge_requests/36>`_
 
 * v0.8.4:
 

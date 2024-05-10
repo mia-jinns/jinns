@@ -216,13 +216,7 @@ def create_HYPERPINN(
 
     Returns
     -------
-    init_fn
-        A function which (re-)initializes the PINN parameters with the provided
-        jax random key
-    apply_fn
-        A function to apply the neural network on given inputs for given
-        parameters. A typical call will be of the form `u(t, params)` for
-        ODE or `u(t, x, params)` for nD PDEs (`x` being multidimensional)
+    `u`, a :class:`.HyperPINN` object which inherits from `eqx.Module` (hence callable).
 
     Raises
     ------
@@ -289,7 +283,6 @@ def create_HYPERPINN(
 
     if shared_pinn_outputs is not None:
         hyperpinns = []
-        static = None
         for output_slice in shared_pinn_outputs:
             hyperpinn = HYPERPINN(
                 mlp,
@@ -302,11 +295,6 @@ def create_HYPERPINN(
                 hypernet_input_size,
                 output_slice,
             )
-            # all the pinns are in fact the same so we share the same static
-            if static is None:
-                static = hyperpinn.static
-            else:
-                hyperpinn.static = static
             hyperpinns.append(hyperpinn)
         return hyperpinns
     hyperpinn = HYPERPINN(

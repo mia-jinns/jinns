@@ -194,13 +194,7 @@ def create_SPINN(key, d, r, eqx_list, eq_type, m=1):
 
     Returns
     -------
-    init_fn
-        A function which (re-)initializes the SPINN parameters with the provided
-        jax random key
-    apply_fn
-        A function to apply the neural network on given inputs for given
-        parameters. A typical call will be of the form `u(t, params)` for
-        ODE or `u(t, x, params)` for nD PDEs (`x` being multidimensional)
+    `u`, a :class:`.SPINN` object which inherits from `eqx.Module` (hence callable).
 
     Raises
     ------
