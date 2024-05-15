@@ -159,8 +159,6 @@ def solve(
     if obs_data is not None:
         check_batch_size(obs_data, data, "obs_batch_size")
 
-    # TODO add checks for the validation tuple
-
     if opt_state is None:
         opt_state = optimizer.init(init_params)
 
