@@ -9,7 +9,8 @@ Welcome to jinn's documentation!
 Changelog:
 
 * v0.8.7:
-    - Merge [!38] `<https://gitlab.com/mia_jinns/jinns/-/merge_requests/38>_``
+
+    - Merge `[!38] <https://gitlab.com/mia_jinns/jinns/-/merge_requests/38>`_
     Introduces `validation` argument in `solve()` for user-defined validation
     strategy with possible early stopping. The validation strategy are expected
     to be `eqx.Module`, and we implement the vanilla validation loss in `jinns.
@@ -18,7 +19,8 @@ Changelog:
     See the tutorial notebook.
 
 * v0.8.6:
- - Merge `[!37] <https://gitlab.com/mia_jinns/jinns/-/merge_requests/37>`_
+
+    - Merge `[!37] <https://gitlab.com/mia_jinns/jinns/-/merge_requests/37>`_
 
 * v0.8.5:
 
