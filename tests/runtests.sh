@@ -1,23 +1,28 @@
 #!/bin/bash
 pytest dataGenerator_tests/*
-if [ $? -ne 0 ]; then
-   exit $?
+status=$?
+if [ $status -ne 0 ]; then
+   exit $status
 fi
 pytest -s sharding_tests/*
-if [ $? -ne 0 ]; then
-   exit $?
+status=$?
+if [ $status -ne 0 ]; then
+   exit $status
 fi
 pytest -s save_load_tests/*
-if [ $? -ne 0 ]; then
-   exit $?
+status=$?
+if [ $status -ne 0 ]; then
+   exit $status
 fi
 pytest solver_tests/*
-if [ $? -ne 0 ]; then
-   exit $?
+status=$?
+if [ $status -ne 0 ]; then
+   exit $status
 fi
 pytest solver_tests_spinn/*
-if [ $? -ne 0 ]; then
-   exit $?
+status=$?
+if [ $status -ne 0 ]; then
+   exit $status
 fi
 pytest utils_tests/*
 exit $?

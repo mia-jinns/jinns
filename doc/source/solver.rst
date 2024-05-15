@@ -3,7 +3,7 @@ jinns.solver
 
 The ``solver`` module is decomposed of different parts:
 
-- The `solve()` function which takes care of the optimization process.
+- The ``solve()`` function which takes care of the optimization process.
 
 - The `Residual Adaptative Refinement` related functions which implement RAR learning.
 
