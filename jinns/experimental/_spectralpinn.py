@@ -69,7 +69,7 @@ class spectralPINN(PINN):
             model = eqx.combine(params["nn_params"], self.static)
         except (KeyError, TypeError) as e:  # give more flexibility
             model = eqx.combine(params, self.static)
-        #model = eqx.tree_at(lambda m:
+        # model = eqx.tree_at(lambda m:
         #        m.layers_pinn[0].bias,
         #        model,
         #        model.layers_pinn[0].bias % (2 *
