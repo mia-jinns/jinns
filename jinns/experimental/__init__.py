@@ -6,3 +6,5 @@ from ._diffrax_solver import (
     neumann_boundary_condition,
     plot_diffrax_solution,
 )
+from ._sinuspinn import create_sinusPINN
+from ._spectralpinn import create_spectralPINN
