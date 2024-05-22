@@ -98,6 +98,31 @@ def _reset_or_increment(bend, n_eff, operands):
     )
 
 
+def _check_and_set_rar_parameters(rar_parameters, n, n_start):
+    if rar_parameters is not None and n_start is None:
+        raise ValueError(
+            f"n_start must be provided in the context of RAR sampling scheme, {n_start} was provided"
+        )
+    if rar_parameters is not None:
+        # Default p is None. However, in the RAR sampling scheme we use 0
+        # probability to specify non-used collocation points (i.e. points
+        # above n_start). Thus, p is a vector of probability of shape (n, 1).
+        p = jnp.zeros((n,))
+        p = p.at[:n_start].set(1 / n_start)
+        # set internal counter for the number of gradient steps since the
+        # last new collocation points have been added
+        rar_iter_from_last_sampling = 0
+        # set iternal counter for the number of times collocation points
+        # have been added
+        rar_iter_nb = 0
+    else:
+        p = None
+        rar_iter_from_last_sampling = None
+        rar_iter_nb = None
+
+    return n_start, p, rar_iter_from_last_sampling, rar_iter_nb
+
+
 #####################################################
 # DataGenerator for ODE : only returns time_batches
 #####################################################
@@ -179,29 +204,13 @@ class DataGeneratorODE:
         self.method = method
         self.rar_parameters = rar_parameters
 
-        if rar_parameters is not None and nt_start is None:
-            raise ValueError(
-                "nt_start must be provided in the context of RAR sampling scheme"
-            )
-        if rar_parameters is not None:
-            self.nt_start = nt_start
-            # Default p is None. However, in the RAR sampling scheme we use 0
-            # probability to specify non-used collocation points (i.e. points
-            # above nt_start). Thus, p is a vector of probability of shape (nt, 1).
-            self.p = jnp.zeros((self.nt,))
-            self.p = self.p.at[: self.nt_start].set(1 / nt_start)
-            # set internal counter for the number of gradient steps since the
-            # last new collocation points have been added
-            self.rar_iter_from_last_sampling = 0
-            # set iternal counter for the number of times collocation points
-            # have been added
-            self.rar_iter_nb = 0
-
-        if rar_parameters is None or nt_start is None:
-            self.nt_start = self.nt
-            self.p = None
-            self.rar_iter_from_last_sampling = None
-            self.rar_iter_nb = None
+        # Set-up for RAR (if used)
+        (
+            self.nt_start,
+            self.p_times,
+            self.rar_iter_from_last_sampling,
+            self.rar_iter_nb,
+        ) = _check_and_set_rar_parameters(rar_parameters, n=nt, n_start=nt_start)
 
         if not self.data_exists:
             # Useful when using a lax.scan with pytree
@@ -238,7 +247,7 @@ class DataGeneratorODE:
             self.times,
             self.curr_time_idx,
             self.temporal_batch_size,
-            self.p,
+            self.p_times,
         )
 
     def temporal_batch(self):
@@ -284,7 +293,7 @@ class DataGeneratorODE:
             self.tmin,
             self.tmax,
             self.rar_parameters,
-            self.p,
+            self.p_times,
             self.rar_iter_from_last_sampling,
             self.rar_iter_nb,
         )  # arrays / dynamic values
@@ -309,7 +318,7 @@ class DataGeneratorODE:
             tmin,
             tmax,
             rar_parameters,
-            p,
+            p_times,
             rar_iter_from_last_sampling,
             rar_iter_nb,
         ) = children
@@ -323,7 +332,7 @@ class DataGeneratorODE:
         )
         obj.times = times
         obj.curr_time_idx = curr_time_idx
-        obj.p = p
+        obj.p_times = p_times
         obj.rar_iter_from_last_sampling = rar_iter_from_last_sampling
         obj.rar_iter_nb = rar_iter_nb
         return obj
@@ -442,30 +451,12 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         assert dim == len(max_pts) and isinstance(max_pts, tuple)
         self.n = n
         self.rar_parameters = rar_parameters
-
-        if rar_parameters is not None and n_start is None:
-            raise ValueError(
-                "n_start must be provided in the context of RAR sampling scheme"
-            )
-        if rar_parameters is not None:
-            self.n_start = n_start
-            # Default p is None. However, in the RAR sampling scheme we use 0
-            # probability to specify non-used collocation points (i.e. points
-            # above n_start). Thus, p is a vector of probability of shape (n, 1).
-            self.p = jnp.zeros((self.n,))
-            self.p = self.p.at[: self.n_start].set(1 / n_start)
-            # set internal counter for the number of gradient steps since the
-            # last new collocation points have been added
-            self.rar_iter_from_last_sampling = 0
-            # set iternal counter for the number of times collocation points
-            # have been added
-            self.rar_iter_nb = 0
-
-        if rar_parameters is None or n_start is None:
-            self.n_start = self.n
-            self.p = None
-            self.rar_iter_from_last_sampling = None
-            self.rar_iter_nb = None
+        (
+            self.n_start,
+            self.p_omega,
+            self.rar_iter_from_last_sampling,
+            self.rar_iter_nb,
+        ) = _check_and_set_rar_parameters(rar_parameters, n=n, n_start=n_start)
 
         self.p_border = None  # no RAR sampling for border for now
 
@@ -643,7 +634,7 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             self.omega,
             self.curr_omega_idx,
             self.omega_batch_size,
-            self.p,
+            self.p_omega,
         )
 
     def inside_batch(self):
@@ -746,7 +737,7 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             self.min_pts,
             self.max_pts,
             self.rar_parameters,
-            self.p,
+            self.p_omega,
             self.rar_iter_from_last_sampling,
             self.rar_iter_nb,
         )
@@ -781,7 +772,7 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             min_pts,
             max_pts,
             rar_parameters,
-            p,
+            p_omega,
             rar_iter_from_last_sampling,
             rar_iter_nb,
         ) = children
@@ -799,7 +790,7 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         obj.omega_border = omega_border
         obj.curr_omega_idx = curr_omega_idx
         obj.curr_omega_border_idx = curr_omega_border_idx
-        obj.p = p
+        obj.p_omega = p_omega
         obj.rar_iter_from_last_sampling = rar_iter_from_last_sampling
         obj.rar_iter_nb = rar_iter_nb
         return obj
@@ -834,6 +825,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         method="grid",
         rar_parameters=None,
         n_start=None,
+        nt_start=None,
         data_exists=False,
     ):
         r"""
@@ -893,21 +885,17 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             collocation points. `selected_sample_size`: the number of selected
             points from the sample to be added to the current collocation
             points.
-            __Note:__ that if RAR sampling is chosen it will currently affect both
-            self.times and self.omega with the same hyperparameters
-            (rar_parameters and n_start)
-            "DeepXDE: A deep learning library for solving differential
-            equations", L. Lu, SIAM Review, 2021
         n_start
             Defaults to None. The effective size of n used at start time.
             This value must be
             provided when rar_parameters is not None. Otherwise we set internally
             n_start = n and this is hidden from the user.
             In RAR, n_start
-            then corresponds to the initial number of points we train the PINN.
-            __Note:__ that if RAR sampling is chosen it will currently affect both
-            self.times and self.omega with the same hyperparameters
-            (rar_parameters and n_start)
+            then corresponds to the initial number of omega points we train the PINN.
+        nt_start
+            Defaults to None. A RAR hyper-parameter. Same as ``n_start`` but
+            for times collocation point. See also ``DataGeneratorODE``
+            documentation.
         data_exists
             Must be left to `False` when created by the user. Avoids the
             regeneration of :math:`\Omega`, :math:`\partial\Omega` and
@@ -931,6 +919,15 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         self.tmin = tmin
         self.tmax = tmax
         self.nt = nt
+
+        # Set-up for timewise RAR (some quantity are already set-up by super())
+        (
+            self.nt_start,
+            self.p_times,
+            _,
+            _,
+        ) = _check_and_set_rar_parameters(rar_parameters, n=nt, n_start=nt_start)
+
         if not self.data_exists:
             # Useful when using a lax.scan with pytree
             # Optionally can tell JAX not to re-generate data
@@ -950,7 +947,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.times,
             self.curr_time_idx,
             self.temporal_batch_size,
-            self.p,
+            self.p_times,
         )
 
     def generate_data_nonstatio(self):
@@ -1023,7 +1020,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.tmin,
             self.tmax,
             self.rar_parameters,
-            self.p,
+            self.p_times,
+            self.p_omega,
             self.rar_iter_from_last_sampling,
             self.rar_iter_nb,
         )
@@ -1039,6 +1037,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
                 "method",
                 "dim",
                 "n_start",
+                "nt_start",
             ]
         }
         return (children, aux_data)
@@ -1064,7 +1063,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             tmin,
             tmax,
             rar_parameters,
-            p,
+            p_times,
+            p_omega,
             rar_iter_from_last_sampling,
             rar_iter_nb,
         ) = children
@@ -1084,7 +1084,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         obj.curr_omega_idx = curr_omega_idx
         obj.curr_omega_border_idx = curr_omega_border_idx
         obj.curr_time_idx = curr_time_idx
-        obj.p = p
+        obj.p_times = p_times
+        obj.p_omega = p_omega
         obj.rar_iter_from_last_sampling = rar_iter_from_last_sampling
         obj.rar_iter_nb = rar_iter_nb
         return obj
