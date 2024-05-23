@@ -177,8 +177,8 @@ class DataGeneratorODE:
             which we start the RAR sampling scheme (we first have a burn in
             period). `update_rate`: the number of gradient steps taken between
             each appending of collocation points in the RAR algo.
-            `sample_size`: the size of the sample from which we will select new
-            collocation points. `selected_sample_size`: the number of selected
+            `sample_size_times`: the size of the sample from which we will select new
+            collocation points. `selected_sample_size_times`: the number of selected
             points from the sample to be added to the current collocation
             points
             "DeepXDE: A deep learning library for solving differential
@@ -262,7 +262,7 @@ class DataGeneratorODE:
         if self.rar_parameters is not None:
             nt_eff = (
                 self.nt_start
-                + self.rar_iter_nb * self.rar_parameters["selected_sample_size"]
+                + self.rar_iter_nb * self.rar_parameters["selected_sample_size_omega"]
             )
         else:
             nt_eff = self.nt
@@ -423,8 +423,8 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             which we start the RAR sampling scheme (we first have a burn in
             period). `update_rate`: the number of gradient steps taken between
             each appending of collocation points in the RAR algo.
-            `sample_size`: the size of the sample from which we will select new
-            collocation points. `selected_sample_size`: the number of selected
+            `sample_size_omega`: the size of the sample from which we will select new
+            collocation points. `selected_sample_size_omega`: the number of selected
             points from the sample to be added to the current collocation
             points
             "DeepXDE: A deep learning library for solving differential
@@ -647,7 +647,7 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         if self.rar_parameters is not None:
             n_eff = (
                 self.n_start
-                + self.rar_iter_nb * self.rar_parameters["selected_sample_size"]
+                + self.rar_iter_nb * self.rar_parameters["selected_sample_size_omega"]
             )
         else:
             n_eff = self.n
@@ -881,8 +881,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             which we start the RAR sampling scheme (we first have a burn in
             period). `update_rate`: the number of gradient steps taken between
             each appending of collocation points in the RAR algo.
-            `sample_size`: the size of the sample from which we will select new
-            collocation points. `selected_sample_size`: the number of selected
+            `sample_size_omega`: the size of the sample from which we will select new
+            collocation points. `selected_sample_size_omega`: the number of selected
             points from the sample to be added to the current collocation
             points.
         n_start
@@ -977,7 +977,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         if self.rar_parameters is not None:
             nt_eff = (
                 self.n_start
-                + self.rar_iter_nb * self.rar_parameters["selected_sample_size"]
+                + self.rar_iter_nb * self.rar_parameters["selected_sample_size_times"]
             )
         else:
             nt_eff = self.nt
