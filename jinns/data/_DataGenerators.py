@@ -101,7 +101,7 @@ def _reset_or_increment(bend, n_eff, operands):
 def _check_and_set_rar_parameters(rar_parameters, n, n_start):
     if rar_parameters is not None and n_start is None:
         raise ValueError(
-            f"n_start must be provided in the context of RAR sampling scheme, {n_start} was provided"
+            f"n_start or/and nt_start must be provided in the context of RAR sampling scheme, {n_start} was provided"
         )
     if rar_parameters is not None:
         # Default p is None. However, in the RAR sampling scheme we use 0
