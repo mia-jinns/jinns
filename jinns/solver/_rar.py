@@ -255,7 +255,7 @@ def _rar_step_init(sample_size, selected_sample_size):
             new_omega_samples = data.sample_in_omega_domain(sample_size)
 
             if isinstance(loss.u, HYPERPINN) or isinstance(loss.u, SPINN):
-                raise NotImplemented("RAR not implemented for hyperPINN and SPINN")
+                raise NotImplementedError("RAR not implemented for hyperPINN and SPINN")
             else:
                 # do cartesian product on new points
                 tile_omega = jnp.tile(
