@@ -315,21 +315,29 @@ def _rar_step_init(sample_size, selected_sample_size):
                         (sample_size_times, sample_size_omega)
                     )
 
-            # Select the m points with highest average residuals on time and
-            # space (times in rows / omega in columns)
             mse_on_s = dyn_on_s**2
-            mean_times = mse_on_s.mean(axis=1)
-            mean_omega = mse_on_s.mean(axis=0)
-            times_idx = jax.lax.dynamic_slice(
-                jnp.argsort(mean_times),
-                (mse_on_s.shape[0] - selected_sample_size_times,),
-                (selected_sample_size_times,),
-            )
-            omega_idx = jax.lax.dynamic_slice(
-                jnp.argsort(mean_omega),
-                (mse_on_s.shape[1] - selected_sample_size_omega,),
-                (selected_sample_size_omega,),
-            )
+            # -- Select the m points with highest average residuals on time and
+            # -- space (times in rows / omega in columns)
+            # mean_times = mse_on_s.mean(axis=1)
+            # mean_omega = mse_on_s.mean(axis=0)
+            # times_idx = jax.lax.dynamic_slice(
+            #     jnp.argsort(mean_times),
+            #     (mse_on_s.shape[0] - selected_sample_size_times,),
+            #     (selected_sample_size_times,),
+            # )
+            # omega_idx = jax.lax.dynamic_slice(
+            #     jnp.argsort(mean_omega),
+            #     (mse_on_s.shape[1] - selected_sample_size_omega,),
+            #     (selected_sample_size_omega,),
+            # )
+
+            # -- Select the m worst points (t, x) with highest residuals
+            n_select = max(selected_sample_size_times, selected_sample_size_omega)
+            _, idx = jax.lax.top_k(mse_on_s.flatten(), k=n_select)
+            arr_idx = jnp.unravel_index(idx, mse_on_s.shape)
+            times_idx = arr_idx[0][:selected_sample_size_times]
+            omega_idx = arr_idx[1][:selected_sample_size_omega]
+
             higher_residual_points_times = new_times_samples[times_idx]
             higher_residual_points_omega = new_omega_samples[omega_idx]
 
