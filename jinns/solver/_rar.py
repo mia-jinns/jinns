@@ -327,7 +327,7 @@ def _rar_step_init(sample_size, selected_sample_size):
             )
             omega_idx = jax.lax.dynamic_slice(
                 jnp.argsort(mean_omega),
-                (mse_on_s.shape[0] - selected_sample_size_omega,),
+                (mse_on_s.shape[1] - selected_sample_size_omega,),
                 (selected_sample_size_omega,),
             )
             higher_residual_points_times = new_times_samples[times_idx]
