@@ -27,7 +27,7 @@ def train_OU_init():
     u = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 2)
     rar_parameters = {
         "start_iter": 1000,  # the gradient step at which RAR algo starts (enables a burn in period)
-        "update_rate": 500,  # nb of gradient steps between two RAR procedures
+        "update_every": 500,  # nb of gradient steps between two RAR procedures
         "sample_size": 50,  # the size of the sample of collocation points from which the new collocation points will be taken
         "selected_sample_size": 5,  # the number of selected collocation points from the sample, to join the dataset.
     }

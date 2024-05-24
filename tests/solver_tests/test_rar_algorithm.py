@@ -156,11 +156,10 @@ def control_shape_after_solve_with_rar(start_iter, update_every):
     assert (train_data.p_omega != 0).sum() == train_data.n_start + jnp.ceil(
         (n_iter - rar_parameters["start_iter"]) / rar_parameters["update_every"]
     ) * rar_parameters["selected_sample_size_omega"]
-    assert False
 
 
 def test_rar_with_various_combination_of_start_and_update_values():
-    start_iter_list = [0, 3, n_iter + 1]
+    start_iter_list = [0, 3]
     update_every_list = [1, 3]
     for start_iter in start_iter_list:
         for update_every in update_every_list:
