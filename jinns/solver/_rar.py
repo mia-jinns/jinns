@@ -73,33 +73,34 @@ def init_rar(data):
     # risks to be a bit obscure but it should be ok.
     if data.rar_parameters is None:
         _rar_step_true, _rar_step_false = None, None
-    elif isinstance(data, DataGeneratorODE):
-        # In this case we only need rar parameters related to `times`
-        _rar_step_true, _rar_step_false = _rar_step_init(
-            data.rar_parameters["sample_size_times"],
-            data.rar_parameters["selected_sample_size_times"],
-        )
-    elif isinstance(data, CubicMeshPDENonStatio):
-        # In this case we only need rar parameters related to both `times` and
-        # `omega`
-        _rar_step_true, _rar_step_false = _rar_step_init(
-            (
+    else:
+        if isinstance(data, DataGeneratorODE):
+            # In this case we only need rar parameters related to `times`
+            _rar_step_true, _rar_step_false = _rar_step_init(
                 data.rar_parameters["sample_size_times"],
-                data.rar_parameters["sample_size_omega"],
-            ),
-            (
                 data.rar_parameters["selected_sample_size_times"],
+            )
+        elif isinstance(data, CubicMeshPDENonStatio):
+            # In this case we only need rar parameters related to both `times`
+            # and`omega`
+            _rar_step_true, _rar_step_false = _rar_step_init(
+                (
+                    data.rar_parameters["sample_size_times"],
+                    data.rar_parameters["sample_size_omega"],
+                ),
+                (
+                    data.rar_parameters["selected_sample_size_times"],
+                    data.rar_parameters["selected_sample_size_omega"],
+                ),
+            )
+        elif isinstance(data, CubicMeshPDEStatio):
+            # In this case we only need rar parameters related to `omega`
+            _rar_step_true, _rar_step_false = _rar_step_init(
+                data.rar_parameters["sample_size_omega"],
                 data.rar_parameters["selected_sample_size_omega"],
-            ),
-        )
-    elif isinstance(data, CubicMeshPDEStatio):
-        # In this case we only need rar parameters related to `omega`
-        _rar_step_true, _rar_step_false = _rar_step_init(
-            data.rar_parameters["sample_size_omega"],
-            data.rar_parameters["selected_sample_size_omega"],
-        )
+            )
 
-    data.rar_parameters["iter_from_last_sampling"] = 0
+        data.rar_parameters["iter_from_last_sampling"] = 0
 
     return data, _rar_step_true, _rar_step_false
 
