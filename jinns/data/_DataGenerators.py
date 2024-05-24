@@ -111,7 +111,9 @@ def _check_and_set_rar_parameters(rar_parameters, n, n_start):
         p = p.at[:n_start].set(1 / n_start)
         # set internal counter for the number of gradient steps since the
         # last new collocation points have been added
-        rar_iter_from_last_sampling = 0
+        # It is not 0 to ensure the first iteration of RAR happens just
+        # after start_iter. See the _proceed_to_rar() function in _rar.py
+        rar_iter_from_last_sampling = rar_parameters["update_every"] - 1
         # set iternal counter for the number of times collocation points
         # have been added
         rar_iter_nb = 0
@@ -175,7 +177,7 @@ class DataGeneratorODE:
             Default to None: do not use Residual Adaptative Resampling.
             Otherwise a dictionary with keys. `start_iter`: the iteration at
             which we start the RAR sampling scheme (we first have a burn in
-            period). `update_rate`: the number of gradient steps taken between
+            period). `update_every`: the number of gradient steps taken between
             each appending of collocation points in the RAR algo.
             `sample_size_times`: the size of the sample from which we will select new
             collocation points. `selected_sample_size_times`: the number of selected
@@ -421,7 +423,7 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             Default to None: do not use Residual Adaptative Resampling.
             Otherwise a dictionary with keys. `start_iter`: the iteration at
             which we start the RAR sampling scheme (we first have a burn in
-            period). `update_rate`: the number of gradient steps taken between
+            period). `update_every`: the number of gradient steps taken between
             each appending of collocation points in the RAR algo.
             `sample_size_omega`: the size of the sample from which we will select new
             collocation points. `selected_sample_size_omega`: the number of selected
@@ -879,7 +881,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             Default to None: do not use Residual Adaptative Resampling.
             Otherwise a dictionary with keys. `start_iter`: the iteration at
             which we start the RAR sampling scheme (we first have a burn in
-            period). `update_rate`: the number of gradient steps taken between
+            period). `update_every`: the number of gradient steps taken between
             each appending of collocation points in the RAR algo.
             `sample_size_omega`: the size of the sample from which we will select new
             collocation points. `selected_sample_size_omega`: the number of selected

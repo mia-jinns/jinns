@@ -19,16 +19,17 @@ def _proceed_to_rar(data, i):
     """Utilility function with various check to ensure we can proceed with the rar_step.
     Return True if yes, and False otherwise"""
 
-    # Overall checks (universale)
+    # Overall checks (universal for any data generator)
     check_list = [
-        # check if enough it since last points added
-        data.rar_parameters["update_rate"] == data.rar_iter_from_last_sampling,
-        # check if burn in period has ended
-        data.rar_parameters["start_iter"] < i,
+        # check if burn-in period has ended
+        data.rar_parameters["start_iter"] <= i,
+        # check if enough iterations since last points added
+        (data.rar_parameters["update_every"] - 1) == data.rar_iter_from_last_sampling,
     ]
 
     # Memory allocation checks (depends on the type of DataGenerator)
-    # check if we still have room to append new collocation points in the # allocated jnp array (can concern `data.p_times` or `p_omega`)
+    # check if we still have room to append new collocation points in the
+    # allocated jnp.array (can concern `data.p_times` or `p_omega`)
     if isinstance(data, DataGeneratorODE) or isinstance(data, CubicMeshPDENonStatio):
         check_list.append(
             data.rar_parameters["selected_sample_size_times"]
@@ -164,8 +165,6 @@ def _rar_step_init(sample_size, selected_sample_size):
             )
             higher_residual_points = new_omega_samples[higher_residual_idx]
 
-            data.rar_iter_from_last_sampling = 0
-
             ## add the new points in times
             # start indices of update can be dynamic but the the shape (length)
             # of the slice
@@ -240,8 +239,6 @@ def _rar_step_init(sample_size, selected_sample_size):
                 (selected_sample_size,),
             )
             higher_residual_points = new_omega_samples[higher_residual_idx]
-
-            data.rar_iter_from_last_sampling = 0
 
             ## add the new points in omega
             # start indices of update can be dynamic but not the shape (length)
@@ -336,8 +333,6 @@ def _rar_step_init(sample_size, selected_sample_size):
             higher_residual_points_times = new_times_samples[times_idx]
             higher_residual_points_omega = new_omega_samples[omega_idx]
 
-            data.rar_iter_from_last_sampling = 0
-
             ## add the new points in times
             # start indices of update can be dynamic but not the shape (length)
             # of the slice
@@ -407,6 +402,9 @@ def _rar_step_init(sample_size, selected_sample_size):
                 data.p_omega,
             )
 
+        # update RAR parameters for all cases
+        data.rar_iter_from_last_sampling = 0
+
         # NOTE must return data to be correctly updated because we cannot
         # have side effects in this function that will be jitted
         return data
@@ -415,13 +413,13 @@ def _rar_step_init(sample_size, selected_sample_size):
         _, _, data, i = operands
 
         # Add 1 only if we are after the burn in period
-        data.rar_iter_from_last_sampling = jax.lax.cond(
-            i < data.rar_parameters["start_iter"],
-            lambda operand: 0,
-            lambda operand: operand + 1,
-            (data.rar_iter_from_last_sampling),
+        increment = jax.lax.cond(
+            i <= data.rar_parameters["start_iter"],
+            lambda: 0,
+            lambda: 1,
         )
 
+        data.rar_iter_from_last_sampling += increment
         return data
 
     return rar_step_true, rar_step_false
