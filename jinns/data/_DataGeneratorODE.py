@@ -53,10 +53,6 @@ class DataGeneratorODE(AbstractDataGenerator):
         nt_start = nt and this is hidden from the user.
         In RAR, nt_start
         then corresponds to the initial number of points we train the PINN.
-    data_exists
-        Must be left to `False` when created by the user. Avoids the
-        regeneration of the `nt` time points at each pytree flattening and
-        unflattening.
     """
 
     key: Key
@@ -67,7 +63,6 @@ class DataGeneratorODE(AbstractDataGenerator):
     method: str = eqx.field(static=True, default_factory=lambda: "uniform")
     rar_parameters: PyTree = None
     nt_start: int = None
-    data_exists: Bool = False
 
     # all the init=False fields are set in __post_init__, even after a _replace
     # or eqx.tree_at __post_init__ is called
@@ -82,6 +77,7 @@ class DataGeneratorODE(AbstractDataGenerator):
             raise ValueError(
                 "nt_start must be provided in the context of RAR sampling scheme"
             )
+
         if self.rar_parameters is not None:
             # Default p is None. However, in the RAR sampling scheme we use 0
             # probability to specify non-used collocation points (i.e. points
@@ -101,37 +97,38 @@ class DataGeneratorODE(AbstractDataGenerator):
             self.rar_iter_from_last_sampling = None
             self.rar_iter_nb = None
 
-        if not self.data_exists:
-            # Useful when using a lax.scan with pytree
-            # Optionally can tell JAX not to re-generate data
-            self.curr_time_idx = 0
-            key, subkey = jax.random.split(self.key)
-            self.key = key
-            self.times = self.generate_time_data(subkey)
+        # Useful when using a lax.scan with pytree
+        # Optionally can tell JAX not to re-generate data
+        self.curr_time_idx = (
+            jnp.inf
+        )  # to be sure there is a shuffling at first get_batch()
+        key, subkey = jax.random.split(self.key)
+        self.key = key
+        self.times = self.generate_time_data(subkey)
 
-            # Note that, here, in __init__ (and __post_init__), this is the
-            # only place where self assignment are authorized so we do the
-            # above way for the key. But note that a method returning a copy
-            # for an out-of-place key update is not possible because we would
-            # replace the self inside its __init__ (by the new); that is, the
-            # following lines break on the error "times attributes not
-            # initialized" :D
-            # new, key = self._get_key()
-            # new.times = self.generate_time_data(subkey)
+        # Note that, here, in __init__ (and __post_init__), this is the
+        # only place where self assignment are authorized so we do the
+        # above way for the key. But note that a method returning a copy
+        # for an out-of-place key update is not possible because we would
+        # replace the self inside its __init__ (by the new); that is, the
+        # following lines break on the error "times attributes not
+        # initialized" :D
+        # new, key = self._get_key()
+        # new.times = self.generate_time_data(subkey)
 
     def _get_key(self) -> tuple["DataGeneratorODE", Key]:
         key, subkey = jax.random.split(self.key)
         new = eqx.tree_at(lambda m: m.key, self, key)
         return new, subkey
 
-    def _get_time_operands(self) -> tuple[Key, Array, Int, Int, Array]:
-        return (
-            self.key,
-            self.times,
-            self.curr_time_idx,
-            self.temporal_batch_size,
-            self.p,
-        )
+    # def _get_time_operands(self) -> tuple[Key, Array, Int, Int, Array]:
+    #    return (
+    #        self.key,
+    #        self.times,
+    #        self.curr_time_idx,
+    #        self.temporal_batch_size,
+    #        self.p,
+    #    )
 
     def sample_in_time_domain(self, key) -> Array:
         return jax.random.uniform(key, (self.nt,), minval=self.tmin, maxval=self.tmax)
@@ -189,3 +186,12 @@ class DataGeneratorODE(AbstractDataGenerator):
 
 if __name__ == "__main__":
     timeDG = DataGeneratorODE(jax.random.PRNGKey(0), 1024, 0, 1, 32)
+    print(timeDG.rar_iter_nb)
+    timeDG = eqx.tree_at(
+        lambda t: t.rar_iter_nb, timeDG, 1000, is_leaf=lambda x: x is None
+    )
+    print(timeDG.rar_iter_nb)
+    vals, treedef = jax.tree.flatten(timeDG)
+    # timeDG.get_batch()
+    timeDG = jax.tree.unflatten(treedef, vals)
+    print(timeDG.rar_iter_nb)  # we see that we do not go again in the __post_init__
