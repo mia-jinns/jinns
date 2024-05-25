@@ -97,11 +97,11 @@ class DataGeneratorODE(AbstractDataGenerator):
             self.rar_iter_from_last_sampling = None
             self.rar_iter_nb = None
 
-        # Useful when using a lax.scan with pytree
-        # Optionally can tell JAX not to re-generate data
-        self.curr_time_idx = (
-            jnp.inf
-        )  # to be sure there is a shuffling at first get_batch()
+        self.curr_time_idx = jnp.iinfo(jnp.int32).max  # to be sure there is a
+        # shuffling at first get_batch() we do not call
+        # _reset_batch_idx_and_permute in __init__ or __post_init__ because it
+        # would return a copy of self and we have not investigate what would
+        # happen
         key, subkey = jax.random.split(self.key)
         self.key = key
         self.times = self.generate_time_data(subkey)
@@ -116,19 +116,48 @@ class DataGeneratorODE(AbstractDataGenerator):
         # new, key = self._get_key()
         # new.times = self.generate_time_data(subkey)
 
+    # Next we set some @properties to interact with the abstract base class
+    # attribute names
+    # Note that the setters are only (for validity of prperty attribute) and
+    # for initialization (the only place where a
+    # self assignement is authorized in eqx.Module). Moreover the attributes
+    # the properties point to are set in the __post_init__
+    # Otherwise all the following modifications of the attributes will be done
+    # out-of-place by eqx.tree_at (no use of setters). Trying to use the
+    # setters later on will anyway raise an error since we cannot modify
+    # attributes
+    @property
+    def curr_time_idx(self):
+        return self.curr_idx
+
+    @curr_time_idx.setter
+    def curr_time_idx(self, val):
+        self.curr_idx = val
+
+    @property
+    def times(self):
+        return self.domain
+
+    @times.setter
+    def times(self, val):
+        self.domain = val
+
+    @property
+    def temporal_batch_size(self):
+        return self.batch_size
+
+    @temporal_batch_size.setter
+    def temporal_batch_size(self, val):
+        self.batch_size = val
+        # Note
+        # the following with walrus assignement notation could be possible?
+        # but this would be a little bit more obscure
+        # return eqx.tree_at(lambda m: m.batch_size, self, val)
+
     def _get_key(self) -> tuple["DataGeneratorODE", Key]:
         key, subkey = jax.random.split(self.key)
         new = eqx.tree_at(lambda m: m.key, self, key)
         return new, subkey
-
-    # def _get_time_operands(self) -> tuple[Key, Array, Int, Int, Array]:
-    #    return (
-    #        self.key,
-    #        self.times,
-    #        self.curr_time_idx,
-    #        self.temporal_batch_size,
-    #        self.p,
-    #    )
 
     def sample_in_time_domain(self, key) -> Array:
         return jax.random.uniform(key, (self.nt,), minval=self.tmin, maxval=self.tmax)
@@ -192,6 +221,6 @@ if __name__ == "__main__":
     )
     print(timeDG.rar_iter_nb)
     vals, treedef = jax.tree.flatten(timeDG)
-    # timeDG.get_batch()
     timeDG = jax.tree.unflatten(treedef, vals)
     print(timeDG.rar_iter_nb)  # we see that we do not go again in the __post_init__
+    timeDG.get_batch()

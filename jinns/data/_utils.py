@@ -32,6 +32,13 @@ class PDEStatioBatch(eqx.Module):
 
 
 class AbstractDataGenerator(eqx.Module):
+    # no eqx.AbstractVar because we do not want to deal with those variables in
+    # the child class
+    curr_idx: Int = eqx.field(init=False)
+    batch_size: Int = eqx.field(init=False)
+    p: Int = eqx.field(init=False)
+    domain: Array = eqx.field(init=False)
+
     @abc.abstractmethod
     def get_batch(
         self,
