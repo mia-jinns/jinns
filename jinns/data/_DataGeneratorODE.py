@@ -5,12 +5,15 @@ Define the DataGeneratorODE equinox module
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jaxtyping import Key, Int, Bool, PyTree, Array
+from jaxtyping import Key, Int, PyTree, Array
+from jinns.data._AbstractDataGenerator import (
+    ODEBatch,
+    AbstractDataGenerator,
+    _reset_or_increment,
+)
 
-from jinns.data._utils import ODEBatch, AbstractDataGenerator, _reset_or_increment
 
-
-class DataGeneratorODE(AbstractDataGenerator):
+class DataGeneratorODE_eqx(AbstractDataGenerator):
     """
     A class implementing data generator object for ordinary differential equations.
 
@@ -59,7 +62,8 @@ class DataGeneratorODE(AbstractDataGenerator):
     nt: Int
     tmin: Int
     tmax: Int
-    temporal_batch_size: Int
+    temporal_batch_size: Int = eqx.field(static=True)  # static cause used as a
+    # shape in jax.lax.dynamic_slice
     method: str = eqx.field(static=True, default_factory=lambda: "uniform")
     rar_parameters: PyTree = None
     nt_start: int = None
@@ -97,11 +101,14 @@ class DataGeneratorODE(AbstractDataGenerator):
             self.rar_iter_from_last_sampling = None
             self.rar_iter_nb = None
 
-        self.curr_time_idx = jnp.iinfo(jnp.int32).max  # to be sure there is a
+        self.curr_time_idx = jnp.iinfo(jnp.int32).max - self.temporal_batch_size - 1
+        # to be sure there is a
         # shuffling at first get_batch() we do not call
         # _reset_batch_idx_and_permute in __init__ or __post_init__ because it
         # would return a copy of self and we have not investigate what would
         # happen
+        # NOTE the (- self.temporal_batch_size - 1) because otherwise when computing
+        # `bend` we overflow the max int32 with unwanted behaviour
         key, subkey = jax.random.split(self.key)
         self.key = key
         self.times = self.generate_time_data(subkey)
@@ -126,6 +133,9 @@ class DataGeneratorODE(AbstractDataGenerator):
     # out-of-place by eqx.tree_at (no use of setters). Trying to use the
     # setters later on will anyway raise an error since we cannot modify
     # attributes
+    # BUT eqx.tree_at seems to take care of properties since
+    # eqx.tree_at(lambda m:m.curr_time_idx, train_data, 0) does update both
+    # curr_time_idx and curr_idx
     @property
     def curr_time_idx(self):
         return self.curr_idx
@@ -151,13 +161,9 @@ class DataGeneratorODE(AbstractDataGenerator):
         self.batch_size = val
         # Note
         # the following with walrus assignement notation could be possible?
-        # but this would be a little bit more obscure
+        # but this would be a little bit more obscure. Eg.:
         # return eqx.tree_at(lambda m: m.batch_size, self, val)
-
-    def _get_key(self) -> tuple["DataGeneratorODE", Key]:
-        key, subkey = jax.random.split(self.key)
-        new = eqx.tree_at(lambda m: m.key, self, key)
-        return new, subkey
+        # and assign like new := temporal_batch_size(val)
 
     def sample_in_time_domain(self, key) -> Array:
         return jax.random.uniform(key, (self.nt,), minval=self.tmin, maxval=self.tmax)
