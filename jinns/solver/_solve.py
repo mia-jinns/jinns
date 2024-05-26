@@ -19,6 +19,7 @@ from jinns.data._DataGenerators import (
     append_param_batch,
     append_obs_batch,
 )
+from jinns.data._DataGeneratorODE import DataGeneratorODE_eqx
 from jinns.utils._containers import *
 
 
@@ -572,7 +573,11 @@ def get_get_batch(obs_batch_sharding):
 
         Note: return all that's modified or unwanted dirty undefined behaviour
         """
-        batch = data.get_batch()
+        if isinstance(data, DataGeneratorODE_eqx):
+            # to comply with new datagenerators
+            data, batch = data.get_batch()
+        else:
+            batch = data.get_batch()
         if param_data is not None:
             batch = append_param_batch(batch, param_data.get_batch())
         if obs_data is not None:
@@ -591,7 +596,11 @@ def get_get_batch(obs_batch_sharding):
 
         Note: return all that's modified or unwanted dirty undefined behaviour
         """
-        batch = data.get_batch()
+        if isinstance(data, DataGeneratorODE_eqx):
+            # to comply with new datagenerators
+            data, batch = data.get_batch()
+        else:
+            batch = data.get_batch()
         if param_data is not None:
             batch = append_param_batch(batch, param_data.get_batch())
         if obs_data is not None:

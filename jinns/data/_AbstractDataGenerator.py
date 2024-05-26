@@ -3,20 +3,21 @@ Util functions for DataGenerators
 """
 
 import abc
+from typing import Union, NamedTuple
 import equinox as eqx
 import jax
-import jax.numpy as jnp
-from typing import Union
-from jaxtyping import Key, Int, Bool, PyTree, Array
+from jaxtyping import Int, Array
 
 
-class ODEBatch(eqx.Module):
+# TODO change to eqx.Module, but this require an update of all the _replace()
+# calls
+class ODEBatch(NamedTuple):  # eqx.Module):
     temporal_batch: Array
     param_batch_dict: dict = None
     obs_batch_dict: dict = None
 
 
-class PDENonStatioBatch(eqx.Module):
+class PDENonStatioBatch(NamedTuple):  # eqx.Module):
     inside_batch: Array
     border_batch: Array
     temporal_batch: Array
@@ -24,7 +25,7 @@ class PDENonStatioBatch(eqx.Module):
     obs_batch_dict: dict = None
 
 
-class PDEStatioBatch(eqx.Module):
+class PDEStatioBatch(NamedTuple):  # eqx.Module):
     inside_batch: Array
     border_batch: Array
     param_batch_dict: dict = None
@@ -35,7 +36,7 @@ class AbstractDataGenerator(eqx.Module):
     # no eqx.AbstractVar because we do not want to deal with those variables in
     # the child class
     curr_idx: Int = eqx.field(init=False)
-    batch_size: Int = eqx.field(init=False)
+    batch_size: Int = eqx.field(init=False, static=True)
     p: Int = eqx.field(init=False)
     domain: Array = eqx.field(init=False)
 

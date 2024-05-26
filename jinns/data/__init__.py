@@ -8,6 +8,8 @@ from ._DataGenerators import (
     append_param_batch,
     append_obs_batch,
 )
+from ._AbstractDataGenerator import AbstractDataGenerator
+from ._DataGeneratorODE import DataGeneratorODE_eqx
 from ._display import (
     plot2d,
     plot1d_slice,
