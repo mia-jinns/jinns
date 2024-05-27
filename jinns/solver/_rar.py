@@ -82,7 +82,7 @@ def init_rar(data):
                 data.rar_parameters["selected_sample_size_times"],
             )
         elif isinstance(data, CubicMeshPDENonStatio):
-            # In this case we only need rar parameters related to both `times`
+            # In this case we need rar parameters related to both `times`
             # and`omega`
             _rar_step_true, _rar_step_false = _rar_step_init(
                 (
