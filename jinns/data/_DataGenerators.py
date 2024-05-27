@@ -294,14 +294,19 @@ class DataGeneratorODE:
             self.curr_time_idx,
             self.tmin,
             self.tmax,
-            self.rar_parameters,
             self.p_times,
             self.rar_iter_from_last_sampling,
             self.rar_iter_nb,
         )  # arrays / dynamic values
         aux_data = {
             k: vars(self)[k]
-            for k in ["temporal_batch_size", "method", "nt", "nt_start"]
+            for k in [
+                "temporal_batch_size",
+                "method",
+                "nt",
+                "rar_parameters",
+                "nt_start",
+            ]
         }  # static values
         return (children, aux_data)
 
@@ -319,7 +324,6 @@ class DataGeneratorODE:
             curr_time_idx,
             tmin,
             tmax,
-            rar_parameters,
             p_times,
             rar_iter_from_last_sampling,
             rar_iter_nb,
@@ -738,7 +742,6 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             self.curr_omega_border_idx,
             self.min_pts,
             self.max_pts,
-            self.rar_parameters,
             self.p_omega,
             self.rar_iter_from_last_sampling,
             self.rar_iter_nb,
@@ -752,6 +755,7 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
                 "omega_border_batch_size",
                 "method",
                 "dim",
+                "rar_parameters",
                 "n_start",
             ]
         }
@@ -1021,7 +1025,6 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.max_pts,
             self.tmin,
             self.tmax,
-            self.rar_parameters,
             self.p_times,
             self.p_omega,
             self.rar_iter_from_last_sampling,
@@ -1038,6 +1041,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
                 "temporal_batch_size",
                 "method",
                 "dim",
+                "rar_parameters",
                 "n_start",
                 "nt_start",
             ]
@@ -1064,7 +1068,6 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             max_pts,
             tmin,
             tmax,
-            rar_parameters,
             p_times,
             p_omega,
             rar_iter_from_last_sampling,
@@ -1077,7 +1080,6 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             max_pts=max_pts,
             tmin=tmin,
             tmax=tmax,
-            rar_parameters=rar_parameters,
             **aux_data,
         )
         obj.omega = omega
@@ -1090,6 +1092,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         obj.p_omega = p_omega
         obj.rar_iter_from_last_sampling = rar_iter_from_last_sampling
         obj.rar_iter_nb = rar_iter_nb
+
         return obj
 
 
