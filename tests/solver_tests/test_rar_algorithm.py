@@ -81,14 +81,15 @@ OU_fpe_non_statio_2D_loss = jinns.loss.OU_FPENonStatioLoss2D(Tmax=Tmax)
 
 loss_weights = {"dyn_loss": 1, "initial_condition": 1 * Tmax, "norm_loss": 0.1 * Tmax}
 
-loss = jinns.loss.LossPDENonStatio(
-    u=u,
-    loss_weights=loss_weights,
-    dynamic_loss=OU_fpe_non_statio_2D_loss,
-    initial_condition_fun=u0,
-    norm_borders=((int_xmin, int_xmax), (int_ymin, int_ymax)),
-    norm_samples=mc_samples,
-)
+with pytest.warns(UserWarning):
+    loss = jinns.loss.LossPDENonStatio(
+        u=u,
+        loss_weights=loss_weights,
+        dynamic_loss=OU_fpe_non_statio_2D_loss,
+        initial_condition_fun=u0,
+        norm_borders=((int_xmin, int_xmax), (int_ymin, int_ymax)),
+        norm_samples=mc_samples,
+    )
 
 
 # Optimizer
@@ -165,3 +166,36 @@ def test_rar_with_various_combination_of_start_and_update_values():
         for update_every in update_every_list:
             with pytest.warns(UserWarning):
                 control_shape_after_solve_with_rar(start_iter, update_every)
+
+
+def test_rar_error_with_SPINN():
+
+    train_data, rar_parameters = get_datagenerator_rar(0, 1)
+    # ensure same batch size in time & space for SPINN
+    train_data.temporal_batch_size = train_data.omega_batch_size
+    d = 3
+    r = 256
+    eqx_list = [
+        [eqx.nn.Linear, 1, 128],
+        [jax.nn.tanh],
+        [eqx.nn.Linear, 128, 128],
+        [jax.nn.tanh],
+        [eqx.nn.Linear, 128, 128],
+        [jax.nn.tanh],
+        [eqx.nn.Linear, 128, r],
+    ]
+    key = jax.random.PRNGKey(12345)
+    key, subkey = random.split(key)
+    u = jinns.utils.create_SPINN(subkey, d, r, eqx_list, "nonstatio_PDE")
+    init_nn_params = u.init_params()
+
+    # update loss and params
+    init_params["nn_params"] = init_nn_params
+    loss.u = u
+    train_data.temporal_batch_size = train_data.omega_batch_size
+    # expect error
+    with pytest.raises(NotImplementedError) as e_info, pytest.warns(UserWarning):
+        tx = optax.adamw(learning_rate=1e-3)
+        jinns.solve(
+            init_params=init_params, data=train_data, optimizer=tx, loss=loss, n_iter=2
+        )
