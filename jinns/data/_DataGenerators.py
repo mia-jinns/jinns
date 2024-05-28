@@ -333,7 +333,6 @@ class DataGeneratorODE:
             data_exists=True,
             tmin=tmin,
             tmax=tmax,
-            rar_parameters=rar_parameters,
             **aux_data,
         )
         obj.times = times
@@ -777,7 +776,6 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             curr_omega_border_idx,
             min_pts,
             max_pts,
-            rar_parameters,
             p_omega,
             rar_iter_from_last_sampling,
             rar_iter_nb,
@@ -789,7 +787,6 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             data_exists=True,
             min_pts=min_pts,
             max_pts=max_pts,
-            rar_parameters=rar_parameters,
             **aux_data,
         )
         obj.omega = omega
