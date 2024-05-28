@@ -117,12 +117,6 @@ def _rar_step_init(sample_size, selected_sample_size):
     """
 
     def rar_step_true(operands):
-        """
-        Note: in all generality, we would need a stop gradient operator around
-        these dynamic_loss evaluations that follow which produce weights for
-        sampling. However, they appear through a argsort and sampling
-        operations which definitly kills gradient flows
-        """
         loss, params, data, i = operands
 
         if isinstance(data, DataGeneratorODE):
