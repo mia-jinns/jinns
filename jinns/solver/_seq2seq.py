@@ -88,7 +88,7 @@ def initialize_seq2seq(loss, data, seq2seq, opt_state):
         data.curr_omega_idx = 0
         data.generate_time_data()
         data._key, data.times, _ = _reset_batch_idx_and_permute(
-            (data._key, data.times, data.curr_omega_idx, None, data.p)
+            (data._key, data.times, data.curr_omega_idx, None, data.p_times)
         )
         opt_state.hyperparams["learning_rate"] = seq2seq["learning_rate"][curr_seq]
 
@@ -145,7 +145,7 @@ def _update_seq2seq_SystemLossODE(operands):
     data.curr_omega_idx = 0
     data.generate_time_data()
     data._key, data.times, _ = _reset_batch_idx_and_permute(
-        (data._key, data.times, data.curr_omega_idx, None, data.p)
+        (data._key, data.times, data.curr_omega_idx, None, data.p_times)
     )
 
     opt_state.hyperparams["learning_rate"] = seq2seq["learning_rate"][curr_seq]

@@ -27,27 +27,28 @@ def train_OU_init():
     u = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 2)
     rar_parameters = {
         "start_iter": 1000,  # the gradient step at which RAR algo starts (enables a burn in period)
-        "update_rate": 500,  # nb of gradient steps between two RAR procedures
-        "sample_size": 500,  # the size of the sample of collocation points from which the new collocation points will be taken
-        "selected_sample_size": 5,  # the number of selected collocation points from the sample, to join the dataset.
+        "update_every": 500,  # nb of gradient steps between two RAR procedures
+        "sample_size_times": 22,  # the number of new candidates time points
+        "selected_sample_size_times": 5,  # the number of selected times collocation points from the sample, to join the dataset.
+        "sample_size_omega": 22,  # the number of new candidates space points
+        "selected_sample_size_omega": 5,
     }
-    n_start = 200  # the initial number of collocation points at beginning
-
+    n_start = 500  # the initial number of spatial collocation points at beginning
+    nt_start = 500  # the initial number of temporal collocation points at beginning
     init_nn_params = u.init_params()
 
-    n = 500
+    n = 1000
     nb = 4  # not used here
-    nt = 500
+    nt = 999  # can be != n
     omega_batch_size = 32
     omega_border_batch_size = None  # not used here
-    temporal_batch_size = 20
+    temporal_batch_size = 32
     xmin = -3
     xmax = 3
     ymin = -3
     ymax = 3
     tmin = 0
     tmax = 1
-    Tmax = 10
     method = "uniform"
 
     key, subkey = random.split(key)
@@ -67,8 +68,10 @@ def train_OU_init():
         method=method,
         rar_parameters=rar_parameters,
         n_start=n_start,
+        nt_start=nt_start,
     )
 
+    Tmax = 5
     sigma = 0.5 * jnp.ones((2))
     alpha = 0.5 * jnp.ones((2))
     mu = jnp.zeros((2))
@@ -84,7 +87,7 @@ def train_OU_init():
     int_xmin, int_xmax = -5, 5
     int_ymin, int_ymax = -5, 5
 
-    n_samples = 32
+    n_samples = int(1e3)
     int_length = (int_xmax - int_xmin) * (int_ymax - int_ymin)
     key, subkey1, subkey2 = random.split(key, 3)
     mc_samples = jnp.concatenate(
@@ -147,12 +150,10 @@ def train_OU_10it(train_OU_init):
 
 def test_initial_loss_OU(train_OU_init):
     init_params, loss, train_data = train_OU_init
-
-    assert jnp.allclose(
-        loss.evaluate(init_params, train_data.get_batch())[0], 7817.113, atol=1e-1
-    )
+    l_init = loss.evaluate(init_params, train_data.get_batch())[0]
+    assert jnp.allclose(l_init, 3924.7366, atol=1e-1)
 
 
 def test_10it_OU(train_OU_10it):
     total_loss_val = train_OU_10it
-    assert jnp.allclose(total_loss_val, 5084.065, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 2564.442, atol=1e-1)

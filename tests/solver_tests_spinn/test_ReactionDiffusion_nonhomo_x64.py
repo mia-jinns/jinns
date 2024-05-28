@@ -62,9 +62,6 @@ def train_ReacDiff_init():
         method,
     )
 
-    from jax.scipy.stats import norm
-
-    sigma_init = 1 * jnp.ones((2))
     mu_init = jnp.array([0.7, 0.15])
 
     def u0(x):

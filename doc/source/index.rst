@@ -8,6 +8,13 @@ Welcome to jinn's documentation!
 
 Changelog:
 
+* v0.8.9:
+
+    - Merge `[!41] <https://gitlab.com/mia_jinns/jinns/-/merge_requests/41>`_
+    which rewrite RAR sampling for the non-stationnary PDE case using cartesian
+    product of time x space: `nt` and `n` can now be different for RAR, time
+    and space are handled separately, all notebooks examples are updated.
+
 * v0.8.8:
 
     - Add experimental PINN architectures and notebook to solve the Matérn SPDE!
