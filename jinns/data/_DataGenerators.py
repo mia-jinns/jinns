@@ -487,10 +487,11 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             # always set to 2.
             self.nb = 2
             self.omega_border_batch_size = 2
-        # warnings.warn("We are in 1-D case => omega_border_batch_size is "
-        #               "ignored since borders of Omega are singletons."
-        #               " self.border_batch() will return [xmin, xmax]"
-        #               )
+            print(
+                "We are in 1-D case => omega_border_batch_size is "
+                "ignored since borders of Omega are singletons."
+                " self.border_batch() will return [xmin, xmax]"
+            )
         else:
             if nb % (2 * self.dim) != 0 or nb < 2 * self.dim:
                 raise ValueError(
@@ -947,11 +948,20 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
                     "inside batches of collocation points, self.temporal_batch_size "
                     "must then be equal to self.omega_batch_size"
                 )
-            if self.temporal_batch_size != self.omega_border_batch_size:
+            if (
+                self.dim > 1
+                and self.omega_border_batch_size is not None
+                and self.temporal_batch_size != self.omega_border_batch_size
+            ):
                 raise ValueError(
-                    "If stacking is requested between the time and "
+                    "If dim > 1 and stacking is requested between the time and "
                     "inside batches of collocation points, self.temporal_batch_size "
                     "must then be equal to self.omega_border_batch_size"
+                )
+            if self.dim == 1:
+                print(
+                    "Cartesian product is not requested but will be "
+                    "executed anyway since dim=1"
                 )
 
         # Set-up for timewise RAR (some quantity are already set-up by super())
@@ -1038,16 +1048,20 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         dx = self.border_batch()
         t = self.temporal_batch().reshape(self.temporal_batch_size, 1)
 
+        if self.cartesian_product:
+            t_x = make_cartesian_product(t, x)
+        else:
+            t_x = jnp.concatenate([t, x], axis=1)
+
         if dx is not None:
             t_ = t.reshape(self.temporal_batch_size, 1, 1)
             t_ = jnp.repeat(t_, dx.shape[-1], axis=2)
-
-        if self.cartesian_product:
-            t_x = make_cartesian_product(t, x)
-            t_dx = make_cartesian_product(t_, dx) if dx is not None else None
+            if self.cartesian_product or self.dim == 1:
+                t_dx = make_cartesian_product(t_, dx)
+            else:
+                t_dx = jnp.concatenate([t_, dx], axis=1)
         else:
-            t_x = jnp.concatenate([t, x], axis=1)
-            t_dx = jnp.concatenate([t_, dx], axis=1) if dx is not None else None
+            t_dx = None
 
         return PDENonStatioBatch(times_x_inside_batch=t_x, times_x_border_batch=t_dx)
 

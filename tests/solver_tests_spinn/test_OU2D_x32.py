@@ -59,6 +59,7 @@ def train_OU_init():
         tmin,
         tmax,
         method,
+        cartesian_product=False,
     )
 
     sigma = 0.5 * jnp.ones((2))

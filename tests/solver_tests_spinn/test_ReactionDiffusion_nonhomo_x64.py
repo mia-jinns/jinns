@@ -60,6 +60,7 @@ def train_ReacDiff_init():
         tmin,
         tmax,
         method,
+        cartesian_product=False,
     )
 
     mu_init = jnp.array([0.7, 0.15])

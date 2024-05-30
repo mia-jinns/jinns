@@ -58,6 +58,7 @@ def train_Fisher_init():
         tmin,
         tmax,
         method,
+        cartesian_product=False,
     )
 
     sigma_init = 0.2 * jnp.ones((1))

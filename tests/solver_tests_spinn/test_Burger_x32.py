@@ -33,7 +33,7 @@ def train_Burger_init():
     nb = 2
     omega_batch_size = 100
     temporal_batch_size = 100
-    omega_border_batch_size = 1
+    omega_border_batch_size = 100
     dim = 1
     xmin = -1
     xmax = 1
@@ -56,6 +56,7 @@ def train_Burger_init():
         tmin,
         tmax,
         method,
+        cartesian_product=False,
     )
 
     nu = 1 / (100 * jnp.pi)
