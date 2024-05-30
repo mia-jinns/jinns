@@ -17,9 +17,8 @@ class ODEBatch(NamedTuple):
 
 
 class PDENonStatioBatch(NamedTuple):
-    inside_batch: ArrayLike
-    border_batch: ArrayLike
-    temporal_batch: ArrayLike
+    times_x_inside_batch: ArrayLike
+    times_x_border_batch: ArrayLike
     param_batch_dict: dict = None
     obs_batch_dict: dict = None
 
@@ -45,6 +44,18 @@ def append_obs_batch(batch, obs_batch_dict):
     obs_batch_dict
     """
     return batch._replace(obs_batch_dict=obs_batch_dict)
+
+
+def make_cartesian_product(b1, b2):
+    """
+    Create the cartesian product of a time and a border omega batches
+    by tiling and repeating
+    """
+    n1 = b1.shape[0]
+    n2 = b2.shape[0]
+    b1 = jnp.repeat(b1, n2, axis=0)
+    b2 = jnp.tile(b2, reps=(n1,) + tuple(1 for i in b2.shape[1:]))
+    return jnp.concatenate([b1, b2], axis=1)
 
 
 def _reset_batch_idx_and_permute(operands):
@@ -829,6 +840,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         rar_parameters=None,
         n_start=None,
         nt_start=None,
+        cartesian_product=True,
         data_exists=False,
     ):
         r"""
@@ -899,6 +911,10 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             Defaults to None. A RAR hyper-parameter. Same as ``n_start`` but
             for times collocation point. See also ``DataGeneratorODE``
             documentation.
+        cartesian_product
+            Defaults to True. Whether we return the cartesian product of the
+            temporal batch with the inside and border batches. If False we just
+            return their concatenation.
         data_exists
             Must be left to `False` when created by the user. Avoids the
             regeneration of :math:`\Omega`, :math:`\partial\Omega` and
@@ -922,6 +938,21 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         self.tmin = tmin
         self.tmax = tmax
         self.nt = nt
+
+        self.cartesian_product = cartesian_product
+        if not self.cartesian_product:
+            if self.temporal_batch_size != self.omega_batch_size:
+                raise ValueError(
+                    "If stacking is requested between the time and "
+                    "inside batches of collocation points, self.temporal_batch_size "
+                    "must then be equal to self.omega_batch_size"
+                )
+            if self.temporal_batch_size != self.omega_border_batch_size:
+                raise ValueError(
+                    "If stacking is requested between the time and "
+                    "inside batches of collocation points, self.temporal_batch_size "
+                    "must then be equal to self.omega_border_batch_size"
+                )
 
         # Set-up for timewise RAR (some quantity are already set-up by super())
         (
@@ -1003,11 +1034,22 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         Generic method to return a batch. Here we call `self.inside_batch()`,
         `self.border_batch()` and `self.temporal_batch()`
         """
-        return PDENonStatioBatch(
-            inside_batch=self.inside_batch(),
-            border_batch=self.border_batch(),
-            temporal_batch=self.temporal_batch(),
-        )
+        x = self.inside_batch()
+        dx = self.border_batch()
+        t = self.temporal_batch().reshape(self.temporal_batch_size, 1)
+
+        if dx is not None:
+            t_ = t.reshape(self.temporal_batch_size, 1, 1)
+            t_ = jnp.repeat(t_, dx.shape[-1], axis=2)
+
+        if self.cartesian_product:
+            t_x = make_cartesian_product(t, x)
+            t_dx = make_cartesian_product(t_, dx) if dx is not None else None
+        else:
+            t_x = jnp.concatenate([t, x], axis=1)
+            t_dx = jnp.concatenate([t_, dx], axis=1) if dx is not None else None
+
+        return PDENonStatioBatch(times_x_inside_batch=t_x, times_x_border_batch=t_dx)
 
     def tree_flatten(self):
         children = (
@@ -1041,6 +1083,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
                 "rar_parameters",
                 "n_start",
                 "nt_start",
+                "cartesian_product",
             ]
         }
         return (children, aux_data)
