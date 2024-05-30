@@ -1164,12 +1164,15 @@ class DataGeneratorParameter:
             once during 1 epoch.
         param_batch_size
             An integer. The size of the batch of randomly selected points among
-            the `n` points.  `param_batch_size` will be the same for all the
-            additional batch(es) of parameter(s). `param_batch_size` must be
+            the `n` points. `param_batch_size` will be the same for all the
+            additional batch(es) of parameter(s). `obs_batch_size` must be
             equal to `temporal_batch_size` or `omega_batch_size` or the product
-            of both whether the present DataGeneratorParameter instance
-            complements and ODEBatch, a PDEStatioBatch or a PDENonStatioBatch,
-            respectively.
+            of both. In the first case, the present DataGeneratorParameter instance
+            complements and ODEBatch, a PDEStatioBatch or a PDENonStatioBatch
+            (with self.cartesian_product = False). In the second case,
+            `obs_batch_size` = `temporal_batch_size` * `omega_batch_size` if
+            the present DataGeneratorParameter complements a PDENonStatioBatch
+            with self.cartesian_product = True
         param_ranges
             A dict. A dict of tuples (min, max), which
             reprensents the range of real numbers where to sample batches (of
@@ -1382,9 +1385,12 @@ class DataGeneratorObservations:
             `obs_batch_size` will be the same for all the
             elements of the obs dict. `obs_batch_size` must be
             equal to `temporal_batch_size` or `omega_batch_size` or the product
-            of both whether the present DataGeneratorParameter instance
-            complements and ODEBatch, a PDEStatioBatch or a PDENonStatioBatch,
-            respectively.
+            of both. In the first case, the present DataGeneratorObservations instance
+            complements and ODEBatch, a PDEStatioBatch or a PDENonStatioBatch
+            (with self.cartesian_product = False). In the second case,
+            `obs_batch_size` = `temporal_batch_size` * `omega_batch_size` if
+            the present DataGeneratorObservations complements a PDENonStatioBatch
+            with self.cartesian_product = True
         observed_pinn_in
             A jnp.array with 2 dimensions.
             Observed values corresponding to the input of the PINN
@@ -1594,9 +1600,12 @@ class DataGeneratorObservationsMultiPINNs:
             `obs_batch_size` will be the same for all the
             elements of the obs dict. `obs_batch_size` must be
             equal to `temporal_batch_size` or `omega_batch_size` or the product
-            of both whether the present DataGeneratorParameter instance
-            complements and ODEBatch, a PDEStatioBatch or a PDENonStatioBatch,
-            respectively.
+            of both. In the first case, the present DataGeneratorObservations instance
+            complements and ODEBatch, a PDEStatioBatch or a PDENonStatioBatch
+            (with self.cartesian_product = False). In the second case,
+            `obs_batch_size` = `temporal_batch_size` * `omega_batch_size` if
+            the present DataGeneratorObservations complements a PDENonStatioBatch
+            with self.cartesian_product = True
         observed_pinn_in_dict
             A dict of observed_pinn_in as defined in DataGeneratorObservations.
             Keys must be that of `u_dict`.
