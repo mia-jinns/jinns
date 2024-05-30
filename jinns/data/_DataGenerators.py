@@ -487,11 +487,9 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             # always set to 2.
             self.nb = 2
             self.omega_border_batch_size = 2
-            print(
-                "We are in 1-D case => omega_border_batch_size is "
-                "ignored since borders of Omega are singletons."
-                " self.border_batch() will return [xmin, xmax]"
-            )
+            # We are in 1-D case => omega_border_batch_size is
+            # ignored since borders of Omega are singletons.
+            #  self.border_batch() will return [xmin, xmax]
         else:
             if nb % (2 * self.dim) != 0 or nb < 2 * self.dim:
                 raise ValueError(
