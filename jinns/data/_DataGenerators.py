@@ -956,11 +956,11 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
                     "inside batches of collocation points, self.temporal_batch_size "
                     "must then be equal to self.omega_border_batch_size"
                 )
-            if self.dim == 1:
-                print(
-                    "Cartesian product is not requested but will be "
-                    "executed anyway since dim=1"
-                )
+            # Note if self.dim == 1:
+            #    print(
+            #        "Cartesian product is not requested but will be "
+            #        "executed anyway since dim=1"
+            #    )
 
         # Set-up for timewise RAR (some quantity are already set-up by super())
         (
