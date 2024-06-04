@@ -139,6 +139,11 @@ def get_datagenerator_rar(start_iter, update_every):
     return train_data, rar_parameters
 
 
+@pytest.fixture
+def all_tests(pytestconfig):
+    return pytestconfig.getoption("all_tests")
+
+
 def test_data_proba_shape_before_solve():
     train_data, rar_parameters = get_datagenerator_rar(1, 1)
     assert (train_data.p_times != 0).sum() == train_data.nt_start
@@ -159,43 +164,60 @@ def control_shape_after_solve_with_rar(start_iter, update_every):
     ) * rar_parameters["selected_sample_size_omega"]
 
 
-def test_rar_with_various_combination_of_start_and_update_values():
-    start_iter_list = [0, 3]
-    update_every_list = [1, 3]
-    for start_iter in start_iter_list:
-        for update_every in update_every_list:
-            with pytest.warns(UserWarning):
-                control_shape_after_solve_with_rar(start_iter, update_every)
+def test_rar_with_various_combination_of_start_and_update_values(all_tests):
+    # long test run only if --all_tests
+    if all_tests:
+        start_iter_list = [0, 3]
+        update_every_list = [1, 3]
+        for start_iter in start_iter_list:
+            for update_every in update_every_list:
+                with pytest.warns(UserWarning):
+                    control_shape_after_solve_with_rar(start_iter, update_every)
+    else:
+        print(
+            "\ntest_rar_with_various_combination_of_start_and_update_values "
+            "has been skipped due to missing --all_tests option\n"
+        )
 
 
-def test_rar_error_with_SPINN():
+def test_rar_error_with_SPINN(all_tests):
+    # long test run only if --all_tests
+    if all_tests:
+        train_data, rar_parameters = get_datagenerator_rar(0, 1)
+        # ensure same batch size in time & space for SPINN
+        train_data.temporal_batch_size = train_data.omega_batch_size
+        d = 3
+        r = 256
+        eqx_list = [
+            [eqx.nn.Linear, 1, 128],
+            [jax.nn.tanh],
+            [eqx.nn.Linear, 128, 128],
+            [jax.nn.tanh],
+            [eqx.nn.Linear, 128, 128],
+            [jax.nn.tanh],
+            [eqx.nn.Linear, 128, r],
+        ]
+        key = jax.random.PRNGKey(12345)
+        key, subkey = random.split(key)
+        u = jinns.utils.create_SPINN(subkey, d, r, eqx_list, "nonstatio_PDE")
+        init_nn_params = u.init_params()
 
-    train_data, rar_parameters = get_datagenerator_rar(0, 1)
-    # ensure same batch size in time & space for SPINN
-    train_data.temporal_batch_size = train_data.omega_batch_size
-    d = 3
-    r = 256
-    eqx_list = [
-        [eqx.nn.Linear, 1, 128],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 128, 128],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 128, 128],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 128, r],
-    ]
-    key = jax.random.PRNGKey(12345)
-    key, subkey = random.split(key)
-    u = jinns.utils.create_SPINN(subkey, d, r, eqx_list, "nonstatio_PDE")
-    init_nn_params = u.init_params()
-
-    # update loss and params
-    init_params["nn_params"] = init_nn_params
-    loss.u = u
-    train_data.temporal_batch_size = train_data.omega_batch_size
-    # expect error
-    with pytest.raises(NotImplementedError) as e_info, pytest.warns(UserWarning):
-        tx = optax.adamw(learning_rate=1e-3)
-        jinns.solve(
-            init_params=init_params, data=train_data, optimizer=tx, loss=loss, n_iter=2
+        # update loss and params
+        init_params["nn_params"] = init_nn_params
+        loss.u = u
+        train_data.temporal_batch_size = train_data.omega_batch_size
+        # expect error
+        with pytest.raises(NotImplementedError) as e_info, pytest.warns(UserWarning):
+            tx = optax.adamw(learning_rate=1e-3)
+            jinns.solve(
+                init_params=init_params,
+                data=train_data,
+                optimizer=tx,
+                loss=loss,
+                n_iter=2,
+            )
+    else:
+        print(
+            "\ntest_rar_error_with_SPINN has been skipped due not missing "
+            "--all_tests option\n"
         )

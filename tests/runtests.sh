@@ -1,5 +1,5 @@
 #!/bin/bash
-pytest dataGenerator_tests/*
+pytest -s dataGenerator_tests/*
 status=$?
 if [ $status -ne 0 ]; then
    exit $status
@@ -14,15 +14,15 @@ status=$?
 if [ $status -ne 0 ]; then
    exit $status
 fi
-pytest solver_tests/*
+pytest -s solver_tests/*
 status=$?
 if [ $status -ne 0 ]; then
    exit $status
 fi
-pytest solver_tests_spinn/*
+pytest -s solver_tests_spinn/*
 status=$?
 if [ $status -ne 0 ]; then
    exit $status
 fi
-pytest utils_tests/*
+pytest -s utils_tests/*
 exit $?
