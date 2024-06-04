@@ -15,6 +15,14 @@ def pytest_addoption(parser):
         help="whether to run test scripts on GPU",
     )
 
+    parser.addoption(
+        "--all_tests",
+        action="store_true",
+        default=False,
+        help="whether to run all tests (can be long so should not be called "
+        "often especially on CI/CD)",
+    )
+
 
 def pytest_configure(config):
     gpu = config.getoption("--gpu")

@@ -237,6 +237,7 @@ class LossODE:
             "u": self.u,
             "dynamic_loss": self.dynamic_loss,
             "obs_slice": self.obs_slice,
+            "derivative_keys": self.derivative_keys,
         }
         return (children, aux_data)
 

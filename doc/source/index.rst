@@ -8,6 +8,10 @@ Welcome to jinn's documentation!
 
 Changelog:
 
+* v0.8.10:
+
+    - Merge `[!44] <https://gitlab.com/mia_jinns/jinns/-/merge_requests/44>`_
+
 * v0.8.9:
 
     - Merge `[!41] <https://gitlab.com/mia_jinns/jinns/-/merge_requests/41>`_
