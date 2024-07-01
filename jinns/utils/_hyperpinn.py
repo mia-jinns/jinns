@@ -78,15 +78,9 @@ class HYPERPINN(PINN):
         parameters of the pinn (`self.params`)
         """
         pinn_params_flat = eqx.tree_at(
-            lambda p: tree_leaves(p, is_leaf=lambda x: isinstance(x, jnp.ndarray)),
+            lambda p: tree_leaves(p, is_leaf=eqx.is_array),
             self.params,
-            [hyper_output[0 : self.pinn_params_cumsum[0]]]
-            + [
-                hyper_output[
-                    self.pinn_params_cumsum[i] : self.pinn_params_cumsum[i + 1]
-                ]
-                for i in range(len(self.pinn_params_cumsum) - 1)
-            ],
+            jnp.split(hyper_output, self.pinn_params_cumsum[:-1]),
         )
 
         return tree_map(
