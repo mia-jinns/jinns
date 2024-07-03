@@ -11,9 +11,8 @@ Changelog:
 * v0.8.11:
 
     - Merge `[!43] <https://gitlab.com/mia_jinns/jinns/-/merge_requests/43>`_
-    New feature : DataGenerators beyond cartesian products. Users can now
-    implement their own collocation point sampling method without separating time (t) from space (x). This is useful if you want to sample uniformly
-    over space and time, or even have any time dependent space domain / boundary.
+    **New feature :** DataGenerators beyond cartesian products. Users can now
+    implement their own collocation point sampling method without separating time (``t``) from space (``x``). This is useful if you want to sample uniformly over space and time, or even have any time dependent space domain / boundary.
 
 
 
