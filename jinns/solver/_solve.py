@@ -402,26 +402,16 @@ def solve(
             validation_loss_val=validation_crit_values[i - 1],
         )
 
-    if validation is None:
-        return (
-            optimization.last_non_nan_params,
-            loss_container.train_loss_values,
-            loss_container.stored_loss_terms,
-            train_data.data,
-            loss,
-            optimization.opt_state,
-            stored_objects.stored_params,
-        )
     return (
         optimization.last_non_nan_params,
         loss_container.train_loss_values,
         loss_container.stored_loss_terms,
-        train_data.data,
-        loss,
+        train_data.data,  # return the DataGenerator if needed (no in-place modif)
+        loss,  # return the Loss if needed (no-inplace modif)
         optimization.opt_state,
         stored_objects.stored_params,
-        validation_crit_values,
-        optimization_extra.best_val_params,
+        validation_crit_values if validation is not None else None,
+        optimization_extra.best_val_params if validation is not None else None,
     )
 
 
