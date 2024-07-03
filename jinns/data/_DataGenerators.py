@@ -17,9 +17,8 @@ class ODEBatch(NamedTuple):
 
 
 class PDENonStatioBatch(NamedTuple):
-    inside_batch: ArrayLike
-    border_batch: ArrayLike
-    temporal_batch: ArrayLike
+    times_x_inside_batch: ArrayLike
+    times_x_border_batch: ArrayLike
     param_batch_dict: dict = None
     obs_batch_dict: dict = None
 
@@ -45,6 +44,18 @@ def append_obs_batch(batch, obs_batch_dict):
     obs_batch_dict
     """
     return batch._replace(obs_batch_dict=obs_batch_dict)
+
+
+def make_cartesian_product(b1, b2):
+    """
+    Create the cartesian product of a time and a border omega batches
+    by tiling and repeating
+    """
+    n1 = b1.shape[0]
+    n2 = b2.shape[0]
+    b1 = jnp.repeat(b1, n2, axis=0)
+    b2 = jnp.tile(b2, reps=(n1,) + tuple(1 for i in b2.shape[1:]))
+    return jnp.concatenate([b1, b2], axis=1)
 
 
 def _reset_batch_idx_and_permute(operands):
@@ -476,10 +487,9 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
             # always set to 2.
             self.nb = 2
             self.omega_border_batch_size = 2
-        # warnings.warn("We are in 1-D case => omega_border_batch_size is "
-        #               "ignored since borders of Omega are singletons."
-        #               " self.border_batch() will return [xmin, xmax]"
-        #               )
+            # We are in 1-D case => omega_border_batch_size is
+            # ignored since borders of Omega are singletons.
+            #  self.border_batch() will return [xmin, xmax]
         else:
             if nb % (2 * self.dim) != 0 or nb < 2 * self.dim:
                 raise ValueError(
@@ -829,6 +839,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         rar_parameters=None,
         n_start=None,
         nt_start=None,
+        cartesian_product=True,
         data_exists=False,
     ):
         r"""
@@ -899,6 +910,10 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             Defaults to None. A RAR hyper-parameter. Same as ``n_start`` but
             for times collocation point. See also ``DataGeneratorODE``
             documentation.
+        cartesian_product
+            Defaults to True. Whether we return the cartesian product of the
+            temporal batch with the inside and border batches. If False we just
+            return their concatenation.
         data_exists
             Must be left to `False` when created by the user. Avoids the
             regeneration of :math:`\Omega`, :math:`\partial\Omega` and
@@ -922,6 +937,30 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         self.tmin = tmin
         self.tmax = tmax
         self.nt = nt
+
+        self.cartesian_product = cartesian_product
+        if not self.cartesian_product:
+            if self.temporal_batch_size != self.omega_batch_size:
+                raise ValueError(
+                    "If stacking is requested between the time and "
+                    "inside batches of collocation points, self.temporal_batch_size "
+                    "must then be equal to self.omega_batch_size"
+                )
+            if (
+                self.dim > 1
+                and self.omega_border_batch_size is not None
+                and self.temporal_batch_size != self.omega_border_batch_size
+            ):
+                raise ValueError(
+                    "If dim > 1 and stacking is requested between the time and "
+                    "inside batches of collocation points, self.temporal_batch_size "
+                    "must then be equal to self.omega_border_batch_size"
+                )
+            # Note if self.dim == 1:
+            #    print(
+            #        "Cartesian product is not requested but will be "
+            #        "executed anyway since dim=1"
+            #    )
 
         # Set-up for timewise RAR (some quantity are already set-up by super())
         (
@@ -1003,11 +1042,26 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         Generic method to return a batch. Here we call `self.inside_batch()`,
         `self.border_batch()` and `self.temporal_batch()`
         """
-        return PDENonStatioBatch(
-            inside_batch=self.inside_batch(),
-            border_batch=self.border_batch(),
-            temporal_batch=self.temporal_batch(),
-        )
+        x = self.inside_batch()
+        dx = self.border_batch()
+        t = self.temporal_batch().reshape(self.temporal_batch_size, 1)
+
+        if self.cartesian_product:
+            t_x = make_cartesian_product(t, x)
+        else:
+            t_x = jnp.concatenate([t, x], axis=1)
+
+        if dx is not None:
+            t_ = t.reshape(self.temporal_batch_size, 1, 1)
+            t_ = jnp.repeat(t_, dx.shape[-1], axis=2)
+            if self.cartesian_product or self.dim == 1:
+                t_dx = make_cartesian_product(t_, dx)
+            else:
+                t_dx = jnp.concatenate([t_, dx], axis=1)
+        else:
+            t_dx = None
+
+        return PDENonStatioBatch(times_x_inside_batch=t_x, times_x_border_batch=t_dx)
 
     def tree_flatten(self):
         children = (
@@ -1041,6 +1095,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
                 "rar_parameters",
                 "n_start",
                 "nt_start",
+                "cartesian_product",
             ]
         }
         return (children, aux_data)
@@ -1121,12 +1176,17 @@ class DataGeneratorParameter:
             once during 1 epoch.
         param_batch_size
             An integer. The size of the batch of randomly selected points among
-            the `n` points.  `param_batch_size` will be the same for all the
-            additional batch(es) of parameter(s). `param_batch_size` must be
-            equal to `temporal_batch_size` or `omega_batch_size` or the product
-            of both whether the present DataGeneratorParameter instance
-            complements and ODEBatch, a PDEStatioBatch or a PDENonStatioBatch,
-            respectively.
+            the `n` points. `param_batch_size` will be the same for all
+            additional batch of parameter.
+            NOTE: no check is done BUT users should be careful that
+            `param_batch_size` must be equal to `temporal_batch_size` or
+            `omega_batch_size` or the product of both. In the first case, the
+            present DataGeneratorParameter instance complements an ODEBatch, a
+            PDEStatioBatch or a PDENonStatioBatch (with self.cartesian_product
+            = False). In the second case, `param_batch_size` =
+            `temporal_batch_size * omega_batch_size` if the present
+            DataGeneratorParameter complements a PDENonStatioBatch
+            with self.cartesian_product = True
         param_ranges
             A dict. A dict of tuples (min, max), which
             reprensents the range of real numbers where to sample batches (of
@@ -1335,13 +1395,18 @@ class DataGeneratorObservations:
         key
             Jax random key to sample new time points and to shuffle batches
         obs_batch_size
-            An integer. The size of the batch of randomly selected observations
-            `obs_batch_size` will be the same for all the
-            elements of the obs dict. `obs_batch_size` must be
-            equal to `temporal_batch_size` or `omega_batch_size` or the product
-            of both whether the present DataGeneratorParameter instance
-            complements and ODEBatch, a PDEStatioBatch or a PDENonStatioBatch,
-            respectively.
+            An integer. The size of the batch of randomly selected points among
+            the `n` points. `obs_batch_size` will be the same for all
+            elements of the obs dict.
+            NOTE: no check is done BUT users should be careful that
+            `obs_batch_size` must be equal to `temporal_batch_size` or
+            `omega_batch_size` or the product of both. In the first case, the
+            present DataGeneratorObservations instance complements an ODEBatch,
+            PDEStatioBatch or a PDENonStatioBatch (with self.cartesian_product
+            = False). In the second case, `obs_batch_size` =
+            `temporal_batch_size * omega_batch_size` if the present
+            DataGeneratorParameter complements a PDENonStatioBatch
+            with self.cartesian_product = True
         observed_pinn_in
             A jnp.array with 2 dimensions.
             Observed values corresponding to the input of the PINN
@@ -1549,11 +1614,16 @@ class DataGeneratorObservationsMultiPINNs:
         obs_batch_size
             An integer. The size of the batch of randomly selected observations
             `obs_batch_size` will be the same for all the
-            elements of the obs dict. `obs_batch_size` must be
-            equal to `temporal_batch_size` or `omega_batch_size` or the product
-            of both whether the present DataGeneratorParameter instance
-            complements and ODEBatch, a PDEStatioBatch or a PDENonStatioBatch,
-            respectively.
+            elements of the obs dict.
+            NOTE: no check is done BUT users should be careful that
+            `obs_batch_size` must be equal to `temporal_batch_size` or
+            `omega_batch_size` or the product of both. In the first case, the
+            present DataGeneratorObservations instance complements an ODEBatch,
+            PDEStatioBatch or a PDENonStatioBatch (with self.cartesian_product
+            = False). In the second case, `obs_batch_size` =
+            `temporal_batch_size * omega_batch_size` if the present
+            DataGeneratorParameter complements a PDENonStatioBatch
+            with self.cartesian_product = True
         observed_pinn_in_dict
             A dict of observed_pinn_in as defined in DataGeneratorObservations.
             Keys must be that of `u_dict`.

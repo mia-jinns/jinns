@@ -818,17 +818,9 @@ class LossPDENonStatio(LossPDEStatio):
             inputs/outputs/parameters
         """
 
-        omega_batch, omega_border_batch, times_batch = (
-            batch.inside_batch,
-            batch.border_batch,
-            batch.temporal_batch,
-        )
+        times_batch = batch.times_x_inside_batch[:, 0:1]
+        omega_batch = batch.times_x_inside_batch[:, 1:]
         n = omega_batch.shape[0]
-        nt = times_batch.shape[0]
-        times_batch = times_batch.reshape(nt, 1)
-
-        def rep_times(k):
-            return jnp.repeat(times_batch, k, axis=0)
 
         vmap_in_axes_x_t = (0, 0)
 
@@ -843,10 +835,6 @@ class LossPDENonStatio(LossPDEStatio):
                 params["eq_params"][k] = eq_params_batch_dict[k]
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
-
-        if isinstance(self.u, PINN):
-            omega_batch = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
-            times_batch = rep_times(n)  # it is repeated
 
         # dynamic part
         params_ = _set_derivatives(params, "dyn_loss", self.derivative_keys)
@@ -1372,27 +1360,12 @@ class SystemLossPDE:
 
         if isinstance(batch, PDEStatioBatch):
             omega_batch, _ = batch.inside_batch, batch.border_batch
-            n = omega_batch.shape[0]
             vmap_in_axes_x_or_x_t = (0,)
 
             batches = (omega_batch,)
         elif isinstance(batch, PDENonStatioBatch):
-            omega_batch, _, times_batch = (
-                batch.inside_batch,
-                batch.border_batch,
-                batch.temporal_batch,
-            )
-            n = omega_batch.shape[0]
-            nt = times_batch.shape[0]
-            times_batch = times_batch.reshape(nt, 1)
-
-            def rep_times(k):
-                return jnp.repeat(times_batch, k, axis=0)
-
-            # Moreover...
-            if isinstance(list(self.u_dict.values())[0], PINN):
-                omega_batch = jnp.tile(omega_batch, reps=(nt, 1))  # it is tiled
-                times_batch = rep_times(n)  # it is repeated
+            times_batch = batch.times_x_inside_batch[:, 0:1]
+            omega_batch = batch.times_x_inside_batch[:, 1:]
 
             batches = (omega_batch, times_batch)
             vmap_in_axes_x_or_x_t = (0, 0)

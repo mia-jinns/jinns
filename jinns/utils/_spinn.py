@@ -81,6 +81,9 @@ class SPINN(eqx.Module):
     Basically a wrapper around the `__call__` function to be able to give a type to
     our former `self.u`
     The function create_SPINN has the role to population the `__call__` function
+
+    **NOTE**: SPINNs with `t` and `x` as inputs are best used with a
+    DataGenerator with `self.cartesian_product=False` for memory consideration
     """
 
     d: int
@@ -190,6 +193,9 @@ def create_SPINN(key, d, r, eqx_list, eq_type, m=1):
         the SPINN article, a total embedding dimension of `r*m` is defined. We
         then sum groups of `r` embedding dimensions to compute each output.
         Default is 1.
+
+    **NOTE**: SPINNs with `t` and `x` as inputs are best used with a
+    DataGenerator with `self.cartesian_product=False` for memory consideration
 
 
     Returns

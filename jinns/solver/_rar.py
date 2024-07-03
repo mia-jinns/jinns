@@ -264,6 +264,9 @@ def _rar_step_init(sample_size, selected_sample_size):
             )
 
         elif isinstance(data, CubicMeshPDENonStatio):
+            if isinstance(loss.u, HYPERPINN) or isinstance(loss.u, SPINN):
+                raise NotImplementedError("RAR not implemented for hyperPINN and SPINN")
+
             # NOTE in this case sample_size and selected_sample_size
             # are tuples (times, omega) => we unpack them for clarity
             selected_sample_size_times, selected_sample_size_omega = (
@@ -274,14 +277,15 @@ def _rar_step_init(sample_size, selected_sample_size):
             new_times_samples = data.sample_in_time_domain(sample_size_times)
             new_omega_samples = data.sample_in_omega_domain(sample_size_omega)
 
-            if isinstance(loss.u, HYPERPINN) or isinstance(loss.u, SPINN):
-                raise NotImplementedError("RAR not implemented for hyperPINN and SPINN")
+            if not data.cartesian_product:
+                times = new_times_samples
+                omega = new_omega_samples
             else:
                 # do cartesian product on new points
-                tile_omega = jnp.tile(
+                omega = jnp.tile(
                     new_omega_samples, reps=(sample_size_times, 1)
                 )  # it is tiled
-                repeat_times = jnp.repeat(new_times_samples, sample_size_omega, axis=0)[
+                times = jnp.repeat(new_times_samples, sample_size_omega, axis=0)[
                     ..., None
                 ]  # it is repeated + add an axis
 
@@ -291,7 +295,7 @@ def _rar_step_init(sample_size, selected_sample_size):
                     (0, 0),
                     0,
                 )
-                dyn_on_s = v_dyn_loss(repeat_times, tile_omega).reshape(
+                dyn_on_s = v_dyn_loss(times, omega).reshape(
                     (sample_size_times, sample_size_omega)
                 )
                 mse_on_s = dyn_on_s**2
@@ -305,7 +309,7 @@ def _rar_step_init(sample_size, selected_sample_size):
                         (0, 0),
                         0,
                     )
-                    dyn_on_s += v_dyn_loss(repeat_times, tile_omega).reshape(
+                    dyn_on_s += v_dyn_loss(times, omega).reshape(
                         (sample_size_times, sample_size_omega)
                     )
 

@@ -279,23 +279,10 @@ def boundary_dirichlet_nonstatio(f, batch, u, params, facet, dim_to_apply):
     dim_to_apply
         A jnp.s\_ object. The dimension of u on which to apply the boundary condition
     """
-    _, omega_border_batch, times_batch = (
-        batch.inside_batch,
-        batch.border_batch,
-        batch.temporal_batch,
-    )
-    nt = times_batch.shape[0]
-    times_batch = times_batch.reshape(nt, 1)
-    omega_border_batch = omega_border_batch[..., facet]
+    times_batch = batch.times_x_border_batch[:, 0:1, facet]
+    omega_border_batch = batch.times_x_border_batch[:, 1:, facet]
 
     if isinstance(u, PINN):
-        tile_omega_border_batch = jnp.tile(
-            omega_border_batch, reps=(times_batch.shape[0], 1)
-        )
-
-        def rep_times(k):
-            return jnp.repeat(times_batch, k, axis=0)
-
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
         vmap_in_axes_x_t = (0, 0)
 
@@ -309,26 +296,13 @@ def boundary_dirichlet_nonstatio(f, batch, u, params, facet, dim_to_apply):
             vmap_in_axes_x_t + vmap_in_axes_params,
             0,
         )
-        res = v_u_boundary(
-            rep_times(omega_border_batch.shape[0]), tile_omega_border_batch, params
-        )
+        res = v_u_boundary(times_batch, omega_border_batch, params)
         mse_u_boundary = jnp.sum(
             res**2,
             axis=-1,
         )
     elif isinstance(u, SPINN):
-        tile_omega_border_batch = jnp.tile(
-            omega_border_batch, reps=(times_batch.shape[0], 1)
-        )
-
-        if omega_border_batch.shape[0] == 1:
-            omega_border_batch = jnp.tile(
-                omega_border_batch, reps=(times_batch.shape[0], 1)
-            )
-        # otherwise we require batches to have same shape and we do not need
-        # this operation
-
-        values = u(times_batch, tile_omega_border_batch, params)[..., dim_to_apply]
+        values = u(times_batch, omega_border_batch, params)[..., dim_to_apply]
         tx_grid = _get_grid(jnp.concatenate([times_batch, omega_border_batch], axis=-1))
         boundaries = _check_user_func_return(
             f(tx_grid[..., 0:1], tx_grid[..., 1:]), values.shape
@@ -367,14 +341,8 @@ def boundary_neumann_nonstatio(f, batch, u, params, facet, dim_to_apply):
     dim_to_apply
         A jnp.s\_ object. The dimension of u on which to apply the boundary condition
     """
-    _, omega_border_batch, times_batch = (
-        batch.inside_batch,
-        batch.border_batch,
-        batch.temporal_batch,
-    )
-    nt = times_batch.shape[0]
-    times_batch = times_batch.reshape(nt, 1)
-    omega_border_batch = omega_border_batch[..., facet]
+    times_batch = batch.times_x_border_batch[:, 0:1, facet]
+    omega_border_batch = batch.times_x_border_batch[:, 1:, facet]
 
     # We resort to the shape of the border_batch to determine the dimension as
     # described in the border_batch function
@@ -388,13 +356,6 @@ def boundary_neumann_nonstatio(f, batch, u, params, facet, dim_to_apply):
         n = jnp.array([[-1, 1, 0, 0], [0, 0, -1, 1]])
 
     if isinstance(u, PINN):
-        tile_omega_border_batch = jnp.tile(
-            omega_border_batch, reps=(times_batch.shape[0], 1)
-        )
-
-        def rep_times(k):
-            return jnp.repeat(times_batch, k, axis=0)
-
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
         vmap_in_axes_x_t = (0, 0)
 
@@ -411,8 +372,8 @@ def boundary_neumann_nonstatio(f, batch, u, params, facet, dim_to_apply):
         mse_u_boundary = jnp.sum(
             (
                 v_neumann(
-                    rep_times(omega_border_batch.shape[0]),
-                    tile_omega_border_batch,
+                    times_batch,
+                    omega_border_batch,
                     params,
                 )
             )
@@ -421,14 +382,6 @@ def boundary_neumann_nonstatio(f, batch, u, params, facet, dim_to_apply):
         )
 
     elif isinstance(u, SPINN):
-        if omega_border_batch.shape[0] == 1:
-            omega_border_batch = jnp.tile(
-                omega_border_batch, reps=(times_batch.shape[0], 1)
-            )
-            # ie case 1D
-        # otherwise we require batches to have same shape and we do not need
-        # this operation
-
         # the gradient we see in the PINN case can get gradients wrt to x
         # dimensions at once. But it would be very inefficient in SPINN because
         # of the high dim output of u. So we do 2 explicit forward AD, handling all the
