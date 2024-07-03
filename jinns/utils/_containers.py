@@ -45,6 +45,7 @@ class OptimizationContainer(NamedTuple):
 class OptimizationExtraContainer(NamedTuple):
     curr_seq: int
     seq2seq: Union[dict, None]
+    best_val_params: dict
     early_stopping: bool = False
 
 
