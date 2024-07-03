@@ -42,7 +42,7 @@ class AbstractValidationModule(eqx.Module):
     @abc.abstractmethod
     def __call__(
         self, params: PyTree
-    ) -> tuple["AbstractValidationModule", Bool, Array]:
+    ) -> tuple["AbstractValidationModule", Bool, Array, Bool]:
         raise NotImplementedError
 
 
@@ -86,10 +86,10 @@ class ValidationLoss(AbstractValidationModule):
             )
 
         validation_loss_value, _ = self.loss(params, val_batch)
-        (counter, best_val_loss) = jax.lax.cond(
+        (counter, best_val_loss, update_best_params) = jax.lax.cond(
             validation_loss_value < self.best_val_loss,
-            lambda _: (jnp.array(0.0), validation_loss_value),  # reset
-            lambda operands: (operands[0] + 1, operands[1]),  # increment
+            lambda _: (jnp.array(0.0), validation_loss_value, True),  # reset
+            lambda operands: (operands[0] + 1, operands[1], False),  # increment
             (self.counter, self.best_val_loss),
         )
 
@@ -108,7 +108,7 @@ class ValidationLoss(AbstractValidationModule):
             None,
         )
         # return `new` cause no in-place modification of the eqx.Module
-        return (new, bool_early_stopping, validation_loss_value)
+        return (new, bool_early_stopping, validation_loss_value, update_best_params)
 
 
 if __name__ == "__main__":
