@@ -14,6 +14,7 @@ Changelog:
         1. **New feature :** DataGenerators beyond cartesian products. Users can now implement their own collocation point sampling method without separating time (``t``) from space (``x``). This is useful if you want to sample uniformly over space and time, or even have any time dependent space domain / boundary.
         2. **Breaking change** to ``jinns.solve()`` which now always returns a tuple of length 9 regardless of validation being None or not.
         3. A ``verbose`` argument was introduced to remove all std output, and the best parameters with respect to the validation criterion are now being returned (they are None if ``validation`` is None).
+        4. Bug correction in SystemLossODE (thanks @yjouanaud)
 
 
 

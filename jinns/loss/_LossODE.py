@@ -459,7 +459,7 @@ class SystemLossODE:
 
         Parameters
         ---------
-        params
+        params_dict
             A dictionary of dictionaries of parameters of the model.
             Typically, it is a dictionary of dictionaries of
             dictionaries: `eq_params` and `nn_params``, respectively the
@@ -489,7 +489,7 @@ class SystemLossODE:
         # and update vmap_in_axes
         if batch.param_batch_dict is not None:
             # update params with the batches of generated params
-            params = _update_eq_params_dict(params, batch.param_batch_dict)
+            params_dict = _update_eq_params_dict(params_dict, batch.param_batch_dict)
 
         vmap_in_axes_params = _get_vmap_in_axes_params(
             batch.param_batch_dict, params_dict
