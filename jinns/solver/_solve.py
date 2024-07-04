@@ -61,6 +61,7 @@ def solve(
     obs_data=None,
     validation=None,
     obs_batch_sharding=None,
+    verbose=True,
 ):
     """
     Performs the optimization process via stochastic gradient descent
@@ -132,6 +133,9 @@ def solve(
         Typically, a SingleDeviceSharding(gpu_device) when obs_data has been
         created with sharding_device=SingleDeviceSharding(cpu_device) to avoid
         loading on GPU huge datasets of observations
+    verbose:
+        Boolean, default True. If False, no std output (loss or cause of
+        exiting the optimization loop) will be produced.
 
     Returns
     -------
@@ -203,11 +207,14 @@ def solve(
         data=data, param_data=param_data, obs_data=obs_data
     )
     optimization = OptimizationContainer(
-        params=init_params, last_non_nan_params=init_params.copy(), opt_state=opt_state
+        params=init_params,
+        last_non_nan_params=init_params.copy(),
+        opt_state=opt_state,
     )
     optimization_extra = OptimizationExtraContainer(
         curr_seq=curr_seq,
         seq2seq=seq2seq,
+        best_val_params=init_params.copy(),
     )
     loss_container = LossContainer(
         stored_loss_terms=stored_loss_terms,
@@ -222,7 +229,7 @@ def solve(
     else:
         validation_crit_values = None
 
-    break_fun = get_break_fun(n_iter)
+    break_fun = get_break_fun(n_iter, verbose)
 
     iteration = 0
     carry = (
@@ -272,7 +279,8 @@ def solve(
         )
 
         # Print train loss value during optimization
-        print_fn(i, train_loss_value, print_loss_every, prefix="[train] ")
+        if verbose:
+            print_fn(i, train_loss_value, print_loss_every, prefix="[train] ")
 
         if validation is not None:
             # there is a jax.lax.cond because we do not necesarily call the
@@ -281,6 +289,7 @@ def solve(
                 validation,  # always return `validation` for in-place mutation
                 early_stopping,
                 validation_criterion,
+                update_best_params,
             ) = jax.lax.cond(
                 i % validation.call_every == 0,
                 lambda operands: operands[0](*operands[1:]),  # validation.__call__()
@@ -288,6 +297,7 @@ def solve(
                     operands[0],
                     False,
                     validation_crit_values[i - 1],
+                    False,
                 ),
                 (
                     validation,  # validation must be in operands
@@ -295,12 +305,24 @@ def solve(
                 ),
             )
             # Print validation loss value during optimization
-            print_fn(i, validation_criterion, print_loss_every, prefix="[validation] ")
+            if verbose:
+                print_fn(
+                    i, validation_criterion, print_loss_every, prefix="[validation] "
+                )
             validation_crit_values = validation_crit_values.at[i].set(
                 validation_criterion
             )
+
+            # update best_val_params w.r.t val_loss if needed
+            best_val_params = jax.lax.cond(
+                update_best_params,
+                lambda _: params,  # update with current value
+                lambda operands: operands[0].best_val_params,  # unchanged
+                (optimization_extra,),
+            )
         else:
             early_stopping = False
+            best_val_params = params
 
         # Trigger RAR
         loss, params, data = trigger_rar(
@@ -329,13 +351,17 @@ def solve(
             loss_terms,
             tracked_params,
         )
+
+        # increment iteration number
         i += 1
 
         return (
             i,
             loss,
             OptimizationContainer(params, last_non_nan_params, opt_state),
-            OptimizationExtraContainer(curr_seq, seq2seq, early_stopping),
+            OptimizationExtraContainer(
+                curr_seq, seq2seq, best_val_params, early_stopping
+            ),
             DataGeneratorContainer(data, param_data, obs_data),
             validation,
             LossContainer(stored_loss_terms, train_loss_values),
@@ -364,36 +390,28 @@ def solve(
         validation_crit_values,
     ) = carry
 
-    jax.debug.print(
-        "Final iteration {i}: train loss value = {train_loss_val}",
-        i=i,
-        train_loss_val=loss_container.train_loss_values[i - 1],
-    )
+    if verbose:
+        jax.debug.print(
+            "Final iteration {i}: train loss value = {train_loss_val}",
+            i=i,
+            train_loss_val=loss_container.train_loss_values[i - 1],
+        )
     if validation is not None:
         jax.debug.print(
             "validation loss value = {validation_loss_val}",
             validation_loss_val=validation_crit_values[i - 1],
         )
 
-    if validation is None:
-        return (
-            optimization.last_non_nan_params,
-            loss_container.train_loss_values,
-            loss_container.stored_loss_terms,
-            train_data.data,
-            loss,
-            optimization.opt_state,
-            stored_objects.stored_params,
-        )
     return (
         optimization.last_non_nan_params,
         loss_container.train_loss_values,
         loss_container.stored_loss_terms,
-        train_data.data,
-        loss,
+        train_data.data,  # return the DataGenerator if needed (no in-place modif)
+        loss,  # return the Loss if needed (no-inplace modif)
         optimization.opt_state,
         stored_objects.stored_params,
-        validation_crit_values,
+        validation_crit_values if validation is not None else None,
+        optimization_extra.best_val_params if validation is not None else None,
     )
 
 
@@ -478,16 +496,20 @@ def store_loss_and_params(
     return (stored_params, stored_loss_terms, train_loss_values)
 
 
-def get_break_fun(n_iter):
+def get_break_fun(n_iter, verbose: str):
     """
-    Wrapper to get the break_fun with appropriate `n_iter`
+    Wrapper to get the break_fun with appropriate `n_iter`.
+    The verbose argument is here to control printing (or not) when exiting
+    the optimisation loop. It can be convenient is jinns.solve is itself
+    called in a loop and user want to avoid std output.
     """
 
     @jit
-    def break_fun(carry):
+    def break_fun(carry: tuple):
         """
         Function to break from the main optimization loop
-        We check several conditions
+        We the following conditions : maximum number of iterations, NaN
+        appearing in the parameters, and early stopping criterion.
         """
 
         def stop_while_loop(msg):
@@ -495,7 +517,8 @@ def get_break_fun(n_iter):
             Note that the message is wrapped in the jax.lax.cond because a
             string is not a valid JAX type that can be fed into the operands
             """
-            jax.debug.print(f"Stopping main optimization loop, cause: {msg}")
+            if verbose:
+                jax.debug.print(f"Stopping main optimization loop, cause: {msg}")
             return False
 
         def continue_while_loop(_):

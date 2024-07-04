@@ -142,7 +142,7 @@ def train_OU_10it(train_OU_init):
     # Catching an expected UserWarning since no border condition is given
     # for this specific PDE (Fokker-Planck).
     with pytest.warns(UserWarning):
-        params, total_loss_list, loss_by_term_dict, _, _, _, _ = jinns.solve(
+        params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _ = jinns.solve(
             init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
         )
     return total_loss_list[9]
