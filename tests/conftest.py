@@ -1,5 +1,6 @@
 import pytest
 import os
+import jax
 
 """
 Here we set up the env variable to run on GPU if available or on CPU. Such set
@@ -27,7 +28,7 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     gpu = config.getoption("--gpu")
     if not gpu:
-        os.environ["CUDA_VISIBLE_DEVICES"] = ""
+        os.environ["JAX_PLATFORMS"] = "cpu"
 
 
 # Note that the we cannot get the option using fixtures as suggested by the

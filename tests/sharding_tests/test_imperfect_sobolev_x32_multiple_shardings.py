@@ -2,8 +2,8 @@ import pytest
 
 import os
 
+os.environ["JAX_PLATFORMS"] = "cpu"
 os.environ["XLA_FLAGS"] = f"--xla_force_host_platform_device_count=2"
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 import jax
 import jax.numpy as jnp
