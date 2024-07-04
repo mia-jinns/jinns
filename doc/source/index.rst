@@ -8,7 +8,7 @@ Welcome to jinn's documentation!
 
 Changelog:
 
-* v0.8.11:
+* v0.9.10:
 
     - Merge `[!43] <https://gitlab.com/mia_jinns/jinns/-/merge_requests/43>`_ and `[!46] <https://gitlab.com/mia_jinns/jinns/-/merge_requests/46>`_
         1. **New feature :** DataGenerators beyond cartesian products. Users can now implement their own collocation point sampling method without separating time (``t``) from space (``x``). This is useful if you want to sample uniformly over space and time, or even have any time dependent space domain / boundary.
