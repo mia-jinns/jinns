@@ -120,16 +120,23 @@ def boundary_condition_apply(
         else:
             raise ValueError("Other border batches are not implemented")
         b_losses_by_facet = jax.tree_util.tree_map(
-            lambda c, f, fa, d: jnp.mean(
-                loss_weight * _compute_boundary_loss(c, f, batch, u, params, fa, d)
+            lambda c, f, fa, d: (
+                None
+                if c is None
+                else jnp.mean(
+                    loss_weight * _compute_boundary_loss(c, f, batch, u, params, fa, d)
+                )
             ),
             omega_boundary_condition,
             omega_boundary_fun,
             facet_tree,
             omega_boundary_dim,
+            is_leaf=lambda x: x is None,
         )  # when exploring leaves with None value (no condition) the returned
         # mse is None and we get rid of the None leaves of b_losses_by_facet
         # with the tree_leaves below
+        # Note that to keep the behaviour given in the comment above we neede
+        # to specify is_leaf according to the note in the release of 0.4.29
     else:
         facet_tuple = tuple(f for f in range(batch[1].shape[-1]))
         b_losses_by_facet = jax.tree_util.tree_map(

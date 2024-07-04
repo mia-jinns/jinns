@@ -453,15 +453,20 @@ def store_loss_and_params(
     tracked_params,
 ):
     stored_params = jax.tree_util.tree_map(
-        lambda stored_value, param, tracked_param: jax.lax.cond(
-            tracked_param,
-            lambda ope: ope[0].at[i].set(ope[1]),
-            lambda ope: ope[0],
-            (stored_value, param),
+        lambda stored_value, param, tracked_param: (
+            None
+            if stored_value is None
+            else jax.lax.cond(
+                tracked_param,
+                lambda ope: ope[0].at[i].set(ope[1]),
+                lambda ope: ope[0],
+                (stored_value, param),
+            )
         ),
         stored_params,
         params,
         tracked_params,
+        is_leaf=lambda x: x is None,
     )
     stored_loss_terms = jax.tree_util.tree_map(
         lambda stored_term, loss_term: stored_term.at[i].set(loss_term),
