@@ -62,19 +62,19 @@ def train_GLV_init():
         for i in range(3)
     }
 
-    N1_dynamic_loss = jinns.loss.GeneralizedLotkaVolterra(
+    N1_dynamic_loss = jinns.loss.GeneralizedLotkaVolterra_eqx(
         key_main="0", keys_other=["1", "2"], Tmax=Tmax
     )
-    N2_dynamic_loss = jinns.loss.GeneralizedLotkaVolterra(
+    N2_dynamic_loss = jinns.loss.GeneralizedLotkaVolterra_eqx(
         key_main="1", keys_other=["0", "2"], Tmax=Tmax
     )
-    N3_dynamic_loss = jinns.loss.GeneralizedLotkaVolterra(
+    N3_dynamic_loss = jinns.loss.GeneralizedLotkaVolterra_eqx(
         key_main="2", keys_other=["0", "1"], Tmax=Tmax
     )
 
     loss_weights = {"dyn_loss": 1, "initial_condition": 1 * Tmax}
 
-    loss = jinns.loss.SystemLossODE(
+    loss = jinns.loss.SystemLossODE_eqx(
         u_dict={"0": u, "1": u, "2": u},
         loss_weights=loss_weights,
         dynamic_loss_dict={
@@ -115,7 +115,7 @@ def train_GLV_10it(train_GLV_init):
 
     tx = optax.adam(learning_rate=1e-3)
     n_iter = 10
-    params, total_loss_list, loss_by_term_dict, data, _, _, _ = jinns.solve(
+    params, total_loss_list, loss_by_term_dict, data, _, _, _, _, _ = jinns.solve(
         n_iter=n_iter,
         loss=loss,
         optimizer=tx,
