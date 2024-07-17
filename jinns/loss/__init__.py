@@ -9,3 +9,5 @@ from ._DynamicLoss import (
 )
 from ._LossPDE import LossPDENonStatio, LossPDEStatio, SystemLossPDE
 from ._LossODE import LossODE, SystemLossODE
+from ._LossODE_eqx import LossODE_eqx, SystemLossODE_eqx
+from ._DynamicLoss_eqx import GeneralizedLotkaVolterra_eqx
