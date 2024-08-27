@@ -5,31 +5,31 @@ Define the DataGeneratorODE equinox module
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jaxtyping import Key, Int, PyTree, Array
+from jaxtyping import Key, Int, PyTree, Array, Float
 from typing import Union, NamedTuple
-
+from jinns.data._DataGenerators import ODEBatch, PDENonStatioBatch, PDEStatioBatch
 
 # TODO ? change to eqx.Module, but this require an update of all the _replace()
 # calls
-class ODEBatch(NamedTuple):  # eqx.Module):
-    temporal_batch: Array
-    param_batch_dict: dict = None
-    obs_batch_dict: dict = None
-
-
-class PDENonStatioBatch(NamedTuple):  # eqx.Module):
-    inside_batch: Array
-    border_batch: Array
-    temporal_batch: Array
-    param_batch_dict: dict = None
-    obs_batch_dict: dict = None
-
-
-class PDEStatioBatch(NamedTuple):  # eqx.Module):
-    inside_batch: Array
-    border_batch: Array
-    param_batch_dict: dict = None
-    obs_batch_dict: dict = None
+# class ODEBatch(NamedTuple):  # eqx.Module):
+#    temporal_batch: Array
+#    param_batch_dict: dict = None
+#    obs_batch_dict: dict = None
+#
+#
+# class PDENonStatioBatch(NamedTuple):  # eqx.Module):
+#    inside_batch: Array
+#    border_batch: Array
+#    temporal_batch: Array
+#    param_batch_dict: dict = None
+#    obs_batch_dict: dict = None
+#
+#
+# class PDEStatioBatch(NamedTuple):  # eqx.Module):
+#    inside_batch: Array
+#    border_batch: Array
+#    param_batch_dict: dict = None
+#    obs_batch_dict: dict = None
 
 
 def _reset_batch_idx_and_permute(operands):
@@ -85,6 +85,35 @@ def _reset_or_increment(bend, n_eff, operands):
     )
 
 
+def _check_and_set_rar_parameters(rar_parameters, n, n_start):
+    if rar_parameters is not None and n_start is None:
+        raise ValueError(
+            "nt_start must be provided in the context of RAR sampling scheme"
+        )
+
+    if rar_parameters is not None:
+        # Default p is None. However, in the RAR sampling scheme we use 0
+        # probability to specify non-used collocation points (i.e. points
+        # above nt_start). Thus, p is a vector of probability of shape (nt, 1).
+        p = jnp.zeros((n,))
+        p = p.at[:n_start].set(1 / n_start)
+        # set internal counter for the number of gradient steps since the
+        # last new collocation points have been added
+        # It is not 0 to ensure the first iteration of RAR happens just
+        # after start_iter. See the _proceed_to_rar() function in _rar.py
+        rar_iter_from_last_sampling = rar_parameters["update_every"] - 1
+        # set iternal counter for the number of times collocation points
+        # have been added
+        rar_iter_nb = 0
+    else:
+        n_start = n
+        p = None
+        rar_iter_from_last_sampling = None
+        rar_iter_nb = None
+
+    return n_start, p, rar_iter_from_last_sampling, rar_iter_nb
+
+
 class DataGeneratorODE_eqx(eqx.Module):
     """
     A class implementing data generator object for ordinary differential equations.
@@ -132,8 +161,8 @@ class DataGeneratorODE_eqx(eqx.Module):
 
     key: Key
     nt: Int
-    tmin: Int
-    tmax: Int
+    tmin: Float
+    tmax: Float
     temporal_batch_size: Int = eqx.field(static=True)  # static cause used as a
     # shape in jax.lax.dynamic_slice
     method: str = eqx.field(static=True, default_factory=lambda: "uniform")
@@ -149,29 +178,12 @@ class DataGeneratorODE_eqx(eqx.Module):
     times: Array = eqx.field(init=False)
 
     def __post_init__(self):
-        if self.rar_parameters is not None and self.nt_start is None:
-            raise ValueError(
-                "nt_start must be provided in the context of RAR sampling scheme"
-            )
-
-        if self.rar_parameters is not None:
-            # Default p is None. However, in the RAR sampling scheme we use 0
-            # probability to specify non-used collocation points (i.e. points
-            # above nt_start). Thus, p is a vector of probability of shape (nt, 1).
-            self.p_times = jnp.zeros((self.nt,))
-            self.p_times = self.p_times.at[: self.nt_start].set(1 / self.nt_start)
-            # set internal counter for the number of gradient steps since the
-            # last new collocation points have been added
-            self.rar_iter_from_last_sampling = 0
-            # set iternal counter for the number of times collocation points
-            # have been added
-            self.rar_iter_nb = 0
-
-        if self.rar_parameters is None or self.nt_start is None:
-            self.nt_start = self.nt
-            self.p_times = None
-            self.rar_iter_from_last_sampling = None
-            self.rar_iter_nb = None
+        (
+            self.nt_start,
+            self.p_times,
+            self.rar_iter_from_last_sampling,
+            self.rar_iter_nb,
+        ) = _check_and_set_rar_parameters(self.rar_parameters, self.nt, self.nt_start)
 
         self.curr_time_idx = jnp.iinfo(jnp.int32).max - self.temporal_batch_size - 1
         # to be sure there is a
@@ -213,7 +225,7 @@ class DataGeneratorODE_eqx(eqx.Module):
             return self.sample_in_time_domain(key)
         raise ValueError("Method " + self.method + " is not implemented.")
 
-    def _get_time_operands(self):
+    def _get_time_operands(self) -> tuple[Key, Array, Int, Int, Array]:
         return (
             self.key,
             self.times,
@@ -259,3 +271,360 @@ class DataGeneratorODE_eqx(eqx.Module):
         """
         new, temporal_batch = self.temporal_batch()
         return new, ODEBatch(temporal_batch=temporal_batch)
+
+
+class CubicMeshPDEStatio_eqx(eqx.Module):
+    r"""
+    A class implementing data generator object for stationary partial
+    differential equations.
+
+    Parameters
+    ----------
+    key
+        Jax random key to sample new time points and to shuffle batches
+    n
+        An integer. The number of total :math:`\Omega` points that will be divided in
+        batches. Batches are made so that each data point is seen only
+        once during 1 epoch.
+    nb
+        An integer. The total number of points in :math:`\partial\Omega`.
+        Can be `None` not to lose performance generating the border
+        batch if they are not used
+    omega_batch_size
+        An integer. The size of the batch of randomly selected points among
+        the `n` points.
+    omega_border_batch_size
+        An integer. The size of the batch of points randomly selected
+        among the `nb` points.
+        Can be `None` not to lose performance generating the border
+        batch if they are not used
+    dim
+        An integer. dimension of :math:`\Omega` domain
+    min_pts
+        A tuple of minimum values of the domain along each dimension. For a sampling
+        in `n` dimension, this represents :math:`(x_{1, min}, x_{2,min}, ...,
+        x_{n, min})`
+    max_pts
+        A tuple of maximum values of the domain along each dimension. For a sampling
+        in `n` dimension, this represents :math:`(x_{1, max}, x_{2,max}, ...,
+        x_{n,max})`
+    method
+        Either `grid` or `uniform`, default is `grid`.
+        The method that generates the `nt` time points. `grid` means
+        regularly spaced points over the domain. `uniform` means uniformly
+        sampled points over the domain
+    rar_parameters
+        Default to None: do not use Residual Adaptative Resampling.
+        Otherwise a dictionary with keys. `start_iter`: the iteration at
+        which we start the RAR sampling scheme (we first have a burn in
+        period). `update_every`: the number of gradient steps taken between
+        each appending of collocation points in the RAR algo.
+        `sample_size_omega`: the size of the sample from which we will select new
+        collocation points. `selected_sample_size_omega`: the number of selected
+        points from the sample to be added to the current collocation
+        points
+        "DeepXDE: A deep learning library for solving differential
+        equations", L. Lu, SIAM Review, 2021
+    n_start
+        Defaults to None. The effective size of n used at start time.
+        This value must be
+        provided when rar_parameters is not None. Otherwise we set internally
+        n_start = n and this is hidden from the user.
+        In RAR, n_start
+        then corresponds to the initial number of points we train the PINN.
+    """
+
+    key: Key
+    n: Int
+    nb: Int
+    omega_batch_size: Int = eqx.field(static=True)  # static cause used as a
+    # shape in jax.lax.dynamic_slice
+    omega_border_batch_size: Int = eqx.field(static=True)  # static cause used as a
+    # shape in jax.lax.dynamic_slice
+    dim: Int = eqx.field(static=True)  # static cause used as a
+    # shape in jax.lax.dynamic_slice
+    min_pts: tuple[Float]
+    max_pts: tuple[Float]
+    method: str = eqx.field(static=True, default_factory=lambda: "uniform")
+    rar_parameters: PyTree = None
+    n_start: int = None
+
+    # all the init=False fields are set in __post_init__, even after a _replace
+    # or eqx.tree_at __post_init__ is called
+    p_omega: Array = eqx.field(init=False)
+    p_border: Array = eqx.field(init=False)
+    rar_iter_from_last_sampling: Array = eqx.field(init=False)
+    rar_iter_nb: Array = eqx.field(init=False)
+    curr_omega_idx: Int = eqx.field(init=False)
+    curr_omega_border_idx: Int = eqx.field(init=False)
+    omega: Array = eqx.field(init=False)
+    omega_border: Array = eqx.field(init=False)
+
+    def __post_init__(self):
+        assert self.dim == len(self.min_pts) and isinstance(self.min_pts, tuple)
+        assert self.dim == len(self.max_pts) and isinstance(self.max_pts, tuple)
+
+        (
+            self.n_start,
+            self.p_omega,
+            self.rar_iter_from_last_sampling,
+            self.rar_iter_nb,
+        ) = _check_and_set_rar_parameters(self.rar_parameters, self.n, self.n_start)
+
+        self.p_border = None  # no RAR sampling for border for now
+
+        # Special handling for the border batch
+        if self.omega_border_batch_size is None:
+            self.nb = None
+            self.omega_border_batch_size = None
+        elif self.dim == 1:
+            # 1-D case : the arguments `nb` and `omega_border_batch_size` are
+            # ignored but kept for backward stability. The attributes are
+            # always set to 2.
+            self.nb = 2
+            self.omega_border_batch_size = 2
+            # We are in 1-D case => omega_border_batch_size is
+            # ignored since borders of Omega are singletons.
+            #  self.border_batch() will return [xmin, xmax]
+        else:
+            if self.nb % (2 * self.dim) != 0 or self.nb < 2 * self.dim:
+                raise ValueError(
+                    "number of border point must be"
+                    " a multiple of 2xd (the # of faces of a d-dimensional cube)"
+                )
+            if self.nb // (2 * self.dim) < self.omega_border_batch_size:
+                raise ValueError(
+                    "number of points per facets (nb//2*self.dim)"
+                    " cannot be lower than border batch size"
+                )
+            self.nb = int((2 * self.dim) * (self.nb // (2 * self.dim)))
+
+        self.curr_omega_idx = jnp.iinfo(jnp.int32).max - self.omega_batch_size - 1
+        # see explaination in DataGeneratorODE_eqx
+        if self.omega_border_batch_size is None:
+            self.curr_omega_border_idx = None
+        else:
+            self.curr_omega_border_idx = (
+                jnp.iinfo(jnp.int32).max - self.omega_border_batch_size - 1
+            )
+        key, subkey = jax.random.split(self.key)
+        self.key = key
+        self.omega, self.omega_border = self.generate_data(subkey)
+        # see explaination in DataGeneratorODE_eqx for the key
+
+    def sample_in_omega_domain(self, key: Key) -> Array:
+        if self.dim == 1:
+            xmin, xmax = self.min_pts[0], self.max_pts[0]
+            return jax.random.uniform(key, shape=(self.n, 1), minval=xmin, maxval=xmax)
+        keys = jax.random.split(key, self.dim)
+        return jnp.concatenate(
+            [
+                jax.random.uniform(
+                    keys[i],
+                    (self.n, 1),
+                    minval=self.min_pts[i],
+                    maxval=self.max_pts[i],
+                )
+                for i in range(self.dim)
+            ],
+            axis=-1,
+        )
+
+    def sample_in_omega_border_domain(self, key: Key) -> Array:
+        if self.omega_border_batch_size is None:
+            return None
+        if self.dim == 1:
+            xmin = self.min_pts[0]
+            xmax = self.max_pts[0]
+            return jnp.array([xmin, xmax]).astype(float)
+        if self.dim == 2:
+            # currently hard-coded the 4 edges for d==2
+            # TODO : find a general & efficient way to sample from the border
+            # (facets) of the hypercube in general dim.
+
+            facet_n = self.nb // (2 * self.dim)
+            subkeys = jax.random.split(key, 4)
+            xmin = jnp.hstack(
+                [
+                    self.min_pts[0] * jnp.ones((facet_n, 1)),
+                    jax.random.uniform(
+                        subkeys[0],
+                        (facet_n, 1),
+                        minval=self.min_pts[1],
+                        maxval=self.max_pts[1],
+                    ),
+                ]
+            )
+            xmax = jnp.hstack(
+                [
+                    self.max_pts[0] * jnp.ones((facet_n, 1)),
+                    jax.random.uniform(
+                        subkeys[1],
+                        (facet_n, 1),
+                        minval=self.min_pts[1],
+                        maxval=self.max_pts[1],
+                    ),
+                ]
+            )
+            ymin = jnp.hstack(
+                [
+                    jax.random.uniform(
+                        subkeys[2],
+                        (facet_n, 1),
+                        minval=self.min_pts[0],
+                        maxval=self.max_pts[0],
+                    ),
+                    self.min_pts[1] * jnp.ones((facet_n, 1)),
+                ]
+            )
+            ymax = jnp.hstack(
+                [
+                    jax.random.uniform(
+                        subkeys[3],
+                        (facet_n, 1),
+                        minval=self.min_pts[0],
+                        maxval=self.max_pts[0],
+                    ),
+                    self.max_pts[1] * jnp.ones((facet_n, 1)),
+                ]
+            )
+            return jnp.stack([xmin, xmax, ymin, ymax], axis=-1)
+        raise NotImplementedError(
+            "Generation of the border of a cube in dimension > 2 is not "
+            + f"implemented yet. You are asking for generation in dimension d={self.dim}."
+        )
+
+    def generate_data(self, key: Key) -> Array:
+        r"""
+        Construct a complete set of `self.n` :math:`\Omega` points according to the
+        specified `self.method`. Also constructs a complete set of `self.nb`
+        :math:`\partial\Omega` points if `self.omega_border_batch_size` is not
+        `None`. If the latter is `None` we set `self.omega_border` to `None`.
+        """
+        subkey1, subkey2 = jax.random.split(key, 2)
+        # Generate Omega
+        if self.method == "grid":
+            if self.dim == 1:
+                xmin, xmax = self.min_pts[0], self.max_pts[0]
+                partial = (xmax - xmin) / self.n
+                # shape (n, 1)
+                omega = jnp.arange(xmin, xmax, partial)[:, None]
+            else:
+                partials = [
+                    (self.max_pts[i] - self.min_pts[i]) / jnp.sqrt(self.n)
+                    for i in range(self.dim)
+                ]
+                xyz_ = jnp.meshgrid(
+                    *[
+                        jnp.arange(self.min_pts[i], self.max_pts[i], partials[i])
+                        for i in range(self.dim)
+                    ]
+                )
+                xyz_ = [a.reshape((self.n, 1)) for a in xyz_]
+                omega = jnp.concatenate(xyz_, axis=-1)
+        elif self.method == "uniform":
+            omega = self.sample_in_omega_domain(subkey1)
+        else:
+            raise ValueError("Method " + self.method + " is not implemented.")
+
+        # Generate border of omega
+        omega_border = self.sample_in_omega_border_domain(subkey2)
+
+        return omega, omega_border
+
+    def _get_omega_operands(self) -> tuple[Key, Array, Int, Int, Array]:
+        return (
+            self.key,
+            self.omega,
+            self.curr_omega_idx,
+            self.omega_batch_size,
+            self.p_omega,
+        )
+
+    def inside_batch(self):
+        r"""
+        Return a batch of points in :math:`\Omega`.
+        If all the batches have been seen, we reshuffle them,
+        otherwise we just return the next unseen batch.
+        """
+        # Compute the effective number of used collocation points
+        if self.rar_parameters is not None:
+            n_eff = (
+                self.n_start
+                + self.rar_iter_nb * self.rar_parameters["selected_sample_size_omega"]
+            )
+        else:
+            n_eff = self.n
+
+        bstart = self.curr_omega_idx
+        bend = bstart + self.omega_batch_size
+
+        new_attributes = _reset_or_increment(bend, n_eff, self._get_omega_operands())
+        new = eqx.tree_at(
+            lambda m: (m.key, m.omega, m.curr_omega_idx), self, new_attributes
+        )
+
+        return new, jax.lax.dynamic_slice(
+            new.omega,
+            start_indices=(new.curr_omega_idx, 0),
+            slice_sizes=(new.omega_batch_size, new.dim),
+        )
+
+    def _get_omega_border_operands(self) -> tuple[Key, Array, Int, Int, Array]:
+        return (
+            self.key,
+            self.omega_border,
+            self.curr_omega_border_idx,
+            self.omega_border_batch_size,
+            self.p_border,
+        )
+
+    def border_batch(self):
+        r"""
+        Return
+
+        - The value `None` if `self.omega_border_batch_size` is `None`.
+
+        - a jnp array with two fixed values :math:`(x_{min}, x_{max})` if
+          `self.dim` = 1. There is no sampling here, we return the entire
+          :math:`\partial\Omega`
+
+        - a batch of points in :math:`\partial\Omega` otherwise, stacked by
+          facet on the last axis.
+          If all the batches have been seen, we reshuffle them,
+          otherwise we just return the next unseen batch.
+
+
+        """
+        if self.omega_border_batch_size is None:
+            return self, None
+        if self.dim == 1:
+            # 1-D case, no randomness : we always return the whole omega border,
+            # i.e. (1, 1, 2) shape jnp.array([[[xmin], [xmax]]]).
+            return self, self.omega_border[None, None]  # shape is (1, 1, 2)
+        bstart = self.curr_omega_border_idx
+        bend = bstart + self.omega_border_batch_size
+
+        new_attributes = _reset_or_increment(
+            bend, self.nb, self._get_omega_border_operands()
+        )
+        new = eqx.tree_at(
+            lambda m: (m.key, m.omega_border, m.curr_omega_border_idx),
+            self,
+            new_attributes,
+        )
+
+        return new, jax.lax.dynamic_slice(
+            new.omega_border,
+            start_indices=(new.curr_omega_border_idx, 0, 0),
+            slice_sizes=(new.omega_border_batch_size, new.dim, 2 * new.dim),
+        )
+
+    def get_batch(self) -> tuple["CubicMeshPDEStatio_eqx", PDEStatioBatch]:
+        """
+        Generic method to return a batch. Here we call `self.inside_batch()`
+        and `self.border_batch()`
+        """
+        new, inside_batch = self.inside_batch()
+        new, border_batch = new.border_batch()
+        return new, PDEStatioBatch(inside_batch=inside_batch, border_batch=border_batch)

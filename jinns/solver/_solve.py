@@ -19,7 +19,7 @@ from jinns.data._DataGenerators import (
     append_param_batch,
     append_obs_batch,
 )
-from jinns.data._DataGenerators_eqx import DataGeneratorODE_eqx
+from jinns.data._DataGenerators_eqx import DataGeneratorODE_eqx, CubicMeshPDEStatio_eqx
 from jinns.utils._containers import *
 
 
@@ -573,7 +573,7 @@ def get_get_batch(obs_batch_sharding):
 
         Note: return all that's modified or unwanted dirty undefined behaviour
         """
-        if isinstance(data, DataGeneratorODE_eqx):
+        if isinstance(data, (DataGeneratorODE_eqx, CubicMeshPDEStatio_eqx)):
             # to comply with new datagenerators
             data, batch = data.get_batch()
         else:
@@ -596,10 +596,12 @@ def get_get_batch(obs_batch_sharding):
 
         Note: return all that's modified or unwanted dirty undefined behaviour
         """
-        if isinstance(data, DataGeneratorODE_eqx):
+        if isinstance(data, (DataGeneratorODE_eqx, CubicMeshPDEStatio_eqx)):
             # to comply with new datagenerators
+            print("HERE")
             data, batch = data.get_batch()
         else:
+            print("HEREiEEE")
             batch = data.get_batch()
         if param_data is not None:
             batch = append_param_batch(batch, param_data.get_batch())
