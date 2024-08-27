@@ -156,6 +156,10 @@ def solve(
     stored_params
         A dictionary. At each key an array of the values of the parameters
         given in tracked_params_key_list is stored
+    validation_crit_values
+        An array containing the validation criterion values of the training
+    best_val_params
+        The best parameters according to the validation criterion
     """
     if param_data is not None:
         check_batch_size(param_data, data, "param_batch_size")
