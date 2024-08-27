@@ -6,7 +6,7 @@ from jax import random
 import equinox as eqx
 import optax
 import jinns
-from jinns.data._DataGeneratorODE import DataGeneratorODE_eqx
+from jinns.data._DataGenerators_eqx import DataGeneratorODE_eqx
 
 
 @pytest.fixture
@@ -108,7 +108,7 @@ def train_GLV_10it(train_GLV_init):
     # (which had this bug see issue #5) so that we can keep old tests values to
     # know we are doing the same
     train_data = eqx.tree_at(
-        lambda m: m.curr_time_idx, train_data, train_data.batch_size
+        lambda m: m.curr_time_idx, train_data, train_data.temporal_batch_size
     )
 
     params = init_params

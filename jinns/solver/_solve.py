@@ -19,7 +19,7 @@ from jinns.data._DataGenerators import (
     append_param_batch,
     append_obs_batch,
 )
-from jinns.data._DataGeneratorODE import DataGeneratorODE_eqx
+from jinns.data._DataGenerators_eqx import DataGeneratorODE_eqx
 from jinns.utils._containers import *
 
 
