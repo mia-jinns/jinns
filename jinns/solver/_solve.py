@@ -19,7 +19,11 @@ from jinns.data._DataGenerators import (
     append_param_batch,
     append_obs_batch,
 )
-from jinns.data._DataGenerators_eqx import DataGeneratorODE_eqx, CubicMeshPDEStatio_eqx
+from jinns.data._DataGenerators_eqx import (
+    DataGeneratorODE_eqx,
+    CubicMeshPDEStatio_eqx,
+    CubicMeshPDENonStatio_eqx,
+)
 from jinns.utils._containers import *
 
 
@@ -257,6 +261,7 @@ def solve(
             stored_objects,
             validation_crit_values,
         ) = carry
+        # jax.debug.print("key at iteration {i}={x}", i=i, x=train_data.data._key)
 
         batch, data, param_data, obs_data = get_batch(
             train_data.data, train_data.param_data, train_data.obs_data
@@ -573,7 +578,10 @@ def get_get_batch(obs_batch_sharding):
 
         Note: return all that's modified or unwanted dirty undefined behaviour
         """
-        if isinstance(data, (DataGeneratorODE_eqx, CubicMeshPDEStatio_eqx)):
+        if isinstance(
+            data,
+            (DataGeneratorODE_eqx, CubicMeshPDEStatio_eqx, CubicMeshPDENonStatio_eqx),
+        ):
             # to comply with new datagenerators
             data, batch = data.get_batch()
         else:
@@ -596,7 +604,10 @@ def get_get_batch(obs_batch_sharding):
 
         Note: return all that's modified or unwanted dirty undefined behaviour
         """
-        if isinstance(data, (DataGeneratorODE_eqx, CubicMeshPDEStatio_eqx)):
+        if isinstance(
+            data,
+            (DataGeneratorODE_eqx, CubicMeshPDEStatio_eqx, CubicMeshPDENonStatio_eqx),
+        ):
             # to comply with new datagenerators
             data, batch = data.get_batch()
         else:

@@ -206,24 +206,18 @@ class DataGeneratorODE_eqx(eqx.Module):
         # happen
         # NOTE the (- self.temporal_batch_size - 1) because otherwise when computing
         # `bend` we overflow the max int32 with unwanted behaviour
-        key, subkey = jax.random.split(self.key)
-        self.key = key
-        self.times = self.generate_time_data(subkey)
 
+        self.key, self.times = self.generate_time_data(self.key)
         # Note that, here, in __init__ (and __post_init__), this is the
         # only place where self assignment are authorized so we do the
-        # above way for the key. But note that a method returning a copy
-        # for an out-of-place key update is not possible because we would
-        # replace the self inside its __init__ (by the new); that is, the
-        # following lines break on the error "times attributes not
-        # initialized" :D
-        # new, key = self._get_key()
-        # new.times = self.generate_time_data(subkey)
+        # above way for the key. Note that one of the motivation to return the
+        # key from generate_*_data is to easily align key with legacy
+        # DataGenerators to use same unit tests
 
     def sample_in_time_domain(self, key) -> Array:
         return jax.random.uniform(key, (self.nt,), minval=self.tmin, maxval=self.tmax)
 
-    def generate_time_data(self, key) -> Array:
+    def generate_time_data(self, key) -> tuple[Key, Array]:
         """
         Construct a complete set of `self.nt` time points according to the
         specified `self.method`
@@ -231,11 +225,12 @@ class DataGeneratorODE_eqx(eqx.Module):
         Note that self.times has always size self.nt and not self.nt_start, even
         in RAR scheme, we must allocate all the collocation points
         """
+        key, subkey = jax.random.split(self.key)
         if self.method == "grid":
             partial_times = (self.tmax - self.tmin) / self.nt
-            return jnp.arange(self.tmin, self.tmax, partial_times)
+            return key, jnp.arange(self.tmin, self.tmax, partial_times)
         if self.method == "uniform":
-            return self.sample_in_time_domain(key)
+            return key, self.sample_in_time_domain(subkey)
         raise ValueError("Method " + self.method + " is not implemented.")
 
     def _get_time_operands(self) -> tuple[Key, Array, Int, Int, Array]:
@@ -427,9 +422,9 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
             self.curr_omega_border_idx = (
                 jnp.iinfo(jnp.int32).max - self.omega_border_batch_size - 1
             )
-        key, subkey = jax.random.split(self.key)
-        self.key = key
-        self.omega, self.omega_border = self.generate_data(subkey)
+        # key, subkey = jax.random.split(self.key)
+        # self.key = key
+        self.key, self.omega, self.omega_border = self.generate_data(self.key)
         # see explaination in DataGeneratorODE_eqx for the key
 
     def sample_in_omega_domain(self, key: Key) -> Array:
@@ -514,14 +509,14 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
             + f"implemented yet. You are asking for generation in dimension d={self.dim}."
         )
 
-    def generate_data(self, key: Key) -> Array:
+    def generate_data(self, key: Key) -> tuple[Key, Array]:
         r"""
         Construct a complete set of `self.n` :math:`\Omega` points according to the
         specified `self.method`. Also constructs a complete set of `self.nb`
         :math:`\partial\Omega` points if `self.omega_border_batch_size` is not
         `None`. If the latter is `None` we set `self.omega_border` to `None`.
         """
-        subkey1, subkey2 = jax.random.split(key, 2)
+        key, subkey = jax.random.split(key, 2)
         # Generate Omega
         if self.method == "grid":
             if self.dim == 1:
@@ -543,14 +538,15 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
                 xyz_ = [a.reshape((self.n, 1)) for a in xyz_]
                 omega = jnp.concatenate(xyz_, axis=-1)
         elif self.method == "uniform":
-            omega = self.sample_in_omega_domain(subkey1)
+            omega = self.sample_in_omega_domain(subkey)
         else:
             raise ValueError("Method " + self.method + " is not implemented.")
 
         # Generate border of omega
-        omega_border = self.sample_in_omega_border_domain(subkey2)
+        key, subkey = jax.random.split(key, 2)
+        omega_border = self.sample_in_omega_border_domain(subkey)
 
-        return omega, omega_border
+        return key, omega, omega_border
 
     def _get_omega_operands(self) -> tuple[Key, Array, Int, Int, Array]:
         return (
@@ -733,8 +729,9 @@ class CubicMeshPDENonStatio_eqx(CubicMeshPDEStatio_eqx):
     tmin: Float = eqx.field(kw_only=True)
     tmax: Float = eqx.field(kw_only=True)
     nt: Int = eqx.field(kw_only=True)
-    temporal_batch_size: Int = eqx.field(kw_only=True)
-    cartesian_product: Bool = eqx.field(kw_only=True, default=True)
+    temporal_batch_size: Int = eqx.field(kw_only=True, static=True)
+    cartesian_product: Bool = eqx.field(kw_only=True, default=True, static=True)
+    nt_start: int = eqx.field(kw_only=True, default=None)
 
     p_times: Array = eqx.field(init=False)
     curr_time_idx: Int = eqx.field(init=False)
@@ -780,9 +777,7 @@ class CubicMeshPDENonStatio_eqx(CubicMeshPDEStatio_eqx):
         ) = _check_and_set_rar_parameters(self.rar_parameters, self.nt, self.nt_start)
 
         self.curr_time_idx = jnp.iinfo(jnp.int32).max - self.temporal_batch_size - 1
-        key, subkey = jax.random.split(self.key)
-        self.key = key
-        self.times = self.generate_time_data(subkey)
+        self.key, self.times = self.generate_time_data(self.key)
         # see explaination in DataGeneratorODE_eqx for the key
 
     def sample_in_time_domain(self, key) -> Array:
@@ -797,7 +792,7 @@ class CubicMeshPDENonStatio_eqx(CubicMeshPDEStatio_eqx):
             self.p_times,
         )
 
-    def generate_time_data(self, key) -> Array:
+    def generate_time_data(self, key) -> tuple[Key, Array]:
         """
         Construct a complete set of `self.nt` time points according to the
         specified `self.method`
@@ -805,11 +800,12 @@ class CubicMeshPDENonStatio_eqx(CubicMeshPDEStatio_eqx):
         Note that self.times has always size self.nt and not self.nt_start, even
         in RAR scheme, we must allocate all the collocation points
         """
+        key, subkey = jax.random.split(key, 2)
         if self.method == "grid":
             partial_times = (self.tmax - self.tmin) / self.nt
-            return jnp.arange(self.tmin, self.tmax, partial_times)
+            return key, jnp.arange(self.tmin, self.tmax, partial_times)
         if self.method == "uniform":
-            return self.sample_in_time_domain(key)
+            return key, self.sample_in_time_domain(subkey)
         raise ValueError("Method " + self.method + " is not implemented.")
 
     def temporal_batch(self) -> tuple["CubicMeshPDENonStatio_eqx", Array]:
@@ -847,7 +843,8 @@ class CubicMeshPDENonStatio_eqx(CubicMeshPDEStatio_eqx):
         """
         new, x = self.inside_batch()
         new, dx = new.border_batch()
-        new, t = new.temporal_batch().reshape(self.temporal_batch_size, 1)
+        new, t = new.temporal_batch()
+        t = t.reshape(self.temporal_batch_size, 1)
 
         if self.cartesian_product:
             t_x = make_cartesian_product(t, x)

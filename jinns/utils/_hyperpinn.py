@@ -36,7 +36,7 @@ class HYPERPINN(PINN):
     """
 
     params_hyper: eqx.Module
-    static_hyper: eqx.Module
+    static_hyper: eqx.Module = eqx.field(static=True)
     hyperparams: list = eqx.field(static=True)
     hypernet_input_size: int
     pinn_params_sum: ArrayLike = eqx.field(static=True)

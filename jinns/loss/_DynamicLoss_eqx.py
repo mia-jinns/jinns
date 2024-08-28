@@ -4,12 +4,16 @@ Implements several dynamic losses
 
 from typing import Union, Callable, Dict
 from jaxtyping import Float
+import jax
 from jax import grad
 import jax.numpy as jnp
 import equinox as eqx
 
+from jinns.utils._pinn import PINN
+from jinns.utils._spinn import SPINN
+
 from jinns.utils._utils import _extract_nn_params
-from jinns.loss._DynamicLossAbstract_eqx import ODE
+from jinns.loss._DynamicLossAbstract_eqx import ODE, PDEStatio, PDENonStatio
 
 
 class GeneralizedLotkaVolterra_eqx(ODE):
@@ -93,3 +97,80 @@ class GeneralizedLotkaVolterra_eqx(ODE):
         return du_dt + self.Tmax * (
             -params_main["eq_params"]["growth_rate"] - interaction_terms + carrying_term
         )
+
+
+class BurgerEquation_eqx(PDENonStatio):
+    r"""
+    Return the Burger dynamic loss term (in 1 space dimension):
+
+    .. math::
+        \frac{\partial}{\partial t} u(t,x) + u(t,x)\frac{\partial}{\partial x}
+        u(t,x) - \theta \frac{\partial^2}{\partial x^2} u(t,x) = 0
+
+    Parameters
+    ----------
+    Tmax
+        Tmax needs to be given when the PINN time input is normalized in
+        [0, 1], ie. we have performed renormalization of the differential
+        equation
+    eq_params_heterogeneity
+        Default None. A dict with the keys being the same as in eq_params
+        and the value being `time`, `space`, `both` or None which corresponds to
+        the heterogeneity of a given parameter. A value can be missing, in
+        this case there is no heterogeneity (=None). If
+        eq_params_heterogeneity is None this means there is no
+        heterogeneity for no parameters.
+    """
+
+    def evaluate(self, t, x, u, params):
+        r"""
+        Evaluate the dynamic loss at :math:`(t,x)`.
+
+        Parameters
+        ---------
+        t
+            A time point
+        x
+            A point in :math:`\Omega`
+        u
+            The PINN
+        params
+            The dictionary of parameters of the model.
+            Typically, it is a dictionary of
+            dictionaries: `eq_params` and `nn_params``, respectively the
+            differential equation parameters and the neural network parameter
+        """
+        if isinstance(u, PINN):
+            # Note that the last dim of u is nec. 1
+            u_ = lambda t, x: jnp.squeeze(u(t, x, params)[u.slice_solution])
+            du_dt = grad(u_, 0)
+            du_dx = grad(u_, 1)
+            d2u_dx2 = grad(
+                lambda t, x: du_dx(t, x)[0],
+                1,
+            )
+
+            return du_dt(t, x) + self.Tmax * (
+                u(t, x, params) * du_dx(t, x)
+                - params["eq_params"]["nu"] * d2u_dx2(t, x)
+            )
+
+        if isinstance(u, SPINN):
+            # d=2 JVP calls are expected since we have time and x
+            # then with a batch of size B, we then have Bd JVP calls
+            u_tx, du_dt = jax.jvp(
+                lambda t: u(t, x, params),
+                (t,),
+                (jnp.ones_like(t),),
+            )
+            du_dx_fun = lambda x: jax.jvp(
+                lambda x: u(t, x, params),
+                (x,),
+                (jnp.ones_like(x),),
+            )[1]
+            du_dx, d2u_dx2 = jax.jvp(du_dx_fun, (x,), (jnp.ones_like(x),))
+            # Note that ones_like(x) works because x is Bx1 !
+            return du_dt + self.Tmax * (
+                u_tx * du_dx - params["eq_params"]["nu"] * d2u_dx2
+            )
+        raise ValueError("u is not among the recognized types (PINN or SPINN)")

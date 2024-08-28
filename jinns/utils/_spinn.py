@@ -91,7 +91,7 @@ class SPINN(eqx.Module):
     eq_type: str = eqx.field(static=True)
     m: int
     params: eqx.Module
-    static: eqx.Module
+    static: eqx.Module = eqx.field(static=True)
 
     def __init__(self, spinn_mlp, d, r, eq_type, m):
         self.d, self.r, self.m = d, r, m

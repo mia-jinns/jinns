@@ -307,7 +307,7 @@ class LossPDEStatio_eqx(_LossPDEAbstract_eqx):
         are not respected
     """
 
-    u: eqx.Module = eqx.field(static=True)
+    u: eqx.Module
     dynamic_loss: Union[eqx.Module, None]
     key: Union[Key, None] = eqx.field(kw_only=True, default=None)
 
@@ -759,6 +759,10 @@ class SystemLossPDE_eqx(eqx.Module):
         if the dictionaries that should share the keys of u_dict do not
     """
 
+    # Contrary to the losses above, we need to declare u_dict and
+    # dynamic_loss_dict as static because of the str typed keys which are not
+    # valid JAX type (and not because of the ODE or eqx.Module)
+    # TODO do not use a dictionary here!
     u_dict: Dict[str, eqx.Module] = eqx.field(static=True)
     dynamic_loss_dict: Dict[str, Union[PDEStatio, PDENonStatio]] = eqx.field(
         static=True

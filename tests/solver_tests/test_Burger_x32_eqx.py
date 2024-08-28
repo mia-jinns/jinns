@@ -40,20 +40,20 @@ def train_Burger_init():
     Tmax = 1
     method = "uniform"
 
-    train_data = jinns.data.CubicMeshPDENonStatio(
-        subkey,
-        n,
-        nb,
-        nt,
-        omega_batch_size,
-        omega_border_batch_size,
-        temporal_batch_size,
-        dim,
-        (xmin,),
-        (xmax,),
-        tmin,
-        tmax,
-        method,
+    train_data = jinns.data.CubicMeshPDENonStatio_eqx(
+        key=subkey,
+        n=n,
+        nb=nb,
+        nt=nt,
+        omega_batch_size=omega_batch_size,
+        omega_border_batch_size=omega_border_batch_size,
+        temporal_batch_size=temporal_batch_size,
+        dim=dim,
+        min_pts=(xmin,),
+        max_pts=(xmax,),
+        tmin=tmin,
+        tmax=tmax,
+        method=method,
     )
 
     nu = 1 / (100 * jnp.pi)
@@ -62,11 +62,11 @@ def train_Burger_init():
     def u0(x):
         return -jnp.sin(jnp.pi * x)
 
-    be_loss = jinns.loss.BurgerEquation(Tmax=Tmax)
+    be_loss = jinns.loss.BurgerEquation_eqx(Tmax=Tmax)
 
     loss_weights = {"dyn_loss": 1, "initial_condition": 5, "boundary_loss": 1}
 
-    loss = jinns.loss.LossPDENonStatio(
+    loss = jinns.loss.LossPDENonStatio_eqx(
         u=u,
         loss_weights=loss_weights,
         dynamic_loss=be_loss,
@@ -75,7 +75,7 @@ def train_Burger_init():
         initial_condition_fun=u0,
     )
 
-    print("1", train_data._key)
+    print("1", train_data.key)
     return init_params, loss, train_data
 
 
@@ -85,11 +85,10 @@ def train_Burger_10it(train_Burger_init):
     Fixture that requests a fixture
     """
     init_params, loss, train_data = train_Burger_init
-    print("10it", train_data._key)
+    print("10it", train_data.key)
 
-    # NOTE we need to waste one get_batch() here to stay synchronized with the
-    # notebook
-    _ = loss.evaluate(init_params, train_data.get_batch())[0]
+    # NOTE as opposed to test_Burger for legacy modules, we do not waste a
+    # a batch here (trick to align DataGenerators)
 
     params = init_params
 
@@ -103,8 +102,8 @@ def train_Burger_10it(train_Burger_init):
 
 def test_initial_loss_Burger(train_Burger_init):
     init_params, loss, train_data = train_Burger_init
-    batch = train_data.get_batch()
-    print("init", train_data._key)
+    train_data, batch = train_data.get_batch()
+    print("init", train_data.key)
     assert jnp.allclose(loss.evaluate(init_params, batch)[0], 2.6066298, atol=1e-1)
 
 

@@ -161,7 +161,7 @@ class LossODE_eqx(_LossODEAbstract_eqx):
         if initial condition is not a tuple.
     """
 
-    u: eqx.Module = eqx.field(static=True)
+    u: eqx.Module
     dynamic_loss: Union[eqx.Module, None]
 
     def __post_init__(self):
@@ -325,6 +325,10 @@ class SystemLossODE_eqx(eqx.Module):
         if the dictionaries that should share the keys of u_dict do not
     """
 
+    # Contrary to the losses above, we need to declare u_dict and
+    # dynamic_loss_dict as static because of the str typed keys which are not
+    # valid JAX type (and not because of the ODE or eqx.Module)
+    # TODO do not use a dictionary here!
     u_dict: Dict[str, eqx.Module] = eqx.field(static=True)
     dynamic_loss_dict: Dict[str, ODE] = eqx.field(static=True)
     derivative_keys_dict: Union[Dict[str, Union[list, None]], None] = eqx.field(

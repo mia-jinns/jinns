@@ -61,13 +61,13 @@ class PINN(eqx.Module):
     The function create_PINN has the role to population the `__call__` function
     """
 
-    slice_solution: ArrayLike
+    slice_solution: slice = eqx.field(static=True)
     eq_type: str = eqx.field(static=True)
     input_transform: Callable = eqx.field(static=True)
     output_transform: Callable = eqx.field(static=True)
-    output_slice: ArrayLike
+    output_slice: slice = eqx.field(static=True)
     params: eqx.Module
-    static: eqx.Module
+    static: eqx.Module = eqx.field(static=True)
 
     def __init__(
         self,
