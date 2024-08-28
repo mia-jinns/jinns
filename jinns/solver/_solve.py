@@ -598,10 +598,8 @@ def get_get_batch(obs_batch_sharding):
         """
         if isinstance(data, (DataGeneratorODE_eqx, CubicMeshPDEStatio_eqx)):
             # to comply with new datagenerators
-            print("HERE")
             data, batch = data.get_batch()
         else:
-            print("HEREiEEE")
             batch = data.get_batch()
         if param_data is not None:
             batch = append_param_batch(batch, param_data.get_batch())

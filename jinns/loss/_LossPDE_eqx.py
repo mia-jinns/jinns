@@ -309,7 +309,7 @@ class LossPDEStatio_eqx(_LossPDEAbstract_eqx):
 
     u: eqx.Module = eqx.field(static=True)
     dynamic_loss: Union[eqx.Module, None]
-    key: Union[Key, None]
+    key: Union[Key, None] = eqx.field(kw_only=True, default=None)
 
     def __post_init__(self):
         """
@@ -371,10 +371,10 @@ class LossPDEStatio_eqx(_LossPDEAbstract_eqx):
 
         # normalization part
         params_ = _set_derivatives(params, "norm_loss", self.derivative_keys)
-        if self.normalization_loss is not None:
+        if self.norm_samples is not None:
             mse_norm_loss = normalization_loss_apply(
                 self.u,
-                (self.get_norm_samples(),),
+                (self.norm_samples,),
                 params_,
                 vmap_in_axes_x + vmap_in_axes_params,
                 self.int_length,
@@ -597,10 +597,10 @@ class LossPDENonStatio_eqx(LossPDEStatio_eqx):
 
         # normalization part
         params_ = _set_derivatives(params, "norm_loss", self.derivative_keys)
-        if self.normalization_loss is not None:
+        if self.norm_samples is not None:
             mse_norm_loss = normalization_loss_apply(
                 self.u,
-                (times_batch, self.get_norm_samples()),
+                (times_batch, self.norm_samples),
                 params_,
                 vmap_in_axes_x_t + vmap_in_axes_params,
                 self.int_length,
@@ -763,7 +763,9 @@ class SystemLossPDE_eqx(eqx.Module):
     dynamic_loss_dict: Dict[str, Union[PDEStatio, PDENonStatio]] = eqx.field(
         static=True
     )
-    key_dict: Union[Dict[Union[Key, None], None]]
+    key_dict: Union[Dict[Union[Key, None], None]] = eqx.field(
+        kw_only=True, default=None
+    )
     derivative_keys_dict: Union[Dict[str, Union[list, None]], None] = eqx.field(
         kw_only=True, default=None, static=True
     )
@@ -771,14 +773,14 @@ class SystemLossPDE_eqx(eqx.Module):
         kw_only=True, default=None, static=True
     )
     omega_boundary_fun_dict: Union[
-        Dict[str, Union[Callable, Dict[str, Callable]], None], None
+        Dict[str, Union[Callable, Dict[str, Callable]]], None
     ] = eqx.field(kw_only=True, default=None, static=True)
     omega_boundary_condition_dict: Union[
-        Dict[str, Union[str, Dict[str, str], None]], None
+        Dict[str, Union[str, Dict[str, str]]], None
     ] = eqx.field(kw_only=True, default=None, static=True)
-    omega_boundary_dim_dict: Union[
-        Dict[str, Union[slice, Dict[str, slice], None]], None
-    ] = eqx.field(kw_only=True, default=None, static=True)
+    omega_boundary_dim_dict: Union[Dict[str, Union[slice, Dict[str, slice]]], None] = (
+        eqx.field(kw_only=True, default=None, static=True)
+    )
     initial_condition_fun_dict: Union[Dict[str, Union[Callable, None]], None] = (
         eqx.field(kw_only=True, default=None, static=True)
     )
@@ -968,11 +970,7 @@ class SystemLossPDE_eqx(eqx.Module):
             v is None for k, v in self.omega_boundary_condition_dict.items()
         ):
             _loss_weights["boundary_loss"] = {k: 0 for k in self.u_dict.keys()}
-        if (
-            all(v is None for k, v in self.norm_key_dict.items())
-            or all(v is None for k, v in self.norm_borders_dict.items())
-            or all(v is None for k, v in self.norm_samples_dict.items())
-        ):
+        if all(v is None for k, v in self.norm_samples_dict.items()):
             _loss_weights["norm_loss"] = {k: 0 for k in self.u_dict.keys()}
         if all(v is None for k, v in self.initial_condition_fun_dict.items()):
             _loss_weights["initial_condition"] = {k: 0 for k in self.u_dict.keys()}
@@ -1054,7 +1052,7 @@ class SystemLossPDE_eqx(eqx.Module):
             dyn_loss_for_one_key,
             self.dynamic_loss_dict,
             self.derivative_keys_dyn_loss_dict,
-            self._loss_weights["dyn_loss"],
+            self.loss_weights["dyn_loss"],
         )
         mse_dyn_loss = jax.tree_util.tree_reduce(
             lambda x, y: x + y, jax.tree_util.tree_leaves(dyn_loss_mse_dict)
@@ -1077,7 +1075,7 @@ class SystemLossPDE_eqx(eqx.Module):
             self.u_constraints_dict,
             batch,
             params_dict,
-            self._loss_weights,
+            self.loss_weights,
             loss_weight_struct,
         )
 
