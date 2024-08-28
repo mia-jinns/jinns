@@ -158,7 +158,7 @@ class DataGeneratorODE_eqx(eqx.Module):
         period). `update_rate`: the number of gradient steps taken between
         each appending of collocation points in the RAR algo.
         `sample_size`: the size of the sample from which we will select new
-        collocation points. `selected_sample_size`: the number of selected
+        collocation points. `selected_sample_size_times`: the number of selected
         points from the sample to be added to the current collocation
         points
         "DeepXDE: A deep learning library for solving differential
@@ -180,13 +180,13 @@ class DataGeneratorODE_eqx(eqx.Module):
     # shape in jax.lax.dynamic_slice
     method: str = eqx.field(static=True, default_factory=lambda: "uniform")
     rar_parameters: PyTree = None
-    nt_start: int = None
+    nt_start: Int = eqx.field(static=True, default=None)
 
     # all the init=False fields are set in __post_init__, even after a _replace
     # or eqx.tree_at __post_init__ is called
     p_times: Array = eqx.field(init=False)
-    rar_iter_from_last_sampling: Array = eqx.field(init=False)
-    rar_iter_nb: Array = eqx.field(init=False)
+    rar_iter_from_last_sampling: Int = eqx.field(init=False)
+    rar_iter_nb: Int = eqx.field(init=False)
     curr_time_idx: Int = eqx.field(init=False)
     times: Array = eqx.field(init=False)
 
@@ -214,8 +214,13 @@ class DataGeneratorODE_eqx(eqx.Module):
         # key from generate_*_data is to easily align key with legacy
         # DataGenerators to use same unit tests
 
-    def sample_in_time_domain(self, key) -> Array:
-        return jax.random.uniform(key, (self.nt,), minval=self.tmin, maxval=self.tmax)
+    def sample_in_time_domain(self, key: Key, sample_size: Int = None) -> Array:
+        return jax.random.uniform(
+            key,
+            (self.nt if sample_size is None else sample_size,),
+            minval=self.tmin,
+            maxval=self.tmax,
+        )
 
     def generate_time_data(self, key) -> tuple[Key, Array]:
         """
@@ -254,7 +259,7 @@ class DataGeneratorODE_eqx(eqx.Module):
         if self.rar_parameters is not None:
             nt_eff = (
                 self.nt_start
-                + self.rar_iter_nb * self.rar_parameters["selected_sample_size"]
+                + self.rar_iter_nb * self.rar_parameters["selected_sample_size_times"]
             )
         else:
             nt_eff = self.nt
@@ -362,14 +367,14 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
         kw_only=True, static=True, default_factory=lambda: "uniform"
     )
     rar_parameters: PyTree = eqx.field(kw_only=True, default=None)
-    n_start: int = eqx.field(kw_only=True, default=None)
+    n_start: int = eqx.field(kw_only=True, default=None, static=True)
 
     # all the init=False fields are set in __post_init__, even after a _replace
     # or eqx.tree_at __post_init__ is called
     p_omega: Array = eqx.field(init=False)
     p_border: Array = eqx.field(init=False)
-    rar_iter_from_last_sampling: Array = eqx.field(init=False)
-    rar_iter_nb: Array = eqx.field(init=False)
+    rar_iter_from_last_sampling: Int = eqx.field(init=False)
+    rar_iter_nb: Int = eqx.field(init=False)
     curr_omega_idx: Int = eqx.field(init=False)
     curr_omega_border_idx: Int = eqx.field(init=False)
     omega: Array = eqx.field(init=False)
@@ -427,16 +432,19 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
         self.key, self.omega, self.omega_border = self.generate_data(self.key)
         # see explaination in DataGeneratorODE_eqx for the key
 
-    def sample_in_omega_domain(self, key: Key) -> Array:
+    def sample_in_omega_domain(self, keys: Key, sample_size: Int = None) -> Array:
+        sample_size = self.n if sample_size is None else sample_size
         if self.dim == 1:
             xmin, xmax = self.min_pts[0], self.max_pts[0]
-            return jax.random.uniform(key, shape=(self.n, 1), minval=xmin, maxval=xmax)
-        keys = jax.random.split(key, self.dim)
+            return jax.random.uniform(
+                keys, shape=(sample_size, 1), minval=xmin, maxval=xmax
+            )
+        # keys = jax.random.split(key, self.dim)
         return jnp.concatenate(
             [
                 jax.random.uniform(
                     keys[i],
-                    (self.n, 1),
+                    (sample_size, 1),
                     minval=self.min_pts[i],
                     maxval=self.max_pts[i],
                 )
@@ -445,7 +453,7 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
             axis=-1,
         )
 
-    def sample_in_omega_border_domain(self, key: Key) -> Array:
+    def sample_in_omega_border_domain(self, keys: Key) -> Array:
         if self.omega_border_batch_size is None:
             return None
         if self.dim == 1:
@@ -458,12 +466,11 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
             # (facets) of the hypercube in general dim.
 
             facet_n = self.nb // (2 * self.dim)
-            subkeys = jax.random.split(key, 4)
             xmin = jnp.hstack(
                 [
                     self.min_pts[0] * jnp.ones((facet_n, 1)),
                     jax.random.uniform(
-                        subkeys[0],
+                        keys[0],
                         (facet_n, 1),
                         minval=self.min_pts[1],
                         maxval=self.max_pts[1],
@@ -474,7 +481,7 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
                 [
                     self.max_pts[0] * jnp.ones((facet_n, 1)),
                     jax.random.uniform(
-                        subkeys[1],
+                        keys[1],
                         (facet_n, 1),
                         minval=self.min_pts[1],
                         maxval=self.max_pts[1],
@@ -484,7 +491,7 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
             ymin = jnp.hstack(
                 [
                     jax.random.uniform(
-                        subkeys[2],
+                        keys[2],
                         (facet_n, 1),
                         minval=self.min_pts[0],
                         maxval=self.max_pts[0],
@@ -495,7 +502,7 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
             ymax = jnp.hstack(
                 [
                     jax.random.uniform(
-                        subkeys[3],
+                        keys[3],
                         (facet_n, 1),
                         minval=self.min_pts[0],
                         maxval=self.max_pts[0],
@@ -516,7 +523,6 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
         :math:`\partial\Omega` points if `self.omega_border_batch_size` is not
         `None`. If the latter is `None` we set `self.omega_border` to `None`.
         """
-        key, subkey = jax.random.split(key, 2)
         # Generate Omega
         if self.method == "grid":
             if self.dim == 1:
@@ -538,13 +544,21 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
                 xyz_ = [a.reshape((self.n, 1)) for a in xyz_]
                 omega = jnp.concatenate(xyz_, axis=-1)
         elif self.method == "uniform":
-            omega = self.sample_in_omega_domain(subkey)
+            if self.dim == 1:
+                key, subkeys = jax.random.split(key, 2)
+            else:
+                key, *subkeys = jax.random.split(key, self.dim + 1)
+            print("key to sample omega", subkeys)
+            omega = self.sample_in_omega_domain(subkeys)
         else:
             raise ValueError("Method " + self.method + " is not implemented.")
 
         # Generate border of omega
-        key, subkey = jax.random.split(key, 2)
-        omega_border = self.sample_in_omega_border_domain(subkey)
+        if self.dim == 2 and self.omega_border_batch_size is not None:
+            key, *subkeys = jax.random.split(key, 5)
+        else:
+            subkeys = None
+        omega_border = self.sample_in_omega_border_domain(subkeys)
 
         return key, omega, omega_border
 
@@ -580,6 +594,7 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
             lambda m: (m.key, m.omega, m.curr_omega_idx), self, new_attributes
         )
 
+        print("idx of omega batch", new.curr_omega_idx)
         return new, jax.lax.dynamic_slice(
             new.omega,
             start_indices=(new.curr_omega_idx, 0),
@@ -731,7 +746,7 @@ class CubicMeshPDENonStatio_eqx(CubicMeshPDEStatio_eqx):
     nt: Int = eqx.field(kw_only=True)
     temporal_batch_size: Int = eqx.field(kw_only=True, static=True)
     cartesian_product: Bool = eqx.field(kw_only=True, default=True, static=True)
-    nt_start: int = eqx.field(kw_only=True, default=None)
+    nt_start: int = eqx.field(kw_only=True, default=None, static=True)
 
     p_times: Array = eqx.field(init=False)
     curr_time_idx: Int = eqx.field(init=False)
@@ -777,11 +792,19 @@ class CubicMeshPDENonStatio_eqx(CubicMeshPDEStatio_eqx):
         ) = _check_and_set_rar_parameters(self.rar_parameters, self.nt, self.nt_start)
 
         self.curr_time_idx = jnp.iinfo(jnp.int32).max - self.temporal_batch_size - 1
+        self.key, _ = jax.random.split(self.key, 2)  # to make it equivalent to
+        # the call to _reset_batch_idx_and_permute in legacy DG
         self.key, self.times = self.generate_time_data(self.key)
         # see explaination in DataGeneratorODE_eqx for the key
 
-    def sample_in_time_domain(self, key) -> Array:
-        return jax.random.uniform(key, (self.nt,), minval=self.tmin, maxval=self.tmax)
+    def sample_in_time_domain(self, key: Key, sample_size: Int = None) -> Array:
+        print("key to sample times", key)
+        return jax.random.uniform(
+            key,
+            (self.nt if sample_size is None else sample_size,),
+            minval=self.tmin,
+            maxval=self.tmax,
+        )
 
     def _get_time_operands(self) -> tuple[Key, Array, Int, Int, Array]:
         return (
@@ -820,7 +843,7 @@ class CubicMeshPDENonStatio_eqx(CubicMeshPDEStatio_eqx):
         if self.rar_parameters is not None:
             nt_eff = (
                 self.nt_start
-                + self.rar_iter_nb * self.rar_parameters["selected_sample_size"]
+                + self.rar_iter_nb * self.rar_parameters["selected_sample_size_times"]
             )
         else:
             nt_eff = self.nt
@@ -830,6 +853,8 @@ class CubicMeshPDENonStatio_eqx(CubicMeshPDEStatio_eqx):
             lambda m: (m.key, m.times, m.curr_time_idx), self, new_attributes
         )
 
+        # print(new.times)
+        print("idx of time batch", new.curr_time_idx)
         return new, jax.lax.dynamic_slice(
             new.times,
             start_indices=(new.curr_time_idx,),

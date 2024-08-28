@@ -75,7 +75,6 @@ def train_Burger_init():
         initial_condition_fun=u0,
     )
 
-    print("1", train_data._key)
     return init_params, loss, train_data
 
 
@@ -85,7 +84,6 @@ def train_Burger_10it(train_Burger_init):
     Fixture that requests a fixture
     """
     init_params, loss, train_data = train_Burger_init
-    print("10it", train_data._key)
 
     # NOTE we need to waste one get_batch() here to stay synchronized with the
     # notebook
@@ -104,7 +102,6 @@ def train_Burger_10it(train_Burger_init):
 def test_initial_loss_Burger(train_Burger_init):
     init_params, loss, train_data = train_Burger_init
     batch = train_data.get_batch()
-    print("init", train_data._key)
     assert jnp.allclose(loss.evaluate(init_params, batch)[0], 2.6066298, atol=1e-1)
 
 

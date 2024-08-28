@@ -67,6 +67,7 @@ def _reset_batch_idx_and_permute(operands):
     # domain = random.permutation(subkey, domain, axis=0, independent=False)
     # we want that permutation = choice when p=None
     # otherwise p is used to avoid collocation points not in nt_start
+    print("key to shuffle", subkey)
     domain = random.choice(subkey, domain, shape=(domain.shape[0],), replace=False, p=p)
 
     # return updated
@@ -523,10 +524,13 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
         if self.dim == 1:
             xmin, xmax = self.min_pts[0], self.max_pts[0]
             self._key, subkey = random.split(self._key, 2)
+            print("key to sample omega", subkey)
             return random.uniform(
                 subkey, shape=(n_samples, 1), minval=xmin, maxval=xmax
             )
         keys = random.split(self._key, self.dim + 1)
+
+        print("key to sample omega", keys[1:])
         self._key = keys[0]
         return jnp.concatenate(
             [
@@ -676,6 +680,7 @@ class CubicMeshPDEStatio(DataGeneratorPDEAbstract):
 
         # commands below are equivalent to
         # return self.omega[i:(i+batch_size), 0:dim]
+        print("idx of omega batch", self.curr_omega_idx)
         return jax.lax.dynamic_slice(
             self.omega,
             start_indices=(self.curr_omega_idx, 0),
@@ -981,6 +986,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
     def sample_in_time_domain(self, n_samples):
         self._key, subkey = random.split(self._key, 2)
+        print("key to sample times", subkey)
         return random.uniform(subkey, (n_samples,), minval=self.tmin, maxval=self.tmax)
 
     def _get_time_operands(self):
@@ -1031,6 +1037,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         # commands below are equivalent to
         # return self.times[i:(i+t_batch_size)]
         # but JAX prefer the latter
+        # print(self.times)
+        print("idx of tiem batch", self.curr_time_idx)
         return jax.lax.dynamic_slice(
             self.times,
             start_indices=(self.curr_time_idx,),

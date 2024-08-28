@@ -75,6 +75,10 @@ class _LossPDEAbstract_eqx(eqx.Module):
         normalization constant. Default is None. Note that contrary to
         LossPDEAbstract defined in custom Python classes, we perform no check
         on this argument!
+    norm_int_length
+        A Float. Must be provided if norm_samples is provided. The domain area
+        (or interval length in 1D) upon which we perform the numerical
+        integration. Default None
     obs_slice
         slice object specifying the begininning/ending
         slice of u output(s) that is observed (this is then useful for
@@ -98,6 +102,7 @@ class _LossPDEAbstract_eqx(eqx.Module):
         kw_only=True, default=None, static=True
     )
     norm_samples: Union[Array, None] = eqx.field(kw_only=True, default=None)
+    norm_int_length: Union[Float, None] = eqx.field(kw_only=True, default=None)
     obs_slice: Union[slice, None] = eqx.field(kw_only=True, default=None, static=True)
 
     def __post_init__(self):
@@ -207,7 +212,10 @@ class _LossPDEAbstract_eqx(eqx.Module):
                     self.omega_boundary_dim : self.omega_boundary_dim + 1
                 ]
             if not isinstance(self.omega_boundary_dim, slice):
-                raise ValueError("self.omega_boundary_dim must be a jnp.s_" " object")
+                raise ValueError("self.omega_boundary_dim must be a jnp.s_ object")
+
+        if self.norm_samples is not None and self.norm_int_length is None:
+            raise ValueError("self.norm_samples and norm_int_length must be provided")
 
     @abc.abstractmethod
     def evaluate(
@@ -294,6 +302,10 @@ class LossPDEStatio_eqx(_LossPDEAbstract_eqx):
         normalization constant. Default is None. Note that contrary to
         LossPDEAbstract defined in custom Python classes, we perform no check
         on this argument!
+    norm_int_length
+        A Float. Must be provided if norm_samples is provided. The domain area
+        (or interval length in 1D) upon which we perform the numerical
+        integration. Default None
     obs_slice
         slice object specifying the begininning/ending
         slice of u output(s) that is observed (this is then useful for
@@ -377,7 +389,7 @@ class LossPDEStatio_eqx(_LossPDEAbstract_eqx):
                 (self.norm_samples,),
                 params_,
                 vmap_in_axes_x + vmap_in_axes_params,
-                self.int_length,
+                self.norm_int_length,
                 self.loss_weights["norm_loss"],
             )
         else:
@@ -510,6 +522,10 @@ class LossPDENonStatio_eqx(LossPDEStatio_eqx):
     norm_samples
         Fixed sample point in the space over which to compute the
         normalization constant. Default is None
+    norm_int_length
+        A Float. Must be provided if norm_samples is provided. The domain area
+        (or interval length in 1D) upon which we perform the numerical
+        integration. Default None
     obs_slice
         slice object specifying the begininning/ending
         slice of u output(s) that is observed (this is then useful for
@@ -603,7 +619,7 @@ class LossPDENonStatio_eqx(LossPDEStatio_eqx):
                 (times_batch, self.norm_samples),
                 params_,
                 vmap_in_axes_x_t + vmap_in_axes_params,
-                self.int_length,
+                self.norm_int_length,
                 self.loss_weights["norm_loss"],
             )
         else:
@@ -743,6 +759,12 @@ class SystemLossPDE_eqx(eqx.Module):
         A dict of fixed sample point in the space over which to compute the
         normalization constant. Default is None
         Must share the keys of `u_dict`
+    norm_int_length_dict
+        A dict of Float. The domain area
+        (or interval length in 1D) upon which we perform the numerical
+        integration for each element of u_dict.
+        Default is None
+        Must share the keys of `u_dict`
     obs_slice_dict
         dict of obs_slice, with keys from `u_dict` to designate the
         output(s) channels that are forced to observed values, for each
@@ -791,6 +813,9 @@ class SystemLossPDE_eqx(eqx.Module):
     norm_samples_dict: Union[Dict[str, Union[Array, None]], None] = eqx.field(
         kw_only=True, default=None
     )
+    norm_int_length_dict: Union[Dict[str, Union[Float, None]], None] = eqx.field(
+        kw_only=True, default=None
+    )
     obs_slice_dict: Union[Dict[str, Union[slice, None]], None] = eqx.field(
         kw_only=True, default=None, static=True
     )
@@ -821,6 +846,8 @@ class SystemLossPDE_eqx(eqx.Module):
             self.initial_condition_fun_dict = self.u_dict_with_none
         if self.norm_samples_dict is None:
             self.norm_samples_dict = self.u_dict_with_none
+        if self.norm_int_length_dict is None:
+            self.norm_int_length_dict = self.u_dict_with_none
         if self.obs_slice_dict is None:
             self.obs_slice_dict = {k: jnp.s_[...] for k in self.u_dict.keys()}
             if self.u_dict.keys() != self.obs_slice_dict.keys():
@@ -851,6 +878,7 @@ class SystemLossPDE_eqx(eqx.Module):
             or self.u_dict.keys() != self.omega_boundary_dim_dict.keys()
             or self.u_dict.keys() != self.initial_condition_fun_dict.keys()
             or self.u_dict.keys() != self.norm_samples_dict.keys()
+            or self.u_dict.keys() != self.norm_int_length_dict.keys()
         ):
             raise ValueError("All the dicts concerning the PINNs should have same keys")
 
@@ -878,6 +906,7 @@ class SystemLossPDE_eqx(eqx.Module):
                     omega_boundary_condition=self.omega_boundary_condition_dict[i],
                     omega_boundary_dim=self.omega_boundary_dim_dict[i],
                     norm_samples=self.norm_samples_dict[i],
+                    norm_int_length=self.norm_int_length_dict[i],
                     obs_slice=self.obs_slice_dict[i],
                 )
             elif self.u_dict[i].eq_type == "nonstatio_PDE":
@@ -897,9 +926,9 @@ class SystemLossPDE_eqx(eqx.Module):
                     omega_boundary_condition=self.omega_boundary_condition_dict[i],
                     omega_boundary_dim=self.omega_boundary_dim_dict[i],
                     initial_condition_fun=self.initial_condition_fun_dict[i],
-                    norm_key=self.norm_key_dict[i],
-                    norm_borders=self.norm_borders_dict[i],
                     norm_samples=self.norm_samples_dict[i],
+                    norm_int_length=self.norm_int_length_dict[i],
+                    obs_slice=self.obs_slice_dict[i],
                 )
             else:
                 raise ValueError(

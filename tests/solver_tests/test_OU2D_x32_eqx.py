@@ -52,23 +52,49 @@ def train_OU_init():
     method = "uniform"
 
     key, subkey = random.split(key)
-    train_data = jinns.data.CubicMeshPDENonStatio(
-        subkey,
-        n,
-        nb,
-        nt,
-        omega_batch_size,
-        omega_border_batch_size,
-        temporal_batch_size,
-        2,
-        (xmin, ymin),
-        (xmax, ymax),
-        tmin,
-        tmax,
+    train_data = jinns.data.CubicMeshPDENonStatio_eqx(
+        key=subkey,
+        n=n,
+        nb=nb,
+        nt=nt,
+        omega_batch_size=omega_batch_size,
+        omega_border_batch_size=omega_border_batch_size,
+        temporal_batch_size=temporal_batch_size,
+        dim=2,
+        min_pts=(xmin, ymin),
+        max_pts=(xmax, ymax),
+        tmin=tmin,
+        tmax=tmax,
         method=method,
         rar_parameters=rar_parameters,
         n_start=n_start,
         nt_start=nt_start,
+    )
+
+    # the next line is to be able to use the the same test values as the legacy
+    # DataGenerators. We need to align the object parameters because their
+    # respective init is not the same
+    train_data = eqx.tree_at(
+        lambda m: (m.curr_omega_idx, m.curr_time_idx, m.omega, m.times),
+        train_data,
+        (
+            0,
+            0,
+            random.choice(
+                jnp.array([1200475246, 4276610528], dtype=jnp.uint32),
+                train_data.omega,
+                shape=(train_data.omega.shape[0],),
+                replace=False,
+                p=train_data.p_omega,
+            ),
+            random.choice(
+                jnp.array([1112151499, 1480465624], dtype=jnp.uint32),
+                train_data.times,
+                shape=(train_data.times.shape[0],),
+                replace=False,
+                p=train_data.p_times,
+            ),
+        ),
     )
 
     Tmax = 5
@@ -107,17 +133,17 @@ def train_OU_init():
         "initial_condition": 1 * Tmax,
         "norm_loss": 0.1 * Tmax,
     }
-    OU_fpe_non_statio_2D_loss = jinns.loss.OU_FPENonStatioLoss2D(Tmax=Tmax)
+    OU_fpe_non_statio_2D_loss = jinns.loss.OU_FPENonStatioLoss2D_eqx(Tmax=Tmax)
 
     # Catching an expected UserWarning since no border condition is given
     # for this specific PDE (Fokker-Planck).
     with pytest.warns(UserWarning):
-        loss = jinns.loss.LossPDENonStatio(
+        loss = jinns.loss.LossPDENonStatio_eqx(
             u=u,
             loss_weights=loss_weights,
             dynamic_loss=OU_fpe_non_statio_2D_loss,
             initial_condition_fun=u0,
-            norm_borders=((int_xmin, int_xmax), (int_ymin, int_ymax)),
+            norm_int_length=int_length,
             norm_samples=mc_samples,
         )
 
@@ -133,30 +159,27 @@ def train_OU_10it(train_OU_init):
 
     # NOTE we need to waste one get_batch() here to stay synchronized with the
     # notebook
-    _ = loss.evaluate(init_params, train_data.get_batch())[0]
+    train_data, _ = train_data.get_batch()
 
     params = init_params
 
     tx = optax.adamw(learning_rate=1e-3)
     n_iter = 10
-    # Catching an expected UserWarning since no border condition is given
-    # for this specific PDE (Fokker-Planck).
-    with pytest.warns(UserWarning):
-        params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _ = jinns.solve(
-            init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
-        )
+    params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _ = jinns.solve(
+        init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
+    )
     return total_loss_list[9]
 
 
 def test_initial_loss_OU(train_OU_init):
     init_params, loss, train_data = train_OU_init
-    batch = train_data.get_batch()
-    l_init, all = loss.evaluate(init_params, batch)
+    _, batch = train_data.get_batch()
     print(batch)
+    l_init, all = loss.evaluate(init_params, batch)
     print(all)
     assert jnp.allclose(l_init, 3924.7366, atol=1e-1)
 
 
-# def test_10it_OU(train_OU_10it):
-#    total_loss_val = train_OU_10it
-#    assert jnp.allclose(total_loss_val, 2564.442, atol=1e-1)
+def test_10it_OU(train_OU_10it):
+    total_loss_val = train_OU_10it
+    assert jnp.allclose(total_loss_val, 2564.442, atol=1e-1)
