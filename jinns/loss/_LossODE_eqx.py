@@ -10,7 +10,7 @@ import jax
 import jax.numpy as jnp
 from jax import vmap
 import equinox as eqx
-from jaxtyping import PyTree, Float
+from jaxtyping import PyTree, Float, Array
 from jinns.data._DataGenerators import ODEBatch
 from jinns.utils._utils import (
     _get_vmap_in_axes_params,
@@ -29,11 +29,44 @@ _MSE_TERMS_ODE = ["observations", "dyn_loss", "initial_condition"]
 
 
 class _LossODEAbstract_eqx(eqx.Module):
+    """
+    Parameters
+    ----------
 
+    loss_weights
+        a dictionary with values used to ponderate each term in the loss
+        function. Valid keys are that of _MSE_TERMS_ODE
+        Note that we can have jnp.arrays with the same dimension of
+        `u` which then ponderates each output of `u`
+    derivative_keys
+        A dict of lists of strings. In the dict, the key must correspond to
+        the loss term keywords (valid keys are in _MSE_TERMS_ODE). Then each of the values must correspond to keys in the parameter
+        dictionary (*at top level only of the parameter dictionary*).
+        It enables selecting the set of parameters
+        with respect to which the gradients of the dynamic
+        loss are computed. If nothing is provided, we set ["nn_params"] for all loss term
+        keywords, this is what is typically
+        done in solving forward problems, when we only estimate the
+        equation solution with a PINN. If some loss terms keywords are
+        missing we set their value to ["nn_params"] by default for the
+        same reason
+    initial_condition
+        tuple of length 2 with initial condition :math:`(t0, u0)`.
+        Can be None in order to
+        access only some part of the evaluate call results.
+    obs_slice
+        slice object specifying the begininning/ending
+        slice of u output(s) that is observed (this is then useful for
+        multidim PINN). Default is None.
+    """
+
+    # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
     derivative_keys: Union[list, None] = eqx.field(
         kw_only=True, default=None, static=True
     )
-    loss_weights: Union[dict, None] = eqx.field(kw_only=True, default=None, static=True)
+    loss_weights: Union[Dict[str, Union[Float, Array]], None] = eqx.field(
+        kw_only=True, default=None, static=True
+    )
     initial_condition: Union[tuple, None] = eqx.field(
         kw_only=True, default=None, static=True
     )
@@ -66,7 +99,7 @@ class _LossODEAbstract_eqx(eqx.Module):
             self.obs_slice = jnp.s_[...]
 
         for k in _MSE_TERMS_ODE:
-            if k not in self.loss_weights.keys():  # pylint: disable=no-member
+            if k not in self.loss_weights.keys():
                 self.loss_weights[k] = 0
 
     @abc.abstractmethod
@@ -88,19 +121,19 @@ class LossODE_eqx(_LossODEAbstract_eqx):
 
     Parameters
     ----------
-    u :
+    u
         the PINN
-    loss_weights :
-        a dictionary with values used to ponderate each term in the loss
-        function. Valid keys are `dyn_loss`, `initial_condition` and `observations`
-        Note that we can have jnp.arrays with the same dimension of
-        `u` which then ponderates each output of `u`
-    dynamic_loss :
+    dynamic_loss
         the ODE dynamic part of the loss, basically the differential
         operator :math:`\mathcal{N}[u](t)`. Should implement a method
         `dynamic_loss.evaluate(t, u, params)`.
         Can be None in order to
         access only some part of the evaluate call results.
+    loss_weights
+        a dictionary with values used to ponderate each term in the loss
+        function. Valid keys are `dyn_loss`, `initial_condition` and `observations`
+        Note that we can have jnp.arrays with the same dimension of
+        `u` which then ponderates each output of `u`
     derivative_keys
         A dict of lists of strings. In the dict, the key must correspond to
         the loss term keywords. Then each of the values must correspond to keys in the parameter
@@ -129,7 +162,7 @@ class LossODE_eqx(_LossODEAbstract_eqx):
     """
 
     u: eqx.Module = eqx.field(static=True)
-    dynamic_loss: eqx.Module
+    dynamic_loss: Union[eqx.Module, None]
 
     def __post_init__(self):
         super().__post_init__()  # because __init__ or __post_init__ of Base
@@ -247,62 +280,63 @@ class SystemLossODE_eqx(eqx.Module):
     Indeed, these dictionaries (except `dynamic_loss_dict`) are tied to one
     solution.
 
-        Parameters
-        ----------
-        u_dict
-            dict of PINNs
-        loss_weights
-            A dictionary of dictionaries with values used to
-            ponderate each term in the loss
-            function. Valid keys in the first dictionary are `dyn_loss`,
-            `initial_condition` and `observations`. The keys of the nested
-            dictionaries must share the keys of `u_dict`. Note that the values
-            at the leaf level can have jnp.arrays with the same dimension of
-            `u` which then ponderates each output of `u`
-        derivative_keys_dict
-            A dict of derivative keys as defined in LossODE. The key of this
-            dict must be that of `dynamic_loss_dict` at least and specify how
-            to compute gradient for the `dyn_loss` loss term at least (see the
-            check at the beginning of the present `__init__` function.
-            Other keys of this dict might be that of `u_dict` to specify how to
-            compute gradients for all the different constraints. If those keys
-            are not specified then the default behaviour for `derivative_keys`
-            of LossODE is used
-        initial_condition_dict
-            dict of tuple of length 2 with initial condition :math:`(t_0, u_0)`
-            Must share the keys of `u_dict`. Default is None. No initial
-            condition is permitted when the initial condition is hardcoded in
-            the PINN architecture for example
-        dynamic_loss_dict
-            dict of dynamic part of the loss, basically the differential
-            operator :math:`\mathcal{N}[u](t)`. Should implement a method
-            `dynamic_loss.evaluate(t, u, params)`
-        obs_slice_dict
-            dict of obs_slice, with keys from `u_dict` to designate the
-            output(s) channels that are forced to observed values, for each
-            PINNs. Default is None. But if a value is given, all the entries of
-            `u_dict` must be represented here with default value `jnp.s_[...]`
-            if no particular slice is to be given
+    Parameters
+    ----------
+    u_dict
+        dict of PINNs
+    loss_weights
+        A dictionary of dictionaries with values used to
+        ponderate each term in the loss
+        function. Valid keys in the first dictionary are `dyn_loss`,
+        `initial_condition` and `observations`. The keys of the nested
+        dictionaries must share the keys of `u_dict`. Note that the values
+        at the leaf level can have jnp.arrays with the same dimension of
+        `u` which then ponderates each output of `u`
+    derivative_keys_dict
+        A dict of derivative keys as defined in LossODE. The key of this
+        dict must be that of `dynamic_loss_dict` at least and specify how
+        to compute gradient for the `dyn_loss` loss term at least (see the
+        check at the beginning of the present `__init__` function.
+        Other keys of this dict might be that of `u_dict` to specify how to
+        compute gradients for all the different constraints. If those keys
+        are not specified then the default behaviour for `derivative_keys`
+        of LossODE is used
+    initial_condition_dict
+        dict of tuple of length 2 with initial condition :math:`(t_0, u_0)`
+        Must share the keys of `u_dict`. Default is None. No initial
+        condition is permitted when the initial condition is hardcoded in
+        the PINN architecture for example
+    dynamic_loss_dict
+        dict of dynamic part of the loss, basically the differential
+        operator :math:`\mathcal{N}[u](t)`. Should implement a method
+        `dynamic_loss.evaluate(t, u, params)`
+    obs_slice_dict
+        dict of obs_slice, with keys from `u_dict` to designate the
+        output(s) channels that are forced to observed values, for each
+        PINNs. Default is None. But if a value is given, all the entries of
+        `u_dict` must be represented here with default value `jnp.s_[...]`
+        if no particular slice is to be given
 
-        Raises
-        ------
-        ValueError
-            if initial condition is not a dict of tuple
-        ValueError
-            if the dictionaries that should share the keys of u_dict do not
+    Raises
+    ------
+    ValueError
+        if initial condition is not a dict of tuple
+    ValueError
+        if the dictionaries that should share the keys of u_dict do not
     """
 
     u_dict: Dict[str, eqx.Module] = eqx.field(static=True)
     dynamic_loss_dict: Dict[str, ODE] = eqx.field(static=True)
-    # note that the next arg is kw_only to ease its handling with the base class
-    derivative_keys_dict: Union[Dict[str, list], None] = eqx.field(
+    derivative_keys_dict: Union[Dict[str, Union[list, None]], None] = eqx.field(
         kw_only=True, default=None, static=True
     )
-    loss_weights: Union[dict, None] = eqx.field(kw_only=True, default=None, static=True)
+    loss_weights: Union[Dict[str, Dict[str, Union[Float, Array]]], None] = eqx.field(
+        kw_only=True, default=None, static=True
+    )
     initial_condition_dict: Union[Dict[str, tuple], None] = eqx.field(
         kw_only=True, default=None, static=True
     )
-    obs_slice_dict: Union[Dict[str, slice], None] = eqx.field(
+    obs_slice_dict: Union[Dict[str, Union[slice, None]], None] = eqx.field(
         kw_only=True, default=None, static=True
     )
 
