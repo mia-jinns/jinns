@@ -1,3 +1,4 @@
+# pylint: disable=unsubscriptable-object
 """
 Define the DataGeneratorODE equinox module
 """
@@ -5,7 +6,7 @@ Define the DataGeneratorODE equinox module
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jaxtyping import Key, Int, PyTree, Array, Float
+from jaxtyping import Key, Int, PyTree, Array, Float, Bool
 from typing import Union, NamedTuple
 from jinns.data._DataGenerators import ODEBatch, PDENonStatioBatch, PDEStatioBatch
 
@@ -30,6 +31,18 @@ from jinns.data._DataGenerators import ODEBatch, PDENonStatioBatch, PDEStatioBat
 #    border_batch: Array
 #    param_batch_dict: dict = None
 #    obs_batch_dict: dict = None
+
+
+def make_cartesian_product(b1, b2):
+    """
+    Create the cartesian product of a time and a border omega batches
+    by tiling and repeating
+    """
+    n1 = b1.shape[0]
+    n2 = b2.shape[0]
+    b1 = jnp.repeat(b1, n2, axis=0)
+    b2 = jnp.tile(b2, reps=(n1,) + tuple(1 for i in b2.shape[1:]))
+    return jnp.concatenate([b1, b2], axis=1)
 
 
 def _reset_batch_idx_and_permute(operands):
@@ -334,20 +347,27 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
         then corresponds to the initial number of points we train the PINN.
     """
 
-    key: Key
-    n: Int
-    nb: Int
-    omega_batch_size: Int = eqx.field(static=True)  # static cause used as a
+    # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
+    key: Key = eqx.field(kw_only=True)
+    n: Int = eqx.field(kw_only=True)
+    nb: Int = eqx.field(kw_only=True)
+    omega_batch_size: Int = eqx.field(
+        kw_only=True, static=True
+    )  # static cause used as a
     # shape in jax.lax.dynamic_slice
-    omega_border_batch_size: Int = eqx.field(static=True)  # static cause used as a
+    omega_border_batch_size: Int = eqx.field(
+        kw_only=True, static=True
+    )  # static cause used as a
     # shape in jax.lax.dynamic_slice
-    dim: Int = eqx.field(static=True)  # static cause used as a
+    dim: Int = eqx.field(kw_only=True, static=True)  # static cause used as a
     # shape in jax.lax.dynamic_slice
-    min_pts: tuple[Float]
-    max_pts: tuple[Float]
-    method: str = eqx.field(static=True, default_factory=lambda: "uniform")
-    rar_parameters: PyTree = None
-    n_start: int = None
+    min_pts: tuple[Float] = eqx.field(kw_only=True)
+    max_pts: tuple[Float] = eqx.field(kw_only=True)
+    method: str = eqx.field(
+        kw_only=True, static=True, default_factory=lambda: "uniform"
+    )
+    rar_parameters: PyTree = eqx.field(kw_only=True, default=None)
+    n_start: int = eqx.field(kw_only=True, default=None)
 
     # all the init=False fields are set in __post_init__, even after a _replace
     # or eqx.tree_at __post_init__ is called
@@ -628,3 +648,222 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
         new, inside_batch = self.inside_batch()
         new, border_batch = new.border_batch()
         return new, PDEStatioBatch(inside_batch=inside_batch, border_batch=border_batch)
+
+
+class CubicMeshPDENonStatio_eqx(CubicMeshPDEStatio_eqx):
+    r"""
+    A class implementing data generator object for non stationary partial
+    differential equations. Formally, it extends `CubicMeshPDEStatio`
+    to include a temporal batch.
+
+    Parameters
+    ----------
+    key
+        Jax random key to sample new time points and to shuffle batches
+    n
+        An integer. The number of total :math:`\Omega` points that will be divided in
+        batches. Batches are made so that each data point is seen only
+        once during 1 epoch.
+    nb
+        An integer. The total number of points in :math:`\partial\Omega`.
+        Can be `None` not to lose performance generating the border
+        batch if they are not used
+    nt
+        An integer. The number of total time points that will be divided in
+        batches. Batches are made so that each data point is seen only
+        once during 1 epoch.
+    omega_batch_size
+        An integer. The size of the batch of randomly selected points among
+        the `n` points.
+    omega_border_batch_size
+        An integer. The size of the batch of points randomly selected
+        among the `nb` points.
+        Can be `None` not to lose performance generating the border
+        batch if they are not used
+    temporal_batch_size
+        An integer. The size of the batch of randomly selected points among
+        the `nt` points.
+    dim
+        An integer. dimension of :math:`\Omega` domain
+    min_pts
+        A tuple of minimum values of the domain along each dimension. For a sampling
+        in `n` dimension, this represents :math:`(x_{1, min}, x_{2,min}, ...,
+        x_{n, min})`
+    max_pts
+        A tuple of maximum values of the domain along each dimension. For a sampling
+        in `n` dimension, this represents :math:`(x_{1, max}, x_{2,max}, ...,
+        x_{n,max})`
+    tmin
+        A float. The minimum value of the time domain to consider
+    tmax
+        A float. The maximum value of the time domain to consider
+    method
+        Either `grid` or `uniform`, default is `grid`.
+        The method that generates the `nt` time points. `grid` means
+        regularly spaced points over the domain. `uniform` means uniformly
+        sampled points over the domain
+    rar_parameters
+        Default to None: do not use Residual Adaptative Resampling.
+        Otherwise a dictionary with keys. `start_iter`: the iteration at
+        which we start the RAR sampling scheme (we first have a burn in
+        period). `update_every`: the number of gradient steps taken between
+        each appending of collocation points in the RAR algo.
+        `sample_size_omega`: the size of the sample from which we will select new
+        collocation points. `selected_sample_size_omega`: the number of selected
+        points from the sample to be added to the current collocation
+        points.
+    n_start
+        Defaults to None. The effective size of n used at start time.
+        This value must be
+        provided when rar_parameters is not None. Otherwise we set internally
+        n_start = n and this is hidden from the user.
+        In RAR, n_start
+        then corresponds to the initial number of omega points we train the PINN.
+    nt_start
+        Defaults to None. A RAR hyper-parameter. Same as ``n_start`` but
+        for times collocation point. See also ``DataGeneratorODE``
+        documentation.
+    cartesian_product
+        Defaults to True. Whether we return the cartesian product of the
+        temporal batch with the inside and border batches. If False we just
+        return their concatenation.
+    """
+
+    temporal_batch_size: Int = eqx.field(kw_only=True)
+    tmin: Float = eqx.field(kw_only=True)
+    tmax: Float = eqx.field(kw_only=True)
+    nt: Int = eqx.field(kw_only=True)
+    temporal_batch_size: Int = eqx.field(kw_only=True)
+    cartesian_product: Bool = eqx.field(kw_only=True, default=True)
+
+    p_times: Array = eqx.field(init=False)
+    curr_time_idx: Int = eqx.field(init=False)
+    times: Array = eqx.field(init=False)
+
+    def __post_init__(self):
+        """
+        Note that neither __init__ or __post_init__ are called when udating a
+        Module with eqx.tree_at!
+        """
+        super().__post_init__()  # because __init__ or __post_init__ of Base
+        # class is not automatically called
+
+        if not self.cartesian_product:
+            if self.temporal_batch_size != self.omega_batch_size:
+                raise ValueError(
+                    "If stacking is requested between the time and "
+                    "inside batches of collocation points, self.temporal_batch_size "
+                    "must then be equal to self.omega_batch_size"
+                )
+            if (
+                self.dim > 1
+                and self.omega_border_batch_size is not None
+                and self.temporal_batch_size != self.omega_border_batch_size
+            ):
+                raise ValueError(
+                    "If dim > 1 and stacking is requested between the time and "
+                    "inside batches of collocation points, self.temporal_batch_size "
+                    "must then be equal to self.omega_border_batch_size"
+                )
+            # Note if self.dim == 1:
+            #    print(
+            #        "Cartesian product is not requested but will be "
+            #        "executed anyway since dim=1"
+            #    )
+
+        # Set-up for timewise RAR (some quantity are already set-up by super())
+        (
+            self.nt_start,
+            self.p_times,
+            _,
+            _,
+        ) = _check_and_set_rar_parameters(self.rar_parameters, self.nt, self.nt_start)
+
+        self.curr_time_idx = jnp.iinfo(jnp.int32).max - self.temporal_batch_size - 1
+        key, subkey = jax.random.split(self.key)
+        self.key = key
+        self.times = self.generate_time_data(subkey)
+        # see explaination in DataGeneratorODE_eqx for the key
+
+    def sample_in_time_domain(self, key) -> Array:
+        return jax.random.uniform(key, (self.nt,), minval=self.tmin, maxval=self.tmax)
+
+    def _get_time_operands(self) -> tuple[Key, Array, Int, Int, Array]:
+        return (
+            self.key,
+            self.times,
+            self.curr_time_idx,
+            self.temporal_batch_size,
+            self.p_times,
+        )
+
+    def generate_time_data(self, key) -> Array:
+        """
+        Construct a complete set of `self.nt` time points according to the
+        specified `self.method`
+
+        Note that self.times has always size self.nt and not self.nt_start, even
+        in RAR scheme, we must allocate all the collocation points
+        """
+        if self.method == "grid":
+            partial_times = (self.tmax - self.tmin) / self.nt
+            return jnp.arange(self.tmin, self.tmax, partial_times)
+        if self.method == "uniform":
+            return self.sample_in_time_domain(key)
+        raise ValueError("Method " + self.method + " is not implemented.")
+
+    def temporal_batch(self) -> tuple["CubicMeshPDENonStatio_eqx", Array]:
+        """
+        Return a batch of time points. If all the batches have been seen, we
+        reshuffle them, otherwise we just return the next unseen batch.
+        """
+        bstart = self.curr_time_idx
+        bend = bstart + self.temporal_batch_size
+
+        # Compute the effective number of used collocation points
+        if self.rar_parameters is not None:
+            nt_eff = (
+                self.nt_start
+                + self.rar_iter_nb * self.rar_parameters["selected_sample_size"]
+            )
+        else:
+            nt_eff = self.nt
+
+        new_attributes = _reset_or_increment(bend, nt_eff, self._get_time_operands())
+        new = eqx.tree_at(
+            lambda m: (m.key, m.times, m.curr_time_idx), self, new_attributes
+        )
+
+        return new, jax.lax.dynamic_slice(
+            new.times,
+            start_indices=(new.curr_time_idx,),
+            slice_sizes=(new.temporal_batch_size,),
+        )
+
+    def get_batch(self) -> tuple["CubicMeshPDEStatio_eqx", PDENonStatioBatch]:
+        """
+        Generic method to return a batch. Here we call `self.inside_batch()`,
+        `self.border_batch()` and `self.temporal_batch()`
+        """
+        new, x = self.inside_batch()
+        new, dx = new.border_batch()
+        new, t = new.temporal_batch().reshape(self.temporal_batch_size, 1)
+
+        if self.cartesian_product:
+            t_x = make_cartesian_product(t, x)
+        else:
+            t_x = jnp.concatenate([t, x], axis=1)
+
+        if dx is not None:
+            t_ = t.reshape(self.temporal_batch_size, 1, 1)
+            t_ = jnp.repeat(t_, dx.shape[-1], axis=2)
+            if self.cartesian_product or self.dim == 1:
+                t_dx = make_cartesian_product(t_, dx)
+            else:
+                t_dx = jnp.concatenate([t_, dx], axis=1)
+        else:
+            t_dx = None
+
+        return new, PDENonStatioBatch(
+            times_x_inside_batch=t_x, times_x_border_batch=t_dx
+        )
