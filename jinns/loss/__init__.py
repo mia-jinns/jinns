@@ -15,4 +15,5 @@ from ._DynamicLoss_eqx import (
     GeneralizedLotkaVolterra_eqx,
     BurgerEquation_eqx,
     OU_FPENonStatioLoss2D_eqx,
+    FisherKPP_eqx,
 )

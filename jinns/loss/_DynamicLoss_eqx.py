@@ -14,6 +14,87 @@ from jinns.utils._spinn import SPINN
 
 from jinns.utils._utils import _extract_nn_params, _get_grid
 from jinns.loss._DynamicLossAbstract_eqx import ODE, PDEStatio, PDENonStatio
+from jinns.loss._operators import (
+    _laplacian_rev,
+    _laplacian_fwd,
+    _div_rev,
+)
+
+
+class FisherKPP_eqx(PDENonStatio):
+    r"""
+    Return the Fisher KPP dynamic loss term. Dimension of :math:`x` can be
+    arbitrary
+
+    .. math::
+        \frac{\partial}{\partial t} u(t,x)=D\Delta u(t,x) + u(t,x)(r(x) - \gamma(x)u(t,x))
+
+    Parameters
+    ----------
+    Tmax
+        Tmax needs to be given when the PINN time input is normalized in
+        [0, 1], ie. we have performed renormalization of the differential
+        equation
+    eq_params_heterogeneity
+        Default None. A dict with the keys being the same as in eq_params
+        and the value being `time`, `space`, `both` or None which corresponds to
+        the heterogeneity of a given parameter. A value can be missing, in
+        this case there is no heterogeneity (=None). If
+        eq_params_heterogeneity is None this means there is no
+        heterogeneity for no parameters.
+    """
+
+    @PDENonStatio.evaluate_heterogeneous_parameters
+    def evaluate(self, t, x, u, params):
+        r"""
+        Evaluate the dynamic loss at :math:`(t,x)`.
+
+        Parameters
+        ---------
+        t
+            A time point
+        x
+            A point in :math:`\Omega`
+        u
+            The PINN
+        params
+            The dictionary of parameters of the model.
+            Typically, it is a dictionary of
+            dictionaries: `eq_params` and `nn_params``, respectively the
+            differential equation parameters and the neural network parameter
+        """
+        if isinstance(u, PINN):
+            # Note that the last dim of u is nec. 1
+            u_ = lambda t, x: u(t, x, params)[0]
+
+            du_dt = grad(u_, 0)(t, x)
+
+            lap = _laplacian_rev(t, x, u, params)[..., None]
+
+            return du_dt + self.Tmax * (
+                -params["eq_params"]["D"] * lap
+                - u(t, x, params)
+                * (
+                    params["eq_params"]["r"]
+                    - params["eq_params"]["g"] * u(t, x, params)
+                )
+            )
+        if isinstance(u, SPINN):
+            u_tx, du_dt = jax.jvp(
+                lambda t: u(t, x, params),
+                (t,),
+                (jnp.ones_like(t),),
+            )
+            lap = _laplacian_fwd(t, x, u, params)[..., None]
+            return du_dt + self.Tmax * (
+                -params["eq_params"]["D"] * lap
+                - u_tx
+                * (
+                    params["eq_params"]["r"][..., None]
+                    - params["eq_params"]["g"] * u_tx
+                )
+            )
+        raise ValueError("u is not among the recognized types (PINN or SPINN)")
 
 
 class GeneralizedLotkaVolterra_eqx(ODE):
