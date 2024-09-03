@@ -33,7 +33,7 @@ from jinns.data._DataGenerators import ODEBatch, PDENonStatioBatch, PDEStatioBat
 #    obs_batch_dict: dict = None
 
 
-def make_cartesian_product(b1, b2):
+def make_cartesian_product(b1: Array, b2: Array) -> Array:
     """
     Create the cartesian product of a time and a border omega batches
     by tiling and repeating
@@ -45,7 +45,9 @@ def make_cartesian_product(b1, b2):
     return jnp.concatenate([b1, b2], axis=1)
 
 
-def _reset_batch_idx_and_permute(operands):
+def _reset_batch_idx_and_permute(
+    operands: tuple[Key, Array, Int, None, Array]
+) -> tuple[Key, Array, Int]:
     key, domain, curr_idx, _, p = operands
     # resetting counter
     curr_idx = 0
@@ -62,14 +64,18 @@ def _reset_batch_idx_and_permute(operands):
     return (key, domain, curr_idx)
 
 
-def _increment_batch_idx(operands):
+def _increment_batch_idx(
+    operands: tuple[Key, Array, Int, None, Array]
+) -> tuple[Key, Array, Int]:
     key, domain, curr_idx, batch_size, _ = operands
     # simply increases counter and get the batch
     curr_idx += batch_size
     return (key, domain, curr_idx)
 
 
-def _reset_or_increment(bend, n_eff, operands):
+def _reset_or_increment(
+    bend: Int, n_eff: Int, operands: tuple[Key, Array, Int, None, Array]
+) -> tuple[Key, Array, Int]:
     """
     Factorize the code of the jax.lax.cond which checks if we have seen all the
     batches in an epoch
@@ -98,7 +104,9 @@ def _reset_or_increment(bend, n_eff, operands):
     )
 
 
-def _check_and_set_rar_parameters(rar_parameters, n, n_start):
+def _check_and_set_rar_parameters(
+    rar_parameters: dict, n: Int, n_start: Int
+) -> tuple[Int, Array, Int, Int]:
     if rar_parameters is not None and n_start is None:
         raise ValueError(
             "nt_start must be provided in the context of RAR sampling scheme"
@@ -222,7 +230,7 @@ class DataGeneratorODE_eqx(eqx.Module):
             maxval=self.tmax,
         )
 
-    def generate_time_data(self, key) -> tuple[Key, Array]:
+    def generate_time_data(self, key: Key) -> tuple[Key, Array]:
         """
         Construct a complete set of `self.nt` time points according to the
         specified `self.method`
@@ -516,7 +524,7 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
             + f"implemented yet. You are asking for generation in dimension d={self.dim}."
         )
 
-    def generate_data(self, key: Key) -> tuple[Key, Array]:
+    def generate_data(self, key: Key) -> tuple[Key, Array, Array]:
         r"""
         Construct a complete set of `self.n` :math:`\Omega` points according to the
         specified `self.method`. Also constructs a complete set of `self.nb`
@@ -571,7 +579,7 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
             self.p_omega,
         )
 
-    def inside_batch(self):
+    def inside_batch(self) -> tuple["CubicMeshPDEStatio_eqx", Array]:
         r"""
         Return a batch of points in :math:`\Omega`.
         If all the batches have been seen, we reshuffle them,
@@ -610,7 +618,7 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
             self.p_border,
         )
 
-    def border_batch(self):
+    def border_batch(self) -> tuple["CubicMeshPDEStatio_eqx", Array]:
         r"""
         Return
 
@@ -815,7 +823,7 @@ class CubicMeshPDENonStatio_eqx(CubicMeshPDEStatio_eqx):
             self.p_times,
         )
 
-    def generate_time_data(self, key) -> tuple[Key, Array]:
+    def generate_time_data(self, key: Key) -> tuple[Key, Array]:
         """
         Construct a complete set of `self.nt` time points according to the
         specified `self.method`
@@ -861,7 +869,7 @@ class CubicMeshPDENonStatio_eqx(CubicMeshPDEStatio_eqx):
             slice_sizes=(new.temporal_batch_size,),
         )
 
-    def get_batch(self) -> tuple["CubicMeshPDEStatio_eqx", PDENonStatioBatch]:
+    def get_batch(self) -> tuple["CubicMeshPDENonStatio_eqx", PDENonStatioBatch]:
         """
         Generic method to return a batch. Here we call `self.inside_batch()`,
         `self.border_batch()` and `self.temporal_batch()`
@@ -889,3 +897,176 @@ class CubicMeshPDENonStatio_eqx(CubicMeshPDEStatio_eqx):
         return new, PDENonStatioBatch(
             times_x_inside_batch=t_x, times_x_border_batch=t_dx
         )
+
+
+class DataGeneratorObservations_eqx(eqx.Module):
+    r"""
+    Despite the class name, it is rather a dataloader from user provided
+    observations that will be used for the observations loss
+
+    Parameters
+    ----------
+    key
+        Jax random key to sample new time points and to shuffle batches
+    obs_batch_size
+        An integer. The size of the batch of randomly selected points among
+        the `n` points. `obs_batch_size` will be the same for all
+        elements of the obs dict.
+        NOTE: no check is done BUT users should be careful that
+        `obs_batch_size` must be equal to `temporal_batch_size` or
+        `omega_batch_size` or the product of both. In the first case, the
+        present DataGeneratorObservations instance complements an ODEBatch,
+        PDEStatioBatch or a PDENonStatioBatch (with self.cartesian_product
+        = False). In the second case, `obs_batch_size` =
+        `temporal_batch_size * omega_batch_size` if the present
+        DataGeneratorParameter complements a PDENonStatioBatch
+        with self.cartesian_product = True
+    observed_pinn_in
+        A jnp.array with 2 dimensions.
+        Observed values corresponding to the input of the PINN
+        (eg. the time at which we recorded the observations). The first
+        dimension must corresponds to the number of observed_values.
+        The second dimension depends on the input dimension of the PINN,
+        that is `1` for ODE, `n_dim_x` for stationnary PDE and `n_dim_x + 1`
+        for non-stationnary PDE.
+    observed_values
+        A jnp.array with 2 dimensions.
+        Observed values that the PINN should learn to fit. The first
+        dimension must be aligned with observed_pinn_in.
+    observed_eq_params
+        Optional. Default is None. A dict with keys corresponding to the
+        parameter name. The keys must match the keys in
+        `params["eq_params"]`. The values are jnp.array with 2 dimensions
+        with values corresponding to the parameter value for which we also
+        have observed_pinn_in and observed_values. Hence the first
+        dimension must be aligned with observed_pinn_in and observed_values.
+    sharding_device
+        Default None. An optional sharding object to constraint the storage
+        of observed inputs, values and parameters. Typically, a
+        SingleDeviceSharding(cpu_device) to avoid loading on GPU huge
+        datasets of observations. Note that computations for **batches**
+        can still be performed on other devices (*e.g.* GPU, TPU or
+        any pre-defined Sharding) thanks to the `obs_batch_sharding`
+        arguments of `jinns.solve()`. Read the docs for more info.
+    """
+
+    key: Key
+    obs_batch_size: Int
+    observed_pinn_in: Array
+    observed_values: Array
+    observed_eq_params: dict[str, Array] = eqx.field(
+        static=True, default_factory=lambda: {}
+    )
+    sharding_device: jax.sharding.Sharding = eqx.field(static=True, default=None)
+
+    n: Int = eqx.field(init=False)
+    curr_idx: Int = eqx.field(init=False)
+    indices: Array = eqx.field(init=False)
+
+    def __post_init__(self):
+        if self.observed_pinn_in.shape[0] != self.observed_values.shape[0]:
+            raise ValueError(
+                "self.observed_pinn_in and self.observed_values must have same first axis"
+            )
+        for _, v in self.observed_eq_params.items():
+            if v.shape[0] != self.observed_pinn_in.shape[0]:
+                raise ValueError(
+                    "self.observed_pinn_in and the values of"
+                    " self.observed_eq_params must have the same first axis"
+                )
+        if len(self.observed_pinn_in.shape) == 1:
+            self.observed_pinn_in = self.observed_pinn_in[:, None]
+        if len(self.observed_pinn_in.shape) > 2:
+            raise ValueError("self.observed_pinn_in must have 2 dimensions")
+        if len(self.observed_values.shape) == 1:
+            self.observed_values = self.observed_values[:, None]
+        if len(self.observed_values.shape) > 2:
+            raise ValueError("self.observed_values must have 2 dimensions")
+        for k, v in self.observed_eq_params.items():
+            if len(v.shape) == 1:
+                self.observed_eq_params[k] = v[:, None]
+            if len(v.shape) > 2:
+                raise ValueError(
+                    "Each value of observed_eq_params must have 2 dimensions"
+                )
+
+        self.n = self.observed_pinn_in.shape[0]
+
+        if self.sharding_device is not None:
+            self.observed_pinn_in = jax.lax.with_sharding_constraint(
+                self.observed_pinn_in, self.sharding_device
+            )
+            self.observed_values = jax.lax.with_sharding_constraint(
+                self.observed_values, self.sharding_device
+            )
+            self.observed_eq_params = jax.lax.with_sharding_constraint(
+                self.observed_eq_params, self.sharding_device
+            )
+
+        self.curr_idx = 0
+        # For speed and to avoid duplicating data what is really
+        # shuffled is a vector of indices
+        if self.sharding_device is not None:
+            self.indices = jax.lax.with_sharding_constraint(
+                jnp.arange(self.n), self.sharding_device
+            )
+        else:
+            self.indices = jnp.arange(self.n)
+        # recall post_init is the only place with _init_ where we can set
+        # self attribute in a in-place way
+        self.key, self.indices, _ = _reset_batch_idx_and_permute(self._get_operands())
+
+    def _get_operands(self) -> tuple[Key, Array, Int, Int, None]:
+        return (
+            self.key,
+            self.indices,
+            self.curr_idx,
+            self.obs_batch_size,
+            None,
+        )
+
+    def obs_batch(self) -> tuple["DataGeneratorObservations_eqx", Array]:
+        """
+        Return a dictionary with (keys, values): (pinn_in, a mini batch of pinn
+        inputs), (obs, a mini batch of corresponding observations), (eq_params,
+        a dictionary with entry names found in `params["eq_params"]` and values
+        giving the correspond parameter value for the couple
+        (input, observation) mentioned before).
+        It can also be a dictionary of dictionaries as described above if
+        observed_pinn_in, observed_values, etc. are dictionaries with keys
+        representing the PINNs.
+        """
+
+        new_attributes = _reset_or_increment(
+            self.curr_idx + self.obs_batch_size, self.n, self._get_operands()
+        )
+        new = eqx.tree_at(
+            lambda m: (m.key, m.times, m.curr_time_idx), self, new_attributes
+        )
+
+        minib_indices = jax.lax.dynamic_slice(
+            self.indices,
+            start_indices=(self.curr_idx,),
+            slice_sizes=(self.obs_batch_size,),
+        )
+
+        obs_batch = {
+            "pinn_in": jnp.take(
+                self.observed_pinn_in, minib_indices, unique_indices=True, axis=0
+            ),
+            "val": jnp.take(
+                self.observed_values, minib_indices, unique_indices=True, axis=0
+            ),
+            "eq_params": jax.tree_util.tree_map(
+                lambda a: jnp.take(a, minib_indices, unique_indices=True, axis=0),
+                self.observed_eq_params,
+            ),
+        }
+        return new, obs_batch
+
+    def get_batch(self) -> tuple["DataGeneratorObservations_eqx", Array]:
+        """
+        Generic method to return a batch
+        """
+        new, obs_batch = self.obs_batch()
+        return new, obs_batch

@@ -12,6 +12,7 @@ from ._DataGenerators_eqx import (
     DataGeneratorODE_eqx,
     CubicMeshPDEStatio_eqx,
     CubicMeshPDENonStatio_eqx,
+    DataGeneratorObservations_eqx,
 )
 from ._display import (
     plot2d,
