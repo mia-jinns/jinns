@@ -3,7 +3,6 @@ This modules implements the main `solve()` function of jinns which
 handles the optimization process
 """
 
-import copy
 from functools import partial
 import optax
 import jax
@@ -24,6 +23,8 @@ from jinns.data._DataGenerators_eqx import (
     CubicMeshPDEStatio_eqx,
     CubicMeshPDENonStatio_eqx,
     DataGeneratorObservations_eqx,
+    DataGeneratorParameter_eqx,
+    DataGeneratorObservationsMultiPINNs_eqx,
 )
 from jinns.utils._containers import *
 
@@ -586,13 +587,21 @@ def get_get_batch(obs_batch_sharding):
         else:
             batch = data.get_batch()
         if param_data is not None:
-            batch = append_param_batch(batch, param_data.get_batch())
+            if isinstance(param_data, DataGeneratorParameter_eqx):
+                param_data, param_batch = param_data.get_batch()
+            else:
+                param_batch = param_data.get_batch()
+            batch = append_param_batch(batch, param_batch)
         if obs_data is not None:
             # This is the part that motivated the transition from scan to for loop
             # Indeed we need to be transit obs_batch from CPU to GPU when we have
             # huge observations that cannot fit on GPU. Such transfer wasn't meant
             # to be jitted, i.e. in a scan loop
-            if isinstance(obs_data, DataGeneratorObservations_eqx):
+            if isinstance(
+                obs_data,
+                DataGeneratorObservations_eqx,
+                DataGeneratorObservationsMultiPINNs_eqx,
+            ):
                 obs_data, obs_batch = obs_data.get_batch()
             else:
                 obs_batch = obs_data.get_batch()
@@ -614,9 +623,17 @@ def get_get_batch(obs_batch_sharding):
         else:
             batch = data.get_batch()
         if param_data is not None:
-            batch = append_param_batch(batch, param_data.get_batch())
+            if isinstance(param_data, DataGeneratorParameter_eqx):
+                param_data, param_batch = param_data.get_batch()
+            else:
+                param_batch = param_data.get_batch()
+            batch = append_param_batch(batch, param_batch)
         if obs_data is not None:
-            if isinstance(obs_data, DataGeneratorObservations_eqx):
+            if isinstance(
+                obs_data,
+                DataGeneratorObservations_eqx,
+                DataGeneratorObservationsMultiPINNs_eqx,
+            ):
                 obs_data, obs_batch = obs_data.get_batch()
             else:
                 obs_batch = obs_data.get_batch()

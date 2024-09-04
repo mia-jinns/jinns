@@ -14,6 +14,7 @@ from ._DataGenerators_eqx import (
     CubicMeshPDENonStatio_eqx,
     DataGeneratorObservations_eqx,
     DataGeneratorParameter_eqx,
+    DataGeneratorObservationsMultiPINNs_eqx,
 )
 from ._display import (
     plot2d,
