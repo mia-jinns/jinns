@@ -18,7 +18,7 @@ from jinns.loss._Losses import (
 from jinns.data._DataGenerators import PDEStatioBatch, PDENonStatioBatch
 from jinns.utils._utils import (
     _get_vmap_in_axes_params,
-    _set_derivatives,
+    #    _set_derivatives,
     _update_eq_params_dict,
 )
 from jinns.utils._pinn import PINN

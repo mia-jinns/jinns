@@ -9,7 +9,7 @@ from jax import vmap
 from jax.tree_util import register_pytree_node_class
 from jinns.utils._utils import (
     _get_vmap_in_axes_params,
-    _set_derivatives,
+    #    _set_derivatives,
     _update_eq_params_dict,
 )
 from jinns.loss._Losses import (

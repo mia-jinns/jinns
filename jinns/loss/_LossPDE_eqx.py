@@ -22,12 +22,17 @@ from jinns.loss._Losses import (
 from jinns.data._DataGenerators import PDEStatioBatch, PDENonStatioBatch
 from jinns.utils._utils import (
     _get_vmap_in_axes_params,
-    _set_derivatives,
     _update_eq_params_dict,
 )
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
 from jinns.loss._DynamicLossAbstract_eqx import PDEStatio, PDENonStatio
+from jinns.parameters._params import Params
+from jinns.parameters._derivative_keys import (
+    DerivativeKeysPDEStatio,
+    DerivativeKeysPDENonStatio,
+    _set_derivatives,
+)
 
 _IMPLEMENTED_BOUNDARY_CONDITIONS = [
     "dirichlet",
@@ -86,9 +91,9 @@ class _LossPDEAbstract_eqx(eqx.Module):
     """
 
     # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
-    derivative_keys: Union[list, None] = eqx.field(
-        kw_only=True, default=None, static=True
-    )
+    derivative_keys: Union[
+        Union[DerivativeKeysPDEStatio, DerivativeKeysPDENonStatio], None
+    ] = eqx.field(kw_only=True, default=None, static=True)
     loss_weights: Union[Dict[str, Union[Float, Array]], None] = eqx.field(
         kw_only=True, default=None, static=True
     )
@@ -111,11 +116,11 @@ class _LossPDEAbstract_eqx(eqx.Module):
         Module with eqx.tree_at
         """
         if self.derivative_keys is None:
-            self.derivative_keys = {k: ["nn_params"] for k in _MSE_TERMS_PDENONSTATIO}
-        if isinstance(self.derivative_keys, list):
-            self.derivative_keys = {
-                k: self.derivative_keys for k in _MSE_TERMS_PDENONSTATIO
-            }
+            self.derivative_keys = (
+                DerivativeKeysPDENonStatio()
+                if type(self) == LossPDENonStatio_eqx
+                else DerivativeKeysPDEStatio()
+            )
 
         for k in _LOSS_WEIGHT_KEYS_PDENONSTATIO:
             if k not in self.loss_weights.keys():
@@ -220,7 +225,7 @@ class _LossPDEAbstract_eqx(eqx.Module):
     @abc.abstractmethod
     def evaluate(
         self: eqx.Module,
-        params: PyTree,
+        params: Params,
         batch: Union[PDEStatioBatch, PDENonStatioBatch],
     ) -> tuple[Float, dict]:
         raise NotImplementedError
@@ -259,17 +264,7 @@ class LossPDEStatio_eqx(_LossPDEAbstract_eqx):
         Note that we can have jnp.arrays with the same dimension of
         `u` which then ponderates each output of `u`
     derivative_keys
-        A dict of lists of strings. In the dict, the key must correspond to
-        the loss term keywords. Then each of the values must correspond to keys in the parameter
-        dictionary (*at top level only of the parameter dictionary*).
-        It enables selecting the set of parameters
-        with respect to which the gradients of the dynamic
-        loss are computed. If nothing is provided, we set ["nn_params"] for all loss term
-        keywords, this is what is typically
-        done in solving forward problems, when we only estimate the
-        equation solution with a PINN. If some loss terms keywords are
-        missing we set their value to ["nn_params"] by default for the same
-        reason
+        XXX
     omega_boundary_fun
         The function to be matched in the border condition (can be None)
         or a dictionary of such function. In this case, the keys are the
@@ -597,14 +592,19 @@ class LossPDENonStatio_eqx(LossPDEStatio_eqx):
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
+        params_with_derivatives_at_loss_terms = _set_derivatives(
+            params, self.derivative_keys
+        )
+
         # dynamic part
-        params_ = _set_derivatives(params, "dyn_loss", self.derivative_keys)
+        # params_ = _set_derivatives(params, "dyn_loss", self.derivative_keys)
+        print(params_with_derivatives_at_loss_terms.dyn_loss)
         if self.dynamic_loss is not None:
             mse_dyn_loss = dynamic_loss_apply(
                 self.dynamic_loss.evaluate,
                 self.u,
                 (times_batch, omega_batch),
-                params_,
+                params_with_derivatives_at_loss_terms.dyn_loss,
                 vmap_in_axes_x_t + vmap_in_axes_params,
                 self.loss_weights["dyn_loss"],
             )
@@ -612,12 +612,12 @@ class LossPDENonStatio_eqx(LossPDEStatio_eqx):
             mse_dyn_loss = jnp.array(0.0)
 
         # normalization part
-        params_ = _set_derivatives(params, "norm_loss", self.derivative_keys)
+        # params_ = _set_derivatives(params, "norm_loss", self.derivative_keys)
         if self.norm_samples is not None:
             mse_norm_loss = normalization_loss_apply(
                 self.u,
                 (times_batch, self.norm_samples),
-                params_,
+                params_with_derivatives_at_loss_terms.norm_loss,
                 vmap_in_axes_x_t + vmap_in_axes_params,
                 self.norm_int_length,
                 self.loss_weights["norm_loss"],
@@ -626,12 +626,12 @@ class LossPDENonStatio_eqx(LossPDEStatio_eqx):
             mse_norm_loss = jnp.array(0.0)
 
         # boundary part
-        params_ = _set_derivatives(params, "boundary_loss", self.derivative_keys)
+        # params_ = _set_derivatives(params, "boundary_loss", self.derivative_keys)
         if self.omega_boundary_fun is not None:
             mse_boundary_loss = boundary_condition_apply(
                 self.u,
                 batch,
-                params_,
+                params_with_derivatives_at_loss_terms.boundary_loss,
                 self.omega_boundary_fun,
                 self.omega_boundary_condition,
                 self.omega_boundary_dim,
@@ -641,12 +641,12 @@ class LossPDENonStatio_eqx(LossPDEStatio_eqx):
             mse_boundary_loss = jnp.array(0.0)
 
         # initial condition
-        params_ = _set_derivatives(params, "initial_condition", self.derivative_keys)
+        # params_ = _set_derivatives(params, "initial_condition", self.derivative_keys)
         if self.initial_condition_fun is not None:
             mse_initial_condition = initial_condition_apply(
                 self.u,
                 omega_batch,
-                params_,
+                params_with_derivatives_at_loss_terms.initial_condition,
                 (0,) + vmap_in_axes_params,
                 self.initial_condition_fun,
                 n,
@@ -660,14 +660,14 @@ class LossPDENonStatio_eqx(LossPDEStatio_eqx):
             # update params with the batches of observed params
             params = _update_eq_params_dict(params, batch.obs_batch_dict["eq_params"])
 
-            params_ = _set_derivatives(params, "observations", self.derivative_keys)
+            # params_ = _set_derivatives(params, "observations", self.derivative_keys)
             mse_observation_loss = observations_loss_apply(
                 self.u,
                 (
                     batch.obs_batch_dict["pinn_in"][:, 0:1],
                     batch.obs_batch_dict["pinn_in"][:, 1:],
                 ),
-                params_,
+                params_with_derivatives_at_loss_terms.observations,
                 vmap_in_axes_x_t + vmap_in_axes_params,
                 batch.obs_batch_dict["val"],
                 self.loss_weights["observations"],
@@ -730,14 +730,7 @@ class SystemLossPDE_eqx(eqx.Module):
         match that of u_dict. See LossPDEStatio_eqx or LossPDENonStatio_eqx for
         more details.
     derivative_keys_dict
-        A dict of derivative keys as defined in LossODE. The key of this
-        dict must be that of `dynamic_loss_dict` at least and specify how
-        to compute gradient for the `dyn_loss` loss term at least (see the
-        check at the beginning of the present `__init__` function.
-        Other keys of this dict might be that of `u_dict` to specify how to
-        compute gradients for all the different constraints. If those keys
-        are not specified then the default behaviour for `derivative_keys`
-        of LossODE is used
+        XXX
     omega_boundary_fun_dict
         A dict of dict of functions (see doc for `omega_boundary_fun` in
         LossPDEStatio or LossPDENonStatio). Default is None.
@@ -792,9 +785,9 @@ class SystemLossPDE_eqx(eqx.Module):
     key_dict: Union[Dict[Union[Key, None], None]] = eqx.field(
         kw_only=True, default=None
     )
-    derivative_keys_dict: Union[Dict[str, Union[list, None]], None] = eqx.field(
-        kw_only=True, default=None, static=True
-    )
+    derivative_keys_dict: Union[
+        Union[DerivativeKeysPDEStatio, DerivativeKeysPDENonStatio], None
+    ] = eqx.field(kw_only=True, default=None, static=True)
     loss_weights: Union[Dict[str, Dict[str, Union[Float, Array]]], None] = eqx.field(
         kw_only=True, default=None, static=True
     )

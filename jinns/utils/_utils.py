@@ -36,7 +36,7 @@ def _check_nan_in_pytree(pytree):
 
 def _tracked_parameters(params, tracked_params_key_list):
     """
-    Returns a pytree with the same structure as params with True is the
+    Returns a pytree with the same structure as params with True if the
     parameter is tracked False otherwise
     """
 
@@ -115,33 +115,6 @@ def _check_user_func_return(r, shape):
     # the reshape below avoids a missing (1,) ending dimension
     # depending on how the user has coded the inital function
     return r.reshape(shape)
-
-
-def _set_derivatives(params, loss_term, derivative_keys):
-    """
-    Given derivative_keys, the parameters wrt which we want to compute
-    gradients in the loss, we set stop_gradient operators to not take the
-    derivatives with respect to the others. Note that we only operator at
-    top level
-    """
-    try:
-        params = {
-            k: (
-                value
-                if k in derivative_keys[loss_term]
-                else jax.lax.stop_gradient(value)
-            )
-            for k, value in params.items()
-        }
-    except KeyError:  # if the loss_term key has not been specified we
-        # only take gradients wrt "nn_params", all the other entries have
-        # stopped gradient
-        params = {
-            k: value if k in ["nn_params"] else jax.lax.stop_gradient(value)
-            for k, value in params.items()
-        }
-
-    return params
 
 
 def _extract_nn_params(params_dict, nn_key):

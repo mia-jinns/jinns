@@ -17,6 +17,7 @@ from jinns.data._DataGenerators import (
     DataGeneratorObservations,
     DataGeneratorObservationsMultiPINNs,
 )
+from jinns.parameters._params import Params
 
 
 class DataGeneratorContainer(NamedTuple):
@@ -37,7 +38,7 @@ class ValidationContainer(NamedTuple):
 
 
 class OptimizationContainer(NamedTuple):
-    params: dict
+    params: Params
     last_non_nan_params: dict
     opt_state: optax.OptState
 
@@ -45,7 +46,7 @@ class OptimizationContainer(NamedTuple):
 class OptimizationExtraContainer(NamedTuple):
     curr_seq: int
     seq2seq: Union[dict, None]
-    best_val_params: dict
+    best_val_params: Params
     early_stopping: bool = False
 
 

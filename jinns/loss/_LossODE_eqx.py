@@ -14,7 +14,7 @@ from jaxtyping import PyTree, Float, Array
 from jinns.data._DataGenerators import ODEBatch
 from jinns.utils._utils import (
     _get_vmap_in_axes_params,
-    _set_derivatives,
+    #    _set_derivatives,
     _update_eq_params_dict,
 )
 from jinns.loss._Losses import (

@@ -90,7 +90,10 @@ def train_Burger_init():
     )
 
     nu = 1 / (100 * jnp.pi)
-    init_params = {"nn_params": init_nn_params, "eq_params": {"nu": nu}}
+    init_params = jinns.parameters.Params(
+        nn_params=init_nn_params, eq_params={"nu": nu}
+    )
+    # init_params = {"nn_params": init_nn_params, "eq_params": {"nu": nu}}
 
     def u0(x):
         return -jnp.sin(jnp.pi * x)

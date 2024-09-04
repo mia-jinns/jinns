@@ -3,6 +3,7 @@ This modules implements the main `solve()` function of jinns which
 handles the optimization process
 """
 
+import copy
 from functools import partial
 import optax
 import jax
@@ -82,9 +83,7 @@ def solve(
     n_iter
         The number of iterations in the optimization
     init_params
-        The initial dictionary of parameters. Typically, it is a dictionary of
-        dictionaries: `eq_params` and `nn_params``, respectively the
-        differential equation parameters and the neural network parameter
+        The initial jinns.parameters.Params object
     data
         A DataGenerator object which implements a `get_batch()`
         method which returns a 3-tuple with (omega_grid, omega_border, time grid).
@@ -147,7 +146,7 @@ def solve(
     Returns
     -------
     params
-        The last non NaN value of the dictionaries of parameters at then end of the
+        The last non NaN value of the params at then end of the
         optimization process
     total_loss_values
         An array of the total loss term along the gradient steps
@@ -196,6 +195,7 @@ def solve(
     _, loss_terms = loss(init_params, batch_ini)
     if tracked_params_key_list is None:
         tracked_params_key_list = []
+    # TODO check next function
     tracked_params = _tracked_parameters(init_params, tracked_params_key_list)
     stored_params = jax.tree_util.tree_map(
         lambda tracked_param, param: (
@@ -215,7 +215,7 @@ def solve(
     )
     optimization = OptimizationContainer(
         params=init_params,
-        last_non_nan_params=init_params.copy(),
+        last_non_nan_params=copy.deepcopy(init_params),
         opt_state=opt_state,
     )
     optimization_extra = OptimizationExtraContainer(
