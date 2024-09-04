@@ -1068,5 +1068,184 @@ class DataGeneratorObservations_eqx(eqx.Module):
         """
         Generic method to return a batch
         """
-        new, obs_batch = self.obs_batch()
-        return new, obs_batch
+        return self.obs_batch()
+
+
+class DataGeneratorParameter_eqx(eqx.Module):
+    r"""
+    A data generator for additional unidimensional parameter(s)
+
+    Parameters
+    ----------
+    keys
+        Jax random key to sample new time points and to shuffle batches
+        or a dict of Jax random keys with key entries from param_ranges
+    n
+        An integer. The number of total points that will be divided in
+        batches. Batches are made so that each data point is seen only
+        once during 1 epoch.
+    param_batch_size
+        An integer. The size of the batch of randomly selected points among
+        the `n` points. `param_batch_size` will be the same for all
+        additional batch of parameter.
+        NOTE: no check is done BUT users should be careful that
+        `param_batch_size` must be equal to `temporal_batch_size` or
+        `omega_batch_size` or the product of both. In the first case, the
+        present DataGeneratorParameter instance complements an ODEBatch, a
+        PDEStatioBatch or a PDENonStatioBatch (with self.cartesian_product
+        = False). In the second case, `param_batch_size` =
+        `temporal_batch_size * omega_batch_size` if the present
+        DataGeneratorParameter complements a PDENonStatioBatch
+        with self.cartesian_product = True
+    param_ranges
+        A dict. A dict of tuples (min, max), which
+        reprensents the range of real numbers where to sample batches (of
+        length `param_batch_size` among `n` points).
+        The key corresponds to the parameter name. The keys must match the
+        keys in `params["eq_params"]`.
+        By providing several entries in this dictionary we can sample
+        an arbitrary number of parameters.
+        __Note__ that we currently only support unidimensional parameters
+    method
+        Either `grid` or `uniform`, default is `grid`. `grid` means
+        regularly spaced points over the domain. `uniform` means uniformly
+        sampled points over the domain
+    user_data
+        A dictionary containing user-provided data for parameters.
+        As for `param_ranges`, the key corresponds to the parameter name,
+        the keys must match the keys in `params["eq_params"]` and only
+        unidimensional arrays are supported. Therefore, the jnp arrays
+        found at `user_data[k]` must have shape `(n, 1)` or `(n,)`.
+        Note that if the same key appears in `param_ranges` and `user_data`
+        priority goes for the content in `user_data`.
+        Defaults to None.
+    """
+
+    keys: Union[Key, dict[str, Key]]
+    n: Int
+    param_batch_size: Int
+    method: str = eqx.field(static=True, default="uniform")
+    param_ranges: dict[str, tuple] = eqx.field(static=True, default_factory=lambda: {})
+    user_data: dict[str, Array] = eqx.field(static=True, default_factory=lambda: {})
+
+    curr_param_idx: dict[str, Int] = eqx.field(init=False)
+    param_n_samples: dict[str, Array] = eqx.field(init=False)
+
+    def __post_init__(self):
+        if self.n < self.param_batch_size:
+            raise ValueError(
+                f"Number of data points ({self.n}) is smaller than the"
+                f"number of batch points ({self.param_batch_size})."
+            )
+        if not isinstance(self.keys, dict):
+            all_keys = set().union(self.param_ranges, self.user_data)
+            self.keys = dict(zip(all_keys, jax.random.split(self.keys, len(all_keys))))
+
+        self.curr_param_idx = {}
+        for k in self.keys.keys():
+            self.curr_param_idx[k] = (
+                jnp.iinfo(jnp.int32).max - self.param_batch_size - 1
+            )
+
+        # The call to self.generate_data() creates
+        # the dict self.param_n_samples and then we will only use this one
+        # because it merges the scattered data between `user_data` and
+        # `param_ranges`
+        self.keys, self.param_n_samples = self.generate_data(self.keys)
+
+    def generate_data(
+        self, keys: dict[str, Key]
+    ) -> tuple[dict[str, Key], dict[str, Array]]:
+        """
+        Generate parameter samples, either through generation
+        or using user-provided data.
+        """
+        param_n_samples = {}
+
+        all_keys = set().union(self.param_ranges, self.user_data)
+        for k in all_keys:
+            if (
+                self.user_data and k in self.user_data.keys()
+            ):  # pylint: disable=no-member
+                if self.user_data[k].shape == (self.n, 1):
+                    param_n_samples[k] = self.user_data[k]
+                if self.user_data[k].shape == (self.n,):
+                    param_n_samples[k] = self.user_data[k][:, None]
+                else:
+                    raise ValueError(
+                        "Wrong shape for user provided parameters"
+                        f" in user_data dictionary at key='{k}'"
+                    )
+            else:
+                if self.method == "grid":
+                    xmin, xmax = self.param_ranges[k][0], self.param_ranges[k][1]
+                    partial = (xmax - xmin) / self.n
+                    # shape (n, 1)
+                    param_n_samples[k] = jnp.arange(xmin, xmax, partial)[:, None]
+                elif self.method == "uniform":
+                    xmin, xmax = self.param_ranges[k][0], self.param_ranges[k][1]
+                    keys[k], subkey = jax.random.split(keys[k], 2)
+                    param_n_samples[k] = jax.random.uniform(
+                        subkey, shape=(self.n, 1), minval=xmin, maxval=xmax
+                    )
+                else:
+                    raise ValueError("Method " + self.method + " is not implemented.")
+
+        return keys, param_n_samples
+
+    def _get_param_operands(self, k):
+        return (
+            self.keys[k],
+            self.param_n_samples[k],
+            self.curr_param_idx[k],
+            self.param_batch_size,
+            None,
+        )
+
+    def param_batch(self):
+        """
+        Return a dictionary with batches of parameters
+        If all the batches have been seen, we reshuffle them,
+        otherwise we just return the next unseen batch.
+        """
+
+        def _reset_or_increment_wrapper(param_k, idx_k, key_k):
+            return _reset_or_increment(
+                idx_k + self.param_batch_size,
+                self.n,
+                (key_k, param_k, idx_k, self.param_batch_size, None),
+            )
+
+        res = jax.tree_util.tree_map(
+            _reset_or_increment_wrapper,
+            self.param_n_samples,
+            self.curr_param_idx,
+            self.keys,
+        )
+        # we must transpose the pytrees because keys are merged in res
+        # https://jax.readthedocs.io/en/latest/jax-101/05.1-pytrees.html#transposing-trees
+        new_attributes = jax.tree_util.tree_transpose(
+            jax.tree_util.tree_structure(self.keys),
+            jax.tree_util.tree_structure([0, 0, 0]),
+            res,
+        )
+
+        new = eqx.tree_at(
+            lambda m: (m.keys, m.param_n_samples, m.curr_param_idx),
+            self,
+            new_attributes,
+        )
+
+        return new, jax.tree_util.tree_map(
+            lambda p, q: jax.lax.dynamic_slice(
+                p, start_indices=(q, 0), slice_sizes=(new.param_batch_size, 1)
+            ),
+            new.param_n_samples,
+            new.curr_param_idx,
+        )
+
+    def get_batch(self):
+        """
+        Generic method to return a batch
+        """
+        return self.param_batch()
