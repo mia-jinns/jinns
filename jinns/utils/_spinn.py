@@ -16,9 +16,9 @@ class _SPINN(eqx.Module):
 
     layers: list
     separated_mlp: list
-    d: int
-    r: int
-    m: int
+    d: int = eqx.field(static=True)
+    r: int = eqx.field(static=True)
+    m: int = eqx.field(static=True)
 
     def __init__(self, key, d, r, eqx_list, m=1):
         """
@@ -86,10 +86,10 @@ class SPINN(eqx.Module):
     DataGenerator with `self.cartesian_product=False` for memory consideration
     """
 
-    d: int
-    r: int
+    d: int = eqx.field(static=True)
+    r: int = eqx.field(static=True)
     eq_type: str = eqx.field(static=True)
-    m: int
+    m: int = eqx.field(static=True)
     params: eqx.Module
     static: eqx.Module = eqx.field(static=True)
 

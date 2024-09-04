@@ -878,17 +878,17 @@ class CubicMeshPDENonStatio_eqx(CubicMeshPDEStatio_eqx):
         new, x = self.inside_batch()
         new, dx = new.border_batch()
         new, t = new.temporal_batch()
-        t = t.reshape(self.temporal_batch_size, 1)
+        t = t.reshape(new.temporal_batch_size, 1)
 
-        if self.cartesian_product:
+        if new.cartesian_product:
             t_x = make_cartesian_product(t, x)
         else:
             t_x = jnp.concatenate([t, x], axis=1)
 
         if dx is not None:
-            t_ = t.reshape(self.temporal_batch_size, 1, 1)
+            t_ = t.reshape(new.temporal_batch_size, 1, 1)
             t_ = jnp.repeat(t_, dx.shape[-1], axis=2)
-            if self.cartesian_product or self.dim == 1:
+            if new.cartesian_product or new.dim == 1:
                 t_dx = make_cartesian_product(t_, dx)
             else:
                 t_dx = jnp.concatenate([t_, dx], axis=1)
@@ -952,7 +952,7 @@ class DataGeneratorObservations_eqx(eqx.Module):
     """
 
     key: Key
-    obs_batch_size: Int
+    obs_batch_size: Int = eqx.field(static=True)
     observed_pinn_in: Array
     observed_values: Array
     observed_eq_params: dict[str, Array] = eqx.field(
@@ -1004,7 +1004,7 @@ class DataGeneratorObservations_eqx(eqx.Module):
                 self.observed_eq_params, self.sharding_device
             )
 
-        self.curr_idx = 0
+        self.curr_idx = jnp.iinfo(jnp.int32).max - self.obs_batch_size - 1
         # For speed and to avoid duplicating data what is really
         # shuffled is a vector of indices
         if self.sharding_device is not None:
@@ -1013,9 +1013,11 @@ class DataGeneratorObservations_eqx(eqx.Module):
             )
         else:
             self.indices = jnp.arange(self.n)
+
         # recall post_init is the only place with _init_ where we can set
         # self attribute in a in-place way
-        self.key, self.indices, _ = _reset_batch_idx_and_permute(self._get_operands())
+        self.key, _ = jax.random.split(self.key, 2)  # to make it equivalent to
+        # the call to _reset_batch_idx_and_permute in legacy DG
 
     def _get_operands(self) -> tuple[Key, Array, Int, Int, None]:
         return (
@@ -1042,25 +1044,25 @@ class DataGeneratorObservations_eqx(eqx.Module):
             self.curr_idx + self.obs_batch_size, self.n, self._get_operands()
         )
         new = eqx.tree_at(
-            lambda m: (m.key, m.times, m.curr_time_idx), self, new_attributes
+            lambda m: (m.key, m.indices, m.curr_idx), self, new_attributes
         )
 
         minib_indices = jax.lax.dynamic_slice(
-            self.indices,
-            start_indices=(self.curr_idx,),
-            slice_sizes=(self.obs_batch_size,),
+            new.indices,
+            start_indices=(new.curr_idx,),
+            slice_sizes=(new.obs_batch_size,),
         )
 
         obs_batch = {
             "pinn_in": jnp.take(
-                self.observed_pinn_in, minib_indices, unique_indices=True, axis=0
+                new.observed_pinn_in, minib_indices, unique_indices=True, axis=0
             ),
             "val": jnp.take(
-                self.observed_values, minib_indices, unique_indices=True, axis=0
+                new.observed_values, minib_indices, unique_indices=True, axis=0
             ),
             "eq_params": jax.tree_util.tree_map(
                 lambda a: jnp.take(a, minib_indices, unique_indices=True, axis=0),
-                self.observed_eq_params,
+                new.observed_eq_params,
             ),
         }
         return new, obs_batch
@@ -1124,7 +1126,7 @@ class DataGeneratorParameter_eqx(eqx.Module):
 
     keys: Union[Key, dict[str, Key]]
     n: Int
-    param_batch_size: Int
+    param_batch_size: Int = eqx.field(static=True)
     method: str = eqx.field(static=True, default="uniform")
     param_ranges: dict[str, tuple] = eqx.field(static=True, default_factory=lambda: {})
     user_data: dict[str, Array] = eqx.field(static=True, default_factory=lambda: {})
@@ -1166,8 +1168,9 @@ class DataGeneratorParameter_eqx(eqx.Module):
         all_keys = set().union(self.param_ranges, self.user_data)
         for k in all_keys:
             if (
-                self.user_data and k in self.user_data.keys()
-            ):  # pylint: disable=no-member
+                self.user_data
+                and k in self.user_data.keys()  # pylint: disable=no-member
+            ):
                 if self.user_data[k].shape == (self.n, 1):
                     param_n_samples[k] = self.user_data[k]
                 if self.user_data[k].shape == (self.n,):

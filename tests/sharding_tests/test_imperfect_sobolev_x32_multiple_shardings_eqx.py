@@ -85,12 +85,62 @@ def train_imperfect_sobolev_init_sharding():
         method=method,
     )
 
+    # the next line is to be able to use the the same test values as the legacy
+    # DataGenerators. We need to align the object parameters because their
+    # respective init is not the same
+    train_data = eqx.tree_at(
+        lambda m: (
+            m.curr_omega_idx,
+            m.curr_omega_border_idx,
+            m.curr_time_idx,
+            m.omega,
+            m.times,
+        ),
+        train_data,
+        (
+            0,
+            0,
+            0,
+            random.choice(
+                jnp.array([2330110495, 1427500313], dtype=jnp.uint32),
+                train_data.omega,
+                shape=(train_data.omega.shape[0],),
+                replace=False,
+                p=train_data.p_omega,
+            ),
+            random.choice(
+                jnp.array([1474180313, 1830033527], dtype=jnp.uint32),
+                train_data.times,
+                shape=(train_data.times.shape[0],),
+                replace=False,
+                p=train_data.p_times,
+            ),
+        ),
+    )
+
     key, subkey = random.split(key)
     obs_data = jinns.data.DataGeneratorObservations_eqx(
         subkey,
         obs_batch_size=omega_batch_size * temporal_batch_size,
         observed_pinn_in=jnp.stack([t_obs, x_obs], axis=1),
         observed_values=obs,
+    )
+    obs_data = eqx.tree_at(
+        lambda m: (
+            m.curr_idx,
+            m.indices,
+        ),
+        obs_data,
+        (
+            0,
+            random.choice(
+                jnp.array([2823058779, 1116524360], dtype=jnp.uint32),
+                obs_data.indices,
+                shape=(obs_data.indices.shape[0],),
+                replace=False,
+                p=None,
+            ),
+        ),
     )
 
     init_params = {"nn_params": init_nn_params, "eq_params": {}}
@@ -235,12 +285,62 @@ def train_imperfect_sobolev_init_no_sharding():
         method=method,
     )
 
+    # the next line is to be able to use the the same test values as the legacy
+    # DataGenerators. We need to align the object parameters because their
+    # respective init is not the same
+    train_data = eqx.tree_at(
+        lambda m: (
+            m.curr_omega_idx,
+            m.curr_omega_border_idx,
+            m.curr_time_idx,
+            m.omega,
+            m.times,
+        ),
+        train_data,
+        (
+            0,
+            0,
+            0,
+            random.choice(
+                jnp.array([2330110495, 1427500313], dtype=jnp.uint32),
+                train_data.omega,
+                shape=(train_data.omega.shape[0],),
+                replace=False,
+                p=train_data.p_omega,
+            ),
+            random.choice(
+                jnp.array([1474180313, 1830033527], dtype=jnp.uint32),
+                train_data.times,
+                shape=(train_data.times.shape[0],),
+                replace=False,
+                p=train_data.p_times,
+            ),
+        ),
+    )
+
     key, subkey = random.split(key)
     obs_data = jinns.data.DataGeneratorObservations_eqx(
         subkey,
         obs_batch_size=omega_batch_size * temporal_batch_size,
         observed_pinn_in=jnp.stack([t_obs, x_obs], axis=1),
         observed_values=obs,
+    )
+    obs_data = eqx.tree_at(
+        lambda m: (
+            m.curr_idx,
+            m.indices,
+        ),
+        obs_data,
+        (
+            0,
+            random.choice(
+                jnp.array([2823058779, 1116524360], dtype=jnp.uint32),
+                obs_data.indices,
+                shape=(obs_data.indices.shape[0],),
+                replace=False,
+                p=None,
+            ),
+        ),
     )
 
     init_params = {"nn_params": init_nn_params, "eq_params": {}}

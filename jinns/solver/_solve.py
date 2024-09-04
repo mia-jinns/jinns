@@ -599,8 +599,10 @@ def get_get_batch(obs_batch_sharding):
             # to be jitted, i.e. in a scan loop
             if isinstance(
                 obs_data,
-                DataGeneratorObservations_eqx,
-                DataGeneratorObservationsMultiPINNs_eqx,
+                (
+                    DataGeneratorObservations_eqx,
+                    DataGeneratorObservationsMultiPINNs_eqx,
+                ),
             ):
                 obs_data, obs_batch = obs_data.get_batch()
             else:
@@ -631,8 +633,10 @@ def get_get_batch(obs_batch_sharding):
         if obs_data is not None:
             if isinstance(
                 obs_data,
-                DataGeneratorObservations_eqx,
-                DataGeneratorObservationsMultiPINNs_eqx,
+                (
+                    DataGeneratorObservations_eqx,
+                    DataGeneratorObservationsMultiPINNs_eqx,
+                ),
             ):
                 obs_data, obs_batch = obs_data.get_batch()
             else:

@@ -53,20 +53,53 @@ def train_imperfect_sobolev_init():
     Tmax = 1
     method = "uniform"
 
-    train_data = jinns.data.CubicMeshPDENonStatio(
-        subkey,
-        n,
-        nb,
-        nt,
-        omega_batch_size,
-        omega_border_batch_size,
-        temporal_batch_size,
-        dim,
-        (xmin,),
-        (xmax,),
-        tmin,
-        tmax,
-        method,
+    train_data = jinns.data.CubicMeshPDENonStatio_eqx(
+        key=subkey,
+        n=n,
+        nb=nb,
+        nt=nt,
+        omega_batch_size=omega_batch_size,
+        omega_border_batch_size=omega_border_batch_size,
+        temporal_batch_size=temporal_batch_size,
+        dim=dim,
+        min_pts=(xmin,),
+        max_pts=(xmax,),
+        tmin=tmin,
+        tmax=tmax,
+        method=method,
+    )
+
+    # the next line is to be able to use the the same test values as the legacy
+    # DataGenerators. We need to align the object parameters because their
+    # respective init is not the same
+    train_data = eqx.tree_at(
+        lambda m: (
+            m.curr_omega_idx,
+            m.curr_omega_border_idx,
+            m.curr_time_idx,
+            m.omega,
+            m.times,
+        ),
+        train_data,
+        (
+            0,
+            0,
+            0,
+            random.choice(
+                jnp.array([2330110495, 1427500313], dtype=jnp.uint32),
+                train_data.omega,
+                shape=(train_data.omega.shape[0],),
+                replace=False,
+                p=train_data.p_omega,
+            ),
+            random.choice(
+                jnp.array([1474180313, 1830033527], dtype=jnp.uint32),
+                train_data.times,
+                shape=(train_data.times.shape[0],),
+                replace=False,
+                p=train_data.p_times,
+            ),
+        ),
     )
 
     key, subkey = random.split(key)
@@ -75,6 +108,23 @@ def train_imperfect_sobolev_init():
         obs_batch_size=omega_batch_size * temporal_batch_size,
         observed_pinn_in=jnp.stack([t_obs, x_obs], axis=1),
         observed_values=obs,
+    )
+    obs_data = eqx.tree_at(
+        lambda m: (
+            m.curr_idx,
+            m.indices,
+        ),
+        obs_data,
+        (
+            0,
+            random.choice(
+                jnp.array([2823058779, 1116524360], dtype=jnp.uint32),
+                obs_data.indices,
+                shape=(obs_data.indices.shape[0],),
+                replace=False,
+                p=None,
+            ),
+        ),
     )
 
     init_params = {"nn_params": init_nn_params, "eq_params": {}}
@@ -135,10 +185,8 @@ def train_imperfect_sobolev_10it(train_imperfect_sobolev_init):
 
     # NOTE we need to waste one get_batch() here to stay synchronized with the
     # notebook
-    _ = loss.evaluate(
-        init_params,
-        jinns.data.append_obs_batch(train_data.get_batch(), obs_data.get_batch()),
-    )[0]
+    train_data, _ = train_data.get_batch()
+    obs_data, _ = obs_data.get_batch()
 
     params = init_params
 
@@ -160,10 +208,13 @@ def train_imperfect_sobolev_10it(train_imperfect_sobolev_init):
 def test_initial_loss_imperfect_sobolev(train_imperfect_sobolev_init):
     init_params, loss, train_data, obs_data = train_imperfect_sobolev_init
 
+    train_data, train_batch = train_data.get_batch()
+    obs_data, obs_batch = obs_data.get_batch()
+
     assert jnp.allclose(
         loss.evaluate(
             init_params,
-            jinns.data.append_obs_batch(train_data.get_batch(), obs_data.get_batch()),
+            jinns.data.append_obs_batch(train_batch, obs_batch),
         )[0],
         69.282555,
         atol=1e-1,
