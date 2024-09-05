@@ -1,5 +1,5 @@
 """
-Utility functions for plotting
+Utility functions for plotting in 1D and 2D, with and without time.
 """
 
 from functools import partial
