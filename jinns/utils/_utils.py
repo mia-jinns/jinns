@@ -25,10 +25,8 @@ def _check_nan_in_pytree(pytree):
     """
     return jnp.any(
         jnp.array(
-            list(
-                jax.tree_util.tree_leaves(
-                    jax.tree_util.tree_map(lambda x: jnp.any(jnp.isnan(x)), pytree)
-                )
+            jax.tree_util.tree_leaves(
+                jax.tree_util.tree_map(lambda x: jnp.any(jnp.isnan(x)), pytree)
             )
         )
     )
