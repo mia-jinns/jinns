@@ -483,8 +483,8 @@ def get_break_fun(n_iter, verbose: str):
     @jit
     def break_fun(carry: tuple):
         """
-        Function to break from the main optimization loop
-        We the following conditions : maximum number of iterations, NaN
+        Function to break from the main optimization loop whe the following
+        conditions are met : maximum number of iterations, NaN
         appearing in the parameters, and early stopping criterion.
         """
 
@@ -538,7 +538,7 @@ def get_break_fun(n_iter, verbose: str):
 def get_get_batch(obs_batch_sharding):
     """
     Return the get_batch function that will be used either the jittable one or
-    the non-jittable one with sharding
+    the non-jittable one with sharding using jax.device.put()
     """
 
     def get_batch_sharding(data, param_data, obs_data):
@@ -582,7 +582,7 @@ def get_get_batch(obs_batch_sharding):
     @jit
     def get_batch(data, param_data, obs_data):
         """
-        Original get_batch with not sharding
+        Original get_batch with no sharding
         """
         if isinstance(
             data,
