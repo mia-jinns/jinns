@@ -5,7 +5,7 @@ Implements several dynamic losses
 import jax
 from jax import grad, jacrev
 import jax.numpy as jnp
-from jinns.utils._utils import _get_grid, _extract_nn_params
+from jinns.utils._utils import _get_grid
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
 from jinns.loss._DynamicLossAbstract import ODE, PDEStatio, PDENonStatio
@@ -18,6 +18,7 @@ from jinns.loss._operators import (
     _u_dot_nabla_times_u_rev,
     _u_dot_nabla_times_u_fwd,
 )
+from jinns.parameters._params import _extract_nn_params
 
 
 class FisherKPP(PDENonStatio):

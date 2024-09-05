@@ -12,7 +12,8 @@ import equinox as eqx
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
 
-from jinns.utils._utils import _extract_nn_params, _get_grid
+from jinns.utils._utils import _get_grid
+from jinns.parameters._params import _extract_nn_params
 from jinns.loss._DynamicLossAbstract_eqx import ODE, PDEStatio, PDENonStatio
 from jinns.loss._operators import (
     _laplacian_rev,

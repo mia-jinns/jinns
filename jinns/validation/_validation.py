@@ -11,14 +11,14 @@ import jax.numpy as jnp
 from jaxtyping import Array, Bool, PyTree, Int
 import jinns
 import jinns.data
-from jinns.loss import LossODE, LossPDENonStatio, LossPDEStatio
-from jinns.data._DataGenerators import (
-    DataGeneratorODE,
-    CubicMeshPDEStatio,
-    CubicMeshPDENonStatio,
-    DataGeneratorParameter,
-    DataGeneratorObservations,
-    DataGeneratorObservationsMultiPINNs,
+from jinns.loss import LossODE_eqx, LossPDENonStatio_eqx, LossPDEStatio_eqx
+from jinns.data._DataGenerators_eqx import (
+    DataGeneratorODE_eqx,
+    CubicMeshPDEStatio_eqx,
+    CubicMeshPDENonStatio_eqx,
+    DataGeneratorParameter_eqx,
+    DataGeneratorObservations_eqx,
+    DataGeneratorObservationsMultiPINNs_eqx,
     append_obs_batch,
     append_param_batch,
 )

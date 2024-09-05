@@ -3,35 +3,50 @@
 Define the DataGeneratorODE equinox module
 """
 
+from typing import Union, NamedTuple
 from dataclasses import InitVar
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jaxtyping import Key, Int, PyTree, Array, Float, Bool
-from typing import Union, NamedTuple
-from jinns.data._DataGenerators import ODEBatch, PDENonStatioBatch, PDEStatioBatch
+
 
 # TODO ? change to eqx.Module, but this require an update of all the _replace()
 # calls
-# class ODEBatch(NamedTuple):  # eqx.Module):
-#    temporal_batch: Array
-#    param_batch_dict: dict = None
-#    obs_batch_dict: dict = None
-#
-#
-# class PDENonStatioBatch(NamedTuple):  # eqx.Module):
-#    inside_batch: Array
-#    border_batch: Array
-#    temporal_batch: Array
-#    param_batch_dict: dict = None
-#    obs_batch_dict: dict = None
-#
-#
-# class PDEStatioBatch(NamedTuple):  # eqx.Module):
-#    inside_batch: Array
-#    border_batch: Array
-#    param_batch_dict: dict = None
-#    obs_batch_dict: dict = None
+class ODEBatch(NamedTuple):
+    temporal_batch: Array
+    param_batch_dict: dict = None
+    obs_batch_dict: dict = None
+
+
+class PDENonStatioBatch(NamedTuple):
+    times_x_inside_batch: Array
+    times_x_border_batch: Array
+    param_batch_dict: dict = None
+    obs_batch_dict: dict = None
+
+
+class PDEStatioBatch(NamedTuple):
+    inside_batch: Array
+    border_batch: Array
+    param_batch_dict: dict = None
+    obs_batch_dict: dict = None
+
+
+def append_param_batch(batch, param_batch_dict):
+    """
+    Utility function that fill the param_batch_dict of a batch object with a
+    param_batch_dict
+    """
+    return batch._replace(param_batch_dict=param_batch_dict)
+
+
+def append_obs_batch(batch, obs_batch_dict):
+    """
+    Utility function that fill the obs_batch_dict of a batch object with a
+    obs_batch_dict
+    """
+    return batch._replace(obs_batch_dict=obs_batch_dict)
 
 
 def make_cartesian_product(b1: Array, b2: Array) -> Array:

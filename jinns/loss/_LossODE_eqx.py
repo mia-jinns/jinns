@@ -12,10 +12,6 @@ from jax import vmap
 import equinox as eqx
 from jaxtyping import Float, Array, Int
 from jinns.data._DataGenerators import ODEBatch
-from jinns.utils._utils import (
-    _get_vmap_in_axes_params,
-    _update_eq_params_dict,
-)
 from jinns.loss._Losses import (
     dynamic_loss_apply,
     constraints_system_loss_apply,
@@ -23,7 +19,11 @@ from jinns.loss._Losses import (
 )
 from jinns.utils._pinn import PINN
 from jinns.loss._DynamicLossAbstract_eqx import ODE
-from jinns.parameters._params import Params
+from jinns.parameters._params import (
+    Params,
+    _get_vmap_in_axes_params,
+    _update_eq_params_dict,
+)
 from jinns.parameters._derivative_keys import DerivativeKeysODE, _set_derivatives
 
 _LOSS_WEIGHT_KEYS_ODE = ["observations", "dyn_loss", "initial_condition"]

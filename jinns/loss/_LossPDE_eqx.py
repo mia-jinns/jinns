@@ -19,14 +19,14 @@ from jinns.loss._Losses import (
     constraints_system_loss_apply,
 )
 from jinns.data._DataGenerators import PDEStatioBatch, PDENonStatioBatch
-from jinns.utils._utils import (
-    _get_vmap_in_axes_params,
-    _update_eq_params_dict,
-)
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
 from jinns.loss._DynamicLossAbstract_eqx import PDEStatio, PDENonStatio
-from jinns.parameters._params import Params
+from jinns.parameters._params import (
+    Params,
+    _get_vmap_in_axes_params,
+    _update_eq_params_dict,
+)
 from jinns.parameters._derivative_keys import (
     DerivativeKeysPDEStatio,
     DerivativeKeysPDENonStatio,

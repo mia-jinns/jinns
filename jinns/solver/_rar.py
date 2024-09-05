@@ -1,28 +1,19 @@
+from functools import partial
 import jax
 from jax import vmap
 import jax.numpy as jnp
 import equinox as eqx
-from jinns.data._DataGenerators import (
-    DataGeneratorODE,
-    CubicMeshPDEStatio,
-    CubicMeshPDENonStatio,
-)
 from jinns.data._DataGenerators_eqx import (
     DataGeneratorODE_eqx,
     CubicMeshPDEStatio_eqx,
     CubicMeshPDENonStatio_eqx,
 )
-from jinns.loss._LossPDE import LossPDEStatio, LossPDENonStatio, SystemLossPDE
-from jinns.loss._LossODE import LossODE, SystemLossODE
 from jinns.loss._LossPDE_eqx import (
     LossPDEStatio_eqx,
     LossPDENonStatio_eqx,
     SystemLossPDE_eqx,
 )
 from jinns.loss._LossODE_eqx import LossODE_eqx, SystemLossODE_eqx
-from jinns.loss._DynamicLossAbstract import PDEStatio
-
-from functools import partial
 from jinns.utils._hyperpinn import HYPERPINN
 from jinns.utils._spinn import SPINN
 
@@ -42,13 +33,13 @@ def _proceed_to_rar(data, i):
     # Memory allocation checks (depends on the type of DataGenerator)
     # check if we still have room to append new collocation points in the
     # allocated jnp.array (can concern `data.p_times` or `p_omega`)
-    if isinstance(data, DataGeneratorODE) or isinstance(data, CubicMeshPDENonStatio):
+    if isinstance(data, (DataGeneratorODE_eqx, CubicMeshPDENonStatio_eqx)):
         check_list.append(
             data.rar_parameters["selected_sample_size_times"]
             <= jnp.count_nonzero(data.p_times == 0),
         )
 
-    if isinstance(data, CubicMeshPDEStatio) or isinstance(data, CubicMeshPDENonStatio):
+    if isinstance(data, (CubicMeshPDEStatio_eqx, CubicMeshPDENonStatio_eqx)):
         # for now the above check are redundants but there may be a time when
         # we drop inheritence
         check_list.append(
@@ -87,13 +78,13 @@ def init_rar(data):
     if data.rar_parameters is None:
         _rar_step_true, _rar_step_false = None, None
     else:
-        if isinstance(data, (DataGeneratorODE, DataGeneratorODE_eqx)):
+        if isinstance(data, DataGeneratorODE_eqx):
             # In this case we only need rar parameters related to `times`
             _rar_step_true, _rar_step_false = _rar_step_init(
                 data.rar_parameters["sample_size_times"],
                 data.rar_parameters["selected_sample_size_times"],
             )
-        elif isinstance(data, (CubicMeshPDENonStatio, CubicMeshPDENonStatio_eqx)):
+        elif isinstance(data, CubicMeshPDENonStatio_eqx):
             # In this case we need rar parameters related to both `times`
             # and`omega`
             _rar_step_true, _rar_step_false = _rar_step_init(
@@ -106,7 +97,7 @@ def init_rar(data):
                     data.rar_parameters["selected_sample_size_omega"],
                 ),
             )
-        elif isinstance(data, (CubicMeshPDEStatio, CubicMeshPDEStatio_eqx)):
+        elif isinstance(data, CubicMeshPDEStatio_eqx):
             # In this case we only need rar parameters related to `omega`
             _rar_step_true, _rar_step_false = _rar_step_init(
                 data.rar_parameters["sample_size_omega"],
@@ -136,7 +127,7 @@ def _rar_step_init(sample_size, selected_sample_size):
     def rar_step_true(operands):
         loss, params, data, i = operands
 
-        if isinstance(data, (DataGeneratorODE, DataGeneratorODE_eqx)):
+        if isinstance(data, DataGeneratorODE_eqx):
 
             if isinstance(data, eqx.Module):
                 new_key, subkey = jax.random.split(data.key)
@@ -146,7 +137,7 @@ def _rar_step_init(sample_size, selected_sample_size):
                 new_omega_samples = data.sample_in_time_domain(sample_size)
 
             # We can have different types of Loss
-            if isinstance(loss, (LossODE, LossODE_eqx)):
+            if isinstance(loss, LossODE_eqx):
                 v_dyn_loss = vmap(
                     lambda t: loss.dynamic_loss.evaluate(t, loss.u, params),
                     (0),
@@ -157,7 +148,7 @@ def _rar_step_init(sample_size, selected_sample_size):
                     mse_on_s = (jnp.linalg.norm(dyn_on_s, axis=-1) ** 2).flatten()
                 else:
                     mse_on_s = dyn_on_s**2
-            elif isinstance(loss, (SystemLossODE, SystemLossODE_eqx)):
+            elif isinstance(loss, SystemLossODE_eqx):
                 mse_on_s = 0
 
                 for i in loss.dynamic_loss_dict.keys():
@@ -231,9 +222,9 @@ def _rar_step_init(sample_size, selected_sample_size):
                 data.rar_iter_nb = new_rar_iter_nb
                 data.p_times = new_p_times
 
-        elif isinstance(
-            data, (CubicMeshPDEStatio, CubicMeshPDEStatio_eqx)
-        ) and not isinstance(data, (CubicMeshPDENonStatio, CubicMeshPDENonStatio_eqx)):
+        elif isinstance(data, CubicMeshPDEStatio_eqx) and not isinstance(
+            data, CubicMeshPDENonStatio_eqx
+        ):
             if isinstance(data, eqx.Module):
                 new_key, *subkeys = jax.random.split(data.key, data.dim + 1)
                 new_omega_samples = data.sample_in_omega_domain(subkeys, sample_size)
@@ -242,7 +233,7 @@ def _rar_step_init(sample_size, selected_sample_size):
                 new_omega_samples = data.sample_in_omega_domain(sample_size)
 
             # We can have different types of Loss
-            if isinstance(loss, (LossPDEStatio, LossPDEStatio_eqx)):
+            if isinstance(loss, LossPDEStatio_eqx):
                 v_dyn_loss = vmap(
                     lambda x: loss.dynamic_loss.evaluate(
                         x,
@@ -257,7 +248,7 @@ def _rar_step_init(sample_size, selected_sample_size):
                     mse_on_s = (jnp.linalg.norm(dyn_on_s, axis=-1) ** 2).flatten()
                 else:
                     mse_on_s = dyn_on_s**2
-            elif isinstance(loss, (SystemLossPDE, SystemLossODE_eqx)):
+            elif isinstance(loss, SystemLossODE_eqx):
                 mse_on_s = 0
                 for i in loss.dynamic_loss_dict.keys():
                     # only the case LossPDEStatio here
@@ -332,7 +323,7 @@ def _rar_step_init(sample_size, selected_sample_size):
                 data.rar_iter_nb = new_rar_iter_nb
                 data.p_omega = new_p_omega
 
-        elif isinstance(data, (CubicMeshPDENonStatio, CubicMeshPDENonStatio_eqx)):
+        elif isinstance(data, CubicMeshPDENonStatio_eqx):
             if isinstance(loss.u, HYPERPINN) or isinstance(loss.u, SPINN):
                 raise NotImplementedError("RAR not implemented for hyperPINN and SPINN")
 
@@ -369,7 +360,7 @@ def _rar_step_init(sample_size, selected_sample_size):
                     ..., None
                 ]  # it is repeated + add an axis
 
-            if isinstance(loss, (LossPDENonStatio, LossPDENonStatio_eqx)):
+            if isinstance(loss, LossPDENonStatio_eqx):
                 v_dyn_loss = vmap(
                     lambda t, x: loss.dynamic_loss.evaluate(t, x, loss.u, params),
                     (0, 0),
@@ -379,7 +370,7 @@ def _rar_step_init(sample_size, selected_sample_size):
                     (sample_size_times, sample_size_omega)
                 )
                 mse_on_s = dyn_on_s**2
-            elif isinstance(loss, (SystemLossPDE, SystemLossPDE_eqx)):
+            elif isinstance(loss, SystemLossPDE_eqx):
                 dyn_on_s = jnp.zeros((sample_size_times, sample_size_omega))
                 for i in loss.dynamic_loss_dict.keys():
                     v_dyn_loss = vmap(
