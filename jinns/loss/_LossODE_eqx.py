@@ -10,11 +10,10 @@ import jax
 import jax.numpy as jnp
 from jax import vmap
 import equinox as eqx
-from jaxtyping import PyTree, Float, Array
+from jaxtyping import Float, Array, Int
 from jinns.data._DataGenerators import ODEBatch
 from jinns.utils._utils import (
     _get_vmap_in_axes_params,
-    #    _set_derivatives,
     _update_eq_params_dict,
 )
 from jinns.loss._Losses import (
@@ -24,8 +23,10 @@ from jinns.loss._Losses import (
 )
 from jinns.utils._pinn import PINN
 from jinns.loss._DynamicLossAbstract_eqx import ODE
+from jinns.parameters._params import Params
+from jinns.parameters._derivative_keys import DerivativeKeysODE, _set_derivatives
 
-_MSE_TERMS_ODE = ["observations", "dyn_loss", "initial_condition"]
+_LOSS_WEIGHT_KEYS_ODE = ["observations", "dyn_loss", "initial_condition"]
 
 
 class _LossODEAbstract_eqx(eqx.Module):
@@ -35,21 +36,11 @@ class _LossODEAbstract_eqx(eqx.Module):
 
     loss_weights
         a dictionary with values used to ponderate each term in the loss
-        function. Valid keys are that of _MSE_TERMS_ODE
+        function. Valid keys are that of _LOSS_WEIGHT_KEYS_ODE
         Note that we can have jnp.arrays with the same dimension of
         `u` which then ponderates each output of `u`
     derivative_keys
-        A dict of lists of strings. In the dict, the key must correspond to
-        the loss term keywords (valid keys are in _MSE_TERMS_ODE). Then each of the values must correspond to keys in the parameter
-        dictionary (*at top level only of the parameter dictionary*).
-        It enables selecting the set of parameters
-        with respect to which the gradients of the dynamic
-        loss are computed. If nothing is provided, we set ["nn_params"] for all loss term
-        keywords, this is what is typically
-        done in solving forward problems, when we only estimate the
-        equation solution with a PINN. If some loss terms keywords are
-        missing we set their value to ["nn_params"] by default for the
-        same reason
+        XXXX
     initial_condition
         tuple of length 2 with initial condition :math:`(t0, u0)`.
         Can be None in order to
@@ -61,7 +52,7 @@ class _LossODEAbstract_eqx(eqx.Module):
     """
 
     # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
-    derivative_keys: Union[list, None] = eqx.field(
+    derivative_keys: Union[DerivativeKeysODE, None] = eqx.field(
         kw_only=True, default=None, static=True
     )
     loss_weights: Union[Dict[str, Union[Float, Array]], None] = eqx.field(
@@ -75,11 +66,7 @@ class _LossODEAbstract_eqx(eqx.Module):
     def __post_init__(self):
         if self.derivative_keys is None:
             # be default we only take gradient wrt nn_params
-            self.derivative_keys = {k: ["nn_params"] for k in _MSE_TERMS_ODE}
-        if isinstance(self.derivative_keys, list):
-            # if the user only provided a list, this defines the gradient taken
-            # for all the loss entries
-            self.derivative_keys = {k: self.derivative_keys for k in _MSE_TERMS_ODE}
+            self.derivative_keys = DerivativeKeysODE()
         if self.initial_condition is None:
             warnings.warn(
                 "Initial condition wasn't provided. Be sure to cover for that"
@@ -98,13 +85,13 @@ class _LossODEAbstract_eqx(eqx.Module):
         if self.obs_slice is None:
             self.obs_slice = jnp.s_[...]
 
-        for k in _MSE_TERMS_ODE:
+        for k in _LOSS_WEIGHT_KEYS_ODE:
             if k not in self.loss_weights.keys():
                 self.loss_weights[k] = 0
 
     @abc.abstractmethod
     def evaluate(
-        self: eqx.Module, params: PyTree, batch: ODEBatch
+        self: eqx.Module, params: Params, batch: ODEBatch
     ) -> tuple[Float, dict]:
         raise NotImplementedError
 
@@ -135,17 +122,7 @@ class LossODE_eqx(_LossODEAbstract_eqx):
         Note that we can have jnp.arrays with the same dimension of
         `u` which then ponderates each output of `u`
     derivative_keys
-        A dict of lists of strings. In the dict, the key must correspond to
-        the loss term keywords. Then each of the values must correspond to keys in the parameter
-        dictionary (*at top level only of the parameter dictionary*).
-        It enables selecting the set of parameters
-        with respect to which the gradients of the dynamic
-        loss are computed. If nothing is provided, we set ["nn_params"] for all loss term
-        keywords, this is what is typically
-        done in solving forward problems, when we only estimate the
-        equation solution with a PINN. If some loss terms keywords are
-        missing we set their value to ["nn_params"] by default for the same
-        reason
+        XXXX
     initial_condition :
         tuple of length 2 with initial condition :math:`(t0, u0)`.
         Can be None in order to
@@ -164,9 +141,13 @@ class LossODE_eqx(_LossODEAbstract_eqx):
     u: eqx.Module
     dynamic_loss: Union[eqx.Module, None]
 
+    vmap_in_axes: tuple[Int] = eqx.field(init=False, static=True)
+
     def __post_init__(self):
         super().__post_init__()  # because __init__ or __post_init__ of Base
         # class is not automatically called
+
+        self.vmap_in_axes = (0,)
 
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
@@ -192,8 +173,6 @@ class LossODE_eqx(_LossODEAbstract_eqx):
         """
         temporal_batch = batch.temporal_batch
 
-        vmap_in_axes_t = (0,)
-
         # Retrieve the optional eq_params_batch
         # and update eq_params with the latter
         # and update vmap_in_axes
@@ -203,22 +182,24 @@ class LossODE_eqx(_LossODEAbstract_eqx):
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
+        params_with_derivatives_at_loss_terms = _set_derivatives(
+            params, self.derivative_keys
+        )
+
         ## dynamic part
-        params_ = _set_derivatives(params, "dyn_loss", self.derivative_keys)
         if self.dynamic_loss is not None:
             mse_dyn_loss = dynamic_loss_apply(
                 self.dynamic_loss.evaluate,
                 self.u,
                 (temporal_batch,),
-                params_,
-                vmap_in_axes_t + vmap_in_axes_params,
+                params_with_derivatives_at_loss_terms.dyn_loss,
+                self.vmap_in_axes + vmap_in_axes_params,
                 self.loss_weights["dyn_loss"],
             )
         else:
             mse_dyn_loss = jnp.array(0.0)
 
         # initial condition
-        params_ = _set_derivatives(params, "initial_condition", self.derivative_keys)
         if self.initial_condition is not None:
             vmap_in_axes = (None,) + vmap_in_axes_params
             if not jax.tree_util.tree_leaves(vmap_in_axes):
@@ -232,7 +213,14 @@ class LossODE_eqx(_LossODEAbstract_eqx):
             u0 = jnp.array(u0)
             mse_initial_condition = jnp.mean(
                 self.loss_weights["initial_condition"]
-                * jnp.sum((v_u(t0, params_) - u0) ** 2, axis=-1)
+                * jnp.sum(
+                    (
+                        v_u(t0, params_with_derivatives_at_loss_terms.initial_condition)
+                        - u0
+                    )
+                    ** 2,
+                    axis=-1,
+                )
             )
         else:
             mse_initial_condition = jnp.array(0.0)
@@ -242,12 +230,11 @@ class LossODE_eqx(_LossODEAbstract_eqx):
             params = _update_eq_params_dict(params, batch.obs_batch_dict["eq_params"])
 
             # MSE loss wrt to an observed batch
-            params_ = _set_derivatives(params, "observations", self.derivative_keys)
             mse_observation_loss = observations_loss_apply(
                 self.u,
                 (batch.obs_batch_dict["pinn_in"],),
-                params_,
-                vmap_in_axes_t + vmap_in_axes_params,
+                params_with_derivatives_at_loss_terms.observations,
+                self.vmap_in_axes + vmap_in_axes_params,
                 batch.obs_batch_dict["val"],
                 self.loss_weights["observations"],
                 self.obs_slice,

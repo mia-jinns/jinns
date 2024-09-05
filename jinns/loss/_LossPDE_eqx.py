@@ -8,9 +8,8 @@ from typing import Union, Dict, Callable
 import warnings
 import jax
 import jax.numpy as jnp
-from jax.tree_util import register_pytree_node_class
 import equinox as eqx
-from jaxtyping import PyTree, Float, Array, Key
+from jaxtyping import Float, Array, Key, Int
 from jinns.loss._Losses import (
     dynamic_loss_apply,
     boundary_condition_apply,
@@ -49,9 +48,6 @@ _LOSS_WEIGHT_KEYS_PDESTATIO = [
 
 _LOSS_WEIGHT_KEYS_PDENONSTATIO = _LOSS_WEIGHT_KEYS_PDESTATIO + ["initial_condition"]
 
-_MSE_TERMS_PDESTATIO = _LOSS_WEIGHT_KEYS_PDESTATIO
-_MSE_TERMS_PDENONSTATIO = _LOSS_WEIGHT_KEYS_PDENONSTATIO
-
 
 class _LossPDEAbstract_eqx(eqx.Module):
     """
@@ -64,17 +60,7 @@ class _LossPDEAbstract_eqx(eqx.Module):
         Note that we can have jnp.arrays with the same dimension of
         `u` which then ponderates each output of `u`
     derivative_keys
-        A dict of lists of strings. In the dict, the key must correspond to
-        the loss term keywords (valid keys are in _MSE_TERMS_PDENONSTATIO). Then each of the values must correspond to keys in the parameter
-        dictionary (*at top level only of the parameter dictionary*).
-        It enables selecting the set of parameters
-        with respect to which the gradients of the dynamic
-        loss are computed. If nothing is provided, we set ["nn_params"] for all loss term
-        keywords, this is what is typically
-        done in solving forward problems, when we only estimate the
-        equation solution with a PINN. If some loss terms keywords are
-        missing we set their value to ["nn_params"] by default for the
-        same reason
+        XX
     norm_samples
         Fixed sample point in the space over which to compute the
         normalization constant. Default is None. Note that contrary to
@@ -116,9 +102,10 @@ class _LossPDEAbstract_eqx(eqx.Module):
         Module with eqx.tree_at
         """
         if self.derivative_keys is None:
+            # be default we only take gradient wrt nn_params
             self.derivative_keys = (
                 DerivativeKeysPDENonStatio()
-                if type(self) == LossPDENonStatio_eqx
+                if isinstance(self, LossPDENonStatio_eqx)
                 else DerivativeKeysPDEStatio()
             )
 
@@ -318,6 +305,8 @@ class LossPDEStatio_eqx(_LossPDEAbstract_eqx):
     dynamic_loss: Union[eqx.Module, None]
     key: Union[Key, None] = eqx.field(kw_only=True, default=None)
 
+    vmap_in_axes: tuple[Int] = eqx.field(init=False, static=True)
+
     def __post_init__(self):
         """
         Note that neither __init__ or __post_init__ are called when udating a
@@ -325,6 +314,17 @@ class LossPDEStatio_eqx(_LossPDEAbstract_eqx):
         """
         super().__post_init__()  # because __init__ or __post_init__ of Base
         # class is not automatically called
+
+        self.vmap_in_axes = (0,)  # for x only here
+
+    def _get_dynamic_loss_batch(self, batch):
+        return (batch.inside_batch,)
+
+    def _get_normalization_loss_batch(self, batch):
+        return (self.norm_samples,)
+
+    def _get_observations_loss_batch(self, batch):
+        return (batch.obs_batch_dict["pinn_in"],)
 
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
@@ -349,10 +349,6 @@ class LossPDEStatio_eqx(_LossPDEAbstract_eqx):
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
         """
-        omega_batch, _ = batch.inside_batch, batch.border_batch
-
-        vmap_in_axes_x = (0,)
-
         # Retrieve the optional eq_params_batch
         # and update eq_params with the latter
         # and update vmap_in_axes
@@ -362,28 +358,30 @@ class LossPDEStatio_eqx(_LossPDEAbstract_eqx):
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
+        params_with_derivatives_at_loss_terms = _set_derivatives(
+            params, self.derivative_keys
+        )
+
         # dynamic part
-        params_ = _set_derivatives(params, "dyn_loss", self.derivative_keys)
         if self.dynamic_loss is not None:
             mse_dyn_loss = dynamic_loss_apply(
                 self.dynamic_loss.evaluate,
                 self.u,
-                (omega_batch,),
-                params_,
-                vmap_in_axes_x + vmap_in_axes_params,
+                self._get_dynamic_loss_batch(batch),
+                params_with_derivatives_at_loss_terms.dyn_loss,
+                self.vmap_in_axes + vmap_in_axes_params,
                 self.loss_weights["dyn_loss"],
             )
         else:
             mse_dyn_loss = jnp.array(0.0)
 
         # normalization part
-        params_ = _set_derivatives(params, "norm_loss", self.derivative_keys)
         if self.norm_samples is not None:
             mse_norm_loss = normalization_loss_apply(
                 self.u,
-                (self.norm_samples,),
-                params_,
-                vmap_in_axes_x + vmap_in_axes_params,
+                self._get_normalization_loss_batch(batch),
+                params_with_derivatives_at_loss_terms.norm_loss,
+                self.vmap_in_axes + vmap_in_axes_params,
                 self.norm_int_length,
                 self.loss_weights["norm_loss"],
             )
@@ -391,12 +389,11 @@ class LossPDEStatio_eqx(_LossPDEAbstract_eqx):
             mse_norm_loss = jnp.array(0.0)
 
         # boundary part
-        params_ = _set_derivatives(params, "boundary_loss", self.derivative_keys)
         if self.omega_boundary_condition is not None:
             mse_boundary_loss = boundary_condition_apply(
                 self.u,
                 batch,
-                params_,
+                params_with_derivatives_at_loss_terms.boundary_loss,
                 self.omega_boundary_fun,
                 self.omega_boundary_condition,
                 self.omega_boundary_dim,
@@ -410,12 +407,11 @@ class LossPDEStatio_eqx(_LossPDEAbstract_eqx):
             # update params with the batches of observed params
             params = _update_eq_params_dict(params, batch.obs_batch_dict["eq_params"])
 
-            params_ = _set_derivatives(params, "observations", self.derivative_keys)
             mse_observation_loss = observations_loss_apply(
                 self.u,
-                (batch.obs_batch_dict["pinn_in"],),
-                params_,
-                vmap_in_axes_x + vmap_in_axes_params,
+                self._get_observations_loss_batch(batch),
+                params_with_derivatives_at_loss_terms.observations,
+                self.vmap_in_axes + vmap_in_axes_params,
                 batch.obs_batch_dict["val"],
                 self.loss_weights["observations"],
                 self.obs_slice,
@@ -540,11 +536,30 @@ class LossPDENonStatio_eqx(LossPDEStatio_eqx):
         super().__post_init__()  # because __init__ or __post_init__ of Base
         # class is not automatically called
 
+        self.vmap_in_axes = (0, 0)  # for t and x
+
         if self.initial_condition_fun is None:
             warnings.warn(
                 "Initial condition wasn't provided. Be sure to cover for that"
                 "case (e.g by. hardcoding it into the PINN output)."
             )
+
+    def _get_dynamic_loss_batch(self, batch):
+        times_batch = batch.times_x_inside_batch[:, 0:1]
+        omega_batch = batch.times_x_inside_batch[:, 1:]
+        return (times_batch, omega_batch)
+
+    def _get_normalization_loss_batch(self, batch):
+        return (
+            batch.times_x_inside_batch[:, 0:1],
+            self.norm_samples,
+        )
+
+    def _get_observations_loss_batch(self, batch):
+        return (
+            batch.obs_batch_dict["pinn_in"][:, 0:1],
+            batch.obs_batch_dict["pinn_in"][:, 1:],
+        )
 
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
@@ -574,11 +589,7 @@ class LossPDENonStatio_eqx(LossPDEStatio_eqx):
             inputs/outputs/parameters
         """
 
-        times_batch = batch.times_x_inside_batch[:, 0:1]
         omega_batch = batch.times_x_inside_batch[:, 1:]
-        n = omega_batch.shape[0]
-
-        vmap_in_axes_x_t = (0, 0)
 
         # Retrieve the optional eq_params_batch
         # and update eq_params with the latter
@@ -592,56 +603,25 @@ class LossPDENonStatio_eqx(LossPDEStatio_eqx):
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
+        # we create a small class DerivativeKeysPDENonStatio with only
+        # initial_condition in order to get only the param with gradient for
+        # initial_condition. All the rest is computed in super().evaluate()
         params_with_derivatives_at_loss_terms = _set_derivatives(
-            params, self.derivative_keys
+            params,
+            DerivativeKeysPDENonStatio(
+                dyn_loss=None,
+                observations=None,
+                boundary_loss=None,
+                norm_loss=None,
+                initial_condition=self.derivative_keys.initial_condition,
+            ),
         )
 
-        # dynamic part
-        # params_ = _set_derivatives(params, "dyn_loss", self.derivative_keys)
-        print(params_with_derivatives_at_loss_terms.dyn_loss)
-        if self.dynamic_loss is not None:
-            mse_dyn_loss = dynamic_loss_apply(
-                self.dynamic_loss.evaluate,
-                self.u,
-                (times_batch, omega_batch),
-                params_with_derivatives_at_loss_terms.dyn_loss,
-                vmap_in_axes_x_t + vmap_in_axes_params,
-                self.loss_weights["dyn_loss"],
-            )
-        else:
-            mse_dyn_loss = jnp.array(0.0)
-
-        # normalization part
-        # params_ = _set_derivatives(params, "norm_loss", self.derivative_keys)
-        if self.norm_samples is not None:
-            mse_norm_loss = normalization_loss_apply(
-                self.u,
-                (times_batch, self.norm_samples),
-                params_with_derivatives_at_loss_terms.norm_loss,
-                vmap_in_axes_x_t + vmap_in_axes_params,
-                self.norm_int_length,
-                self.loss_weights["norm_loss"],
-            )
-        else:
-            mse_norm_loss = jnp.array(0.0)
-
-        # boundary part
-        # params_ = _set_derivatives(params, "boundary_loss", self.derivative_keys)
-        if self.omega_boundary_fun is not None:
-            mse_boundary_loss = boundary_condition_apply(
-                self.u,
-                batch,
-                params_with_derivatives_at_loss_terms.boundary_loss,
-                self.omega_boundary_fun,
-                self.omega_boundary_condition,
-                self.omega_boundary_dim,
-                self.loss_weights["boundary_loss"],
-            )
-        else:
-            mse_boundary_loss = jnp.array(0.0)
+        # For mse_dyn_loss, mse_norm_loss, mse_boundary_loss,
+        # mse_observation_loss we use the evaluate from parent class
+        partial_mse, partial_mse_terms = super().evaluate(params, batch)
 
         # initial condition
-        # params_ = _set_derivatives(params, "initial_condition", self.derivative_keys)
         if self.initial_condition_fun is not None:
             mse_initial_condition = initial_condition_apply(
                 self.u,
@@ -649,51 +629,19 @@ class LossPDENonStatio_eqx(LossPDEStatio_eqx):
                 params_with_derivatives_at_loss_terms.initial_condition,
                 (0,) + vmap_in_axes_params,
                 self.initial_condition_fun,
-                n,
+                omega_batch.shape[0],
                 self.loss_weights["initial_condition"],
             )
         else:
             mse_initial_condition = jnp.array(0.0)
 
-        # Observation mse
-        if batch.obs_batch_dict is not None:
-            # update params with the batches of observed params
-            params = _update_eq_params_dict(params, batch.obs_batch_dict["eq_params"])
-
-            # params_ = _set_derivatives(params, "observations", self.derivative_keys)
-            mse_observation_loss = observations_loss_apply(
-                self.u,
-                (
-                    batch.obs_batch_dict["pinn_in"][:, 0:1],
-                    batch.obs_batch_dict["pinn_in"][:, 1:],
-                ),
-                params_with_derivatives_at_loss_terms.observations,
-                vmap_in_axes_x_t + vmap_in_axes_params,
-                batch.obs_batch_dict["val"],
-                self.loss_weights["observations"],
-                self.obs_slice,
-            )
-        else:
-            mse_observation_loss = jnp.array(0.0)
-
         # total loss
-        total_loss = (
-            mse_dyn_loss
-            + mse_norm_loss
-            + mse_boundary_loss
-            + mse_initial_condition
-            + mse_observation_loss
-        )
+        total_loss = partial_mse + mse_initial_condition
 
-        return total_loss, (
-            {
-                "dyn_loss": mse_dyn_loss,
-                "norm_loss": mse_norm_loss,
-                "boundary_loss": mse_boundary_loss,
-                "initial_condition": mse_initial_condition,
-                "observations": mse_observation_loss,
-            }
-        )
+        return total_loss, {
+            **partial_mse_terms,
+            "initial_condition": mse_initial_condition,
+        }
 
 
 class SystemLossPDE_eqx(eqx.Module):

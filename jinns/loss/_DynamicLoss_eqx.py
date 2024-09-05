@@ -72,12 +72,9 @@ class FisherKPP_eqx(PDENonStatio):
             lap = _laplacian_rev(t, x, u, params)[..., None]
 
             return du_dt + self.Tmax * (
-                -params["eq_params"]["D"] * lap
+                -params.eq_params["D"] * lap
                 - u(t, x, params)
-                * (
-                    params["eq_params"]["r"]
-                    - params["eq_params"]["g"] * u(t, x, params)
-                )
+                * (params.eq_params["r"] - params.eq_params["g"] * u(t, x, params))
             )
         if isinstance(u, SPINN):
             u_tx, du_dt = jax.jvp(
@@ -87,12 +84,9 @@ class FisherKPP_eqx(PDENonStatio):
             )
             lap = _laplacian_fwd(t, x, u, params)[..., None]
             return du_dt + self.Tmax * (
-                -params["eq_params"]["D"] * lap
+                -params.eq_params["D"] * lap
                 - u_tx
-                * (
-                    params["eq_params"]["r"][..., None]
-                    - params["eq_params"]["g"] * u_tx
-                )
+                * (params.eq_params["r"][..., None] - params.eq_params["g"] * u_tx)
             )
         raise ValueError("u is not among the recognized types (PINN or SPINN)")
 
@@ -232,8 +226,7 @@ class BurgerEquation_eqx(PDENonStatio):
             )
 
             return du_dt(t, x) + self.Tmax * (
-                u(t, x, params) * du_dx(t, x)
-                - params["eq_params"]["nu"] * d2u_dx2(t, x)
+                u(t, x, params) * du_dx(t, x) - params.eq_params["nu"] * d2u_dx2(t, x)
             )
 
         if isinstance(u, SPINN):
@@ -251,9 +244,7 @@ class BurgerEquation_eqx(PDENonStatio):
             )[1]
             du_dx, d2u_dx2 = jax.jvp(du_dx_fun, (x,), (jnp.ones_like(x),))
             # Note that ones_like(x) works because x is Bx1 !
-            return du_dt + self.Tmax * (
-                u_tx * du_dx - params["eq_params"]["nu"] * d2u_dx2
-            )
+            return du_dt + self.Tmax * (u_tx * du_dx - params.eq_params["nu"] * d2u_dx2)
         raise ValueError("u is not among the recognized types (PINN or SPINN)")
 
 

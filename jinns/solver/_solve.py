@@ -221,7 +221,7 @@ def solve(
     optimization_extra = OptimizationExtraContainer(
         curr_seq=curr_seq,
         seq2seq=seq2seq,
-        best_val_params=init_params.copy(),
+        best_val_params=copy.deepcopy(init_params),
     )
     loss_container = LossContainer(
         stored_loss_terms=stored_loss_terms,

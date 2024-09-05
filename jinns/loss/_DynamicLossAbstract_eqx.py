@@ -6,6 +6,8 @@ import equinox as eqx
 from typing import Union, Callable, Dict
 from jaxtyping import Float
 
+from jinns.parameters._params import Params
+
 
 class DynamicLoss(eqx.Module):
     r"""
@@ -43,8 +45,8 @@ class DynamicLoss(eqx.Module):
     def _eval_heterogeneous_parameters(t, x, u, params, eq_params_heterogeneity=None):
         eq_params_ = {}
         if eq_params_heterogeneity is None:
-            return params["eq_params"]
-        for k, p in params["eq_params"].items():
+            return params.eq_params
+        for k, p in params.eq_params.items():
             try:
                 if eq_params_heterogeneity[k] is None:
                     eq_params_[k] = p
@@ -104,14 +106,13 @@ class ODE(DynamicLoss):
 
         def wrapper(*args):
             self, t, u, params = args
-            # avoid side effect with in-place modif of param["eq_params"]
-            # TODO NamedTuple for params and use _replace() see Issue 1
-            _params = {
-                "nn_params": params["nn_params"],
-                "eq_params": self.eval_heterogeneous_parameters(
+            _params = eqx.tree_at(
+                lambda p: p.eq_params,
+                params,
+                self.eval_heterogeneous_parameters(
                     t, u, params, self.eq_params_heterogeneity
                 ),
-            }
+            )
             new_args = args[:-1] + (_params,)
             res = evaluate(*new_args)
             return res
@@ -159,14 +160,13 @@ class PDEStatio(DynamicLoss):
 
         def wrapper(*args):
             self, x, u, params = args
-            # avoid side effect with in-place modif of param["eq_params"]
-            # TODO NamedTuple for params and use _replace() see Issue 1
-            _params = {
-                "nn_params": params["nn_params"],
-                "eq_params": self.eval_heterogeneous_parameters(
+            _params = eqx.tree_at(
+                lambda p: p.eq_params,
+                params,
+                self.eval_heterogeneous_parameters(
                     x, u, params, self.eq_params_heterogeneity
                 ),
-            }
+            )
             new_args = args[:-1] + (_params,)
             res = evaluate(*new_args)
             return res
@@ -216,14 +216,13 @@ class PDENonStatio(DynamicLoss):
 
         def wrapper(*args):
             self, t, x, u, params = args
-            # avoid side effect with in-place modif of param["eq_params"]
-            # TODO NamedTuple for params and use _replace() see Issue 1
-            _params = {
-                "nn_params": params["nn_params"],
-                "eq_params": self.eval_heterogeneous_parameters(
+            _params = eqx.tree_at(
+                lambda p: p.eq_params,
+                params,
+                self.eval_heterogeneous_parameters(
                     t, x, u, params, self.eq_params_heterogeneity
                 ),
-            }
+            )
             new_args = args[:-1] + (_params,)
             res = evaluate(*new_args)
             return res
