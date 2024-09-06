@@ -25,7 +25,7 @@ def save_reload(tmpdir):
     u = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
 
     params = u.init_params()
-    params = {"nn_params": params, "eq_params": {}}
+    params = jinns.parameters.Params(nn_params=params, eq_params={})
 
     # Save
     filename = str(tmpdir.join("test"))

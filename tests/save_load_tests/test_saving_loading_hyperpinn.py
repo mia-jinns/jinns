@@ -67,10 +67,10 @@ def save_reload(tmpdir):
     )
 
     params = u.init_params()
-    params = {
-        "nn_params": params,
-        "eq_params": {"D": jnp.empty((10, 1)), "r": jnp.empty((10, 1))},
-    }
+    params = jinns.parameters.Params(
+        nn_params=params,
+        eq_params={"D": jnp.empty((10, 1)), "r": jnp.empty((10, 1))},
+    )
 
     # Save
     filename = str(tmpdir.join("test"))
@@ -97,9 +97,12 @@ def test_equality_save_reload(save_reload):
     key, params, u, params_reloaded, u_reloaded = save_reload
     key, subkey = jax.random.split(key, 2)
     test_points = jax.random.normal(subkey, shape=(10, 5))
-    v_u = jax.vmap(u, (0, 0, {"nn_params": None, "eq_params": {"D": 0, "r": 0}}))
+    v_u = jax.vmap(
+        u, (0, 0, jinns.parameters.Params(nn_params=None, eq_params={"D": 0, "r": 0}))
+    )
     v_u_reloaded = jax.vmap(
-        u_reloaded, (0, 0, {"nn_params": None, "eq_params": {"D": 0, "r": 0}})
+        u_reloaded,
+        (0, 0, jinns.parameters.Params(nn_params=None, eq_params={"D": 0, "r": 0})),
     )
 
     assert jnp.allclose(
@@ -121,7 +124,8 @@ def test_jitting_reloaded_hyperpinn(save_reload):
     key, _, _, params_reloaded, u_reloaded = save_reload
 
     v_u_reloaded = jax.vmap(
-        u_reloaded, (0, 0, {"nn_params": None, "eq_params": {"D": 0, "r": 0}})
+        u_reloaded,
+        (0, 0, jinns.parameters.Params(nn_params=None, eq_params={"D": 0, "r": 0})),
     )
     v_u_reloaded_jitted = jax.jit(v_u_reloaded)
 
