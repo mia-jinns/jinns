@@ -30,7 +30,7 @@ build_doc:
   script:
     - python -m pip install --upgrade pip
     - pip install --break-system-packages .
-    - python -m pip install -r docs/requirements.txt
+    - python -m pip install -r docs/doc_requirements.txt
     - make -C doc clean html
     - mkdocs build
     - mkdocs build  # twice, see https://github.com/patrick-kidger/pytkdocs_tweaks
@@ -75,7 +75,7 @@ pages:
   image: "python:3.9"
   script:
     - rm -rf public/
-    - cp -r docs/ public/
+    - cp -r site/ public/
   artifacts:
     paths:
     - public
