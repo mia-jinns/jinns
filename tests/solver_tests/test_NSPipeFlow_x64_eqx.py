@@ -10,7 +10,7 @@ import jinns
 
 @pytest.fixture
 def train_NSPipeFlow_init():
-    jax.config.update("jax_enable_x64", False)
+    jax.config.update("jax_enable_x64", True)
 
     L = 1
     R = 0.05
@@ -71,18 +71,19 @@ def train_NSPipeFlow_init():
 
     u_init_nn_params = u.init_params()
     p_init_nn_params = p.init_params()
+
     method = "uniform"
     key, subkey = random.split(key)
-    train_data = jinns.data.CubicMeshPDEStatio(
-        subkey,
-        n,
-        nb,
-        omega_batch_size,
-        omega_border_batch_size,
-        dim,
-        (xmin, ymin),
-        (xmax, ymax),
-        method,
+    train_data = jinns.data.CubicMeshPDEStatio_eqx(
+        key=subkey,
+        n=n,
+        nb=nb,
+        omega_batch_size=omega_batch_size,
+        omega_border_batch_size=omega_border_batch_size,
+        dim=dim,
+        min_pts=(xmin, ymin),
+        max_pts=(xmax, ymax),
+        method=method,
     )
 
     rho = 1.0
@@ -92,23 +93,23 @@ def train_NSPipeFlow_init():
     d = 2 * R
 
     # initiate parameters dictionary
-    init_params = {}
-    init_params["nn_params"] = {"u": u_init_nn_params, "p": p_init_nn_params}
-    init_params["eq_params"] = {"rho": rho, "nu": nu}
+    init_params = jinns.parameters.ParamsDict(
+        nn_params={"u": u_init_nn_params, "p": p_init_nn_params},
+        eq_params={"rho": rho, "nu": nu},
+    )
 
-    mc_loss = jinns.loss.MassConservation2DStatio(nn_key="u")
-    ns_loss = jinns.loss.NavierStokes2DStatio(u_key="u", p_key="p")
+    mc_loss = jinns.loss.MassConservation2DStatio_eqx(nn_key="u")
+    ns_loss = jinns.loss.NavierStokes2DStatio_eqx(u_key="u", p_key="p")
 
     loss_weights = {"dyn_loss": 1.0}
 
     # Catching an expected UserWarning since no border condition is given
     # for this specific PDE (Fokker-Planck).
     with pytest.warns(UserWarning):
-        loss = jinns.loss.SystemLossPDE(
+        loss = jinns.loss.SystemLossPDE_eqx(
             u_dict={"u": u, "p": p},
             loss_weights=loss_weights,
             dynamic_loss_dict={"mass_conservation": mc_loss, "navier_stokes": ns_loss},
-            nn_type_dict={"u": "nn_statio", "p": "nn_statio"},
         )
 
     return init_params, loss, train_data
@@ -123,19 +124,17 @@ def train_NSPipeFlow_10it(train_NSPipeFlow_init):
 
     # NOTE we need to waste one get_batch() here to stay synchronized with the
     # notebook
-
-    _ = loss.evaluate(init_params, train_data.get_batch())[0]
+    _, batch = train_data.get_batch()
+    _ = loss.evaluate(init_params, batch)[0]
 
     params = init_params
 
     tx = optax.adam(learning_rate=1e-4)
     n_iter = 10
-    # Catching an expected UserWarning since no border condition is given
-    # for this specific PDE (Fokker-Planck).
-    with pytest.warns(UserWarning):
-        params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _ = jinns.solve(
-            init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
-        )
+
+    params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _ = jinns.solve(
+        init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
+    )
     return total_loss_list[9]
 
 
@@ -143,10 +142,10 @@ def test_initial_loss_NSPipeFlow(train_NSPipeFlow_init):
     init_params, loss, train_data = train_NSPipeFlow_init
 
     assert jnp.allclose(
-        loss.evaluate(init_params, train_data.get_batch())[0], 0.01134, atol=1e-1
+        loss.evaluate(init_params, train_data.get_batch()[1])[0], 0.01055, atol=1e-1
     )
 
 
 def test_10it_NSPipeFlow(train_NSPipeFlow_10it):
     total_loss_val = train_NSPipeFlow_10it
-    assert jnp.allclose(total_loss_val, 0.01133, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 0.01061, atol=1e-1)

@@ -65,10 +65,10 @@ mu = jnp.zeros((2))
 Tmax = 10
 
 
-init_params = {
-    "nn_params": init_nn_params,
-    "eq_params": {"sigma": sigma, "alpha": alpha, "mu": mu},
-}
+init_params = jinns.parameters.Params(
+    nn_params=init_nn_params,
+    eq_params={"sigma": sigma, "alpha": alpha, "mu": mu},
+)
 
 
 def u0(x):
@@ -77,17 +77,17 @@ def u0(x):
 
 vectorized_u0 = vmap(u0, (0), 0)
 
-OU_fpe_non_statio_2D_loss = jinns.loss.OU_FPENonStatioLoss2D(Tmax=Tmax)
+OU_fpe_non_statio_2D_loss = jinns.loss.OU_FPENonStatioLoss2D_eqx(Tmax=Tmax)
 
 loss_weights = {"dyn_loss": 1, "initial_condition": 1 * Tmax, "norm_loss": 0.1 * Tmax}
 
 with pytest.warns(UserWarning):
-    loss = jinns.loss.LossPDENonStatio(
+    loss = jinns.loss.LossPDENonStatio_eqx(
         u=u,
         loss_weights=loss_weights,
         dynamic_loss=OU_fpe_non_statio_2D_loss,
         initial_condition_fun=u0,
-        norm_borders=((int_xmin, int_xmax), (int_ymin, int_ymax)),
+        norm_int_length=int_length,
         norm_samples=mc_samples,
     )
 
@@ -117,19 +117,19 @@ def get_datagenerator_rar(start_iter, update_every):
     key = random.PRNGKey(12345)
 
     key, subkey = random.split(key)
-    train_data = jinns.data.CubicMeshPDENonStatio(
-        subkey,
-        n,
-        nb,
-        nt,
-        omega_batch_size,
-        omega_border_batch_size,
-        temporal_batch_size,
-        2,
-        (xmin, ymin),
-        (xmax, ymax),
-        tmin,
-        tmax,
+    train_data = jinns.data.CubicMeshPDENonStatio_eqx(
+        key=subkey,
+        n=n,
+        nb=nb,
+        nt=nt,
+        omega_batch_size=omega_batch_size,
+        omega_border_batch_size=omega_border_batch_size,
+        temporal_batch_size=temporal_batch_size,
+        dim=2,
+        min_pts=(xmin, ymin),
+        max_pts=(xmax, ymax),
+        tmin=tmin,
+        tmax=tmax,
         method=method,
         rar_parameters=rar_parameters,
         n_start=n_start,

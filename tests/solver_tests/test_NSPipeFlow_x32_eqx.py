@@ -131,9 +131,7 @@ def train_NSPipeFlow_10it(train_NSPipeFlow_init):
 
     tx = optax.adam(learning_rate=1e-4)
     n_iter = 10
-    # Note that as opposed to the non _eqx version of this test, there is no
-    # more warning to catch here since we will have one and only one class init
-    # since we do not use tree_flatten / tree_unflatten anymore!
+
     params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _ = jinns.solve(
         init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
     )

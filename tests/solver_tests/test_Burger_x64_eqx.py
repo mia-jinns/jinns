@@ -40,33 +40,68 @@ def train_Burger_init():
     Tmax = 1
     method = "uniform"
 
-    train_data = jinns.data.CubicMeshPDENonStatio(
-        subkey,
-        n,
-        nb,
-        nt,
-        omega_batch_size,
-        omega_border_batch_size,
-        temporal_batch_size,
-        dim,
-        (xmin,),
-        (xmax,),
-        tmin,
-        tmax,
-        method,
+    train_data = jinns.data.CubicMeshPDENonStatio_eqx(
+        key=subkey,
+        n=n,
+        nb=nb,
+        nt=nt,
+        omega_batch_size=omega_batch_size,
+        omega_border_batch_size=omega_border_batch_size,
+        temporal_batch_size=temporal_batch_size,
+        dim=dim,
+        min_pts=(xmin,),
+        max_pts=(xmax,),
+        tmin=tmin,
+        tmax=tmax,
+        method=method,
+    )
+
+    # the next line is to be able to use the the same test values as the legacy
+    # DataGenerators. We need to align the object parameters because their
+    # respective init is not the same
+    train_data = eqx.tree_at(
+        lambda m: (
+            m.curr_omega_idx,
+            m.curr_omega_border_idx,
+            m.curr_time_idx,
+            m.omega,
+            m.times,
+        ),
+        train_data,
+        (
+            0,
+            0,
+            0,
+            random.choice(
+                jnp.array([514834130, 3419754500], dtype=jnp.uint32),
+                train_data.omega,
+                shape=(train_data.omega.shape[0],),
+                replace=False,
+                p=train_data.p_omega,
+            ),
+            random.choice(
+                jnp.array([2180730075, 137981201], dtype=jnp.uint32),
+                train_data.times,
+                shape=(train_data.times.shape[0],),
+                replace=False,
+                p=train_data.p_times,
+            ),
+        ),
     )
 
     nu = 1 / (100 * jnp.pi)
-    init_params = {"nn_params": init_nn_params, "eq_params": {"nu": nu}}
+    init_params = jinns.parameters.Params(
+        nn_params=init_nn_params, eq_params={"nu": nu}
+    )
 
     def u0(x):
         return -jnp.sin(jnp.pi * x)
 
-    be_loss = jinns.loss.BurgerEquation(Tmax=Tmax)
+    be_loss = jinns.loss.BurgerEquation_eqx(Tmax=Tmax)
 
     loss_weights = {"dyn_loss": 1, "initial_condition": 5, "boundary_loss": 1}
 
-    loss = jinns.loss.LossPDENonStatio(
+    loss = jinns.loss.LossPDENonStatio_eqx(
         u=u,
         loss_weights=loss_weights,
         dynamic_loss=be_loss,
@@ -87,7 +122,7 @@ def train_Burger_10it(train_Burger_init):
 
     # NOTE we need to waste one get_batch() here to stay synchronized with the
     # notebook
-    _ = loss.evaluate(init_params, train_data.get_batch())[0]
+    train_data, _ = train_data.get_batch()
 
     params = init_params
 
@@ -102,7 +137,7 @@ def train_Burger_10it(train_Burger_init):
 def test_initial_loss_Burger(train_Burger_init):
     init_params, loss, train_data = train_Burger_init
     assert jnp.allclose(
-        loss.evaluate(init_params, train_data.get_batch())[0], 2.98864, atol=1e-1
+        loss.evaluate(init_params, train_data.get_batch()[1])[0], 2.98864, atol=1e-1
     )
 
 

@@ -36,7 +36,9 @@ def train_GLV_init():
 
     Tmax = 30
     key, subkey = random.split(key)
-    train_data = jinns.data.DataGeneratorODE(subkey, n, tmin, tmax, batch_size, method)
+    train_data = jinns.data.DataGeneratorODE_eqx(
+        subkey, n, tmin, tmax, batch_size, method
+    )
 
     init_nn_params_list = []
     for _ in range(3):
@@ -50,30 +52,31 @@ def train_GLV_init():
     carrying_capacities = jnp.array([0.04, 0.02, 0.02])
     interactions = -jnp.array([[0, 0.001, 0.001], [0, 0.001, 0.001], [0, 0.001, 0.001]])
 
-    init_params = {}
-    init_params["nn_params"] = {str(i): init_nn_params_list[i] for i in range(3)}
-    init_params["eq_params"] = {
-        str(i): {
-            "carrying_capacity": carrying_capacities[i],
-            "growth_rate": growth_rates[i],
-            "interactions": interactions[i, :],
-        }
-        for i in range(3)
-    }
+    init_params = jinns.parameters.ParamsDict(
+        nn_params={str(i): init_nn_params_list[i] for i in range(3)},
+        eq_params={
+            str(i): {
+                "carrying_capacity": carrying_capacities[i],
+                "growth_rate": growth_rates[i],
+                "interactions": interactions[i, :],
+            }
+            for i in range(3)
+        },
+    )
 
-    N1_dynamic_loss = jinns.loss.GeneralizedLotkaVolterra(
+    N1_dynamic_loss = jinns.loss.GeneralizedLotkaVolterra_eqx(
         key_main="0", keys_other=["1", "2"], Tmax=Tmax
     )
-    N2_dynamic_loss = jinns.loss.GeneralizedLotkaVolterra(
+    N2_dynamic_loss = jinns.loss.GeneralizedLotkaVolterra_eqx(
         key_main="1", keys_other=["0", "2"], Tmax=Tmax
     )
-    N3_dynamic_loss = jinns.loss.GeneralizedLotkaVolterra(
+    N3_dynamic_loss = jinns.loss.GeneralizedLotkaVolterra_eqx(
         key_main="2", keys_other=["0", "1"], Tmax=Tmax
     )
 
     loss_weights = {"dyn_loss": 1, "initial_condition": 1 * Tmax}
 
-    loss = jinns.loss.SystemLossODE(
+    loss = jinns.loss.SystemLossODE_eqx(
         u_dict={"0": u, "1": u, "2": u},
         loss_weights=loss_weights,
         dynamic_loss_dict={
@@ -100,7 +103,15 @@ def train_GLV_10it(train_GLV_init):
 
     # NOTE we need to waste one get_batch() here to stay synchronized with the
     # notebook
-    _ = loss.evaluate(init_params, train_data.get_batch())[0]
+    train_data, batch = train_data.get_batch()
+    _ = loss.evaluate(init_params, batch)[0]
+    # NOTE the following line is not accurate as it skips one batch
+    # but this is to comply with behaviour of 1st gen of DataGenerator
+    # (which had this bug see issue #5) so that we can keep old tests values to
+    # know we are doing the same
+    train_data = eqx.tree_at(
+        lambda m: m.curr_time_idx, train_data, train_data.temporal_batch_size
+    )
 
     params = init_params
 
@@ -115,8 +126,8 @@ def train_GLV_10it(train_GLV_init):
 def test_initial_loss_GLV(train_GLV_init):
     init_params, loss, train_data = train_GLV_init
     assert jnp.allclose(
-        loss.evaluate(init_params, train_data.get_batch())[0],
-        4233.245370360475,
+        loss.evaluate(init_params, train_data.get_batch()[1])[0],
+        4233.42742,
         atol=1e-1,
     )
 

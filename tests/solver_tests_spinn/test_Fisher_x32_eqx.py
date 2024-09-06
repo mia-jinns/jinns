@@ -114,10 +114,10 @@ def train_Fisher_init():
     elif boundary_condition == "neumann":
         omega_boundary_fun = lambda t, dx: 0  # cte func returning 0
 
-    init_params = {
-        "nn_params": init_nn_params,
-        "eq_params": {"D": jnp.array([D]), "r": jnp.array([r]), "g": jnp.array([g])},
-    }
+    init_params = jinns.parameters.Params(
+        nn_params=init_nn_params,
+        eq_params={"D": jnp.array([D]), "r": jnp.array([r]), "g": jnp.array([g])},
+    )
 
     fisher_dynamic_loss = jinns.loss.FisherKPP_eqx(Tmax=Tmax)
 

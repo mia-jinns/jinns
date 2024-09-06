@@ -11,7 +11,7 @@ import jax.numpy as jnp
 from jax import vmap
 import equinox as eqx
 from jaxtyping import Float, Array, Int
-from jinns.data._DataGenerators import ODEBatch
+from jinns.data._DataGenerators_eqx import ODEBatch
 from jinns.loss._Losses import (
     dynamic_loss_apply,
     constraints_system_loss_apply,
