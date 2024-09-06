@@ -42,6 +42,19 @@ repo_name: mia_jinns/jinns
 
 nav:
     - 'index.md'
+    - Tutorials:
+      - Implementing your own problem: 'Notebooks/Tutorials/implementing_your_own_PDE_problem.ipynb'
+    - Basic API:
+      - Loss:
+        - Dynamic loss: 'api/loss/dynamic_loss.md'
+        - Total loss: 'api/loss/loss_(x)de.md'
+      - PINN:
+        - 'api/pinn/pinn.md'
+        - 'api/pinn/spinn.md'
+        - 'api/pinn/hyperpinn.md'
+    - Advanced API:
+      - 'api/differential_operators.md'
     - Maths backgroung:
       - 'maths/fokker_planck.md'
-      - ''
+      - Forward problem: 'maths/pinn_forward.md'
+      - Inverse problem: 'maths/pinn_inverse.md'
