@@ -13,45 +13,38 @@ import jinns
 def train_OU_init():
     jax.config.update("jax_enable_x64", False)
     key = random.PRNGKey(2)
+    d = 3
+    r = 256
     eqx_list = [
-        [eqx.nn.Linear, 3, 30],
+        [eqx.nn.Linear, 1, 128],
         [jax.nn.tanh],
-        [eqx.nn.Linear, 30, 30],
+        [eqx.nn.Linear, 128, 128],
         [jax.nn.tanh],
-        [eqx.nn.Linear, 30, 30],
+        [eqx.nn.Linear, 128, 128],
         [jax.nn.tanh],
-        [eqx.nn.Linear, 30, 1],
-        [jnp.exp],
+        [eqx.nn.Linear, 128, r],
     ]
     key, subkey = random.split(key)
-    u = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 2)
-    rar_parameters = {
-        "start_iter": 1000,  # the gradient step at which RAR algo starts (enables a burn in period)
-        "update_every": 500,  # nb of gradient steps between two RAR procedures
-        "sample_size_times": 22,  # the number of new candidates time points
-        "selected_sample_size_times": 5,  # the number of selected times collocation points from the sample, to join the dataset.
-        "sample_size_omega": 22,  # the number of new candidates space points
-        "selected_sample_size_omega": 5,
-    }
-    n_start = 500  # the initial number of spatial collocation points at beginning
-    nt_start = 500  # the initial number of temporal collocation points at beginning
+    u = jinns.utils.create_SPINN(subkey, d, r, eqx_list, "nonstatio_PDE")
+
     init_nn_params = u.init_params()
 
-    n = 1000
-    nb = 4  # not used here
-    nt = 999  # can be != n
+    n = 500
+    nt = 500
+    nb = None
     omega_batch_size = 32
-    omega_border_batch_size = None  # not used here
     temporal_batch_size = 32
+    omega_border_batch_size = None
+    dim = 2
     xmin = -3
     xmax = 3
     ymin = -3
     ymax = 3
     tmin = 0
     tmax = 1
+    Tmax = 10
     method = "uniform"
 
-    key, subkey = random.split(key)
     train_data = jinns.data.CubicMeshPDENonStatio_eqx(
         key=subkey,
         n=n,
@@ -66,9 +59,7 @@ def train_OU_init():
         tmin=tmin,
         tmax=tmax,
         method=method,
-        rar_parameters=rar_parameters,
-        n_start=n_start,
-        nt_start=nt_start,
+        cartesian_product=False,
     )
 
     # the next line is to be able to use the the same test values as the legacy
@@ -81,14 +72,14 @@ def train_OU_init():
             0,
             0,
             random.choice(
-                jnp.array([1200475246, 4276610528], dtype=jnp.uint32),
+                jnp.array([], dtype=jnp.uint32),
                 train_data.omega,
                 shape=(train_data.omega.shape[0],),
                 replace=False,
                 p=train_data.p_omega,
             ),
             random.choice(
-                jnp.array([1112151499, 1480465624], dtype=jnp.uint32),
+                jnp.array([], dtype=jnp.uint32),
                 train_data.times,
                 shape=(train_data.times.shape[0],),
                 replace=False,
@@ -97,7 +88,6 @@ def train_OU_init():
         ),
     )
 
-    Tmax = 5
     sigma = 0.5 * jnp.ones((2))
     alpha = 0.5 * jnp.ones((2))
     mu = jnp.zeros((2))
@@ -113,7 +103,7 @@ def train_OU_init():
     int_xmin, int_xmax = -5, 5
     int_ymin, int_ymax = -5, 5
 
-    n_samples = int(1e3)
+    n_samples = 32
     int_length = (int_xmax - int_xmin) * (int_ymax - int_ymin)
     key, subkey1, subkey2 = random.split(key, 3)
     mc_samples = jnp.concatenate(
@@ -129,9 +119,9 @@ def train_OU_init():
     )
 
     loss_weights = {
-        "dyn_loss": 1,
+        "dyn_loss": 10,
         "initial_condition": 1 * Tmax,
-        "norm_loss": 0.1 * Tmax,
+        "norm_loss": 0.00001 * Tmax,
     }
     OU_fpe_non_statio_2D_loss = jinns.loss.OU_FPENonStatioLoss2D_eqx(Tmax=Tmax)
 
@@ -163,21 +153,22 @@ def train_OU_10it(train_OU_init):
 
     params = init_params
 
-    tx = optax.adamw(learning_rate=1e-3)
+    tx = optax.adamw(learning_rate=5e-4)
     n_iter = 10
     params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _ = jinns.solve(
         init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
     )
+
     return total_loss_list[9]
 
 
 def test_initial_loss_OU(train_OU_init):
     init_params, loss, train_data = train_OU_init
-    _, batch = train_data.get_batch()
-    l_init, all = loss.evaluate(init_params, batch)
-    assert jnp.allclose(l_init, 3924.7366, atol=1e-1)
+    assert jnp.allclose(
+        loss.evaluate(init_params, train_data.get_batch()[1])[0], 0.75162, atol=1e-1
+    )
 
 
 def test_10it_OU(train_OU_10it):
     total_loss_val = train_OU_10it
-    assert jnp.allclose(total_loss_val, 2564.442, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 0.86301, atol=1e-1)
