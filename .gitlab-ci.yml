@@ -30,8 +30,7 @@ build_doc:
 
   script:
     - pip install --break-system-packages .
-    - pip install -r docs/doc_requirements.txt
-    - make -C doc clean html
+    - pip install --break-system-packages -r docs/doc_requirements.txt
     - mkdocs build
     - mkdocs build  # twice, see https://github.com/patrick-kidger/pytkdocs_tweaks
 
