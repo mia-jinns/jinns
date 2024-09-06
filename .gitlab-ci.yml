@@ -26,15 +26,15 @@ run_tests:
 build_doc:
   stage: build
   before_script:
-    - quarto render doc/source/math_pinn.qmd
-    - quarto render doc/source/param_estim_pinn.qmd
-    - quarto render doc/source/fokker_planck.qmd
-    - pip install --break-system-packages sphinx sphinx_rtd_theme
-    - apt install pandoc
-    - pip install --break-system-packages nbsphinx pandoc
+
   script:
+    - python -m pip install --upgrade pip
     - pip install --break-system-packages .
+    - python -m pip install -r docs/requirements.txt
     - make -C doc clean html
+    - mkdocs build
+    - mkdocs build  # twice, see https://github.com/patrick-kidger/pytkdocs_tweaks
+
   artifacts:
     untracked: true
     expire_in: 1 week
@@ -75,7 +75,7 @@ pages:
   image: "python:3.9"
   script:
     - rm -rf public/
-    - cp -r doc/build/html public/
+    - cp -r docs/ public/
   artifacts:
     paths:
     - public
