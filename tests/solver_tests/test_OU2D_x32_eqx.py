@@ -102,10 +102,10 @@ def train_OU_init():
     alpha = 0.5 * jnp.ones((2))
     mu = jnp.zeros((2))
 
-    init_params = {
-        "nn_params": init_nn_params,
-        "eq_params": {"sigma": sigma, "alpha": alpha, "mu": mu},
-    }
+    init_params = jinns.parameters.Params(
+        nn_params=init_nn_params,
+        eq_params={"sigma": sigma, "alpha": alpha, "mu": mu},
+    )
 
     def u0(x):
         return multivariate_normal.pdf(x, mean=jnp.array([1, 1]), cov=0.1 * jnp.eye(2))

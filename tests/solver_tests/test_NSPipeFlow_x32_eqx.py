@@ -92,12 +92,13 @@ def train_NSPipeFlow_init():
     d = 2 * R
 
     # initiate parameters dictionary
-    init_params = {}
-    init_params["nn_params"] = {"u": u_init_nn_params, "p": p_init_nn_params}
-    init_params["eq_params"] = {"rho": rho, "nu": nu}
+    init_params = jinns.parameters.ParamsDict(
+        nn_params={"u": u_init_nn_params, "p": p_init_nn_params},
+        eq_params={"rho": rho, "nu": nu},
+    )
 
-    mc_loss = jinns.loss.MassConservation2DStatio(nn_key="u")
-    ns_loss = jinns.loss.NavierStokes2DStatio(u_key="u", p_key="p")
+    mc_loss = jinns.loss.MassConservation2DStatio_eqx(nn_key="u")
+    ns_loss = jinns.loss.NavierStokes2DStatio_eqx(u_key="u", p_key="p")
 
     loss_weights = {"dyn_loss": 1.0}
 

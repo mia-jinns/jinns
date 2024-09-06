@@ -25,6 +25,23 @@ class Params(eqx.Module):
     eq_params: dict[str, Array] = eqx.field(kw_only=True)
 
 
+class ParamsDict(eqx.Module):
+    """
+    The equinox module for the parameters
+
+    Parameters
+    ----------
+    nn_params
+        XXX
+    eq_params
+        A dictionary of the equation parameters. Keys are the parameter name,
+        values are their corresponding value
+    """
+
+    nn_params: dict[str, PyTree] = eqx.field(kw_only=True)
+    eq_params: dict[str, Array] = eqx.field(kw_only=True)
+
+
 def _update_eq_params_dict(params, param_batch_dict):
     """
     update params.eq_params with a batch of eq_params for given key(s)
@@ -67,20 +84,18 @@ def _get_vmap_in_axes_params(eq_params_batch_dict, params):
     return vmap_in_axes_params
 
 
-def _extract_nn_params(params_dict, nn_key):
+def _extract_nn_params(params_dict: ParamsDict, nn_key: str) -> Params:
     """
-    Given a params_dict for system loss (ie "nn_params" and "eq_params" as main
-    keys which contain dicts for each PINN (the nn_keys)) we extract the
-    corresponding "nn_params" for `nn_key` and reform a dict with "nn_params"
-    as main key as expected by the PINN/SPINN apply_fn
+    Given a ParamsDict for system loss we extract the
+    corresponding `nn_params` for `nn_key` and reform Params
     """
     try:
-        return {
-            "nn_params": params_dict["nn_params"][nn_key],
-            "eq_params": params_dict["eq_params"][nn_key],
-        }
+        return Params(
+            nn_params=params_dict.nn_params[nn_key],
+            eq_params=params_dict.eq_params[nn_key],
+        )
     except (KeyError, IndexError) as e:
-        return {
-            "nn_params": params_dict["nn_params"][nn_key],
-            "eq_params": params_dict["eq_params"],
-        }
+        return Params(
+            nn_params=params_dict.nn_params[nn_key],
+            eq_params=params_dict.eq_params,
+        )

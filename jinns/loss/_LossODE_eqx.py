@@ -160,10 +160,7 @@ class LossODE_eqx(_LossODEAbstract_eqx):
         Parameters
         ---------
         params
-            The dictionary of parameters of the model.
-            Typically, it is a dictionary of
-            dictionaries: `eq_params` and `nn_params``, respectively the
-            differential equation parameters and the neural network parameter
+            A Params object
         batch
             A ODEBatch object.
             Such a named tuple is composed of a batch of time points
@@ -280,14 +277,7 @@ class SystemLossODE_eqx(eqx.Module):
         at the leaf level can have jnp.arrays with the same dimension of
         `u` which then ponderates each output of `u`
     derivative_keys_dict
-        A dict of derivative keys as defined in LossODE. The key of this
-        dict must be that of `dynamic_loss_dict` at least and specify how
-        to compute gradient for the `dyn_loss` loss term at least (see the
-        check at the beginning of the present `__init__` function.
-        Other keys of this dict might be that of `u_dict` to specify how to
-        compute gradients for all the different constraints. If those keys
-        are not specified then the default behaviour for `derivative_keys`
-        of LossODE is used
+        XXX
     initial_condition_dict
         dict of tuple of length 2 with initial condition :math:`(t_0, u_0)`
         Must share the keys of `u_dict`. Default is None. No initial
@@ -318,8 +308,8 @@ class SystemLossODE_eqx(eqx.Module):
     # TODO do not use a dictionary here!
     u_dict: Dict[str, eqx.Module] = eqx.field(static=True)
     dynamic_loss_dict: Dict[str, ODE] = eqx.field(static=True)
-    derivative_keys_dict: Union[Dict[str, Union[list, None]], None] = eqx.field(
-        kw_only=True, default=None, static=True
+    derivative_keys_dict: Union[Dict[str, Union[DerivativeKeysODE, None]], None] = (
+        eqx.field(kw_only=True, default=None, static=True)
     )
     loss_weights: Union[Dict[str, Dict[str, Union[Float, Array]]], None] = eqx.field(
         kw_only=True, default=None, static=True
@@ -361,8 +351,10 @@ class SystemLossODE_eqx(eqx.Module):
             }
             # set() because we can have duplicate entries and in this case we
             # say it corresponds to the same derivative_keys_dict entry
-        else:
-            self.derivative_keys_dict = self.derivative_keys_dict
+            # we need both because the constraints (all but dyn_loss) will be
+            # done by iterating on u_dict while the dyn_loss will be by
+            # iterating on dynamic_loss_dict. So each time we will require dome
+            # derivative_keys_dict
 
         # but then if the user did not provide anything, we must at least have
         # a default value for the dynamic_loss_dict keys entries in
@@ -371,7 +363,7 @@ class SystemLossODE_eqx(eqx.Module):
         # default values
         for k in self.dynamic_loss_dict.keys():
             if self.derivative_keys_dict[k] is None:
-                self.derivative_keys_dict[k] = {"dyn_loss": ["nn_params"]}
+                self.derivative_keys_dict[k] = DerivativeKeysODE()
 
         self.loss_weights = self.set_loss_weights(self.loss_weights)
 
@@ -461,13 +453,7 @@ class SystemLossODE_eqx(eqx.Module):
         Parameters
         ---------
         params
-            A dictionary of dictionaries of parameters of the model.
-            Typically, it is a dictionary of dictionaries of
-            dictionaries: `eq_params` and `nn_params``, respectively the
-            differential equation parameters and the neural network parameter.
-            Note that params_dict["nn_params"] need not be a dictionary anymore
-            but can directly be the parameters. It is useful when working with
-            neural networks sharing the same parameters
+            A ParamsDict object
         batch
             A ODEBatch object.
             Such a named tuple is composed of a batch of time points
@@ -476,10 +462,10 @@ class SystemLossODE_eqx(eqx.Module):
             inputs/outputs/parameters
         """
         if (
-            isinstance(params_dict["nn_params"], dict)
-            and self.u_dict.keys() != params_dict["nn_params"].keys()
+            isinstance(params_dict.nn_params, dict)
+            and self.u_dict.keys() != params_dict.nn_params.keys()
         ):
-            raise ValueError("u_dict and params_dict[nn_params] should have same keys ")
+            raise ValueError("u_dict and params_dict.nn_params should have same keys ")
 
         temporal_batch = batch.temporal_batch
 
@@ -498,12 +484,22 @@ class SystemLossODE_eqx(eqx.Module):
 
         def dyn_loss_for_one_key(dyn_loss, derivative_key, loss_weight):
             """This function is used in tree_map"""
-            params_dict_ = _set_derivatives(params_dict, "dyn_loss", derivative_key)
+            # we create a small class DerivativeKeysODE with only
+            # dyn_loss in order to get only the param with gradient for
+            # dyn_loss. All the rest
+            params_dict_with_derivatives_at_loss_terms = _set_derivatives(
+                params_dict,
+                DerivativeKeysODE(
+                    dyn_loss=derivative_key.dyn_loss,
+                    observations=None,
+                    initial_condition=None,
+                ),
+            )
             return dynamic_loss_apply(
                 dyn_loss.evaluate,
                 self.u_dict,
                 (temporal_batch,),
-                params_dict_,
+                params_dict_with_derivatives_at_loss_terms.dyn_loss,
                 vmap_in_axes_t + vmap_in_axes_params,
                 loss_weight,
                 u_type=PINN,

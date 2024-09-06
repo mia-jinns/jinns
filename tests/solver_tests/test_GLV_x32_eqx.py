@@ -51,16 +51,17 @@ def train_GLV_init():
     carrying_capacities = jnp.array([0.04, 0.02, 0.02])
     interactions = -jnp.array([[0, 0.001, 0.001], [0, 0.001, 0.001], [0, 0.001, 0.001]])
 
-    init_params = {}
-    init_params["nn_params"] = {str(i): init_nn_params_list[i] for i in range(3)}
-    init_params["eq_params"] = {
-        str(i): {
-            "carrying_capacity": carrying_capacities[i],
-            "growth_rate": growth_rates[i],
-            "interactions": interactions[i, :],
-        }
-        for i in range(3)
-    }
+    init_params = jinns.parameters.ParamsDict(
+        nn_params={str(i): init_nn_params_list[i] for i in range(3)},
+        eq_params={
+            str(i): {
+                "carrying_capacity": carrying_capacities[i],
+                "growth_rate": growth_rates[i],
+                "interactions": interactions[i, :],
+            }
+            for i in range(3)
+        },
+    )
 
     N1_dynamic_loss = jinns.loss.GeneralizedLotkaVolterra_eqx(
         key_main="0", keys_other=["1", "2"], Tmax=Tmax

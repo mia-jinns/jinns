@@ -18,7 +18,7 @@ from jinns.loss._Losses import (
     initial_condition_apply,
     constraints_system_loss_apply,
 )
-from jinns.data._DataGenerators import PDEStatioBatch, PDENonStatioBatch
+from jinns.data._DataGenerators_eqx import PDEStatioBatch, PDENonStatioBatch
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
 from jinns.loss._DynamicLossAbstract_eqx import PDEStatio, PDENonStatio
@@ -337,10 +337,7 @@ class LossPDEStatio_eqx(_LossPDEAbstract_eqx):
         Parameters
         ---------
         params
-            The dictionary of parameters of the model.
-            Typically, it is a dictionary of
-            dictionaries: `eq_params` and `nn_params``, respectively the
-            differential equation parameters and the neural network parameter
+            A Params object
         batch
             A PDEStatioBatch object.
             Such a named tuple is composed of a batch of points in the
@@ -576,10 +573,7 @@ class LossPDENonStatio_eqx(LossPDEStatio_eqx):
         Parameters
         ---------
         params
-            The dictionary of parameters of the model.
-            Typically, it is a dictionary of
-            dictionaries: `eq_params` and `nn_params`, respectively the
-            differential equation parameters and the neural network parameter
+            A Params object
         batch
             A PDENonStatioBatch object.
             Such a named tuple is composed of a batch of points in
@@ -597,6 +591,7 @@ class LossPDENonStatio_eqx(LossPDEStatio_eqx):
         if batch.param_batch_dict is not None:
             eq_params_batch_dict = batch.param_batch_dict
 
+            # TODO
             # feed the eq_params with the batch
             for k in eq_params_batch_dict.keys():
                 params["eq_params"][k] = eq_params_batch_dict[k]
@@ -802,14 +797,29 @@ class SystemLossPDE_eqx(eqx.Module):
             }
             # set() because we can have duplicate entries and in this case we
             # say it corresponds to the same derivative_keys_dict entry
+            # we need both because the constraints (all but dyn_loss) will be
+            # done by iterating on u_dict while the dyn_loss will be by
+            # iterating on dynamic_loss_dict. So each time we will require dome
+            # derivative_keys_dict
+
         # but then if the user did not provide anything, we must at least have
         # a default value for the dynamic_loss_dict keys entries in
         # self.derivative_keys_dict since the computation of dynamic losses is
-        # made without create a lossODE object that would provide the
+        # made without create a loss object that would provide the
         # default values
         for k in self.dynamic_loss_dict.keys():
             if self.derivative_keys_dict[k] is None:
-                self.derivative_keys_dict[k] = {"dyn_loss": ["nn_params"]}
+                try:
+                    if self.u_dict[k].eq_type == "statio_PDE":
+                        self.derivative_keys_dict[k] = DerivativeKeysPDEStatio
+                    else:
+                        self.derivative_keys_dict[k] = DerivativeKeysPDENonStatio
+                except KeyError:  # We are in a key that is not in u_dict but in
+                    # dynamic_loss_dict
+                    if isinstance(self.dynamic_loss_dict[k], PDEStatio):
+                        self.derivative_keys_dict[k] = DerivativeKeysPDEStatio
+                    else:
+                        self.derivative_keys_dict[k] = DerivativeKeysPDENonStatio
 
         # Second we make sure that all the dicts (except dynamic_loss_dict) have the same keys
         if (
@@ -965,10 +975,7 @@ class SystemLossPDE_eqx(eqx.Module):
         Parameters
         ---------
         params_dict
-            A dictionary of dictionaries of parameters of the model.
-            Typically, it is a dictionary of dictionaries of
-            dictionaries: `eq_params` and `nn_params``, respectively the
-            differential equation parameters and the neural network parameter
+            XXX
         batch
             A PDEStatioBatch or PDENonStatioBatch object.
             Such named tuples are composed of  batch of points in the
@@ -978,7 +985,7 @@ class SystemLossPDE_eqx(eqx.Module):
             and an optional additional batch of observed
             inputs/outputs/parameters
         """
-        if self.u_dict.keys() != params_dict["nn_params"].keys():
+        if self.u_dict.keys() != params_dict.nn_params.keys():
             raise ValueError("u_dict and params_dict[nn_params] should have same keys ")
 
         if isinstance(batch, PDEStatioBatch):
@@ -1001,9 +1008,10 @@ class SystemLossPDE_eqx(eqx.Module):
         if batch.param_batch_dict is not None:
             eq_params_batch_dict = batch.param_batch_dict
 
+            # TODO
             # feed the eq_params with the batch
             for k in eq_params_batch_dict.keys():
-                params_dict["eq_params"][k] = eq_params_batch_dict[k]
+                params_dict.eq_params[k] = eq_params_batch_dict[k]
 
         vmap_in_axes_params = _get_vmap_in_axes_params(
             batch.param_batch_dict, params_dict
@@ -1011,12 +1019,21 @@ class SystemLossPDE_eqx(eqx.Module):
 
         def dyn_loss_for_one_key(dyn_loss, derivative_key, loss_weight):
             """The function used in tree_map"""
-            params_dict_ = _set_derivatives(params_dict, "dyn_loss", derivative_key)
+            params_dict_with_derivatives_at_loss_terms = _set_derivatives(
+                params_dict,
+                DerivativeKeysPDEStatio(  # this will do, even if strictly
+                    # speaking we are in the DerivativeKeysPDENonStatio case
+                    dyn_loss=derivative_key.dyn_loss,
+                    observations=None,
+                    boundary_loss=None,
+                    norm_loss=None,
+                ),
+            )
             return dynamic_loss_apply(
                 dyn_loss.evaluate,
                 self.u_dict,
                 batches,
-                params_dict_,
+                params_dict_with_derivatives_at_loss_terms.dyn_loss,
                 vmap_in_axes_x_or_x_t + vmap_in_axes_params,
                 loss_weight,
                 u_type=type(list(self.u_dict.values())[0]),
@@ -1027,6 +1044,13 @@ class SystemLossPDE_eqx(eqx.Module):
             self.dynamic_loss_dict,
             self.derivative_keys_dyn_loss_dict,
             self.loss_weights["dyn_loss"],
+            is_leaf=lambda x: isinstance(
+                x, (PDEStatio, PDENonStatio)
+            ),  # before when dynamic losses
+            # where plain (unregister pytree) node classes, we could not traverse
+            # this level. Now that dynamic losses are eqx.Module they can be
+            # traversed by tree map recursion. Hence we need to specify to that
+            # we want to stop at this level
         )
         mse_dyn_loss = jax.tree_util.tree_reduce(
             lambda x, y: x + y, jax.tree_util.tree_leaves(dyn_loss_mse_dict)

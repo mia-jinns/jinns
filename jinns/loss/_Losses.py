@@ -13,6 +13,7 @@ from jinns.loss._boundary_conditions import (
     _compute_boundary_loss,
 )
 from jinns.utils._utils import _check_user_func_return, _get_grid
+from jinns.parameters._params import Params
 
 
 def dynamic_loss_apply(
@@ -243,16 +244,16 @@ def constraints_system_loss_apply(
         loss_weights,
     )
 
-    if isinstance(params_dict["nn_params"], dict):
+    if isinstance(params_dict.nn_params, dict):
 
         def apply_u_constraint(
             u_constraint, nn_params, loss_weights_for_u, obs_batch_u
         ):
             res_dict_for_u = u_constraint.evaluate(
-                {
-                    "nn_params": nn_params,
-                    "eq_params": params_dict["eq_params"],
-                },
+                Params(
+                    nn_params=nn_params,
+                    eq_params=params_dict.eq_params,
+                ),
                 batch._replace(obs_batch_dict=obs_batch_u),
             )[1]
             res_dict_ponderated = jax.tree_util.tree_map(
@@ -267,7 +268,7 @@ def constraints_system_loss_apply(
         res_dict = jax.tree_util.tree_map(
             apply_u_constraint,
             u_constraints_dict,
-            params_dict["nn_params"],
+            params_dict.nn_params,
             loss_weights_T,
             batch.obs_batch_dict,
             is_leaf=lambda x: (
