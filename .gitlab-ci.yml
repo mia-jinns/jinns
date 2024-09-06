@@ -29,7 +29,6 @@ build_doc:
   before_script:
 
   script:
-    - pip install --upgrade pip
     - pip install --break-system-packages .
     - pip install -r docs/doc_requirements.txt
     - make -C doc clean html
