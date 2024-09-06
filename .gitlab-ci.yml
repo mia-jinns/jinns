@@ -25,12 +25,13 @@ run_tests:
 
 build_doc:
   stage: build
+  needs: [] # don't need to wait for other jobs
   before_script:
 
   script:
-    - python -m pip install --upgrade pip
+    - pip install --upgrade pip
     - pip install --break-system-packages .
-    - python -m pip install -r docs/doc_requirements.txt
+    - pip install -r docs/doc_requirements.txt
     - make -C doc clean html
     - mkdocs build
     - mkdocs build  # twice, see https://github.com/patrick-kidger/pytkdocs_tweaks
