@@ -72,14 +72,14 @@ def train_OU_init():
             0,
             0,
             random.choice(
-                jnp.array([], dtype=jnp.uint32),
+                jnp.array([3420271947, 3128279307], dtype=jnp.uint32),
                 train_data.omega,
                 shape=(train_data.omega.shape[0],),
                 replace=False,
                 p=train_data.p_omega,
             ),
             random.choice(
-                jnp.array([], dtype=jnp.uint32),
+                jnp.array([276632615, 1451260385], dtype=jnp.uint32),
                 train_data.times,
                 shape=(train_data.times.shape[0],),
                 replace=False,
