@@ -241,7 +241,6 @@ def solve(
             stored_objects,
             validation_crit_values,
         ) = carry
-        # jax.debug.print("key at iteration {i}={x}", i=i, x=train_data.data._key)
 
         batch, data, param_data, obs_data = get_batch(
             train_data.data, train_data.param_data, train_data.obs_data

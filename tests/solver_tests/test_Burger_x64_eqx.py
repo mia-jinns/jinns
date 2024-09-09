@@ -99,7 +99,9 @@ def train_Burger_init():
 
     be_loss = jinns.loss.BurgerEquation_eqx(Tmax=Tmax)
 
-    loss_weights = {"dyn_loss": 1, "initial_condition": 5, "boundary_loss": 1}
+    loss_weights = jinns.loss.LossWeightsPDENonStatio(
+        dyn_loss=1, initial_condition=5, boundary_loss=1
+    )
 
     loss = jinns.loss.LossPDENonStatio_eqx(
         u=u,

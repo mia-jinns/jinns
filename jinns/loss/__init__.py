@@ -9,3 +9,4 @@ from ._DynamicLoss_eqx import (
     MassConservation2DStatio_eqx,
     NavierStokes2DStatio_eqx,
 )
+from ._loss_weights import *

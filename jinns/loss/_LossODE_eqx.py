@@ -3,6 +3,7 @@
 Main module to implement a ODE loss in jinns
 """
 
+from dataclasses import InitVar, fields
 from typing import Union, Dict
 import abc
 import warnings
@@ -19,14 +20,13 @@ from jinns.loss._Losses import (
 )
 from jinns.utils._pinn import PINN
 from jinns.loss._DynamicLossAbstract_eqx import ODE
+from jinns.loss._loss_weights import LossWeightsODE, LossWeightsODEDict
 from jinns.parameters._params import (
     Params,
     _get_vmap_in_axes_params,
     _update_eq_params_dict,
 )
 from jinns.parameters._derivative_keys import DerivativeKeysODE, _set_derivatives
-
-_LOSS_WEIGHT_KEYS_ODE = ["observations", "dyn_loss", "initial_condition"]
 
 
 class _LossODEAbstract_eqx(eqx.Module):
@@ -35,10 +35,7 @@ class _LossODEAbstract_eqx(eqx.Module):
     ----------
 
     loss_weights
-        a dictionary with values used to ponderate each term in the loss
-        function. Valid keys are that of _LOSS_WEIGHT_KEYS_ODE
-        Note that we can have jnp.arrays with the same dimension of
-        `u` which then ponderates each output of `u`
+        XXX
     derivative_keys
         XXXX
     initial_condition
@@ -55,9 +52,7 @@ class _LossODEAbstract_eqx(eqx.Module):
     derivative_keys: Union[DerivativeKeysODE, None] = eqx.field(
         kw_only=True, default=None, static=True
     )
-    loss_weights: Union[Dict[str, Union[Float, Array]], None] = eqx.field(
-        kw_only=True, default=None, static=True
-    )
+    loss_weights: Union[LossWeightsODE, None] = eqx.field(kw_only=True, default=None)
     initial_condition: Union[tuple, None] = eqx.field(
         kw_only=True, default=None, static=True
     )
@@ -85,9 +80,8 @@ class _LossODEAbstract_eqx(eqx.Module):
         if self.obs_slice is None:
             self.obs_slice = jnp.s_[...]
 
-        for k in _LOSS_WEIGHT_KEYS_ODE:
-            if k not in self.loss_weights.keys():
-                self.loss_weights[k] = 0
+        if self.loss_weights is None:
+            self.loss_weights = LossWeightsODE()
 
     @abc.abstractmethod
     def evaluate(
@@ -117,10 +111,6 @@ class LossODE_eqx(_LossODEAbstract_eqx):
         Can be None in order to
         access only some part of the evaluate call results.
     loss_weights
-        a dictionary with values used to ponderate each term in the loss
-        function. Valid keys are `dyn_loss`, `initial_condition` and `observations`
-        Note that we can have jnp.arrays with the same dimension of
-        `u` which then ponderates each output of `u`
     derivative_keys
         XXXX
     initial_condition :
@@ -191,7 +181,7 @@ class LossODE_eqx(_LossODEAbstract_eqx):
                 (temporal_batch,),
                 params_with_derivatives_at_loss_terms.dyn_loss,
                 self.vmap_in_axes + vmap_in_axes_params,
-                self.loss_weights["dyn_loss"],
+                self.loss_weights.dyn_loss,
             )
         else:
             mse_dyn_loss = jnp.array(0.0)
@@ -209,7 +199,7 @@ class LossODE_eqx(_LossODEAbstract_eqx):
             t0 = jnp.array(t0)
             u0 = jnp.array(u0)
             mse_initial_condition = jnp.mean(
-                self.loss_weights["initial_condition"]
+                self.loss_weights.initial_condition
                 * jnp.sum(
                     (
                         v_u(t0, params_with_derivatives_at_loss_terms.initial_condition)
@@ -232,8 +222,8 @@ class LossODE_eqx(_LossODEAbstract_eqx):
                 (batch.obs_batch_dict["pinn_in"],),
                 params_with_derivatives_at_loss_terms.observations,
                 self.vmap_in_axes + vmap_in_axes_params,
-                batch.obs_batch_dict["val"],
-                self.loss_weights["observations"],
+                batch.obs_batch_dict.val,
+                self.loss_weights.observations,
                 self.obs_slice,
             )
         else:
@@ -269,13 +259,7 @@ class SystemLossODE_eqx(eqx.Module):
     u_dict
         dict of PINNs
     loss_weights
-        A dictionary of dictionaries with values used to
-        ponderate each term in the loss
-        function. Valid keys in the first dictionary are `dyn_loss`,
-        `initial_condition` and `observations`. The keys of the nested
-        dictionaries must share the keys of `u_dict`. Note that the values
-        at the leaf level can have jnp.arrays with the same dimension of
-        `u` which then ponderates each output of `u`
+        A dictionary of LossWeightsODE
     derivative_keys_dict
         XXX
     initial_condition_dict
@@ -305,14 +289,12 @@ class SystemLossODE_eqx(eqx.Module):
     # Contrary to the losses above, we need to declare u_dict and
     # dynamic_loss_dict as static because of the str typed keys which are not
     # valid JAX type (and not because of the ODE or eqx.Module)
-    # TODO do not use a dictionary here!
+    # We could consider notusing a dict here, but that's a lot of technical
+    # work maybe not worth it
     u_dict: Dict[str, eqx.Module] = eqx.field(static=True)
     dynamic_loss_dict: Dict[str, ODE] = eqx.field(static=True)
     derivative_keys_dict: Union[Dict[str, Union[DerivativeKeysODE, None]], None] = (
         eqx.field(kw_only=True, default=None, static=True)
-    )
-    loss_weights: Union[Dict[str, Dict[str, Union[Float, Array]]], None] = eqx.field(
-        kw_only=True, default=None, static=True
     )
     initial_condition_dict: Union[Dict[str, tuple], None] = eqx.field(
         kw_only=True, default=None, static=True
@@ -321,12 +303,21 @@ class SystemLossODE_eqx(eqx.Module):
         kw_only=True, default=None, static=True
     )
 
-    u_constraints_dict: Dict[str, list] = eqx.field(init=False, static=True)
-    derivative_keys_u_dict: Dict[str, list] = eqx.field(init=False, static=True)
-    derivative_keys_dyn_loss_dict: Dict[str, list] = eqx.field(init=False, static=True)
-    u_dict_with_none: Dict[str, None] = eqx.field(init=False, static=True)
+    # For the user loss_weights are passed as a LossWeightsODEDict (with internal
+    # dictionary having keys in u_dict and / or dynamic_loss_dict)
+    loss_weights: InitVar[Union[LossWeightsODEDict, None]] = eqx.field(
+        kw_only=True, default=None, static=True
+    )
 
-    def __post_init__(self):
+    u_constraints_dict: Dict[str, list] = eqx.field(init=False, static=True)
+    derivative_keys_dyn_loss_dict: Dict[str, DerivativeKeysODE] = eqx.field(
+        init=False, static=True
+    )
+    u_dict_with_none: Dict[str, None] = eqx.field(init=False, static=True)
+    # internally the loss weights are handled with a dictionary
+    _loss_weights: Dict[str, dict] = eqx.field(init=False, static=True)
+
+    def __post_init__(self, loss_weights):
         # a dictionary that will be useful at different places
         self.u_dict_with_none = {k: None for k in self.u_dict.keys()}
         if self.initial_condition_dict is None:
@@ -365,7 +356,7 @@ class SystemLossODE_eqx(eqx.Module):
             if self.derivative_keys_dict[k] is None:
                 self.derivative_keys_dict[k] = DerivativeKeysODE()
 
-        self.loss_weights = self.set_loss_weights(self.loss_weights)
+        self._loss_weights = self.set_loss_weights(loss_weights)
 
         # The constaints on the solutions will be implemented by reusing a
         # LossODE class without dynamic loss term
@@ -373,44 +364,47 @@ class SystemLossODE_eqx(eqx.Module):
         for i in self.u_dict.keys():
             self.u_constraints_dict[i] = LossODE_eqx(
                 u=self.u_dict[i],
-                loss_weights={
-                    "dyn_loss": 0.0,
-                    "initial_condition": 1.0,
-                    "observations": 1.0,
-                },
+                loss_weights=LossWeightsODE(
+                    dyn_loss=0.0,
+                    initial_condition=1.0,
+                    observations=1.0,
+                ),
                 dynamic_loss=None,
                 derivative_keys=self.derivative_keys_dict[i],
                 initial_condition=self.initial_condition_dict[i],
                 obs_slice=self.obs_slice_dict[i],
             )
 
-        # for convenience in the tree_map of evaluate,
-        # we separate the two derivative keys dict
+        # for convenience in the tree_map of evaluate
         self.derivative_keys_dyn_loss_dict = {
             k: self.derivative_keys_dict[k]
-            for k in self.dynamic_loss_dict.keys() & self.derivative_keys_dict.keys()
-        }
-        self.derivative_keys_u_dict = {
-            k: self.derivative_keys_dict[k]
-            for k in self.u_dict.keys() & self.derivative_keys_dict.keys()
+            for k in self.dynamic_loss_dict.keys()  # & self.derivative_keys_dict.keys()
+            # comment because intersection is neceserily fulfilled right?
         }
 
-    def set_loss_weights(self, value):
+    def set_loss_weights(self, loss_weights_init):
+        """
+        This rather complex function enables the user to specify a simple
+        loss_weights=LossWeightsODEDict(dyn_loss=1., initial_condition=Tmax)
+        for ponderating values being applied to all the equations of the
+        system... So all the transformations are handled here
+        """
         _loss_weights = {}
-        for k, v in value.items():
+        for k in fields(loss_weights_init):
+            v = getattr(loss_weights_init, k.name)
             if isinstance(v, dict):
-                for kk, vv in v.items():
+                for vv in v.keys():
                     if not isinstance(vv, (int, float)) and not (
-                        isinstance(vv, jnp.ndarray)
+                        isinstance(vv, Array)
                         and ((vv.shape == (1,) or len(vv.shape) == 0))
                     ):
                         # TODO improve that
                         raise ValueError(
                             f"loss values cannot be vectorial here, got {vv}"
                         )
-                if k == "dyn_loss":
+                if k.name == "dyn_loss":
                     if v.keys() == self.dynamic_loss_dict.keys():
-                        _loss_weights[k] = v
+                        _loss_weights[k.name] = v
                     else:
                         raise ValueError(
                             "Keys in nested dictionary of loss_weights"
@@ -418,27 +412,26 @@ class SystemLossODE_eqx(eqx.Module):
                         )
                 else:
                     if v.keys() == self.u_dict.keys():
-                        _loss_weights[k] = v
+                        _loss_weights[k.name] = v
                     else:
                         raise ValueError(
                             "Keys in nested dictionary of loss_weights"
                             " do not match u_dict keys"
                         )
+            if v is None:
+                _loss_weights[k.name] = {kk: 0 for kk in self.u_dict.keys()}
             else:
                 if not isinstance(v, (int, float)) and not (
-                    isinstance(v, jnp.ndarray)
-                    and ((v.shape == (1,) or len(v.shape) == 0))
+                    isinstance(v, Array) and ((v.shape == (1,) or len(v.shape) == 0))
                 ):
                     # TODO improve that
                     raise ValueError(f"loss values cannot be vectorial here, got {v}")
-                if k == "dyn_loss":
-                    _loss_weights[k] = {kk: v for kk in self.dynamic_loss_dict.keys()}
+                if k.name == "dyn_loss":
+                    _loss_weights[k.name] = {
+                        kk: v for kk in self.dynamic_loss_dict.keys()
+                    }
                 else:
-                    _loss_weights[k] = {kk: v for kk in self.u_dict.keys()}
-        if all(v is None for k, v in self.initial_condition_dict.items()):
-            _loss_weights["initial_condition"] = {k: 0 for k in self.u_dict.keys()}
-        if "observations" not in value.keys():
-            _loss_weights["observations"] = {k: 0 for k in self.u_dict.keys()}
+                    _loss_weights[k.name] = {kk: v for kk in self.u_dict.keys()}
 
         return _loss_weights
 
@@ -509,7 +502,7 @@ class SystemLossODE_eqx(eqx.Module):
             dyn_loss_for_one_key,
             self.dynamic_loss_dict,
             self.derivative_keys_dyn_loss_dict,
-            self.loss_weights["dyn_loss"],
+            self._loss_weights["dyn_loss"],
             is_leaf=lambda x: isinstance(x, ODE),  # before when dynamic losses
             # where plain (unregister pytree) node classes, we could not traverse
             # this level. Now that dynamic losses are eqx.Module they can be
@@ -534,7 +527,7 @@ class SystemLossODE_eqx(eqx.Module):
             self.u_constraints_dict,
             batch,
             params_dict,
-            self.loss_weights,
+            self._loss_weights,
             loss_weight_struct,
         )
 

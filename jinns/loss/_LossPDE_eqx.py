@@ -4,6 +4,7 @@ Main module to implement a PDE loss in jinns
 """
 
 import abc
+from dataclasses import InitVar, fields
 from typing import Union, Dict, Callable
 import warnings
 import jax
@@ -22,6 +23,11 @@ from jinns.data._DataGenerators_eqx import PDEStatioBatch, PDENonStatioBatch
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
 from jinns.loss._DynamicLossAbstract_eqx import PDEStatio, PDENonStatio
+from jinns.loss._loss_weights import (
+    LossWeightsPDEStatio,
+    LossWeightsPDENonStatio,
+    LossWeightsPDEDict,
+)
 from jinns.parameters._params import (
     Params,
     _get_vmap_in_axes_params,
@@ -39,15 +45,6 @@ _IMPLEMENTED_BOUNDARY_CONDITIONS = [
     "vonneumann",
 ]
 
-_LOSS_WEIGHT_KEYS_PDESTATIO = [
-    "observations",
-    "norm_loss",
-    "boundary_loss",
-    "dyn_loss",
-]
-
-_LOSS_WEIGHT_KEYS_PDENONSTATIO = _LOSS_WEIGHT_KEYS_PDESTATIO + ["initial_condition"]
-
 
 class _LossPDEAbstract_eqx(eqx.Module):
     """
@@ -55,10 +52,6 @@ class _LossPDEAbstract_eqx(eqx.Module):
     ----------
 
     loss_weights
-        a dictionary with values used to ponderate each term in the loss
-        function. Valid keys are in _LOSS_WEIGHT_KEYS_PDENONSTATIO
-        Note that we can have jnp.arrays with the same dimension of
-        `u` which then ponderates each output of `u`
     derivative_keys
         XX
     norm_samples
@@ -80,8 +73,8 @@ class _LossPDEAbstract_eqx(eqx.Module):
     derivative_keys: Union[
         Union[DerivativeKeysPDEStatio, DerivativeKeysPDENonStatio], None
     ] = eqx.field(kw_only=True, default=None, static=True)
-    loss_weights: Union[Dict[str, Union[Float, Array]], None] = eqx.field(
-        kw_only=True, default=None, static=True
+    loss_weights: Union[Union[LossWeightsPDEStatio, LossWeightsPDENonStatio], None] = (
+        eqx.field(kw_only=True, default=None, static=True)
     )
     omega_boundary_fun: Union[Callable, Dict[str, Callable], None] = eqx.field(
         kw_only=True, default=None, static=True
@@ -109,9 +102,12 @@ class _LossPDEAbstract_eqx(eqx.Module):
                 else DerivativeKeysPDEStatio()
             )
 
-        for k in _LOSS_WEIGHT_KEYS_PDENONSTATIO:
-            if k not in self.loss_weights.keys():
-                self.loss_weights[k] = 0
+        if self.loss_weights is None:
+            self.loss_weights = (
+                LossWeightsPDENonStatio()
+                if isinstance(self, LossPDENonStatio_eqx)
+                else LossWeightsPDEStatio()
+            )
 
         if self.obs_slice is None:
             self.obs_slice = jnp.s_[...]
@@ -245,11 +241,7 @@ class LossPDEStatio_eqx(_LossPDEAbstract_eqx):
         taken when splitting the key because in-place updates are forbidden in
         eqx.Modules.
     loss_weights
-        a dictionary with values used to ponderate each term in the loss
-        function. Valid keys are `dyn_loss`, `norm_loss`, `boundary_loss`,
-        `observations`.
-        Note that we can have jnp.arrays with the same dimension of
-        `u` which then ponderates each output of `u`
+        XXX
     derivative_keys
         XXX
     omega_boundary_fun
@@ -367,7 +359,7 @@ class LossPDEStatio_eqx(_LossPDEAbstract_eqx):
                 self._get_dynamic_loss_batch(batch),
                 params_with_derivatives_at_loss_terms.dyn_loss,
                 self.vmap_in_axes + vmap_in_axes_params,
-                self.loss_weights["dyn_loss"],
+                self.loss_weights.dyn_loss,
             )
         else:
             mse_dyn_loss = jnp.array(0.0)
@@ -380,7 +372,7 @@ class LossPDEStatio_eqx(_LossPDEAbstract_eqx):
                 params_with_derivatives_at_loss_terms.norm_loss,
                 self.vmap_in_axes + vmap_in_axes_params,
                 self.norm_int_length,
-                self.loss_weights["norm_loss"],
+                self.loss_weights.norm_loss,
             )
         else:
             mse_norm_loss = jnp.array(0.0)
@@ -394,7 +386,7 @@ class LossPDEStatio_eqx(_LossPDEAbstract_eqx):
                 self.omega_boundary_fun,
                 self.omega_boundary_condition,
                 self.omega_boundary_dim,
-                self.loss_weights["boundary_loss"],
+                self.loss_weights.boundary_loss,
             )
         else:
             mse_boundary_loss = jnp.array(0.0)
@@ -410,7 +402,7 @@ class LossPDEStatio_eqx(_LossPDEAbstract_eqx):
                 params_with_derivatives_at_loss_terms.observations,
                 self.vmap_in_axes + vmap_in_axes_params,
                 batch.obs_batch_dict["val"],
-                self.loss_weights["observations"],
+                self.loss_weights.observations,
                 self.obs_slice,
             )
         else:
@@ -450,9 +442,7 @@ class LossPDENonStatio_eqx(LossPDEStatio_eqx):
     u
         the PINN object
     loss_weights
-        dictionary of values for loss term ponderation
-        Note that we can have jnp.arrays with the same dimension of
-        `u` which then ponderates each output of `u`
+        XXX
     dynamic_loss
         A Dynamic loss object whose evaluate method corresponds to the
         dynamic term in the loss
@@ -625,7 +615,7 @@ class LossPDENonStatio_eqx(LossPDEStatio_eqx):
                 (0,) + vmap_in_axes_params,
                 self.initial_condition_fun,
                 omega_batch.shape[0],
-                self.loss_weights["initial_condition"],
+                self.loss_weights.initial_condition,
             )
         else:
             mse_initial_condition = jnp.array(0.0)
@@ -659,12 +649,7 @@ class SystemLossPDE_eqx(eqx.Module):
     u_dict
         A dict of PINNs
     loss_weights
-        A dictionary of dictionaries with values used to
-        ponderate each term in the loss
-        function. The keys of the nested
-        dictionaries must share the keys of `u_dict`. Note that the values
-        at the leaf level can have jnp.arrays with the same dimension of
-        `u` which then ponderates each output of `u`
+        XXX
     dynamic_loss_dict
         A dict of dynamic part of the loss, basically the differential
         operator :math:`\mathcal{N}[u](t)`.
@@ -720,7 +705,8 @@ class SystemLossPDE_eqx(eqx.Module):
     # Contrary to the losses above, we need to declare u_dict and
     # dynamic_loss_dict as static because of the str typed keys which are not
     # valid JAX type (and not because of the ODE or eqx.Module)
-    # TODO do not use a dictionary here!
+    # We could consider notusing a dict here, but that's a lot of technical
+    # work maybe not worth it
     u_dict: Dict[str, eqx.Module] = eqx.field(static=True)
     dynamic_loss_dict: Dict[str, Union[PDEStatio, PDENonStatio]] = eqx.field(
         static=True
@@ -731,9 +717,6 @@ class SystemLossPDE_eqx(eqx.Module):
     derivative_keys_dict: Union[
         Union[DerivativeKeysPDEStatio, DerivativeKeysPDENonStatio], None
     ] = eqx.field(kw_only=True, default=None, static=True)
-    loss_weights: Union[Dict[str, Dict[str, Union[Float, Array]]], None] = eqx.field(
-        kw_only=True, default=None, static=True
-    )
     omega_boundary_fun_dict: Union[
         Dict[str, Union[Callable, Dict[str, Callable]]], None
     ] = eqx.field(kw_only=True, default=None, static=True)
@@ -756,13 +739,21 @@ class SystemLossPDE_eqx(eqx.Module):
         kw_only=True, default=None, static=True
     )
 
+    # For the user loss_weights are passed as a LossWeightsPDEDict (with internal
+    # dictionary having keys in u_dict and / or dynamic_loss_dict)
+    loss_weights: InitVar[Union[LossWeightsPDEDict, None]] = eqx.field(
+        kw_only=True, default=None, static=True
+    )
+
     # following have init=False and are set in the __post_init__
     u_constraints_dict: Dict[str, list] = eqx.field(init=False, static=True)
     derivative_keys_u_dict: Dict[str, list] = eqx.field(init=False, static=True)
     derivative_keys_dyn_loss_dict: Dict[str, list] = eqx.field(init=False, static=True)
     u_dict_with_none: Dict[str, None] = eqx.field(init=False, static=True)
+    # internally the loss weights are handled with a dictionary
+    _loss_weights: Dict[str, dict] = eqx.field(init=False, static=True)
 
-    def __post_init__(self):
+    def __post_init__(self, loss_weights):
         # a dictionary that will be useful at different places
         self.u_dict_with_none = {k: None for k in self.u_dict.keys()}
         # First, for all the optional dict,
@@ -833,7 +824,7 @@ class SystemLossPDE_eqx(eqx.Module):
         ):
             raise ValueError("All the dicts concerning the PINNs should have same keys")
 
-        self.loss_weights = self.set_loss_weights(self.loss_weights)
+        self._loss_weights = self.set_loss_weights(loss_weights)
 
         # Third, in order not to benefit from LossPDEStatio and
         # LossPDENonStatio and in order to factorize code, we create internally
@@ -844,12 +835,13 @@ class SystemLossPDE_eqx(eqx.Module):
             if self.u_dict[i].eq_type == "statio_PDE":
                 self.u_constraints_dict[i] = LossPDEStatio_eqx(
                     u=self.u_dict[i],
-                    loss_weights={
-                        "dyn_loss": 0.0,
-                        "norm_loss": 1.0,
-                        "boundary_loss": 1.0,
-                        "observations": 1.0,
-                    },
+                    loss_weights=LossWeightsPDENonStatio(
+                        dyn_loss=0.0,
+                        norm_loss=1.0,
+                        boundary_loss=1.0,
+                        observations=1.0,
+                        initial_condition=1.0,
+                    ),
                     dynamic_loss=None,
                     key=self.key_dict[i],
                     derivative_keys=self.derivative_keys_dict[i],
@@ -863,13 +855,13 @@ class SystemLossPDE_eqx(eqx.Module):
             elif self.u_dict[i].eq_type == "nonstatio_PDE":
                 self.u_constraints_dict[i] = LossPDENonStatio_eqx(
                     u=self.u_dict[i],
-                    loss_weights={
-                        "dyn_loss": 0.0,
-                        "norm_loss": 1.0,
-                        "boundary_loss": 1.0,
-                        "observations": 1.0,
-                        "initial_condition": 1.0,
-                    },
+                    loss_weights=LossWeightsPDENonStatio(
+                        dyn_loss=0.0,
+                        norm_loss=1.0,
+                        boundary_loss=1.0,
+                        observations=1.0,
+                        initial_condition=1.0,
+                    ),
                     dynamic_loss=None,
                     key=self.key_dict[i],
                     derivative_keys=self.derivative_keys_dict[i],
@@ -907,22 +899,29 @@ class SystemLossPDE_eqx(eqx.Module):
                 "We only accept dictionary of PINNs or dictionary of SPINNs"
             )
 
-    def set_loss_weights(self, value):
+    def set_loss_weights(self, loss_weights_init):
+        """
+        This rather complex function enables the user to specify a simple
+        loss_weights=LossWeightsPDEDict(dyn_loss=1., initial_condition=Tmax)
+        for ponderating values being applied to all the equations of the
+        system... So all the transformations are handled here
+        """
         _loss_weights = {}
-        for k, v in value.items():
+        for k in fields(loss_weights_init):
+            v = getattr(loss_weights_init, k.name)
             if isinstance(v, dict):
-                for kk, vv in v.items():
+                for vv in v.keys():
                     if not isinstance(vv, (int, float)) and not (
-                        isinstance(vv, jnp.ndarray)
+                        isinstance(vv, Array)
                         and ((vv.shape == (1,) or len(vv.shape) == 0))
                     ):
                         # TODO improve that
                         raise ValueError(
                             f"loss values cannot be vectorial here, got {vv}"
                         )
-                if k == "dyn_loss":
+                if k.name == "dyn_loss":
                     if v.keys() == self.dynamic_loss_dict.keys():
-                        _loss_weights[k] = v
+                        _loss_weights[k.name] = v
                     else:
                         raise ValueError(
                             "Keys in nested dictionary of loss_weights"
@@ -930,34 +929,26 @@ class SystemLossPDE_eqx(eqx.Module):
                         )
                 else:
                     if v.keys() == self.u_dict.keys():
-                        _loss_weights[k] = v
+                        _loss_weights[k.name] = v
                     else:
                         raise ValueError(
                             "Keys in nested dictionary of loss_weights"
                             " do not match u_dict keys"
                         )
+            if v is None:
+                _loss_weights[k.name] = {kk: 0 for kk in self.u_dict.keys()}
             else:
                 if not isinstance(v, (int, float)) and not (
-                    isinstance(v, jnp.ndarray)
-                    and ((v.shape == (1,) or len(v.shape) == 0))
+                    isinstance(v, Array) and ((v.shape == (1,) or len(v.shape) == 0))
                 ):
                     # TODO improve that
                     raise ValueError(f"loss values cannot be vectorial here, got {v}")
-                if k == "dyn_loss":
-                    _loss_weights[k] = {kk: v for kk in self.dynamic_loss_dict.keys()}
+                if k.name == "dyn_loss":
+                    _loss_weights[k.name] = {
+                        kk: v for kk in self.dynamic_loss_dict.keys()
+                    }
                 else:
-                    _loss_weights[k] = {kk: v for kk in self.u_dict.keys()}
-        # Some special checks below
-        if "observations" not in value.keys():
-            _loss_weights["observations"] = {k: 0 for k in self.u_dict.keys()}
-        if all(v is None for k, v in self.omega_boundary_fun_dict.items()) or all(
-            v is None for k, v in self.omega_boundary_condition_dict.items()
-        ):
-            _loss_weights["boundary_loss"] = {k: 0 for k in self.u_dict.keys()}
-        if all(v is None for k, v in self.norm_samples_dict.items()):
-            _loss_weights["norm_loss"] = {k: 0 for k in self.u_dict.keys()}
-        if all(v is None for k, v in self.initial_condition_fun_dict.items()):
-            _loss_weights["initial_condition"] = {k: 0 for k in self.u_dict.keys()}
+                    _loss_weights[k.name] = {kk: v for kk in self.u_dict.keys()}
         return _loss_weights
 
     def __call__(self, *args, **kwargs):
@@ -1043,7 +1034,7 @@ class SystemLossPDE_eqx(eqx.Module):
             dyn_loss_for_one_key,
             self.dynamic_loss_dict,
             self.derivative_keys_dyn_loss_dict,
-            self.loss_weights["dyn_loss"],
+            self._loss_weights["dyn_loss"],
             is_leaf=lambda x: isinstance(
                 x, (PDEStatio, PDENonStatio)
             ),  # before when dynamic losses
@@ -1073,7 +1064,7 @@ class SystemLossPDE_eqx(eqx.Module):
             self.u_constraints_dict,
             batch,
             params_dict,
-            self.loss_weights,
+            self._loss_weights,
             loss_weight_struct,
         )
 

@@ -216,20 +216,6 @@ def initial_condition_apply(
     return mse_initial_condition
 
 
-def sobolev_reg_apply(u, batches, params, vmap_axes, sobolev_reg, loss_weight):
-    # TODO implement for SPINN
-    if isinstance(u, (PINN, HYPERPINN)):
-        v_sob_reg = vmap(
-            lambda *args: sobolev_reg(*args),  # pylint: disable=E1121
-            vmap_axes,
-            0,
-        )
-        mse_sobolev_loss = loss_weight * jnp.mean(v_sob_reg(*batches, params))
-    elif isinstance(u, SPINN):
-        raise RuntimeError("Sobolev loss term not yet implemented for SPINNs")
-    return mse_sobolev_loss
-
-
 def constraints_system_loss_apply(
     u_constraints_dict, batch, params_dict, loss_weights, loss_weight_struct
 ):

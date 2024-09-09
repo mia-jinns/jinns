@@ -160,11 +160,11 @@ def train_ReacDiff_init():
     fisher_dynamic_loss = jinns.loss.FisherKPP_eqx(
         Tmax=Tmax, eq_params_heterogeneity={"D": None, "r": r_fun, "g": None}
     )
-    loss_weights = {
-        "dyn_loss": 1,
-        "initial_condition": 10 * Tmax,
-        "boundary_loss": 1 * Tmax,
-    }
+    loss_weights = jinns.loss.LossWeightsPDENonStatio(
+        dyn_loss=1,
+        initial_condition=10 * Tmax,
+        boundary_loss=1 * Tmax,
+    )
 
     loss = jinns.loss.LossPDENonStatio_eqx(
         u=u_spinn,

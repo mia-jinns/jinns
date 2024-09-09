@@ -122,11 +122,9 @@ def train_Fisher_init():
 
     fisher_dynamic_loss = jinns.loss.FisherKPP_eqx(Tmax=Tmax)
 
-    loss_weights = {
-        "dyn_loss": 1,
-        "initial_condition": 1 * Tmax,
-        "boundary_loss": 3 / 4 * Tmax,
-    }
+    loss_weights = jinns.loss.LossWeightsPDENonStatio(
+        dyn_loss=1, initial_condition=1 * Tmax, boundary_loss=3 / 4 * Tmax
+    )
 
     loss = jinns.loss.LossPDENonStatio_eqx(
         u=u,

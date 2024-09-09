@@ -74,7 +74,7 @@ def train_GLV_init():
         key_main="2", keys_other=["0", "1"], Tmax=Tmax
     )
 
-    loss_weights = {"dyn_loss": 1, "initial_condition": 1 * Tmax}
+    loss_weights = jinns.loss.LossWeightsODEDict(dyn_loss=1, initial_condition=1 * Tmax)
 
     loss = jinns.loss.SystemLossODE_eqx(
         u_dict={"0": u, "1": u, "2": u},

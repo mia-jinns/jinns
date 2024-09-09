@@ -79,7 +79,11 @@ vectorized_u0 = vmap(u0, (0), 0)
 
 OU_fpe_non_statio_2D_loss = jinns.loss.OU_FPENonStatioLoss2D_eqx(Tmax=Tmax)
 
-loss_weights = {"dyn_loss": 1, "initial_condition": 1 * Tmax, "norm_loss": 0.1 * Tmax}
+loss_weights = jinns.loss.LossWeightsPDENonStatio(
+    dyn_loss=1.0,
+    initial_condition=1 * Tmax,
+    norm_loss=0.1 * Tmax,
+)
 
 with pytest.warns(UserWarning):
     loss = jinns.loss.LossPDENonStatio_eqx(

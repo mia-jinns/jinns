@@ -572,7 +572,6 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
                 key, subkeys = jax.random.split(key, 2)
             else:
                 key, *subkeys = jax.random.split(key, self.dim + 1)
-            print("key to sample omega", subkeys)
             omega = self.sample_in_omega_domain(subkeys)
         else:
             raise ValueError("Method " + self.method + " is not implemented.")
@@ -618,7 +617,6 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
             lambda m: (m.key, m.omega, m.curr_omega_idx), self, new_attributes
         )
 
-        print("idx of omega batch", new.curr_omega_idx)
         return new, jax.lax.dynamic_slice(
             new.omega,
             start_indices=(new.curr_omega_idx, 0),
@@ -822,7 +820,6 @@ class CubicMeshPDENonStatio_eqx(CubicMeshPDEStatio_eqx):
         # see explaination in DataGeneratorODE_eqx for the key
 
     def sample_in_time_domain(self, key: Key, sample_size: Int = None) -> Array:
-        print("key to sample times", key)
         return jax.random.uniform(
             key,
             (self.nt if sample_size is None else sample_size,),
@@ -877,8 +874,6 @@ class CubicMeshPDENonStatio_eqx(CubicMeshPDEStatio_eqx):
             lambda m: (m.key, m.times, m.curr_time_idx), self, new_attributes
         )
 
-        # print(new.times)
-        print("idx of time batch", new.curr_time_idx)
         return new, jax.lax.dynamic_slice(
             new.times,
             start_indices=(new.curr_time_idx,),

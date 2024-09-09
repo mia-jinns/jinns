@@ -118,11 +118,9 @@ def train_OU_init():
         axis=-1,
     )
 
-    loss_weights = {
-        "dyn_loss": 10,
-        "initial_condition": 1 * Tmax,
-        "norm_loss": 0.00001 * Tmax,
-    }
+    loss_weights = jinns.loss.LossWeightsPDENonStatio(
+        dyn_loss=10, initial_condition=1 * Tmax, norm_loss=0.00001 * Tmax
+    )
     OU_fpe_non_statio_2D_loss = jinns.loss.OU_FPENonStatioLoss2D_eqx(Tmax=Tmax)
 
     # Catching an expected UserWarning since no border condition is given

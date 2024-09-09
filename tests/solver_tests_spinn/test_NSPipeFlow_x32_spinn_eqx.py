@@ -115,7 +115,7 @@ def train_NSPipeFlow_init():
     }
     mc_loss = jinns.loss.MassConservation2DStatio_eqx(nn_key="u")
     ns_loss = jinns.loss.NavierStokes2DStatio_eqx(u_key="u", p_key="p")
-    loss_weights = {"dyn_loss": 1.0, "boundary_loss": 1.0}
+    loss_weights = jinns.loss.LossWeightsPDEDict(dyn_loss=1, boundary_loss=1)
 
     loss = jinns.loss.SystemLossPDE_eqx(
         u_dict={"u": u, "p": p},

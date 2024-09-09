@@ -1,5 +1,5 @@
 """
-Formalize the data Literal['nn_params', 'eq_params']ucture for the derivative keys
+Formalize the data structure for the derivative keys
 """
 
 from dataclasses import fields
