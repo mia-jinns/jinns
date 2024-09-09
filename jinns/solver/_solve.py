@@ -3,22 +3,17 @@ This modules implements the main `solve()` function of jinns which
 handles the optimization process
 """
 
+import copy
 from functools import partial
 import optax
 import jax
 from jax import jit
 import jax.numpy as jnp
-from jinns.solver._seq2seq import trigger_seq2seq, initialize_seq2seq
 from jinns.solver._rar import init_rar, trigger_rar
 from jinns.utils._utils import _check_nan_in_pytree, _tracked_parameters
-from jinns.data._DataGenerators import (
-    DataGeneratorODE,
-    CubicMeshPDEStatio,
-    CubicMeshPDENonStatio,
-    append_param_batch,
-    append_obs_batch,
-)
 from jinns.data._DataGenerators_eqx import (
+    append_obs_batch,
+    append_param_batch,
     DataGeneratorODE_eqx,
     CubicMeshPDEStatio_eqx,
     CubicMeshPDENonStatio_eqx,
@@ -32,16 +27,16 @@ from jinns.utils._containers import *
 def check_batch_size(other_data, main_data, attr_name):
     if (
         (
-            isinstance(main_data, DataGeneratorODE)
+            isinstance(main_data, DataGeneratorODE_eqx)
             and getattr(other_data, attr_name) != main_data.temporal_batch_size
         )
         or (
-            isinstance(main_data, CubicMeshPDEStatio)
-            and not isinstance(main_data, CubicMeshPDENonStatio)
+            isinstance(main_data, CubicMeshPDEStatio_eqx)
+            and not isinstance(main_data, CubicMeshPDENonStatio_eqx)
             and getattr(other_data, attr_name) != main_data.omega_batch_size
         )
         or (
-            isinstance(main_data, CubicMeshPDENonStatio)
+            isinstance(main_data, CubicMeshPDENonStatio_eqx)
             and getattr(other_data, attr_name)
             != main_data.omega_batch_size * main_data.temporal_batch_size
         )
@@ -62,7 +57,6 @@ def solve(
     optimizer,
     print_loss_every=1000,
     opt_state=None,
-    seq2seq=None,
     tracked_params_key_list=None,
     param_data=None,
     obs_data=None,
@@ -82,9 +76,7 @@ def solve(
     n_iter
         The number of iterations in the optimization
     init_params
-        The initial dictionary of parameters. Typically, it is a dictionary of
-        dictionaries: `eq_params` and `nn_params``, respectively the
-        differential equation parameters and the neural network parameter
+        The initial jinns.parameters.Params object
     data
         A DataGenerator object which implements a `get_batch()`
         method which returns a 3-tuple with (omega_grid, omega_border, time grid).
@@ -102,15 +94,6 @@ def solve(
     opt_state
         Default None. Provide an optional initial optional state to the
         optimizer. Not valid for all optimizers.
-    seq2seq
-        Default None. A dictionary with keys 'times_steps'
-        and 'iter_steps' which mush have same length. The first represents
-        the time steps which represents the different time interval upon
-        which we perform the incremental learning. The second represents
-        the number of iteration we perform in each time interval.
-        The seq2seq approach we reimplements is defined in
-        "Characterizing possible failure modes in physics-informed neural
-        networks", A. S. Krishnapriyan, NeurIPS 2021
     tracked_params_key_list
         Default None. Otherwise it is a list of list of strings
         to access a leaf in params. Each selected leaf will be tracked
@@ -147,7 +130,7 @@ def solve(
     Returns
     -------
     params
-        The last non NaN value of the dictionaries of parameters at then end of the
+        The last non NaN value of the params at then end of the
         optimization process
     total_loss_values
         An array of the total loss term along the gradient steps
@@ -179,11 +162,6 @@ def solve(
 
     # Seq2seq
     curr_seq = 0
-    if seq2seq is not None:
-        assert (
-            data.method == "uniform"
-        ), "data.method must be uniform if using seq2seq learning !"
-        data, opt_state = initialize_seq2seq(loss, data, seq2seq, opt_state)
 
     train_loss_values = jnp.zeros((n_iter))
     # depending on obs_batch_sharding we will get the simple get_batch or the
@@ -196,6 +174,7 @@ def solve(
     _, loss_terms = loss(init_params, batch_ini)
     if tracked_params_key_list is None:
         tracked_params_key_list = []
+    # TODO check next function
     tracked_params = _tracked_parameters(init_params, tracked_params_key_list)
     stored_params = jax.tree_util.tree_map(
         lambda tracked_param, param: (
@@ -215,13 +194,12 @@ def solve(
     )
     optimization = OptimizationContainer(
         params=init_params,
-        last_non_nan_params=init_params.copy(),
+        last_non_nan_params=copy.deepcopy(init_params),
         opt_state=opt_state,
     )
     optimization_extra = OptimizationExtraContainer(
         curr_seq=curr_seq,
-        seq2seq=seq2seq,
-        best_val_params=init_params.copy(),
+        best_val_params=copy.deepcopy(init_params),
     )
     loss_container = LossContainer(
         stored_loss_terms=stored_loss_terms,
@@ -263,7 +241,6 @@ def solve(
             stored_objects,
             validation_crit_values,
         ) = carry
-        # jax.debug.print("key at iteration {i}={x}", i=i, x=train_data.data._key)
 
         batch, data, param_data, obs_data = get_batch(
             train_data.data, train_data.param_data, train_data.obs_data
@@ -337,17 +314,6 @@ def solve(
             i, loss, params, data, _rar_step_true, _rar_step_false
         )
 
-        # Trigger seq2seq
-        loss, params, data, opt_state, curr_seq, seq2seq = trigger_seq2seq(
-            i,
-            loss,
-            params,
-            data,
-            opt_state,
-            optimization_extra.curr_seq,
-            optimization_extra.seq2seq,
-        )
-
         # save loss value and selected parameters
         stored_params, stored_loss_terms, train_loss_values = store_loss_and_params(
             i,
@@ -367,9 +333,7 @@ def solve(
             i,
             loss,
             OptimizationContainer(params, last_non_nan_params, opt_state),
-            OptimizationExtraContainer(
-                curr_seq, seq2seq, best_val_params, early_stopping
-            ),
+            OptimizationExtraContainer(curr_seq, best_val_params, early_stopping),
             DataGeneratorContainer(data, param_data, obs_data),
             validation,
             LossContainer(stored_loss_terms, train_loss_values),

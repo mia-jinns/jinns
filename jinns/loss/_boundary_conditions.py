@@ -8,9 +8,11 @@ from jax import vmap, grad
 from jinns.utils._utils import (
     _get_grid,
     _check_user_func_return,
-    _get_vmap_in_axes_params,
 )
-from jinns.data._DataGenerators import PDEStatioBatch, PDENonStatioBatch
+
+from jinns.parameters._params import _get_vmap_in_axes_params
+
+from jinns.data._DataGenerators_eqx import PDEStatioBatch, PDENonStatioBatch
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
 

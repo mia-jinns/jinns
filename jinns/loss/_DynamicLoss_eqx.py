@@ -12,12 +12,17 @@ import equinox as eqx
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
 
-from jinns.utils._utils import _extract_nn_params, _get_grid
+from jinns.utils._utils import _get_grid
+from jinns.parameters._params import _extract_nn_params
 from jinns.loss._DynamicLossAbstract_eqx import ODE, PDEStatio, PDENonStatio
 from jinns.loss._operators import (
     _laplacian_rev,
     _laplacian_fwd,
     _div_rev,
+    _div_fwd,
+    _vectorial_laplacian,
+    _u_dot_nabla_times_u_rev,
+    _u_dot_nabla_times_u_fwd,
 )
 
 
@@ -72,12 +77,9 @@ class FisherKPP_eqx(PDENonStatio):
             lap = _laplacian_rev(t, x, u, params)[..., None]
 
             return du_dt + self.Tmax * (
-                -params["eq_params"]["D"] * lap
+                -params.eq_params["D"] * lap
                 - u(t, x, params)
-                * (
-                    params["eq_params"]["r"]
-                    - params["eq_params"]["g"] * u(t, x, params)
-                )
+                * (params.eq_params["r"] - params.eq_params["g"] * u(t, x, params))
             )
         if isinstance(u, SPINN):
             u_tx, du_dt = jax.jvp(
@@ -87,12 +89,9 @@ class FisherKPP_eqx(PDENonStatio):
             )
             lap = _laplacian_fwd(t, x, u, params)[..., None]
             return du_dt + self.Tmax * (
-                -params["eq_params"]["D"] * lap
+                -params.eq_params["D"] * lap
                 - u_tx
-                * (
-                    params["eq_params"]["r"][..., None]
-                    - params["eq_params"]["g"] * u_tx
-                )
+                * (params.eq_params["r"][..., None] - params.eq_params["g"] * u_tx)
             )
         raise ValueError("u is not among the recognized types (PINN or SPINN)")
 
@@ -157,26 +156,22 @@ class GeneralizedLotkaVolterra_eqx(ODE):
         u = u_dict[self.key_main]
         # need to index with [0] since u output is nec (1,)
         du_dt = grad(lambda t: jnp.log(u(t, params_main)[0]), 0)(t)
-        carrying_term = params_main["eq_params"]["carrying_capacity"] * u(
-            t, params_main
-        )
+        carrying_term = params_main.eq_params["carrying_capacity"] * u(t, params_main)
         # NOTE the following assumes interaction term with oneself is at idx 0
-        interaction_terms = params_main["eq_params"]["interactions"][0] * u(
-            t, params_main
-        )
+        interaction_terms = params_main.eq_params["interactions"][0] * u(t, params_main)
 
         # TODO write this for loop with tree_util functions?
         for i, k in enumerate(self.keys_other):
             params_k = _extract_nn_params(params_dict, k)
-            carrying_term += params_main["eq_params"]["carrying_capacity"] * u_dict[k](
+            carrying_term += params_main.eq_params["carrying_capacity"] * u_dict[k](
                 t, params_k
             )
-            interaction_terms += params_main["eq_params"]["interactions"][
-                i + 1
-            ] * u_dict[k](t, params_k)
+            interaction_terms += params_main.eq_params["interactions"][i + 1] * u_dict[
+                k
+            ](t, params_k)
 
         return du_dt + self.Tmax * (
-            -params_main["eq_params"]["growth_rate"] - interaction_terms + carrying_term
+            -params_main.eq_params["growth_rate"] - interaction_terms + carrying_term
         )
 
 
@@ -232,8 +227,7 @@ class BurgerEquation_eqx(PDENonStatio):
             )
 
             return du_dt(t, x) + self.Tmax * (
-                u(t, x, params) * du_dx(t, x)
-                - params["eq_params"]["nu"] * d2u_dx2(t, x)
+                u(t, x, params) * du_dx(t, x) - params.eq_params["nu"] * d2u_dx2(t, x)
             )
 
         if isinstance(u, SPINN):
@@ -251,9 +245,7 @@ class BurgerEquation_eqx(PDENonStatio):
             )[1]
             du_dx, d2u_dx2 = jax.jvp(du_dx_fun, (x,), (jnp.ones_like(x),))
             # Note that ones_like(x) works because x is Bx1 !
-            return du_dt + self.Tmax * (
-                u_tx * du_dx - params["eq_params"]["nu"] * d2u_dx2
-            )
+            return du_dt + self.Tmax * (u_tx * du_dx - params.eq_params["nu"] * d2u_dx2)
         raise ValueError("u is not among the recognized types (PINN or SPINN)")
 
 
@@ -317,11 +309,13 @@ class FPENonStatioLoss2D(PDENonStatio):
 
             order_1 = (
                 grad(
-                    lambda t, x: self.drift(t, x, params["eq_params"])[0] * u_(t, x),
+                    lambda t, x: self.drift(t, x, params.eq_params)[0] * u_(t, x),
                     1,
-                )(t, x)[0:1]
+                )(
+                    t, x
+                )[0:1]
                 + grad(
-                    lambda t, x: self.drift(t, x, params["eq_params"])[1] * u_(t, x),
+                    lambda t, x: self.drift(t, x, params.eq_params)[1] * u_(t, x),
                     1,
                 )(t, x)[1:2]
             )
@@ -330,7 +324,7 @@ class FPENonStatioLoss2D(PDENonStatio):
                 grad(
                     lambda t, x: grad(
                         lambda t, x: u_(t, x)
-                        * self.diffusion(t, x, params["eq_params"])[0, 0],
+                        * self.diffusion(t, x, params.eq_params)[0, 0],
                         1,
                     )(t, x)[0],
                     1,
@@ -338,7 +332,7 @@ class FPENonStatioLoss2D(PDENonStatio):
                 + grad(
                     lambda t, x: grad(
                         lambda t, x: u_(t, x)
-                        * self.diffusion(t, x, params["eq_params"])[1, 0],
+                        * self.diffusion(t, x, params.eq_params)[1, 0],
                         1,
                     )(t, x)[1],
                     1,
@@ -346,7 +340,7 @@ class FPENonStatioLoss2D(PDENonStatio):
                 + grad(
                     lambda t, x: grad(
                         lambda t, x: u_(t, x)
-                        * self.diffusion(t, x, params["eq_params"])[0, 1],
+                        * self.diffusion(t, x, params.eq_params)[0, 1],
                         1,
                     )(t, x)[0],
                     1,
@@ -354,7 +348,7 @@ class FPENonStatioLoss2D(PDENonStatio):
                 + grad(
                     lambda t, x: grad(
                         lambda t, x: u_(t, x)
-                        * self.diffusion(t, x, params["eq_params"])[1, 1],
+                        * self.diffusion(t, x, params.eq_params)[1, 1],
                         1,
                     )(t, x)[1],
                     1,
@@ -379,24 +373,20 @@ class FPENonStatioLoss2D(PDENonStatio):
             tangent_vec_0 = jnp.repeat(jnp.array([1.0, 0.0])[None], x.shape[0], axis=0)
             tangent_vec_1 = jnp.repeat(jnp.array([0.0, 1.0])[None], x.shape[0], axis=0)
             _, dau_dx1 = jax.jvp(
-                lambda x: self.drift(t, _get_grid(x), params["eq_params"])[
-                    None, ..., 0:1
-                ]
+                lambda x: self.drift(t, _get_grid(x), params.eq_params)[None, ..., 0:1]
                 * u(t, x, params)[..., 0:1],
                 (x,),
                 (tangent_vec_0,),
             )
             _, dau_dx2 = jax.jvp(
-                lambda x: self.drift(t, _get_grid(x), params["eq_params"])[
-                    None, ..., 1:2
-                ]
+                lambda x: self.drift(t, _get_grid(x), params.eq_params)[None, ..., 1:2]
                 * u(t, x, params)[..., 0:1],
                 (x,),
                 (tangent_vec_1,),
             )
 
             dsu_dx1_fun = lambda x, i, j: jax.jvp(
-                lambda x: self.diffusion(t, _get_grid(x), params["eq_params"], i, j)[
+                lambda x: self.diffusion(t, _get_grid(x), params.eq_params, i, j)[
                     None, None, None, None
                 ]
                 * u(t, x, params)[..., 0:1],
@@ -404,7 +394,7 @@ class FPENonStatioLoss2D(PDENonStatio):
                 (tangent_vec_0,),
             )[1]
             dsu_dx2_fun = lambda x, i, j: jax.jvp(
-                lambda x: self.diffusion(t, _get_grid(x), params["eq_params"], i, j)[
+                lambda x: self.diffusion(t, _get_grid(x), params.eq_params, i, j)[
                     None, None, None, None
                 ]
                 * u(t, x, params)[..., 0:1],
@@ -526,3 +516,197 @@ class OU_FPENonStatioLoss2D_eqx(FPENonStatioLoss2D):
                 jnp.transpose(self.sigma_mat(t, x, eq_params)),
             )[i, j]
         )
+
+
+class MassConservation2DStatio_eqx(PDEStatio):
+    r"""
+    Returns the so-called mass conservation equation.
+
+    .. math::
+        \nabla \cdot \mathbf{u} = \frac{\partial}{\partial x}u(x,y) +
+        \frac{\partial}{\partial y}u(x,y) = 0,
+
+    where :math:`u` is a stationary function, i.e., it does not depend on
+    :math:`t`.
+
+    Parameters
+    ----------
+    nn_key
+        A dictionary key which identifies, in `u_dict` the PINN that
+        appears in the mass conservation equation.
+    eq_params_heterogeneity
+        Default None. A dict with the keys being the same as in eq_params
+        and the value being `time`, `space`, `both` or None which corresponds to
+        the heterogeneity of a given parameter. A value can be missing, in
+        this case there is no heterogeneity (=None). If
+        eq_params_heterogeneity is None this means there is no
+        heterogeneity for no parameters.
+    """
+
+    nn_key: str
+
+    def evaluate(self, x, u_dict, params_dict):
+        r"""
+        Evaluate the dynamic loss at `\mathbf{x}`.
+        For stability we implement the dynamic loss in log space.
+
+        Parameters
+        ---------
+        x
+            A point in :math:`\Omega\subset\mathbb{R}^2`
+        u_dict
+            A dictionary of PINNs. Must have the same keys as `params_dict`
+        params_dict
+            The dictionary of dictionaries of parameters of the model.
+            Typically, each sub-dictionary is a dictionary
+            with keys: `eq_params` and `nn_params``, respectively the
+            differential equation parameters and the neural network parameter.
+            Must have the same keys as `u_dict`
+        """
+        params = _extract_nn_params(params_dict, self.nn_key)
+
+        if isinstance(u_dict[self.nn_key], PINN):
+            u = u_dict[self.nn_key]
+
+            return _div_rev(None, x, u, params)[..., None]
+
+        if isinstance(u_dict[self.nn_key], SPINN):
+            u = u_dict[self.nn_key]
+
+            return _div_fwd(None, x, u, params)[..., None]
+        raise ValueError("u is not among the recognized types (PINN or SPINN)")
+
+
+class NavierStokes2DStatio_eqx(PDEStatio):
+    r"""
+    Return the dynamic loss for all the components of the stationary Navier Stokes
+    equation which is a 2D vectorial PDE.
+
+    .. math::
+       (\mathbf{u}\cdot\nabla)\mathbf{u} + \frac{1}{\rho}\nabla p - \theta
+       \nabla^2\mathbf{u}=0,
+
+
+    or, in 2D,
+
+
+    .. math::
+        \begin{pmatrix}u_x\frac{\partial}{\partial x} u_x + u_y\frac{\partial}{\partial y} u_x \\
+        u_x\frac{\partial}{\partial x} u_y + u_y\frac{\partial}{\partial y} u_y  \end{pmatrix} +
+        \frac{1}{\rho} \begin{pmatrix} \frac{\partial}{\partial x} p \\ \frac{\partial}{\partial y} p \end{pmatrix}
+        - \theta
+        \begin{pmatrix}
+        \frac{\partial^2}{\partial x^2} u_x + \frac{\partial^2}{\partial y^2} u_x \\
+        \frac{\partial^2}{\partial x^2} u_y + \frac{\partial^2}{\partial y^2} u_y
+        \end{pmatrix} = 0,
+
+    with $\theta$ the viscosity coefficient and $\rho$ the density coefficient.
+
+    Parameters
+    ----------
+    u_key
+        A dictionary key which indices in `u_dict`
+        the PINN with the role of the velocity in the equation.
+        Its input is bimensional (points in :math:`\Omega\subset\mathbb{R}^2`).
+        Its output is bimensional as it represents a velocity vector
+        field
+    p_key
+        A dictionary key which indices in `u_dict`
+        the PINN with the role of the pressure in the equation.
+        Its input is bimensional (points in :math:`\Omega\subset\mathbb{R}^2`).
+        Its output is unidimensional as it represents a pressure scalar
+        field
+    eq_params_heterogeneity
+        Default None. A dict with the keys being the same as in eq_params
+        and the value being `time`, `space`, `both` or None which corresponds to
+        the heterogeneity of a given parameter. A value can be missing, in
+        this case there is no heterogeneity (=None). If
+        eq_params_heterogeneity is None this means there is no
+        heterogeneity for no parameters.
+    """
+
+    u_key: dict[str, eqx.Module]
+    p_key: dict[str, eqx.Module]
+
+    def evaluate(self, x, u_dict, params_dict):
+        r"""
+        Evaluate the dynamic loss at `\mathbf{x}`.
+        For stability we implement the dynamic loss in log space.
+
+        Parameters
+        ---------
+        x
+            A point in :math:`\Omega\subset\mathbb{R}^2`
+        u_dict
+            A dictionary of PINNs. Must have the same keys as `params_dict`
+        params_dict
+            The dictionary of dictionaries of parameters of the model.
+            Typically, each sub-dictionary is a dictionary
+            with keys: `eq_params` and `nn_params``, respectively the
+            differential equation parameters and the neural network parameter.
+            Must have the same keys as `u_dict`
+        """
+        u_params = _extract_nn_params(params_dict, self.u_key)
+        p_params = _extract_nn_params(params_dict, self.p_key)
+
+        if isinstance(u_dict[self.u_key], PINN):
+            u = u_dict[self.u_key]
+
+            u_dot_nabla_x_u = _u_dot_nabla_times_u_rev(None, x, u, u_params)
+
+            p = lambda x: u_dict[self.p_key](x, p_params)
+            jac_p = jax.jacrev(p, 0)(x)  # compute the gradient
+
+            vec_laplacian_u = _vectorial_laplacian(None, x, u, u_params, u_vec_ndim=2)
+
+            # dynamic loss on x axis
+            result_x = (
+                u_dot_nabla_x_u[0]
+                + 1 / params_dict.eq_params["rho"] * jac_p[0, 0]
+                - params_dict.eq_params["nu"] * vec_laplacian_u[0]
+            )
+
+            # dynamic loss on y axis
+            result_y = (
+                u_dot_nabla_x_u[1]
+                + 1 / params_dict.eq_params["rho"] * jac_p[0, 1]
+                - params_dict.eq_params["nu"] * vec_laplacian_u[1]
+            )
+
+            # output is 2D
+            return jnp.stack([result_x, result_y], axis=-1)
+
+        if isinstance(u_dict[self.u_key], SPINN):
+            u = u_dict[self.u_key]
+
+            u_dot_nabla_x_u = _u_dot_nabla_times_u_fwd(None, x, u, u_params)
+
+            p = lambda x: u_dict[self.p_key](x, p_params)
+
+            tangent_vec_0 = jnp.repeat(jnp.array([1.0, 0.0])[None], x.shape[0], axis=0)
+            _, dp_dx = jax.jvp(p, (x,), (tangent_vec_0,))
+            tangent_vec_1 = jnp.repeat(jnp.array([0.0, 1.0])[None], x.shape[0], axis=0)
+            _, dp_dy = jax.jvp(p, (x,), (tangent_vec_1,))
+
+            vec_laplacian_u = jnp.moveaxis(
+                _vectorial_laplacian(None, x, u, u_params, u_vec_ndim=2),
+                source=0,
+                destination=-1,
+            )
+
+            # dynamic loss on x axis
+            result_x = (
+                u_dot_nabla_x_u[..., 0]
+                + 1 / params_dict.eq_params["rho"] * dp_dx.squeeze()
+                - params_dict.eq_params["nu"] * vec_laplacian_u[..., 0]
+            )
+            # dynamic loss on y axis
+            result_y = (
+                u_dot_nabla_x_u[..., 1]
+                + 1 / params_dict.eq_params["rho"] * dp_dy.squeeze()
+                - params_dict.eq_params["nu"] * vec_laplacian_u[..., 1]
+            )
+
+            # output is 2D
+            return jnp.stack([result_x, result_y], axis=-1)
+        raise ValueError("u is not among the recognized types (PINN or SPINN)")

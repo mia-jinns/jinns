@@ -105,14 +105,18 @@ def train_Burger_init_sharding():
     )
 
     nu = 1 / (100 * jnp.pi)
-    init_params = {"nn_params": init_nn_params, "eq_params": {"nu": nu}}
+    init_params = jinns.parameters.Params(
+        nn_params=init_nn_params, eq_params={"nu": nu}
+    )
 
     def u0(x):
         return -jnp.sin(jnp.pi * x)
 
     be_loss = jinns.loss.BurgerEquation_eqx(Tmax=Tmax)
 
-    loss_weights = {"dyn_loss": 1, "initial_condition": 5, "boundary_loss": 1}
+    loss_weights = jinns.loss.LossWeightsPDENonStatio(
+        dyn_loss=1, initial_condition=5, boundary_loss=1
+    )
 
     loss = jinns.loss.LossPDENonStatio_eqx(
         u=u,
@@ -235,14 +239,18 @@ def train_Burger_init_no_sharding():
     )
 
     nu = 1 / (100 * jnp.pi)
-    init_params = {"nn_params": init_nn_params, "eq_params": {"nu": nu}}
+    init_params = jinns.parameters.Params(
+        nn_params=init_nn_params, eq_params={"nu": nu}
+    )
 
     def u0(x):
         return -jnp.sin(jnp.pi * x)
 
     be_loss = jinns.loss.BurgerEquation_eqx(Tmax=Tmax)
 
-    loss_weights = {"dyn_loss": 1, "initial_condition": 5, "boundary_loss": 1}
+    loss_weights = jinns.loss.LossWeightsPDENonStatio(
+        dyn_loss=1, initial_condition=5, boundary_loss=1
+    )
 
     loss = jinns.loss.LossPDENonStatio_eqx(
         u=u,
