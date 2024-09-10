@@ -2,11 +2,12 @@
 Implements utility function to create PINNs
 """
 
-from typing import Callable
 import jax
 import jax.numpy as jnp
-from jax.typing import ArrayLike
 import equinox as eqx
+
+from typing import Callable
+from jaxtyping import Array
 
 
 class _MLP(eqx.Module):
