@@ -28,11 +28,12 @@ from jinns.loss._operators import (
 
 class FisherKPP_eqx(PDENonStatio):
     r"""
-    Return the Fisher KPP dynamic loss term. Dimension of :math:`x` can be
+    Return the Fisher KPP dynamic loss term. Dimension of $x$ can be
     arbitrary
 
-    .. math::
-        \frac{\partial}{\partial t} u(t,x)=D\Delta u(t,x) + u(t,x)(r(x) - \gamma(x)u(t,x))
+    $$
+    \frac{\partial}{\partial t} u(t,x)=D\Delta u(t,x) + u(t,x)(r(x) - \gamma(x)u(t,x))
+    $$
 
     Parameters
     ----------
