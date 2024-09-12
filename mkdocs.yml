@@ -41,28 +41,28 @@ plugins:
     - mknotebooks  # Jupyter notebooks
     - mkdocstrings:
         handlers:
-            python:
-                options:
-                    docstring_style: numpy
-                    show_root_heading: true
-                setup_commands:
-                    - import pytkdocs_tweaks
-                    - pytkdocs_tweaks.main()
-                    - import jaxtyping
-                    - jaxtyping.set_array_name_format("array")
-                    - import jax
-                    - jax.ShapeDtypeStruct.__module__ = "jax"
-                    - jax.core.ClosedJaxpr.__module__ = "jax.core"
-                selection:
-                    inherited_members: true  # Allow looking up inherited methods
-                rendering:
-                    show_root_heading: true  # actually display anything at all...
-                    show_root_full_path: true  # display "jinns.abcd" not just "abcd"
-                    show_if_no_docstring: true
-                    show_signature_annotations: true
-                    show_source: false  # don't include source code
-                    members_order: source  # order methods according to their order of definition in the source code, not alphabetical order
-                    heading_level: 4
+          python:
+            options:
+                docstring_style: numpy
+                show_root_heading: true
+                show_source: false  # don't include source code
+            setup_commands:
+                - import pytkdocs_tweaks
+                - pytkdocs_tweaks.main()
+                - import jaxtyping
+                - jaxtyping.set_array_name_format("array")
+                - import jax
+                - jax.ShapeDtypeStruct.__module__ = "jax"
+                - jax.core.ClosedJaxpr.__module__ = "jax.core"
+            selection:
+                inherited_members: true  # Allow looking up inherited methods
+            rendering:
+                show_root_heading: true  # actually display anything at all...
+                show_root_full_path: true  # display "jinns.abcd" not just "abcd"
+                show_if_no_docstring: true
+                show_signature_annotations: true
+                members_order: source  # order methods according to their order of definition in the source code, not alphabetical order
+                heading_level: 4
 
 
 
@@ -101,7 +101,7 @@ nav:
     - Basic API:
       - Loss:
         - Dynamic loss: 'api/loss/dynamic_loss.md'
-        - Total loss: 'api/loss/loss_(x)de.md'
+        - Total loss: 'api/loss/loss_xde.md'
       - Networks:
         - 'api/pinn/pinn.md'
         - 'api/pinn/spinn.md'
