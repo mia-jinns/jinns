@@ -102,10 +102,10 @@ def train_OU_init():
     alpha = 0.5 * jnp.ones((2))
     mu = jnp.zeros((2))
 
-    init_params = {
-        "nn_params": init_nn_params,
-        "eq_params": {"sigma": sigma, "alpha": alpha, "mu": mu},
-    }
+    init_params = jinns.parameters.Params(
+        nn_params=init_nn_params,
+        eq_params={"sigma": sigma, "alpha": alpha, "mu": mu},
+    )
 
     def u0(x):
         return multivariate_normal.pdf(x, mean=jnp.array([1, 1]), cov=0.1 * jnp.eye(2))
@@ -128,11 +128,11 @@ def train_OU_init():
         axis=-1,
     )
 
-    loss_weights = {
-        "dyn_loss": 1,
-        "initial_condition": 1 * Tmax,
-        "norm_loss": 0.1 * Tmax,
-    }
+    loss_weights = jinns.loss.LossWeightsPDENonStatio(
+        dyn_loss=1.0,
+        initial_condition=1 * Tmax,
+        norm_loss=0.1 * Tmax,
+    )
     OU_fpe_non_statio_2D_loss = jinns.loss.OU_FPENonStatioLoss2D_eqx(Tmax=Tmax)
 
     # Catching an expected UserWarning since no border condition is given
@@ -174,9 +174,7 @@ def train_OU_10it(train_OU_init):
 def test_initial_loss_OU(train_OU_init):
     init_params, loss, train_data = train_OU_init
     _, batch = train_data.get_batch()
-    print(batch)
     l_init, all = loss.evaluate(init_params, batch)
-    print(all)
     assert jnp.allclose(l_init, 3924.7366, atol=1e-1)
 
 

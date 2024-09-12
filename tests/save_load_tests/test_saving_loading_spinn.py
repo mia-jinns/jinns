@@ -27,7 +27,7 @@ def save_reload(tmpdir):
     u = jinns.utils.create_SPINN(subkey, d, r, eqx_list, "nonstatio_PDE")
 
     params = u.init_params()
-    params = {"nn_params": params, "eq_params": {}}
+    params = jinns.parameters.Params(nn_params=params, eq_params={})
 
     # Save
     filename = str(tmpdir.join("test"))

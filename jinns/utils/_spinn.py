@@ -105,7 +105,7 @@ class SPINN(eqx.Module):
         if self.eq_type == "statio_PDE":
             (x, params) = args
             try:
-                spinn = eqx.combine(params["nn_params"], self.static)
+                spinn = eqx.combine(params.nn_params, self.static)
             except (KeyError, TypeError) as e:
                 spinn = eqx.combine(params, self.static)
             v_model = jax.vmap(spinn, (0))
@@ -114,7 +114,7 @@ class SPINN(eqx.Module):
         if self.eq_type == "nonstatio_PDE":
             (t, x, params) = args
             try:
-                spinn = eqx.combine(params["nn_params"], self.static)
+                spinn = eqx.combine(params.nn_params, self.static)
             except (KeyError, TypeError) as e:
                 spinn = eqx.combine(params, self.static)
             v_model = jax.vmap(spinn, ((0, 0)))

@@ -96,12 +96,12 @@ class HYPERPINN(PINN):
         call _eval_nn which always have the same content.
         """
         try:
-            hyper = eqx.combine(params["nn_params"], self.static_hyper)
+            hyper = eqx.combine(params.nn_params, self.static_hyper)
         except (KeyError, TypeError) as e:  # give more flexibility
             hyper = eqx.combine(params, self.static_hyper)
 
         eq_params_batch = jnp.concatenate(
-            [params["eq_params"][k].flatten() for k in self.hyperparams], axis=0
+            [params.eq_params[k].flatten() for k in self.hyperparams], axis=0
         )
 
         hyper_output = hyper(eq_params_batch)

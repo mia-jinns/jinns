@@ -92,14 +92,15 @@ def train_NSPipeFlow_init():
     d = 2 * R
 
     # initiate parameters dictionary
-    init_params = {}
-    init_params["nn_params"] = {"u": u_init_nn_params, "p": p_init_nn_params}
-    init_params["eq_params"] = {"rho": rho, "nu": nu}
+    init_params = jinns.parameters.ParamsDict(
+        nn_params={"u": u_init_nn_params, "p": p_init_nn_params},
+        eq_params={"rho": rho, "nu": nu},
+    )
 
-    mc_loss = jinns.loss.MassConservation2DStatio(nn_key="u")
-    ns_loss = jinns.loss.NavierStokes2DStatio(u_key="u", p_key="p")
+    mc_loss = jinns.loss.MassConservation2DStatio_eqx(nn_key="u")
+    ns_loss = jinns.loss.NavierStokes2DStatio_eqx(u_key="u", p_key="p")
 
-    loss_weights = {"dyn_loss": 1.0}
+    loss_weights = jinns.loss.LossWeightsPDEDict(dyn_loss=1.0)
 
     # Catching an expected UserWarning since no border condition is given
     # for this specific PDE (Fokker-Planck).
@@ -130,9 +131,7 @@ def train_NSPipeFlow_10it(train_NSPipeFlow_init):
 
     tx = optax.adam(learning_rate=1e-4)
     n_iter = 10
-    # Note that as opposed to the non _eqx version of this test, there is no
-    # more warning to catch here since we will have one and only one class init
-    # since we do not use tree_flatten / tree_unflatten anymore!
+
     params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _ = jinns.solve(
         init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
     )

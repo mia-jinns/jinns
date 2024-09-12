@@ -3,35 +3,50 @@
 Define the DataGeneratorODE equinox module
 """
 
+from typing import Union, NamedTuple
 from dataclasses import InitVar
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jaxtyping import Key, Int, PyTree, Array, Float, Bool
-from typing import Union, NamedTuple
-from jinns.data._DataGenerators import ODEBatch, PDENonStatioBatch, PDEStatioBatch
+
 
 # TODO ? change to eqx.Module, but this require an update of all the _replace()
 # calls
-# class ODEBatch(NamedTuple):  # eqx.Module):
-#    temporal_batch: Array
-#    param_batch_dict: dict = None
-#    obs_batch_dict: dict = None
-#
-#
-# class PDENonStatioBatch(NamedTuple):  # eqx.Module):
-#    inside_batch: Array
-#    border_batch: Array
-#    temporal_batch: Array
-#    param_batch_dict: dict = None
-#    obs_batch_dict: dict = None
-#
-#
-# class PDEStatioBatch(NamedTuple):  # eqx.Module):
-#    inside_batch: Array
-#    border_batch: Array
-#    param_batch_dict: dict = None
-#    obs_batch_dict: dict = None
+class ODEBatch(NamedTuple):
+    temporal_batch: Array
+    param_batch_dict: dict = None
+    obs_batch_dict: dict = None
+
+
+class PDENonStatioBatch(NamedTuple):
+    times_x_inside_batch: Array
+    times_x_border_batch: Array
+    param_batch_dict: dict = None
+    obs_batch_dict: dict = None
+
+
+class PDEStatioBatch(NamedTuple):
+    inside_batch: Array
+    border_batch: Array
+    param_batch_dict: dict = None
+    obs_batch_dict: dict = None
+
+
+def append_param_batch(batch, param_batch_dict):
+    """
+    Utility function that fill the param_batch_dict of a batch object with a
+    param_batch_dict
+    """
+    return batch._replace(param_batch_dict=param_batch_dict)
+
+
+def append_obs_batch(batch, obs_batch_dict):
+    """
+    Utility function that fill the obs_batch_dict of a batch object with a
+    obs_batch_dict
+    """
+    return batch._replace(obs_batch_dict=obs_batch_dict)
 
 
 def make_cartesian_product(b1: Array, b2: Array) -> Array:
@@ -557,7 +572,6 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
                 key, subkeys = jax.random.split(key, 2)
             else:
                 key, *subkeys = jax.random.split(key, self.dim + 1)
-            print("key to sample omega", subkeys)
             omega = self.sample_in_omega_domain(subkeys)
         else:
             raise ValueError("Method " + self.method + " is not implemented.")
@@ -603,7 +617,6 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
             lambda m: (m.key, m.omega, m.curr_omega_idx), self, new_attributes
         )
 
-        print("idx of omega batch", new.curr_omega_idx)
         return new, jax.lax.dynamic_slice(
             new.omega,
             start_indices=(new.curr_omega_idx, 0),
@@ -807,7 +820,6 @@ class CubicMeshPDENonStatio_eqx(CubicMeshPDEStatio_eqx):
         # see explaination in DataGeneratorODE_eqx for the key
 
     def sample_in_time_domain(self, key: Key, sample_size: Int = None) -> Array:
-        print("key to sample times", key)
         return jax.random.uniform(
             key,
             (self.nt if sample_size is None else sample_size,),
@@ -862,8 +874,6 @@ class CubicMeshPDENonStatio_eqx(CubicMeshPDEStatio_eqx):
             lambda m: (m.key, m.times, m.curr_time_idx), self, new_attributes
         )
 
-        # print(new.times)
-        print("idx of time batch", new.curr_time_idx)
         return new, jax.lax.dynamic_slice(
             new.times,
             start_indices=(new.curr_time_idx,),

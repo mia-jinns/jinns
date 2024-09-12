@@ -11,8 +11,11 @@ class DynamicLoss(eqx.Module):
     r"""
     Abstract base class for dynamic losses whose aim is to implement the term:
 
-    .. math::
+    $$
         \mathcal{N}[u](t, x) = 0
+    $$
+
+    for **one** point $t$, $x$ or $(t, x)$, depending on the context.
 
     Parameters
     ----------
@@ -21,17 +24,18 @@ class DynamicLoss(eqx.Module):
         [0, 1], ie. we have performed renormalization of the differential
         equation
     eq_params_heterogeneity
-        Default None. A dict with the keys being the same as in eq_params
-        and the value being either None (no heterogeneity) or a function
-        which encodes for the spatio-temporal heterogeneity of the parameter.
+        A dict with the same keys as eq_params and the value being either None
+        (no heterogeneity) or a function which encodes for the spatio-temporal
+        heterogeneity of the parameter.
         Such a function must be jittable and take four arguments `t`, `x`,
-        `u` and `params` even if one is not used. Therefore,
+        `u` and `params` even if some are not used. Therefore,
         one can introduce spatio-temporal covariates upon which a particular
-        parameter can depend, e.g. in a GLM fashion. The effect of these
-        covariables can themselves be estimated by being in `eq_params` too.
+        parameter can depend, e.g. in a Generalized Linear Model fashion. The
+        effect of these covariates can themselves be estimated by being in
+        `eq_params` too.
         A value can be missing, in this case there is no heterogeneity (=None).
-        If eq_params_heterogeneity is None this means there is no
-        heterogeneity for no parameters.
+        Default None, meaning there is no heterogeneity in the equation
+        parameters.
     """
 
     Tmax: Float = eqx.field(kw_only=True, default=1)
@@ -43,8 +47,8 @@ class DynamicLoss(eqx.Module):
     def _eval_heterogeneous_parameters(t, x, u, params, eq_params_heterogeneity=None):
         eq_params_ = {}
         if eq_params_heterogeneity is None:
-            return params["eq_params"]
-        for k, p in params["eq_params"].items():
+            return params.eq_params
+        for k, p in params.eq_params.items():
             try:
                 if eq_params_heterogeneity[k] is None:
                     eq_params_[k] = p
@@ -104,14 +108,13 @@ class ODE(DynamicLoss):
 
         def wrapper(*args):
             self, t, u, params = args
-            # avoid side effect with in-place modif of param["eq_params"]
-            # TODO NamedTuple for params and use _replace() see Issue 1
-            _params = {
-                "nn_params": params["nn_params"],
-                "eq_params": self.eval_heterogeneous_parameters(
+            _params = eqx.tree_at(
+                lambda p: p.eq_params,
+                params,
+                self.eval_heterogeneous_parameters(
                     t, u, params, self.eq_params_heterogeneity
                 ),
-            }
+            )
             new_args = args[:-1] + (_params,)
             res = evaluate(*new_args)
             return res
@@ -121,26 +124,7 @@ class ODE(DynamicLoss):
 
 class PDEStatio(DynamicLoss):
     r"""
-    Abstract base class for PDE statio dynamic losses
-
-    Parameters
-    ----------
-    Tmax
-        Tmax needs to be given when the PINN time input is normalized in
-        [0, 1], ie. we have performed renormalization of the differential
-        equation
-    eq_params_heterogeneity
-        Default None. A dict with the keys being the same as in eq_params
-        and the value being either None (no heterogeneity) or a function
-        which encodes for the spatio-temporal heterogeneity of the parameter.
-        Such a function must be jittable and take four arguments `t`, `x`,
-        `u` and `params` even if one is not used. Therefore,
-        one can introduce spatio-temporal covariates upon which a particular
-        parameter can depend, e.g. in a GLM fashion. The effect of these
-        covariables can themselves be estimated by being in `eq_params` too.
-        A value can be missing, in this case there is no heterogeneity (=None).
-        If eq_params_heterogeneity is None this means there is no
-        heterogeneity for no parameters.
+    Abstract base class for stationnary PDE dynamic losses
     """
 
     def eval_heterogeneous_parameters(self, x, u, params, eq_params_heterogeneity=None):
@@ -159,14 +143,13 @@ class PDEStatio(DynamicLoss):
 
         def wrapper(*args):
             self, x, u, params = args
-            # avoid side effect with in-place modif of param["eq_params"]
-            # TODO NamedTuple for params and use _replace() see Issue 1
-            _params = {
-                "nn_params": params["nn_params"],
-                "eq_params": self.eval_heterogeneous_parameters(
+            _params = eqx.tree_at(
+                lambda p: p.eq_params,
+                params,
+                self.eval_heterogeneous_parameters(
                     x, u, params, self.eq_params_heterogeneity
                 ),
-            }
+            )
             new_args = args[:-1] + (_params,)
             res = evaluate(*new_args)
             return res
@@ -176,26 +159,7 @@ class PDEStatio(DynamicLoss):
 
 class PDENonStatio(DynamicLoss):
     r"""
-    Abstract base class for PDE Non statio dynamic losses
-
-    Parameters
-    ----------
-    Tmax
-        Tmax needs to be given when the PINN time input is normalized in
-        [0, 1], ie. we have performed renormalization of the differential
-        equation
-    eq_params_heterogeneity
-        Default None. A dict with the keys being the same as in eq_params
-        and the value being either None (no heterogeneity) or a function
-        which encodes for the spatio-temporal heterogeneity of the parameter.
-        Such a function must be jittable and take four arguments `t`, `x`,
-        `u` and `params` even if one is not used. Therefore,
-        one can introduce spatio-temporal covariates upon which a particular
-        parameter can depend, e.g. in a GLM fashion. The effect of these
-        covariables can themselves be estimated by being in `eq_params` too.
-        A value can be missing, in this case there is no heterogeneity (=None).
-        If eq_params_heterogeneity is None this means there is no
-        heterogeneity for no parameters.
+    Abstract base class for non-stationnary PDE dynamic losses
     """
 
     def eval_heterogeneous_parameters(
@@ -216,14 +180,13 @@ class PDENonStatio(DynamicLoss):
 
         def wrapper(*args):
             self, t, x, u, params = args
-            # avoid side effect with in-place modif of param["eq_params"]
-            # TODO NamedTuple for params and use _replace() see Issue 1
-            _params = {
-                "nn_params": params["nn_params"],
-                "eq_params": self.eval_heterogeneous_parameters(
+            _params = eqx.tree_at(
+                lambda p: p.eq_params,
+                params,
+                self.eval_heterogeneous_parameters(
                     t, x, u, params, self.eq_params_heterogeneity
                 ),
-            }
+            )
             new_args = args[:-1] + (_params,)
             res = evaluate(*new_args)
             return res

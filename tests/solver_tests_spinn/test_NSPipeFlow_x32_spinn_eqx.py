@@ -64,16 +64,16 @@ def train_NSPipeFlow_init():
 
     method = "uniform"
     key, subkey = random.split(key)
-    train_data = jinns.data.CubicMeshPDEStatio(
-        subkey,
-        n,
-        nb,
-        omega_batch_size,
-        omega_border_batch_size,
-        dim,
-        (xmin, ymin),
-        (xmax, ymax),
-        method,
+    train_data = jinns.data.CubicMeshPDEStatio_eqx(
+        key=subkey,
+        n=n,
+        nb=nb,
+        omega_batch_size=omega_batch_size,
+        omega_border_batch_size=omega_border_batch_size,
+        dim=dim,
+        min_pts=(xmin, ymin),
+        max_pts=(xmax, ymax),
+        method=method,
     )
 
     rho = 1.0
@@ -83,9 +83,10 @@ def train_NSPipeFlow_init():
     d = 2 * R
 
     # initiate parameters dictionary
-    init_params = {}
-    init_params["nn_params"] = {"u": u_init_nn_params, "p": p_init_nn_params}
-    init_params["eq_params"] = {"rho": rho, "nu": nu}
+    init_params = jinns.parameters.Params(
+        nn_params={"u": u_init_nn_params, "p": p_init_nn_params},
+        eq_params={"rho": rho, "nu": nu},
+    )
 
     p_omega_boundary_fun = {
         "xmin": lambda x: p_in,
@@ -112,15 +113,14 @@ def train_NSPipeFlow_init():
         "ymin": "dirichlet",
         "ymax": "dirichlet",
     }
-    mc_loss = jinns.loss.MassConservation2DStatio(nn_key="u")
-    ns_loss = jinns.loss.NavierStokes2DStatio(u_key="u", p_key="p")
-    loss_weights = {"dyn_loss": 1.0, "boundary_loss": 1.0}
+    mc_loss = jinns.loss.MassConservation2DStatio_eqx(nn_key="u")
+    ns_loss = jinns.loss.NavierStokes2DStatio_eqx(u_key="u", p_key="p")
+    loss_weights = jinns.loss.LossWeightsPDEDict(dyn_loss=1, boundary_loss=1)
 
-    loss = jinns.loss.SystemLossPDE(
+    loss = jinns.loss.SystemLossPDE_eqx(
         u_dict={"u": u, "p": p},
         loss_weights=loss_weights,
         dynamic_loss_dict={"mass_conservation": mc_loss, "navier_stokes": ns_loss},
-        nn_type_dict={"u": "nn_statio", "p": "nn_statio"},
         omega_boundary_fun_dict={"u": u_omega_boundary_fun, "p": p_omega_boundary_fun},
         omega_boundary_condition_dict={
             "u": u_omega_boundary_condition,
@@ -140,7 +140,7 @@ def train_NSPipeFlow_10it(train_NSPipeFlow_init):
 
     # NOTE we need to waste one get_batch() here to stay synchronized with the
     # notebook
-    _ = loss.evaluate(init_params, train_data.get_batch())[0]
+    train_data, _ = train_data.get_batch()
 
     params = init_params
 
@@ -156,7 +156,7 @@ def test_initial_loss_NSPipeFlow(train_NSPipeFlow_init):
     init_params, loss, train_data = train_NSPipeFlow_init
 
     assert jnp.allclose(
-        loss.evaluate(init_params, train_data.get_batch())[0], 0.10145999, atol=1e-1
+        loss.evaluate(init_params, train_data.get_batch()[1])[0], 0.10145999, atol=1e-1
     )
 
 
