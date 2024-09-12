@@ -32,24 +32,30 @@ class ParamsDict(eqx.Module):
 
     Parameters
     ----------
-    nn_params
-        XXX
-    eq_params
-        A dictionary of the equation parameters. Keys are the parameter name,
-        values are their corresponding value
+    nn_params: Dict[str, PyTree]
+        The neural network's parameters. Most of the time, it will be the
+        Array part of an `eqx.Module` obtained by
+        `eqx.partition(module, eqx.is_inexact_array)`.
+    eq_params: Dict[str, Array]
+        A dictionary of the equation parameters. Dict keys are the parameter name as defined your custom loss.
     """
 
-    nn_params: dict[str, PyTree] = eqx.field(kw_only=True)
-    eq_params: dict[str, Array] = eqx.field(kw_only=True)
+    nn_params: Dict[str, PyTree] = eqx.field(kw_only=True)
+    eq_params: Dict[str, Array] = eqx.field(kw_only=True)
 
 
-def _update_eq_params_dict(params, param_batch_dict):
+def _update_eq_params_dict(params: Params, param_batch_dict: Dict[str, Array]):
     """
-    update params.eq_params with a batch of eq_params for given key(s)
+    Update params.eq_params with a batch of eq_params for given key(s)
     """
+
+    # artificially "complete" `param_batch_dict` with None to match `params`
+    # PyTree  structure
     param_batch_dict_ = param_batch_dict | {
         k: None for k in set(params.eq_params.keys()) - set(param_batch_dict.keys())
     }
+
+    # Replace at non None leafs
     params = eqx.tree_at(
         lambda p: p.eq_params,
         params,
@@ -64,7 +70,7 @@ def _update_eq_params_dict(params, param_batch_dict):
 
 
 def _get_vmap_in_axes_params(
-    eq_params_batch_dict: Dict[Array], params: Params
+    eq_params_batch_dict: Dict[str, Array], params: Params
 ) -> tuple:
     """
     Return the input vmap axes when there is batch(es) of parameters to vmap
