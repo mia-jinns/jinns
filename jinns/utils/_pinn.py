@@ -57,9 +57,8 @@ class _MLP(eqx.Module):
 
 class PINN(eqx.Module):
     """
-    Basically a wrapper around the `__call__` function to be able to give a type to
-    our former `self.u`
-    The function create_PINN has the role to population the `__call__` function
+    Basically a wrapper around the `__call__` function to be able to give a type to our former `self.u`
+    The function create_PINN has the role to populate the `__call__` function
     """
 
     slice_solution: slice = eqx.field(static=True)

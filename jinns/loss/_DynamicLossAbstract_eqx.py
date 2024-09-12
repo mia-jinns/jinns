@@ -9,12 +9,10 @@ from jaxtyping import Float
 
 class DynamicLoss(eqx.Module):
     r"""
-    Abstract base class for dynamic losses whose aim is to implement the term:
-
+    Abstract base class for dynamic losses. Implements the physical term:
     $$
         \mathcal{N}[u](t, x) = 0
     $$
-
     for **one** point $t$, $x$ or $(t, x)$, depending on the context.
 
     Parameters
@@ -72,7 +70,7 @@ class ODE(DynamicLoss):
     r"""
     Abstract base class for ODE dynamic losses
 
-    Parameters
+    Attributes
     ----------
     Tmax
         Tmax needs to be given when the PINN time input is normalized in
