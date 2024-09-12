@@ -8,48 +8,53 @@ import matplotlib.pyplot as plt
 import jax.numpy as jnp
 from jax import vmap
 from mpl_toolkits.axes_grid1 import ImageGrid
+from typing import Callable, List, Union
+from jaxtyping import Array, Float
 
 
 def plot2d(
-    fun,
-    xy_data,
-    times=None,
-    Tmax=1,
-    title="",
-    figsize=(7, 7),
-    cmap="inferno",
-    spinn=False,
-    vmin_vmax=None,
-    ax_for_plot=None,
+    fun: Callable,
+    xy_data: List,
+    times: Union[Array, List, None] = None,
+    Tmax: float = 1,
+    title: str = "",
+    figsize: tuple = (7, 7),
+    cmap: str = "inferno",
+    spinn: bool = False,
+    vmin_vmax: Union[None, tuple] = None,
+    ax_for_plot: Union[None, plt.Axes] = None,
 ):
     r"""Generic function for plotting functions over rectangular 2-D domains
-    :math:`\Omega`. It treats both the stationary case :math:`u(x)` or the
-    non-stationnary case :math:`u(t, x)`.
+    $\Omega$. It handles both the
+
+     1. the stationary case $u(x)$
+     2. the non-stationnary case $u(t, x)$
 
     When in the non-stationnary case, the `times` argument gives the time
-    slices :math:`t_i` at which to plot :math:`u(t_i, x)`.
+    slices $t_i$ at which to plot $u(t_i, x)$.
 
 
     Parameters
     ----------
-    fun : _type_
-        _description_
-    xy_data : _type_
-        _description_
-    times : _type_, optional
-        _description_, by default None
-    Tmax : float, only in non-stationary cases
-        Useful if you used time re-scaling in the differential equation, by
-        default 1
-    title : str, optional
+    fun :
+        the function $u$ to plot on the meshgrid, and eventually the time
+        slices. It's suppose to have signature `u(x)` in the stationnary case,, and `u(t, x)` in the non-stationnary case. Use `partial` or `lambda to freeze / reorder any other arguments.
+    xy_data :
+        A list of 2 `jnp.Array` providing
+    times :
+        list or Array of time slices where to plot the function. Use Tmax if
+        you trained with time-rescaling.
+    Tmax :
+        Useful if you used time rescaling in the differential equation for training, default to 1 (no rescaling).
+    title :
         plot title, by default ""
     figsize : tuple, optional
         _description_, by default (7, 7)
-    cmap : str, optional
-        _description_, by default "inferno"
-    vmin_vmax : tuple, optional
+    cmap :
+        the matplotlib color map used in the ImageGrid.
+    vmin_vmax :
         The colorbar minimum and maximum value. Defaults None.
-    ax_for_plot : Matplotlib axis, optional
+    ax_for_plot :
         If None, jinns triggers the plotting. Otherwise this argument
         corresponds to the axis which will host the plot. Default is None.
         NOTE: that this argument will have an effect only if times is None.
@@ -57,7 +62,7 @@ def plot2d(
     Raises
     ------
     ValueError
-        if xy_data is not a list of type 2
+        if xy_data is not a list of length 2
     """
 
     # if not isinstance(xy_data, jnp.ndarray) and not xy_data.shape[-1] == 2:

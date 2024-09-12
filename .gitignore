@@ -27,3 +27,6 @@ doc/build/
 doc/source/fokker_planck.rst
 doc/source/math_pinn.rst
 doc/source/param_estim_pinn.rst
+
+# MkDocs build
+site/

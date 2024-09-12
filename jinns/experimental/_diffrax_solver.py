@@ -100,16 +100,16 @@ def reaction_diffusion_2d_vector_field(
     r"""
     Matrix stencil implementation of the reaction-diffusion equation using
     finite differences. See e.g. Section 2.6.1 of
-    https://hplgit.github.io/fdm-book/doc/pub/book/pdf/fdm-book-4screen.pdf
+    <https://hplgit.github.io/fdm-book/doc/pub/book/pdf/fdm-book-4screen.pdf>
 
     The reaction-diffusion equation is
 
-    .. math::
+    $$
         \partial_t u = D \Delta u + r u (1-u).
-
+    $$
     In diffrax, the `vector_field` is the derivative of the function y with
-    respect to time `t` in the ODE :math:`y'(t) = F(y(t), t)`. Here it does not
-    depend on `t`.
+    respect to time `t` in the ODE $y'(t) = F(y(t), t)$. Here it does not
+    depend on $t$.
     """
     D, r = args
 
