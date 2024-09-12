@@ -12,14 +12,14 @@ import jax.numpy as jnp
 from jax import vmap
 import equinox as eqx
 from jaxtyping import Float, Array, Int
-from jinns.data._DataGenerators_eqx import ODEBatch
+from jinns.data._DataGenerators import ODEBatch
 from jinns.loss._Losses import (
     dynamic_loss_apply,
     constraints_system_loss_apply,
     observations_loss_apply,
 )
 from jinns.utils._pinn import PINN
-from jinns.loss._DynamicLossAbstract_eqx import ODE
+from jinns.loss._DynamicLossAbstract import ODE
 from jinns.loss._loss_weights import LossWeightsODE, LossWeightsODEDict
 from jinns.parameters._params import (
     Params,
@@ -29,7 +29,7 @@ from jinns.parameters._params import (
 from jinns.parameters._derivative_keys import DerivativeKeysODE, _set_derivatives
 
 
-class _LossODEAbstract_eqx(eqx.Module):
+class _LossODEAbstract(eqx.Module):
     """
     Parameters
     ----------
@@ -90,7 +90,7 @@ class _LossODEAbstract_eqx(eqx.Module):
         raise NotImplementedError
 
 
-class LossODE_eqx(_LossODEAbstract_eqx):
+class LossODE(_LossODEAbstract):
     r"""Loss object for an ordinary differential equation
 
     .. math::
@@ -240,7 +240,7 @@ class LossODE_eqx(_LossODEAbstract_eqx):
         )
 
 
-class SystemLossODE_eqx(eqx.Module):
+class SystemLossODE(eqx.Module):
     r"""
     Class to implement a system of ODEs.
     The goal is to give maximum freedom to the user. The class is created with
@@ -362,7 +362,7 @@ class SystemLossODE_eqx(eqx.Module):
         # LossODE class without dynamic loss term
         self.u_constraints_dict = {}
         for i in self.u_dict.keys():
-            self.u_constraints_dict[i] = LossODE_eqx(
+            self.u_constraints_dict[i] = LossODE(
                 u=self.u_dict[i],
                 loss_weights=LossWeightsODE(
                     dyn_loss=0.0,

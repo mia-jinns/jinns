@@ -11,14 +11,14 @@ import jax.numpy as jnp
 from jaxtyping import Array, Bool, PyTree, Int
 import jinns
 import jinns.data
-from jinns.loss import LossODE_eqx, LossPDENonStatio_eqx, LossPDEStatio_eqx
-from jinns.data._DataGenerators_eqx import (
-    DataGeneratorODE_eqx,
-    CubicMeshPDEStatio_eqx,
-    CubicMeshPDENonStatio_eqx,
-    DataGeneratorParameter_eqx,
-    DataGeneratorObservations_eqx,
-    DataGeneratorObservationsMultiPINNs_eqx,
+from jinns.loss import LossODE, LossPDENonStatio, LossPDEStatio
+from jinns.data._DataGenerators import (
+    DataGeneratorODE,
+    CubicMeshPDEStatio,
+    CubicMeshPDENonStatio,
+    DataGeneratorParameter,
+    DataGeneratorObservations,
+    DataGeneratorObservationsMultiPINNs,
     append_obs_batch,
     append_param_batch,
 )
@@ -53,15 +53,13 @@ class ValidationLoss(AbstractValidationModule):
     for more complicated validation strategy.
     """
 
-    loss: Union[callable, LossODE_eqx, LossPDEStatio_eqx, LossPDENonStatio_eqx] = (
-        eqx.field(converter=copy.deepcopy)
+    loss: Union[callable, LossODE, LossPDEStatio, LossPDENonStatio] = eqx.field(
+        converter=copy.deepcopy
     )
-    validation_data: Union[
-        DataGeneratorODE_eqx, CubicMeshPDEStatio_eqx, CubicMeshPDENonStatio_eqx
-    ]
-    validation_param_data: Union[DataGeneratorParameter_eqx, None] = None
+    validation_data: Union[DataGeneratorODE, CubicMeshPDEStatio, CubicMeshPDENonStatio]
+    validation_param_data: Union[DataGeneratorParameter, None] = None
     validation_obs_data: Union[
-        DataGeneratorObservations_eqx, DataGeneratorObservationsMultiPINNs_eqx, None
+        DataGeneratorObservations, DataGeneratorObservationsMultiPINNs, None
     ] = None
     call_every: Int = 250  # concrete typing
     early_stopping: Bool = True  # globally control if early stopping happens
@@ -117,7 +115,7 @@ if __name__ == "__main__":
     import jax
     import jax.numpy as jnp
     import jax.random as random
-    from jinns.loss import BurgerEquation_eqx
+    from jinns.loss import BurgerEquation
 
     key = random.PRNGKey(1)
     key, subkey = random.split(key)
@@ -134,7 +132,7 @@ if __name__ == "__main__":
     tmin, tmax = 0, 1
     method = "uniform"
 
-    val_data = jinns.data.CubicMeshPDENonStatio_eqx(
+    val_data = jinns.data.CubicMeshPDENonStatio(
         subkey,
         n,
         nb,
@@ -170,13 +168,13 @@ if __name__ == "__main__":
     )
     init_nn_params = u.init_params()
 
-    dyn_loss = BurgerEquation_eqx()
+    dyn_loss = BurgerEquation()
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
         dyn_loss=1, boundary_loss=10, observations=10
     )
 
     key, subkey = random.split(key)
-    loss = jinns.loss.LossPDENonStatio_eqx(
+    loss = jinns.loss.LossPDENonStatio(
         u=u,
         loss_weights=loss_weights,
         dynamic_loss=dyn_loss,

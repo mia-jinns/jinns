@@ -19,10 +19,10 @@ from jinns.loss._Losses import (
     initial_condition_apply,
     constraints_system_loss_apply,
 )
-from jinns.data._DataGenerators_eqx import PDEStatioBatch, PDENonStatioBatch
+from jinns.data._DataGenerators import PDEStatioBatch, PDENonStatioBatch
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
-from jinns.loss._DynamicLossAbstract_eqx import PDEStatio, PDENonStatio
+from jinns.loss._DynamicLossAbstract import PDEStatio, PDENonStatio
 from jinns.loss._loss_weights import (
     LossWeightsPDEStatio,
     LossWeightsPDENonStatio,
@@ -46,7 +46,7 @@ _IMPLEMENTED_BOUNDARY_CONDITIONS = [
 ]
 
 
-class _LossPDEAbstract_eqx(eqx.Module):
+class _LossPDEAbstract(eqx.Module):
     """
     Parameters
     ----------
@@ -98,14 +98,14 @@ class _LossPDEAbstract_eqx(eqx.Module):
             # be default we only take gradient wrt nn_params
             self.derivative_keys = (
                 DerivativeKeysPDENonStatio()
-                if isinstance(self, LossPDENonStatio_eqx)
+                if isinstance(self, LossPDENonStatio)
                 else DerivativeKeysPDEStatio()
             )
 
         if self.loss_weights is None:
             self.loss_weights = (
                 LossWeightsPDENonStatio()
-                if isinstance(self, LossPDENonStatio_eqx)
+                if isinstance(self, LossPDENonStatio)
                 else LossWeightsPDEStatio()
             )
 
@@ -214,7 +214,7 @@ class _LossPDEAbstract_eqx(eqx.Module):
         raise NotImplementedError
 
 
-class LossPDEStatio_eqx(_LossPDEAbstract_eqx):
+class LossPDEStatio(_LossPDEAbstract):
     r"""Loss object for a stationary partial differential equation
 
     .. math::
@@ -424,7 +424,7 @@ class LossPDEStatio_eqx(_LossPDEAbstract_eqx):
         )
 
 
-class LossPDENonStatio_eqx(LossPDEStatio_eqx):
+class LossPDENonStatio(LossPDEStatio):
     r"""Loss object for a stationary partial differential equation
 
     .. math::
@@ -629,7 +629,7 @@ class LossPDENonStatio_eqx(LossPDEStatio_eqx):
         }
 
 
-class SystemLossPDE_eqx(eqx.Module):
+class SystemLossPDE(eqx.Module):
     r"""
     Class to implement a system of PDEs.
     The goal is to give maximum freedom to the user. The class is created with
@@ -655,7 +655,7 @@ class SystemLossPDE_eqx(eqx.Module):
         operator :math:`\mathcal{N}[u](t)`.
     key_dict
         A dictionary of JAX PRNG keys. The dictionary keys of key_dict must
-        match that of u_dict. See LossPDEStatio_eqx or LossPDENonStatio_eqx for
+        match that of u_dict. See LossPDEStatio or LossPDENonStatio for
         more details.
     derivative_keys_dict
         XXX
@@ -833,7 +833,7 @@ class SystemLossPDE_eqx(eqx.Module):
         self.u_constraints_dict = {}
         for i in self.u_dict.keys():
             if self.u_dict[i].eq_type == "statio_PDE":
-                self.u_constraints_dict[i] = LossPDEStatio_eqx(
+                self.u_constraints_dict[i] = LossPDEStatio(
                     u=self.u_dict[i],
                     loss_weights=LossWeightsPDENonStatio(
                         dyn_loss=0.0,
@@ -853,7 +853,7 @@ class SystemLossPDE_eqx(eqx.Module):
                     obs_slice=self.obs_slice_dict[i],
                 )
             elif self.u_dict[i].eq_type == "nonstatio_PDE":
-                self.u_constraints_dict[i] = LossPDENonStatio_eqx(
+                self.u_constraints_dict[i] = LossPDENonStatio(
                     u=self.u_dict[i],
                     loss_weights=LossWeightsPDENonStatio(
                         dyn_loss=0.0,

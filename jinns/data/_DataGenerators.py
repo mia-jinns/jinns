@@ -151,7 +151,7 @@ def _check_and_set_rar_parameters(
     return n_start, p, rar_iter_from_last_sampling, rar_iter_nb
 
 
-class DataGeneratorODE_eqx(eqx.Module):
+class DataGeneratorODE(eqx.Module):
     """
     A class implementing data generator object for ordinary differential equations.
 
@@ -310,7 +310,7 @@ class DataGeneratorODE_eqx(eqx.Module):
         return new, ODEBatch(temporal_batch=temporal_batch)
 
 
-class CubicMeshPDEStatio_eqx(eqx.Module):
+class CubicMeshPDEStatio(eqx.Module):
     r"""
     A class implementing data generator object for stationary partial
     differential equations.
@@ -444,7 +444,7 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
             self.nb = int((2 * self.dim) * (self.nb // (2 * self.dim)))
 
         self.curr_omega_idx = jnp.iinfo(jnp.int32).max - self.omega_batch_size - 1
-        # see explaination in DataGeneratorODE_eqx
+        # see explaination in DataGeneratorODE
         if self.omega_border_batch_size is None:
             self.curr_omega_border_idx = None
         else:
@@ -454,7 +454,7 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
         # key, subkey = jax.random.split(self.key)
         # self.key = key
         self.key, self.omega, self.omega_border = self.generate_data(self.key)
-        # see explaination in DataGeneratorODE_eqx for the key
+        # see explaination in DataGeneratorODE for the key
 
     def sample_in_omega_domain(self, keys: Key, sample_size: Int = None) -> Array:
         sample_size = self.n if sample_size is None else sample_size
@@ -594,7 +594,7 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
             self.p_omega,
         )
 
-    def inside_batch(self) -> tuple["CubicMeshPDEStatio_eqx", Array]:
+    def inside_batch(self) -> tuple["CubicMeshPDEStatio", Array]:
         r"""
         Return a batch of points in :math:`\Omega`.
         If all the batches have been seen, we reshuffle them,
@@ -632,7 +632,7 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
             self.p_border,
         )
 
-    def border_batch(self) -> tuple["CubicMeshPDEStatio_eqx", Array]:
+    def border_batch(self) -> tuple["CubicMeshPDEStatio", Array]:
         r"""
         Return
 
@@ -673,7 +673,7 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
             slice_sizes=(new.omega_border_batch_size, new.dim, 2 * new.dim),
         )
 
-    def get_batch(self) -> tuple["CubicMeshPDEStatio_eqx", PDEStatioBatch]:
+    def get_batch(self) -> tuple["CubicMeshPDEStatio", PDEStatioBatch]:
         """
         Generic method to return a batch. Here we call `self.inside_batch()`
         and `self.border_batch()`
@@ -683,7 +683,7 @@ class CubicMeshPDEStatio_eqx(eqx.Module):
         return new, PDEStatioBatch(inside_batch=inside_batch, border_batch=border_batch)
 
 
-class CubicMeshPDENonStatio_eqx(CubicMeshPDEStatio_eqx):
+class CubicMeshPDENonStatio(CubicMeshPDEStatio):
     r"""
     A class implementing data generator object for non stationary partial
     differential equations. Formally, it extends `CubicMeshPDEStatio`
@@ -817,7 +817,7 @@ class CubicMeshPDENonStatio_eqx(CubicMeshPDEStatio_eqx):
         self.key, _ = jax.random.split(self.key, 2)  # to make it equivalent to
         # the call to _reset_batch_idx_and_permute in legacy DG
         self.key, self.times = self.generate_time_data(self.key)
-        # see explaination in DataGeneratorODE_eqx for the key
+        # see explaination in DataGeneratorODE for the key
 
     def sample_in_time_domain(self, key: Key, sample_size: Int = None) -> Array:
         return jax.random.uniform(
@@ -852,7 +852,7 @@ class CubicMeshPDENonStatio_eqx(CubicMeshPDEStatio_eqx):
             return key, self.sample_in_time_domain(subkey)
         raise ValueError("Method " + self.method + " is not implemented.")
 
-    def temporal_batch(self) -> tuple["CubicMeshPDENonStatio_eqx", Array]:
+    def temporal_batch(self) -> tuple["CubicMeshPDENonStatio", Array]:
         """
         Return a batch of time points. If all the batches have been seen, we
         reshuffle them, otherwise we just return the next unseen batch.
@@ -880,7 +880,7 @@ class CubicMeshPDENonStatio_eqx(CubicMeshPDEStatio_eqx):
             slice_sizes=(new.temporal_batch_size,),
         )
 
-    def get_batch(self) -> tuple["CubicMeshPDENonStatio_eqx", PDENonStatioBatch]:
+    def get_batch(self) -> tuple["CubicMeshPDENonStatio", PDENonStatioBatch]:
         """
         Generic method to return a batch. Here we call `self.inside_batch()`,
         `self.border_batch()` and `self.temporal_batch()`
@@ -910,7 +910,7 @@ class CubicMeshPDENonStatio_eqx(CubicMeshPDEStatio_eqx):
         )
 
 
-class DataGeneratorObservations_eqx(eqx.Module):
+class DataGeneratorObservations(eqx.Module):
     r"""
     Despite the class name, it is rather a dataloader from user provided
     observations that will be used for the observations loss
@@ -1038,7 +1038,7 @@ class DataGeneratorObservations_eqx(eqx.Module):
             None,
         )
 
-    def obs_batch(self) -> tuple["DataGeneratorObservations_eqx", Array]:
+    def obs_batch(self) -> tuple["DataGeneratorObservations", Array]:
         """
         Return a dictionary with (keys, values): (pinn_in, a mini batch of pinn
         inputs), (obs, a mini batch of corresponding observations), (eq_params,
@@ -1077,14 +1077,14 @@ class DataGeneratorObservations_eqx(eqx.Module):
         }
         return new, obs_batch
 
-    def get_batch(self) -> tuple["DataGeneratorObservations_eqx", Array]:
+    def get_batch(self) -> tuple["DataGeneratorObservations", Array]:
         """
         Generic method to return a batch
         """
         return self.obs_batch()
 
 
-class DataGeneratorParameter_eqx(eqx.Module):
+class DataGeneratorParameter(eqx.Module):
     r"""
     A data generator for additional unidimensional parameter(s)
 
@@ -1265,7 +1265,7 @@ class DataGeneratorParameter_eqx(eqx.Module):
         return self.param_batch()
 
 
-class DataGeneratorObservationsMultiPINNs_eqx(eqx.Module):
+class DataGeneratorObservationsMultiPINNs(eqx.Module):
     r"""
     Despite the class name, it is rather a dataloader from user provided
     observations that will be used for the observations loss.
@@ -1320,7 +1320,7 @@ class DataGeneratorObservationsMultiPINNs_eqx(eqx.Module):
     observed_eq_params_dict: dict[str, Array]
     key: InitVar[Key]
 
-    data_gen_obs: dict[str, "DataGeneratorObservations_eqx"] = eqx.field(init=False)
+    data_gen_obs: dict[str, "DataGeneratorObservations"] = eqx.field(init=False)
 
     def __post_init__(self, key):
         if self.observed_pinn_in_dict is None or self.observed_values_dict is None:
@@ -1353,7 +1353,7 @@ class DataGeneratorObservationsMultiPINNs_eqx(eqx.Module):
         )
         self.data_gen_obs = jax.tree_util.tree_map(
             lambda k, pinn_in, val, eq_params: (
-                DataGeneratorObservations_eqx(
+                DataGeneratorObservations(
                     k, self.obs_batch_size, pinn_in, val, eq_params
                 )
                 if pinn_in is not None
@@ -1373,7 +1373,7 @@ class DataGeneratorObservationsMultiPINNs_eqx(eqx.Module):
         data_gen_and_batch_pytree = jax.tree_util.tree_map(
             lambda a: a.get_batch() if a is not None else {},
             self.data_gen_obs,
-            is_leaf=lambda x: isinstance(x, DataGeneratorObservations_eqx),
+            is_leaf=lambda x: isinstance(x, DataGeneratorObservations),
         )  # note the is_leaf note to traverse the DataGeneratorObservations and
         # thus to be able to call the method on the element(s) of
         # self.data_gen_obs which are not None

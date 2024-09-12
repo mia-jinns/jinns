@@ -14,7 +14,7 @@ from jinns.utils._spinn import SPINN
 
 from jinns.utils._utils import _get_grid
 from jinns.parameters._params import _extract_nn_params
-from jinns.loss._DynamicLossAbstract_eqx import ODE, PDEStatio, PDENonStatio
+from jinns.loss._DynamicLossAbstract import ODE, PDEStatio, PDENonStatio
 from jinns.loss._operators import (
     _laplacian_rev,
     _laplacian_fwd,
@@ -26,7 +26,7 @@ from jinns.loss._operators import (
 )
 
 
-class FisherKPP_eqx(PDENonStatio):
+class FisherKPP(PDENonStatio):
     r"""
     Return the Fisher KPP dynamic loss term. Dimension of $x$ can be
     arbitrary
@@ -97,7 +97,7 @@ class FisherKPP_eqx(PDENonStatio):
         raise ValueError("u is not among the recognized types (PINN or SPINN)")
 
 
-class GeneralizedLotkaVolterra_eqx(ODE):
+class GeneralizedLotkaVolterra(ODE):
     r"""
     Return a dynamic loss from an equation of a Generalized Lotka Volterra
     system. Say we implement the equation for population :math:`i`:
@@ -176,7 +176,7 @@ class GeneralizedLotkaVolterra_eqx(ODE):
         )
 
 
-class BurgerEquation_eqx(PDENonStatio):
+class BurgerEquation(PDENonStatio):
     r"""
     Return the Burger dynamic loss term (in 1 space dimension):
 
@@ -430,7 +430,7 @@ class FPENonStatioLoss2D(PDENonStatio):
         pass
 
 
-class OU_FPENonStatioLoss2D_eqx(FPENonStatioLoss2D):
+class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
     r"""
     Return the dynamic loss for a stationary Fokker Planck Equation in two
     dimensions:
@@ -519,7 +519,7 @@ class OU_FPENonStatioLoss2D_eqx(FPENonStatioLoss2D):
         )
 
 
-class MassConservation2DStatio_eqx(PDEStatio):
+class MassConservation2DStatio(PDEStatio):
     r"""
     Returns the so-called mass conservation equation.
 
@@ -578,7 +578,7 @@ class MassConservation2DStatio_eqx(PDEStatio):
         raise ValueError("u is not among the recognized types (PINN or SPINN)")
 
 
-class NavierStokes2DStatio_eqx(PDEStatio):
+class NavierStokes2DStatio(PDEStatio):
     r"""
     Return the dynamic loss for all the components of the stationary Navier Stokes
     equation which is a 2D vectorial PDE.

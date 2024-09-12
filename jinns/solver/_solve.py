@@ -11,15 +11,15 @@ from jax import jit
 import jax.numpy as jnp
 from jinns.solver._rar import init_rar, trigger_rar
 from jinns.utils._utils import _check_nan_in_pytree, _tracked_parameters
-from jinns.data._DataGenerators_eqx import (
+from jinns.data._DataGenerators import (
     append_obs_batch,
     append_param_batch,
-    DataGeneratorODE_eqx,
-    CubicMeshPDEStatio_eqx,
-    CubicMeshPDENonStatio_eqx,
-    DataGeneratorObservations_eqx,
-    DataGeneratorParameter_eqx,
-    DataGeneratorObservationsMultiPINNs_eqx,
+    DataGeneratorODE,
+    CubicMeshPDEStatio,
+    CubicMeshPDENonStatio,
+    DataGeneratorObservations,
+    DataGeneratorParameter,
+    DataGeneratorObservationsMultiPINNs,
 )
 from jinns.utils._containers import *
 
@@ -27,16 +27,16 @@ from jinns.utils._containers import *
 def check_batch_size(other_data, main_data, attr_name):
     if (
         (
-            isinstance(main_data, DataGeneratorODE_eqx)
+            isinstance(main_data, DataGeneratorODE)
             and getattr(other_data, attr_name) != main_data.temporal_batch_size
         )
         or (
-            isinstance(main_data, CubicMeshPDEStatio_eqx)
-            and not isinstance(main_data, CubicMeshPDENonStatio_eqx)
+            isinstance(main_data, CubicMeshPDEStatio)
+            and not isinstance(main_data, CubicMeshPDENonStatio)
             and getattr(other_data, attr_name) != main_data.omega_batch_size
         )
         or (
-            isinstance(main_data, CubicMeshPDENonStatio_eqx)
+            isinstance(main_data, CubicMeshPDENonStatio)
             and getattr(other_data, attr_name)
             != main_data.omega_batch_size * main_data.temporal_batch_size
         )
@@ -548,14 +548,14 @@ def get_get_batch(obs_batch_sharding):
         """
         if isinstance(
             data,
-            (DataGeneratorODE_eqx, CubicMeshPDEStatio_eqx, CubicMeshPDENonStatio_eqx),
+            (DataGeneratorODE, CubicMeshPDEStatio, CubicMeshPDENonStatio),
         ):
             # to comply with new datagenerators
             data, batch = data.get_batch()
         else:
             batch = data.get_batch()
         if param_data is not None:
-            if isinstance(param_data, DataGeneratorParameter_eqx):
+            if isinstance(param_data, DataGeneratorParameter):
                 param_data, param_batch = param_data.get_batch()
             else:
                 param_batch = param_data.get_batch()
@@ -568,8 +568,8 @@ def get_get_batch(obs_batch_sharding):
             if isinstance(
                 obs_data,
                 (
-                    DataGeneratorObservations_eqx,
-                    DataGeneratorObservationsMultiPINNs_eqx,
+                    DataGeneratorObservations,
+                    DataGeneratorObservationsMultiPINNs,
                 ),
             ):
                 obs_data, obs_batch = obs_data.get_batch()
@@ -586,14 +586,14 @@ def get_get_batch(obs_batch_sharding):
         """
         if isinstance(
             data,
-            (DataGeneratorODE_eqx, CubicMeshPDEStatio_eqx, CubicMeshPDENonStatio_eqx),
+            (DataGeneratorODE, CubicMeshPDEStatio, CubicMeshPDENonStatio),
         ):
             # to comply with new datagenerators
             data, batch = data.get_batch()
         else:
             batch = data.get_batch()
         if param_data is not None:
-            if isinstance(param_data, DataGeneratorParameter_eqx):
+            if isinstance(param_data, DataGeneratorParameter):
                 param_data, param_batch = param_data.get_batch()
             else:
                 param_batch = param_data.get_batch()
@@ -602,8 +602,8 @@ def get_get_batch(obs_batch_sharding):
             if isinstance(
                 obs_data,
                 (
-                    DataGeneratorObservations_eqx,
-                    DataGeneratorObservationsMultiPINNs_eqx,
+                    DataGeneratorObservations,
+                    DataGeneratorObservationsMultiPINNs,
                 ),
             ):
                 obs_data, obs_batch = obs_data.get_batch()

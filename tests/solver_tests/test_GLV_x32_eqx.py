@@ -6,7 +6,7 @@ from jax import random
 import equinox as eqx
 import optax
 import jinns
-from jinns.data._DataGenerators_eqx import DataGeneratorODE_eqx
+from jinns.data._DataGenerators import DataGeneratorODE
 
 
 @pytest.fixture
@@ -37,7 +37,7 @@ def train_GLV_init():
 
     Tmax = 30
     key, subkey = random.split(key)
-    train_data = DataGeneratorODE_eqx(subkey, n, tmin, tmax, batch_size, method)
+    train_data = DataGeneratorODE(subkey, n, tmin, tmax, batch_size, method)
 
     init_nn_params_list = []
     for _ in range(3):
