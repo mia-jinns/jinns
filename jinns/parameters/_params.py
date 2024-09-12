@@ -4,6 +4,7 @@ Formalize the data structure for the parameters
 
 import jax
 import equinox as eqx
+from typing import Dict
 from jaxtyping import Array, PyTree
 
 
@@ -62,11 +63,14 @@ def _update_eq_params_dict(params, param_batch_dict):
     return params
 
 
-def _get_vmap_in_axes_params(eq_params_batch_dict, params):
+def _get_vmap_in_axes_params(
+    eq_params_batch_dict: Dict[Array], params: Params
+) -> tuple:
     """
     Return the input vmap axes when there is batch(es) of parameters to vmap
-    over. The latter are designated by keys in eq_params_batch_dict
-    If eq_params_batch_dict (ie no additional parameter batch), we return None
+    over. The latter are designated by keys in eq_params_batch_dict.
+    If eq_params_batch_dict is None (i.e. no additional parameter batch), we
+    return (None,).
     """
     if eq_params_batch_dict is None:
         return (None,)
@@ -74,12 +78,14 @@ def _get_vmap_in_axes_params(eq_params_batch_dict, params):
     # 0 of the eq_parameters for which we have a batch
     # this is for a fine-grained vmaping
     # scheme over the params
-    vmap_in_axes_params = Params(
-        nn_params=None,
-        eq_params={
-            k: (0 if k in eq_params_batch_dict.keys() else None)
-            for k in params.eq_params.keys()
-        },
+    vmap_in_axes_params = (
+        Params(
+            nn_params=None,
+            eq_params={
+                k: (0 if k in eq_params_batch_dict.keys() else None)
+                for k in params.eq_params.keys()
+            },
+        ),
     )
     return vmap_in_axes_params
 
