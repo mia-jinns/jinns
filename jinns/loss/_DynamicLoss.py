@@ -61,7 +61,7 @@ class FisherKPP(PDENonStatio):
         params
             The dictionary of parameters of the model.
             Typically, it is a dictionary of
-            dictionaries: `eq_params` and `nn_params``, respectively the
+            dictionaries: `eq_params` and `nn_params`, respectively the
             differential equation parameters and the neural network parameter
         """
         if isinstance(u, PINN):
@@ -95,31 +95,31 @@ class FisherKPP(PDENonStatio):
 class GeneralizedLotkaVolterra(ODE):
     r"""
     Return a dynamic loss from an equation of a Generalized Lotka Volterra
-    system. Say we implement the equation for population :math:`i`:
+    system. Say we implement the equation for population $i$
 
-    .. math::
+    $$
         \frac{\partial}{\partial t}u_i(t) = r_iu_i(t) - \sum_{j\neq i}\alpha_{ij}u_j(t)
         -\alpha_{i,i}u_i(t) + c_iu_i(t) + \sum_{j \neq i} c_ju_j(t)
-
-    with :math:`r_i` the growth rate parameter, :math:`c_i` the carrying
-    capacities and :math:`\alpha_{ij}` the interaction terms.
+    $$
+    with $r_i$ the growth rate parameter, $c_i$ the carrying
+    capacities and $\alpha_{ij}$ the interaction terms.
 
     Parameters
     ----------
     key_main
-        The dictionary key (in the dictionaries ``u`` and ``params`` that
-        are arguments of the ``evaluate`` function) of the main population
-        :math:`i` of the particular equation of the system implemented
+        The dictionary key (in the dictionaries `u` and `params` that
+        are arguments of the `evaluate` function) of the main population
+        $i$ of the particular equation of the system implemented
         by this dynamic loss
     keys_other
-        The list of dictionary keys (in the dictionaries ``u`` and ``params`` that
-        are arguments of the ``evaluate`` function) of the other
+        The list of dictionary keys (in the dictionaries `u` and `params` that
+        are arguments of the `evaluate` function) of the other
         populations that appear in the equation of the system implemented
         by this dynamic loss
     Tmax
         Tmax needs to be given when the PINN time input is normalized in
-        [0, 1], ie. we have performed renormalization of the differential
-        equation
+        $[0, 1]$, ie. we have performed renormalization of the differential
+        equation.
     eq_params_heterogeneity
         Default None. A dict with the keys being the same as in eq_params
         and the value being `time`, `space`, `both` or None which corresponds to
@@ -175,9 +175,10 @@ class BurgerEquation(PDENonStatio):
     r"""
     Return the Burger dynamic loss term (in 1 space dimension):
 
-    .. math::
+    $$
         \frac{\partial}{\partial t} u(t,x) + u(t,x)\frac{\partial}{\partial x}
         u(t,x) - \theta \frac{\partial^2}{\partial x^2} u(t,x) = 0
+    $$
 
     Parameters
     ----------
@@ -203,14 +204,11 @@ class BurgerEquation(PDENonStatio):
         t
             A time point
         x
-            A point in :math:`\Omega`
+            A point in $\Omega$
         u
             The PINN
         params
             The dictionary of parameters of the model.
-            Typically, it is a dictionary of
-            dictionaries: `eq_params` and `nn_params``, respectively the
-            differential equation parameters and the neural network parameter
         """
         if isinstance(u, PINN):
             # Note that the last dim of u is nec. 1
@@ -250,15 +248,15 @@ class FPENonStatioLoss2D(PDENonStatio):
     Return the dynamic loss for a non-stationary Fokker Planck Equation in two
     dimensions:
 
-    .. math::
+    $$
         -\sum_{i=1}^2\frac{\partial}{\partial \mathbf{x}}
         \left[\mu(t, \mathbf{x})u(t, \mathbf{x})\right] +
         \sum_{i=1}^2\sum_{j=1}^2\frac{\partial^2}{\partial x_i \partial x_j}
         \left[D(t, \mathbf{x})u(t, \mathbf{x})\right]= \frac{\partial}
         {\partial t}u(t,\mathbf{x})
-
-    where :math:`\mu(t, \mathbf{x})` is the drift term and :math:`D(t, \mathbf{x})` is the diffusion
-    term.
+    $$
+    where $\mu(t, \mathbf{x})$ is the drift term and $D(t, \mathbf{x})$ is the
+    diffusion term.
 
     The drift and diffusion terms are not specified here, hence this class
     is `abstract`.
@@ -296,7 +294,7 @@ class FPENonStatioLoss2D(PDENonStatio):
         params
             The dictionary of parameters of the model.
             Typically, it is a dictionary of
-            dictionaries: `eq_params` and `nn_params``, respectively the
+            dictionaries: `eq_params` and `nn_params`, respectively the
             differential equation parameters and the neural network parameter
         """
         if isinstance(u, PINN):
@@ -418,11 +416,11 @@ class FPENonStatioLoss2D(PDENonStatio):
 
     def drift(self, *args, **kwargs):
         # To be implemented in child classes
-        pass
+        raise NotImplementedError("Drift function should be implemented")
 
     def diffusion(self, *args, **kwargs):
         # To be implemented in child classes
-        pass
+        raise NotImplementedError("Diffusion function should be implemented")
 
 
 class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
@@ -430,13 +428,14 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
     Return the dynamic loss for a stationary Fokker Planck Equation in two
     dimensions:
 
-    .. math::
+    $$
         -\sum_{i=1}^2\frac{\partial}{\partial \mathbf{x}}
         \left[(\alpha(\mu - \mathbf{x}))u(t,\mathbf{x})\right] +
         \sum_{i=1}^2\sum_{j=1}^2\frac{\partial^2}{\partial x_i \partial x_j}
         \left[\frac{\sigma^2}{2}u(t,\mathbf{x})\right]=
         \frac{\partial}
         {\partial t}u(t,\mathbf{x})
+    $$
 
     Parameters
     ----------
@@ -518,12 +517,12 @@ class MassConservation2DStatio(PDEStatio):
     r"""
     Returns the so-called mass conservation equation.
 
-    .. math::
+    $$
         \nabla \cdot \mathbf{u} = \frac{\partial}{\partial x}u(x,y) +
         \frac{\partial}{\partial y}u(x,y) = 0,
-
-    where :math:`u` is a stationary function, i.e., it does not depend on
-    :math:`t`.
+    $$
+    where $u$ is a stationary function, i.e., it does not depend on
+    $t$.
 
     Parameters
     ----------
@@ -555,7 +554,7 @@ class MassConservation2DStatio(PDEStatio):
         params_dict
             The dictionary of dictionaries of parameters of the model.
             Typically, each sub-dictionary is a dictionary
-            with keys: `eq_params` and `nn_params``, respectively the
+            with keys: `eq_params` and `nn_params`, respectively the
             differential equation parameters and the neural network parameter.
             Must have the same keys as `u_dict`
         """
@@ -578,15 +577,15 @@ class NavierStokes2DStatio(PDEStatio):
     Return the dynamic loss for all the components of the stationary Navier Stokes
     equation which is a 2D vectorial PDE.
 
-    .. math::
+    $$
        (\mathbf{u}\cdot\nabla)\mathbf{u} + \frac{1}{\rho}\nabla p - \theta
        \nabla^2\mathbf{u}=0,
-
+    $$
 
     or, in 2D,
 
 
-    .. math::
+    $$
         \begin{pmatrix}u_x\frac{\partial}{\partial x} u_x + u_y\frac{\partial}{\partial y} u_x \\
         u_x\frac{\partial}{\partial x} u_y + u_y\frac{\partial}{\partial y} u_y  \end{pmatrix} +
         \frac{1}{\rho} \begin{pmatrix} \frac{\partial}{\partial x} p \\ \frac{\partial}{\partial y} p \end{pmatrix}
@@ -595,7 +594,7 @@ class NavierStokes2DStatio(PDEStatio):
         \frac{\partial^2}{\partial x^2} u_x + \frac{\partial^2}{\partial y^2} u_x \\
         \frac{\partial^2}{\partial x^2} u_y + \frac{\partial^2}{\partial y^2} u_y
         \end{pmatrix} = 0,
-
+    $$
     with $\theta$ the viscosity coefficient and $\rho$ the density coefficient.
 
     Parameters
@@ -626,7 +625,7 @@ class NavierStokes2DStatio(PDEStatio):
 
     def evaluate(self, x, u_dict, params_dict):
         r"""
-        Evaluate the dynamic loss at `\mathbf{x}`.
+        Evaluate the dynamic loss at `x`.
         For stability we implement the dynamic loss in log space.
 
         Parameters
