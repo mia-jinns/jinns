@@ -46,7 +46,7 @@ def train_ReacDiff_init():
 
     Tmax = 2
     key, subkey = random.split(key)
-    train_data = jinns.data.CubicMeshPDENonStatio_eqx(
+    train_data = jinns.data.CubicMeshPDENonStatio(
         key=subkey,
         n=n,
         nb=nb,
@@ -157,7 +157,7 @@ def train_ReacDiff_init():
         )
         return r_map_batch
 
-    fisher_dynamic_loss = jinns.loss.FisherKPP_eqx(
+    fisher_dynamic_loss = jinns.loss.FisherKPP(
         Tmax=Tmax, eq_params_heterogeneity={"D": None, "r": r_fun, "g": None}
     )
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
@@ -166,7 +166,7 @@ def train_ReacDiff_init():
         boundary_loss=1 * Tmax,
     )
 
-    loss = jinns.loss.LossPDENonStatio_eqx(
+    loss = jinns.loss.LossPDENonStatio(
         u=u_spinn,
         loss_weights=loss_weights,
         dynamic_loss=fisher_dynamic_loss,

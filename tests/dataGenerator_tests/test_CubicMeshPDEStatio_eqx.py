@@ -16,7 +16,7 @@ def create_1DCubicMeshPDEStatio():
     xmin = -3
     xmax = 3
 
-    return jinns.data.CubicMeshPDEStatio_eqx(
+    return jinns.data.CubicMeshPDEStatio(
         key=subkey,
         n=n,
         nb=nb,
@@ -68,7 +68,7 @@ def create_2DCubicMeshPDEStatio():
     ymin = -5
     ymax = 5
 
-    return jinns.data.CubicMeshPDEStatio_eqx(
+    return jinns.data.CubicMeshPDEStatio(
         key=subkey,
         n=n,
         nb=nb,

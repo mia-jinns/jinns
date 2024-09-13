@@ -64,7 +64,7 @@ def train_NSPipeFlow_init():
 
     method = "uniform"
     key, subkey = random.split(key)
-    train_data = jinns.data.CubicMeshPDEStatio_eqx(
+    train_data = jinns.data.CubicMeshPDEStatio(
         key=subkey,
         n=n,
         nb=nb,
@@ -113,11 +113,11 @@ def train_NSPipeFlow_init():
         "ymin": "dirichlet",
         "ymax": "dirichlet",
     }
-    mc_loss = jinns.loss.MassConservation2DStatio_eqx(nn_key="u")
-    ns_loss = jinns.loss.NavierStokes2DStatio_eqx(u_key="u", p_key="p")
+    mc_loss = jinns.loss.MassConservation2DStatio(nn_key="u")
+    ns_loss = jinns.loss.NavierStokes2DStatio(u_key="u", p_key="p")
     loss_weights = jinns.loss.LossWeightsPDEDict(dyn_loss=1, boundary_loss=1)
 
-    loss = jinns.loss.SystemLossPDE_eqx(
+    loss = jinns.loss.SystemLossPDE(
         u_dict={"u": u, "p": p},
         loss_weights=loss_weights,
         dynamic_loss_dict={"mass_conservation": mc_loss, "navier_stokes": ns_loss},

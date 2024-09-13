@@ -55,7 +55,7 @@ def train_Burger_init_sharding():
     Tmax = 1
     method = "uniform"
 
-    train_data = jinns.data.CubicMeshPDENonStatio_eqx(
+    train_data = jinns.data.CubicMeshPDENonStatio(
         key=subkey,
         n=n,
         nb=nb,
@@ -112,13 +112,13 @@ def train_Burger_init_sharding():
     def u0(x):
         return -jnp.sin(jnp.pi * x)
 
-    be_loss = jinns.loss.BurgerEquation_eqx(Tmax=Tmax)
+    be_loss = jinns.loss.BurgerEquation(Tmax=Tmax)
 
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
         dyn_loss=1, initial_condition=5, boundary_loss=1
     )
 
-    loss = jinns.loss.LossPDENonStatio_eqx(
+    loss = jinns.loss.LossPDENonStatio(
         u=u,
         loss_weights=loss_weights,
         dynamic_loss=be_loss,
@@ -189,7 +189,7 @@ def train_Burger_init_no_sharding():
     Tmax = 1
     method = "uniform"
 
-    train_data = jinns.data.CubicMeshPDENonStatio_eqx(
+    train_data = jinns.data.CubicMeshPDENonStatio(
         key=subkey,
         n=n,
         nb=nb,
@@ -246,13 +246,13 @@ def train_Burger_init_no_sharding():
     def u0(x):
         return -jnp.sin(jnp.pi * x)
 
-    be_loss = jinns.loss.BurgerEquation_eqx(Tmax=Tmax)
+    be_loss = jinns.loss.BurgerEquation(Tmax=Tmax)
 
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
         dyn_loss=1, initial_condition=5, boundary_loss=1
     )
 
-    loss = jinns.loss.LossPDENonStatio_eqx(
+    loss = jinns.loss.LossPDENonStatio(
         u=u,
         loss_weights=loss_weights,
         dynamic_loss=be_loss,

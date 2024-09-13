@@ -45,7 +45,7 @@ def train_Fisher_init():
     Tmax = 5
     key, subkey = random.split(key)
 
-    train_data = jinns.data.CubicMeshPDENonStatio_eqx(
+    train_data = jinns.data.CubicMeshPDENonStatio(
         key=subkey,
         n=n,
         nb=nb,
@@ -119,13 +119,13 @@ def train_Fisher_init():
         eq_params={"D": jnp.array([D]), "r": jnp.array([r]), "g": jnp.array([g])},
     )
 
-    fisher_dynamic_loss = jinns.loss.FisherKPP_eqx(Tmax=Tmax)
+    fisher_dynamic_loss = jinns.loss.FisherKPP(Tmax=Tmax)
 
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
         dyn_loss=1, initial_condition=1 * Tmax, boundary_loss=3 / 4 * Tmax
     )
 
-    loss = jinns.loss.LossPDENonStatio_eqx(
+    loss = jinns.loss.LossPDENonStatio(
         u=u,
         loss_weights=loss_weights,
         dynamic_loss=fisher_dynamic_loss,

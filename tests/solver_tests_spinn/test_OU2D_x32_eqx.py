@@ -45,7 +45,7 @@ def train_OU_init():
     Tmax = 10
     method = "uniform"
 
-    train_data = jinns.data.CubicMeshPDENonStatio_eqx(
+    train_data = jinns.data.CubicMeshPDENonStatio(
         key=subkey,
         n=n,
         nb=nb,
@@ -121,12 +121,12 @@ def train_OU_init():
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
         dyn_loss=10, initial_condition=1 * Tmax, norm_loss=0.00001 * Tmax
     )
-    OU_fpe_non_statio_2D_loss = jinns.loss.OU_FPENonStatioLoss2D_eqx(Tmax=Tmax)
+    OU_fpe_non_statio_2D_loss = jinns.loss.OU_FPENonStatioLoss2D(Tmax=Tmax)
 
     # Catching an expected UserWarning since no border condition is given
     # for this specific PDE (Fokker-Planck).
     with pytest.warns(UserWarning):
-        loss = jinns.loss.LossPDENonStatio_eqx(
+        loss = jinns.loss.LossPDENonStatio(
             u=u,
             loss_weights=loss_weights,
             dynamic_loss=OU_fpe_non_statio_2D_loss,

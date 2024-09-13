@@ -16,7 +16,7 @@ def create_DataGeneratorParameter():
     param_ranges = {"theta": (10.0, 11.0)}
     user_data = {"nu": jnp.arange(n)}
 
-    return jinns.data.DataGeneratorParameter_eqx(
+    return jinns.data.DataGeneratorParameter(
         subkey,
         n,
         param_batch_size,
@@ -35,7 +35,7 @@ def create_DataGeneratorParameter_only_user_data():
     method = "uniform"
     user_data = {"nu": jnp.arange(n)}
 
-    return jinns.data.DataGeneratorParameter_eqx(
+    return jinns.data.DataGeneratorParameter(
         subkey,
         n,
         param_batch_size,
@@ -70,7 +70,7 @@ def test_raise_error_with_wrong_shape_for_user_data():
 
     with pytest.raises(ValueError) as e_info:
         # __init__ calls self.generate_data() that we are testing for
-        data_generator_parameters = jinns.data.DataGeneratorParameter_eqx(
+        data_generator_parameters = jinns.data.DataGeneratorParameter(
             subkey,
             n,
             param_batch_size,

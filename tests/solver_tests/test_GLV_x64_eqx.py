@@ -36,9 +36,7 @@ def train_GLV_init():
 
     Tmax = 30
     key, subkey = random.split(key)
-    train_data = jinns.data.DataGeneratorODE_eqx(
-        subkey, n, tmin, tmax, batch_size, method
-    )
+    train_data = jinns.data.DataGeneratorODE(subkey, n, tmin, tmax, batch_size, method)
 
     init_nn_params_list = []
     for _ in range(3):
@@ -64,19 +62,19 @@ def train_GLV_init():
         },
     )
 
-    N1_dynamic_loss = jinns.loss.GeneralizedLotkaVolterra_eqx(
+    N1_dynamic_loss = jinns.loss.GeneralizedLotkaVolterra(
         key_main="0", keys_other=["1", "2"], Tmax=Tmax
     )
-    N2_dynamic_loss = jinns.loss.GeneralizedLotkaVolterra_eqx(
+    N2_dynamic_loss = jinns.loss.GeneralizedLotkaVolterra(
         key_main="1", keys_other=["0", "2"], Tmax=Tmax
     )
-    N3_dynamic_loss = jinns.loss.GeneralizedLotkaVolterra_eqx(
+    N3_dynamic_loss = jinns.loss.GeneralizedLotkaVolterra(
         key_main="2", keys_other=["0", "1"], Tmax=Tmax
     )
 
     loss_weights = jinns.loss.LossWeightsODEDict(dyn_loss=1, initial_condition=1 * Tmax)
 
-    loss = jinns.loss.SystemLossODE_eqx(
+    loss = jinns.loss.SystemLossODE(
         u_dict={"0": u, "1": u, "2": u},
         loss_weights=loss_weights,
         dynamic_loss_dict={

@@ -74,7 +74,7 @@ def train_NSPipeFlow_init():
 
     method = "uniform"
     key, subkey = random.split(key)
-    train_data = jinns.data.CubicMeshPDEStatio_eqx(
+    train_data = jinns.data.CubicMeshPDEStatio(
         key=subkey,
         n=n,
         nb=nb,
@@ -98,15 +98,15 @@ def train_NSPipeFlow_init():
         eq_params={"rho": rho, "nu": nu},
     )
 
-    mc_loss = jinns.loss.MassConservation2DStatio_eqx(nn_key="u")
-    ns_loss = jinns.loss.NavierStokes2DStatio_eqx(u_key="u", p_key="p")
+    mc_loss = jinns.loss.MassConservation2DStatio(nn_key="u")
+    ns_loss = jinns.loss.NavierStokes2DStatio(u_key="u", p_key="p")
 
     loss_weights = jinns.loss.LossWeightsPDEDict(dyn_loss=1.0)
 
     # Catching an expected UserWarning since no border condition is given
     # for this specific PDE (Fokker-Planck).
     with pytest.warns(UserWarning):
-        loss = jinns.loss.SystemLossPDE_eqx(
+        loss = jinns.loss.SystemLossPDE(
             u_dict={"u": u, "p": p},
             loss_weights=loss_weights,
             dynamic_loss_dict={"mass_conservation": mc_loss, "navier_stokes": ns_loss},

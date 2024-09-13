@@ -77,7 +77,7 @@ def u0(x):
 
 vectorized_u0 = vmap(u0, (0), 0)
 
-OU_fpe_non_statio_2D_loss = jinns.loss.OU_FPENonStatioLoss2D_eqx(Tmax=Tmax)
+OU_fpe_non_statio_2D_loss = jinns.loss.OU_FPENonStatioLoss2D(Tmax=Tmax)
 
 loss_weights = jinns.loss.LossWeightsPDENonStatio(
     dyn_loss=1.0,
@@ -86,7 +86,7 @@ loss_weights = jinns.loss.LossWeightsPDENonStatio(
 )
 
 with pytest.warns(UserWarning):
-    loss = jinns.loss.LossPDENonStatio_eqx(
+    loss = jinns.loss.LossPDENonStatio(
         u=u,
         loss_weights=loss_weights,
         dynamic_loss=OU_fpe_non_statio_2D_loss,
@@ -121,7 +121,7 @@ def get_datagenerator_rar(start_iter, update_every):
     key = random.PRNGKey(12345)
 
     key, subkey = random.split(key)
-    train_data = jinns.data.CubicMeshPDENonStatio_eqx(
+    train_data = jinns.data.CubicMeshPDENonStatio(
         key=subkey,
         n=n,
         nb=nb,

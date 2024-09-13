@@ -20,7 +20,7 @@ def create_1DCubicMeshPDENonStatio():
     tmin = 0
     tmax = 1
 
-    return jinns.data.CubicMeshPDENonStatio_eqx(
+    return jinns.data.CubicMeshPDENonStatio(
         key=subkey,
         n=n,
         nb=nb,
@@ -92,7 +92,7 @@ def create_2DCubicMeshPDENonStatio():
     tmin = 0
     tmax = 1
 
-    return jinns.data.CubicMeshPDENonStatio_eqx(
+    return jinns.data.CubicMeshPDENonStatio(
         key=subkey,
         n=n,
         nb=nb,
