@@ -25,6 +25,9 @@ from jinns.loss._operators import (
     _u_dot_nabla_times_u_fwd,
 )
 
+from jaxtyping import Array, Float
+from jinns.parameters import Params
+
 
 class FisherKPP(PDENonStatio):
     r"""
@@ -34,33 +37,25 @@ class FisherKPP(PDENonStatio):
     $$
     \frac{\partial}{\partial t} u(t,x)=D\Delta u(t,x) + u(t,x)(r(x) - \gamma(x)u(t,x))
     $$
-
-    Parameters
-    ----------
-    Tmax
-        Tmax needs to be given when the PINN time input is normalized in
-        [0, 1], ie. we have performed renormalization of the differential
-        equation
-    eq_params_heterogeneity
-        Default None. A dict with the keys being the same as in eq_params
-        and the value being `time`, `space`, `both` or None which corresponds to
-        the heterogeneity of a given parameter. A value can be missing, in
-        this case there is no heterogeneity (=None). If
-        eq_params_heterogeneity is None this means there is no
-        heterogeneity for no parameters.
     """
 
     @PDENonStatio.evaluate_heterogeneous_parameters
-    def evaluate(self, t, x, u, params):
+    def evaluate(
+        self,
+        t: Float[Array, "1"],
+        x: Float[Array, "dim"],
+        u: eqx.Module,
+        params: Params,
+    ) -> Float[Array, "1"]:
         r"""
-        Evaluate the dynamic loss at :math:`(t,x)`.
+        Evaluate the dynamic loss at $(t,x)$.
 
         Parameters
         ---------
         t
-            A time point
+            A time point.
         x
-            A point in :math:`\Omega`
+            A point in $\Omega$.
         u
             The PINN
         params
