@@ -490,13 +490,6 @@ class LossPDENonStatio(LossPDEStatio):
     initial_condition_fun
         A function representing the temporal initial condition. If None
         (default) then no initial condition is applied
-    norm_key
-        Jax random key to draw samples in for the Monte Carlo computation
-        of the normalization constant. Default is None
-    norm_borders
-        tuple of (min, max) of the boundaray values of the space over which
-        to integrate in the computation of the normalization constant.
-        A list of tuple for higher dimensional problems. Default None.
     norm_samples
         Fixed sample point in the space over which to compute the
         normalization constant. Default is None
