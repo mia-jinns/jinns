@@ -167,7 +167,7 @@ class ODE(DynamicLoss):
         one can introduce spatio-temporal covariates upon which a particular
         parameter can depend, e.g. in a GLM fashion. The effect of these
         covariables can themselves be estimated by being in `eq_params` too.
-        A value can be missing, in this case there is no heterogeneity (=None).
+        Some key can be missing, in this case there is no heterogeneity (=None).
         If eq_params_heterogeneity is None this means there is no
         heterogeneity for no parameters.
     """
