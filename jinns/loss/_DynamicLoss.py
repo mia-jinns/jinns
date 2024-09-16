@@ -25,7 +25,7 @@ from jinns.loss._operators import (
 )
 
 from jaxtyping import Array, Float
-from jinns.parameters import Params
+from jinns.parameters import Params, ParamsDict
 
 
 class FisherKPP(PDENonStatio):
@@ -130,7 +130,12 @@ class GeneralizedLotkaVolterra(ODE):
     key_main: list[str]
     keys_other: list[str]
 
-    def equation(self, t, u_dict, params_dict):
+    def equation(
+        self,
+        t: Float[Array, "1"],
+        u_dict: Dict[str, eqx.Module],
+        params_dict: ParamsDict,
+    ) -> Float[Array, "1"]:
         """
         Evaluate the dynamic loss at `t`.
         For stability we implement the dynamic loss in log space.
@@ -193,7 +198,13 @@ class BurgerEquation(PDENonStatio):
         heterogeneity for no parameters.
     """
 
-    def equation(self, t, x, u, params):
+    def equation(
+        self,
+        t: Float[Array, "1"],
+        x: Float[Array, "dim"],
+        u: eqx.Module,
+        params: Params,
+    ) -> Float[Array, "1"]:
         r"""
         Evaluate the dynamic loss at :math:`(t,x)`.
 
@@ -277,7 +288,13 @@ class FPENonStatioLoss2D(PDENonStatio):
         heterogeneity for no parameters.
     """
 
-    def equation(self, t, x, u, params):
+    def equation(
+        self,
+        t: Float[Array, "1"],
+        x: Float[Array, "dim"],
+        u: eqx.Module,
+        params: Params,
+    ) -> Float[Array, "1"]:
         r"""
         Evaluate the dynamic loss at $(t,\mathbf{x})$.
 
@@ -538,7 +555,12 @@ class MassConservation2DStatio(PDEStatio):
 
     nn_key: str
 
-    def equation(self, x, u_dict, params_dict):
+    def equation(
+        self,
+        x: Float[Array, "dim"],
+        u_dict: Dict[str, eqx.Module],
+        params_dict: ParamsDict,
+    ) -> Float[Array, "1"]:
         r"""
         Evaluate the dynamic loss at `\mathbf{x}`.
         For stability we implement the dynamic loss in log space.
@@ -621,7 +643,12 @@ class NavierStokes2DStatio(PDEStatio):
     u_key: dict[str, eqx.Module]
     p_key: dict[str, eqx.Module]
 
-    def equation(self, x, u_dict, params_dict):
+    def equation(
+        self,
+        x: Float[Array, "dim"],
+        u_dict: Dict[str, eqx.Module],
+        params_dict: ParamsDict,
+    ) -> Float[Array, "1"]:
         r"""
         Evaluate the dynamic loss at `x`.
         For stability we implement the dynamic loss in log space.
