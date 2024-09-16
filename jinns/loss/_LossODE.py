@@ -13,16 +13,18 @@ from jax import vmap
 import equinox as eqx
 from jaxtyping import Float, Array, Int
 from jinns.data._DataGenerators import ODEBatch
+import jinns.loss
 from jinns.loss._Losses import (
     dynamic_loss_apply,
     constraints_system_loss_apply,
     observations_loss_apply,
 )
 from jinns.utils._pinn import PINN
-from jinns.loss._DynamicLossAbstract import ODE
+from jinns.loss import DynamicLoss, ODE
 from jinns.loss._loss_weights import LossWeightsODE, LossWeightsODEDict
 from jinns.parameters._params import (
     Params,
+    ParamsDict,
     _get_vmap_in_axes_params,
     _update_eq_params_dict,
 )
@@ -39,7 +41,7 @@ class _LossODEAbstract(eqx.Module):
     derivative_keys
         XXXX
     initial_condition
-        tuple of length 2 with initial condition :math:`(t0, u0)`.
+        tuple of length 2 with initial condition $(t_0, u(t_0))$.
         Can be None in order to
         access only some part of the evaluate call results.
     obs_slice
@@ -59,6 +61,9 @@ class _LossODEAbstract(eqx.Module):
     obs_slice: Union[slice, None] = eqx.field(kw_only=True, default=None, static=True)
 
     def __post_init__(self):
+        if self.loss_weights is None:
+            self.loss_weights = LossWeightsODE()
+
         if self.derivative_keys is None:
             # be default we only take gradient wrt nn_params
             self.derivative_keys = DerivativeKeysODE()
@@ -93,34 +98,42 @@ class _LossODEAbstract(eqx.Module):
 class LossODE(_LossODEAbstract):
     r"""Loss object for an ordinary differential equation
 
-    .. math::
-        \mathcal{N}[u](t) = 0, \forall t \in I
+    $$
+    \mathcal{N}[u](t) = 0, \forall t \in I
+    $$
 
-    where :math:`\mathcal{N}[\cdot]` is a differential operator and the
-    initial condition is :math:`u(t_0)=u_0`.
+    where $\mathcal{N}[\cdot]$ is a differential operator and the
+    initial condition is $u(t_0)=u_0$.
 
 
     Parameters
     ----------
-    u
+    a : int, default=1
+        eeee
+    loss_weights : LossWeightsODE, default=None
+        The loss weights for the differents term : dynamic loss,
+        initial condition and eventually observations if any. All fields are
+        set to 1.0 by default.
+    derivative_keys : DerivativeKeysODE, default=None
+        Specify which field of `params` should be differentiated for each
+        composant of the total loss. Particularily useful for inverse problems.
+        Fields can be "nn_params", "eq_params" or "both". Those that should not
+        be updated will have a `jax.lax.stop_gradient` called on them. Default
+        is `"nn_params"` for each composant of the loss.
+    initial_condition : tuple, default=None
+        tuple of length 2 with initial condition $(t_0, u_0)$.
+    obs_slice Slice, default=None
+        Slice object specifying the begininning/ending
+        slice of u output(s) that is observed. This is useful for
+        multidimensional PINN, with partially observed outputs.
+        Default is None (whole output is observed).
+    u : eqx.Module
         the PINN
-    dynamic_loss
+    dynamic_loss : DynamicLoss
         the ODE dynamic part of the loss, basically the differential
-        operator :math:`\mathcal{N}[u](t)`. Should implement a method
+        operator $\mathcal{N}[u](t)$. Should implement a method
         `dynamic_loss.evaluate(t, u, params)`.
-        Can be None in order to
-        access only some part of the evaluate call results.
-    loss_weights
-    derivative_keys
-        XXXX
-    initial_condition :
-        tuple of length 2 with initial condition :math:`(t0, u0)`.
-        Can be None in order to
-        access only some part of the evaluate call results.
-    obs_slice:
-        slice object specifying the begininning/ending
-        slice of u output(s) that is observed (this is then useful for
-        multidim PINN). Default is None.
+        Can be None in order to access only some part of the evaluate call.
 
     Raises
     ------
@@ -129,7 +142,7 @@ class LossODE(_LossODEAbstract):
     """
 
     u: eqx.Module
-    dynamic_loss: Union[eqx.Module, None]
+    dynamic_loss: Union[DynamicLoss, None]
 
     vmap_in_axes: tuple[Int] = eqx.field(init=False, static=True)
 
@@ -142,7 +155,7 @@ class LossODE(_LossODEAbstract):
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
-    def evaluate(self, params, batch):
+    def evaluate(self, params: Params, batch: ODEBatch) -> Float[Array, "1"]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -152,10 +165,10 @@ class LossODE(_LossODEAbstract):
         params
             A Params object
         batch
-            A ODEBatch object.
+            An ODEBatch object.
             Such a named tuple is composed of a batch of time points
-            at which to evaluate an optional additional batch of parameters (eg. for
-            metamodeling) and an optional additional batch of observed
+            at which to evaluate an optional additional batch of parameters
+            (eg. for metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
         """
         temporal_batch = batch.temporal_batch
@@ -244,11 +257,11 @@ class SystemLossODE(eqx.Module):
     r"""
     Class to implement a system of ODEs.
     The goal is to give maximum freedom to the user. The class is created with
-    a dict of dynamic loss and a dict of initial conditions. When then iterate
-    over the dynamic losses that compose the system. All the PINNs with all the
-    parameter dictionaries are passed as arguments to each dynamic loss
-    evaluate functions; it is inside the dynamic loss that specification are
-    performed.
+    a dict of dynamic loss and a dict of initial conditions. Then, it iterates
+    over the dynamic losses that compose the system. All PINNs are passed as
+    arguments to each dynamic loss evaluate functions, along with all the
+    parameter dictionaries. All specification is left to the responsability
+    of the user, inside the dynamic loss.
 
     **Note:** All the dictionaries (except `dynamic_loss_dict`) must have the same keys.
     Indeed, these dictionaries (except `dynamic_loss_dict`) are tied to one
@@ -256,34 +269,37 @@ class SystemLossODE(eqx.Module):
 
     Parameters
     ----------
-    u_dict
+    u_dict : Dict[str, eqx.Module]
         dict of PINNs
-    loss_weights
+    loss_weights : Dict[str, eqx]
         A dictionary of LossWeightsODE
-    derivative_keys_dict
-        XXX
-    initial_condition_dict
-        dict of tuple of length 2 with initial condition :math:`(t_0, u_0)`
+    derivative_keys_dict : Dict[str, DerivativeKeysODE], default=None
+        A dictionnary of DerivativeKeysODE specifying what field of `params`
+        should be used during graident computations for each of the terms of
+        the total loss, for each of the loss in the system. Default in
+        `"nn_params`" everywhere.
+    initial_condition_dict : Dict[str, tuple], default=None
+        dict of tuple of length 2 with initial condition $(t_0, u_0)$
         Must share the keys of `u_dict`. Default is None. No initial
         condition is permitted when the initial condition is hardcoded in
         the PINN architecture for example
-    dynamic_loss_dict
+    dynamic_loss_dict : Dict[str, ODE]
         dict of dynamic part of the loss, basically the differential
-        operator :math:`\mathcal{N}[u](t)`. Should implement a method
+        operator $\mathcal{N}[u](t)$. Should implement a method
         `dynamic_loss.evaluate(t, u, params)`
-    obs_slice_dict
+    obs_slice_dict : Dict[str, Slice]
         dict of obs_slice, with keys from `u_dict` to designate the
-        output(s) channels that are forced to observed values, for each
+        output(s) channels that are observed, for each
         PINNs. Default is None. But if a value is given, all the entries of
         `u_dict` must be represented here with default value `jnp.s_[...]`
-        if no particular slice is to be given
+        if no particular slice is to be given.
 
     Raises
     ------
     ValueError
-        if initial condition is not a dict of tuple
+        if initial condition is not a dict of tuple.
     ValueError
-        if the dictionaries that should share the keys of u_dict do not
+        if the dictionaries that should share the keys of u_dict do not.
     """
 
     # Contrary to the losses above, we need to declare u_dict and
@@ -438,7 +454,7 @@ class SystemLossODE(eqx.Module):
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
-    def evaluate(self, params_dict, batch):
+    def evaluate(self, params_dict: ParamsDict, batch: ODEBatch) -> Float[Array, "1"]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 
