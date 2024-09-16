@@ -13,7 +13,6 @@ from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
 
 from jinns.utils._utils import _get_grid
-from jinns.parameters._params import _extract_nn_params
 from jinns.loss._DynamicLossAbstract import ODE, PDEStatio, PDENonStatio
 from jinns.loss._operators import (
     _laplacian_rev,
@@ -39,8 +38,7 @@ class FisherKPP(PDENonStatio):
     $$
     """
 
-    @PDENonStatio.evaluate_heterogeneous_parameters
-    def evaluate(
+    def equation(
         self,
         t: Float[Array, "1"],
         x: Float[Array, "dim"],
@@ -132,7 +130,7 @@ class GeneralizedLotkaVolterra(ODE):
     key_main: list[str]
     keys_other: list[str]
 
-    def evaluate(self, t, u_dict, params_dict):
+    def equation(self, t, u_dict, params_dict):
         """
         Evaluate the dynamic loss at `t`.
         For stability we implement the dynamic loss in log space.
@@ -147,7 +145,7 @@ class GeneralizedLotkaVolterra(ODE):
             The dictionary of dictionaries of parameters of the model. Keys at
             top level are "nn_params" and "eq_params"
         """
-        params_main = _extract_nn_params(params_dict, self.key_main)
+        params_main = params_dict.extract_params(self.key_main)
 
         u = u_dict[self.key_main]
         # need to index with [0] since u output is nec (1,)
@@ -158,7 +156,7 @@ class GeneralizedLotkaVolterra(ODE):
 
         # TODO write this for loop with tree_util functions?
         for i, k in enumerate(self.keys_other):
-            params_k = _extract_nn_params(params_dict, k)
+            params_k = params_dict.extract_params(k)
             carrying_term += params_main.eq_params["carrying_capacity"] * u_dict[k](
                 t, params_k
             )
@@ -195,7 +193,7 @@ class BurgerEquation(PDENonStatio):
         heterogeneity for no parameters.
     """
 
-    def evaluate(self, t, x, u, params):
+    def equation(self, t, x, u, params):
         r"""
         Evaluate the dynamic loss at :math:`(t,x)`.
 
@@ -558,7 +556,7 @@ class MassConservation2DStatio(PDEStatio):
             differential equation parameters and the neural network parameter.
             Must have the same keys as `u_dict`
         """
-        params = _extract_nn_params(params_dict, self.nn_key)
+        params = params_dict.extract_params(self.nn_key)
 
         if isinstance(u_dict[self.nn_key], PINN):
             u = u_dict[self.nn_key]
@@ -641,8 +639,8 @@ class NavierStokes2DStatio(PDEStatio):
             differential equation parameters and the neural network parameter.
             Must have the same keys as `u_dict`
         """
-        u_params = _extract_nn_params(params_dict, self.u_key)
-        p_params = _extract_nn_params(params_dict, self.p_key)
+        u_params = params_dict.extract_params(self.u_key)
+        p_params = params_dict.extract_params(self.p_key)
 
         if isinstance(u_dict[self.u_key], PINN):
             u = u_dict[self.u_key]
