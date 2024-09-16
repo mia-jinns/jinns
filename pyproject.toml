@@ -30,7 +30,7 @@ classifiers = [
 dependencies = ["numpy", "jax", "jaxopt", "optax", "equinox", "jax-tqdm", "diffrax", "matplotlib"]
 
 [project.optional-dependencies]
-notebook = ["jupyter", "matplotlib"]
+notebook = ["jupyter", "seaborn"]
 
 [project.urls]
 Repository = "https://gitlab.com/mia_jinns/jinns"
