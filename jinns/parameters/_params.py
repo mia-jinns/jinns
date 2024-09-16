@@ -28,7 +28,8 @@ class Params(eqx.Module):
 
 class ParamsDict(eqx.Module):
     """
-    The equinox module for the parameters
+    The equinox module for a dictionnary of parameters with different keys
+    corresponding to different equations.
 
     Parameters
     ----------
@@ -42,6 +43,22 @@ class ParamsDict(eqx.Module):
 
     nn_params: Dict[str, PyTree] = eqx.field(kw_only=True)
     eq_params: Dict[str, Array] = eqx.field(kw_only=True)
+
+    def extract_params(self, nn_key: str) -> Params:
+        """
+        Extract the corresponding `nn_params` and `eq_params` for `nn_key` and
+        return them in the form of a `Params` object.
+        """
+        try:
+            return Params(
+                nn_params=self.nn_params[nn_key],
+                eq_params=self.eq_params[nn_key],
+            )
+        except (KeyError, IndexError) as e:
+            return Params(
+                nn_params=self.nn_params[nn_key],
+                eq_params=self.eq_params,
+            )
 
 
 def _update_eq_params_dict(params: Params, param_batch_dict: Dict[str, Array]):
@@ -94,20 +111,3 @@ def _get_vmap_in_axes_params(
         ),
     )
     return vmap_in_axes_params
-
-
-def _extract_nn_params(params_dict: ParamsDict, nn_key: str) -> Params:
-    """
-    Given a ParamsDict for system loss we extract the
-    corresponding `nn_params` for `nn_key` and reform Params
-    """
-    try:
-        return Params(
-            nn_params=params_dict.nn_params[nn_key],
-            eq_params=params_dict.eq_params[nn_key],
-        )
-    except (KeyError, IndexError) as e:
-        return Params(
-            nn_params=params_dict.nn_params[nn_key],
-            eq_params=params_dict.eq_params,
-        )
