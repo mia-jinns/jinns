@@ -61,7 +61,9 @@ class ParamsDict(eqx.Module):
             )
 
 
-def _update_eq_params_dict(params: Params, param_batch_dict: Dict[str, Array]):
+def _update_eq_params_dict(
+    params: Params, param_batch_dict: Dict[str, Array]
+) -> Params:
     """
     Update params.eq_params with a batch of eq_params for given key(s)
     """
@@ -88,7 +90,7 @@ def _update_eq_params_dict(params: Params, param_batch_dict: Dict[str, Array]):
 
 def _get_vmap_in_axes_params(
     eq_params_batch_dict: Dict[str, Array], params: Params
-) -> tuple:
+) -> tuple[Params]:
     """
     Return the input vmap axes when there is batch(es) of parameters to vmap
     over. The latter are designated by keys in eq_params_batch_dict.
