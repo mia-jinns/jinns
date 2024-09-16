@@ -277,16 +277,16 @@ class FPENonStatioLoss2D(PDENonStatio):
         heterogeneity for no parameters.
     """
 
-    def evaluate(self, t, x, u, params):
+    def equation(self, t, x, u, params):
         r"""
-        Evaluate the dynamic loss at :math:`(t,\mathbf{x})`.
+        Evaluate the dynamic loss at $(t,\mathbf{x})$.
 
         Parameters
         ---------
         t
             A time point
         x
-            A point in :math:`\Omega`
+            A point in $\Omega$
         u
             The PINN
         params
@@ -459,7 +459,7 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
         t
             A time point
         x
-            A point in :math:`\Omega`
+            A point in $\Omega$
         eq_params
             A dictionary containing the equation parameters
         """
@@ -475,7 +475,7 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
         t
             A time point
         x
-            A point in :math:`\Omega`
+            A point in $\Omega$
         eq_params
             A dictionary containing the equation parameters
         """
@@ -492,7 +492,7 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
         t
             A time point
         x
-            A point in :math:`\Omega`
+            A point in $\Omega$
         eq_params
             A dictionary containing the equation parameters
         """
@@ -538,7 +538,7 @@ class MassConservation2DStatio(PDEStatio):
 
     nn_key: str
 
-    def evaluate(self, x, u_dict, params_dict):
+    def equation(self, x, u_dict, params_dict):
         r"""
         Evaluate the dynamic loss at `\mathbf{x}`.
         For stability we implement the dynamic loss in log space.
@@ -546,7 +546,7 @@ class MassConservation2DStatio(PDEStatio):
         Parameters
         ---------
         x
-            A point in :math:`\Omega\subset\mathbb{R}^2`
+            A point in $\Omega\subset\mathbb{R}^2$
         u_dict
             A dictionary of PINNs. Must have the same keys as `params_dict`
         params_dict
@@ -600,13 +600,13 @@ class NavierStokes2DStatio(PDEStatio):
     u_key
         A dictionary key which indices in `u_dict`
         the PINN with the role of the velocity in the equation.
-        Its input is bimensional (points in :math:`\Omega\subset\mathbb{R}^2`).
+        Its input is bimensional (points in $\Omega\subset\mathbb{R}^2$).
         Its output is bimensional as it represents a velocity vector
         field
     p_key
         A dictionary key which indices in `u_dict`
         the PINN with the role of the pressure in the equation.
-        Its input is bimensional (points in :math:`\Omega\subset\mathbb{R}^2`).
+        Its input is bimensional (points in $\Omega\subset\mathbb{R}^2).
         Its output is unidimensional as it represents a pressure scalar
         field
     eq_params_heterogeneity
@@ -621,7 +621,7 @@ class NavierStokes2DStatio(PDEStatio):
     u_key: dict[str, eqx.Module]
     p_key: dict[str, eqx.Module]
 
-    def evaluate(self, x, u_dict, params_dict):
+    def equation(self, x, u_dict, params_dict):
         r"""
         Evaluate the dynamic loss at `x`.
         For stability we implement the dynamic loss in log space.
@@ -629,13 +629,13 @@ class NavierStokes2DStatio(PDEStatio):
         Parameters
         ---------
         x
-            A point in :math:`\Omega\subset\mathbb{R}^2`
+            A point in $\Omega\subset\mathbb{R}^2$
         u_dict
             A dictionary of PINNs. Must have the same keys as `params_dict`
         params_dict
             The dictionary of dictionaries of parameters of the model.
             Typically, each sub-dictionary is a dictionary
-            with keys: `eq_params` and `nn_params``, respectively the
+            with keys: `eq_params` and `nn_params`, respectively the
             differential equation parameters and the neural network parameter.
             Must have the same keys as `u_dict`
         """
