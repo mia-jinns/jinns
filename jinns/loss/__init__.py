@@ -1,4 +1,4 @@
-from ._DynamicLossAbstract import ODE, PDEStatio, PDENonStatio
+from ._DynamicLossAbstract import DynamicLoss, ODE, PDEStatio, PDENonStatio
 from ._LossODE import LossODE, SystemLossODE
 from ._LossPDE import LossPDEStatio, LossPDENonStatio, SystemLossPDE
 from ._DynamicLoss import (
