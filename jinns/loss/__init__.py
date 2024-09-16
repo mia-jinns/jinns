@@ -9,4 +9,10 @@ from ._DynamicLoss import (
     MassConservation2DStatio,
     NavierStokes2DStatio,
 )
-from ._loss_weights import *
+from ._loss_weights import (
+    LossWeightsODE,
+    LossWeightsODEDict,
+    LossWeightsPDENonStatio,
+    LossWeightsPDEStatio,
+    LossWeightsPDEDict,
+)
