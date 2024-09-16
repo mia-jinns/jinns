@@ -1,6 +1,6 @@
 # Total loss
 
 
-::: jinns.loss.LossODE_eqx
+::: jinns.loss.LossODE
     members:
         - evaluate
