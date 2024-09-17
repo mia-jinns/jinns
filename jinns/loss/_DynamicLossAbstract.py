@@ -174,10 +174,6 @@ class ODE(DynamicLoss):
 
     _eq_type: ClassVar[str] = "ODE"
 
-    @classmethod
-    def evaluate_heterogeneous_params(evaluate):
-        return decorator_heteregeneous_params(evaluate, eq_type="ODE")
-
     def evaluate(self, t, u, params):
         """Here we call DynamicLoss._evaluate with x=None"""
         return self._evaluate(t, None, u, params)
