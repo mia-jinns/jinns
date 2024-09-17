@@ -945,8 +945,8 @@ class DataGeneratorObservations(eqx.Module):
         Observed values that the PINN should learn to fit. The first
         dimension must be aligned with observed_pinn_in.
     observed_eq_params
-        Optional. Default is None. A dict with keys corresponding to the
-        parameter name. The keys must match the keys in
+        Optional. Default is empty dict {}. A dict with keys corresponding to
+        the parameter name. The keys must match the keys in
         `params["eq_params"]`. The values are jnp.array with 2 dimensions
         with values corresponding to the parameter value for which we also
         have observed_pinn_in and observed_values. Hence the first
@@ -1309,7 +1309,7 @@ class DataGeneratorObservationsMultiPINNs(eqx.Module):
         Keys must be that of `u_dict`.
         If no observation exists for a particular entry of `u_dict` the
         corresponding key must still exist in observed_eq_params_dict with
-        value None
+        value `{}` (empty dictionnary).
     key
         Jax random key to shuffle batches.
     """
@@ -1317,7 +1317,7 @@ class DataGeneratorObservationsMultiPINNs(eqx.Module):
     obs_batch_size: Int
     observed_pinn_in_dict: dict[str, Array]
     observed_values_dict: dict[str, Array]
-    observed_eq_params_dict: dict[str, Array]
+    observed_eq_params_dict: dict[str, Array] = eqx.field(default=None, kw_only=True)
     key: InitVar[Key]
 
     data_gen_obs: dict[str, "DataGeneratorObservations"] = eqx.field(init=False)
@@ -1332,18 +1332,16 @@ class DataGeneratorObservationsMultiPINNs(eqx.Module):
                 "Keys must be the same in observed_pinn_in_dict"
                 " and observed_values_dict"
             )
-        if (
-            self.observed_eq_params_dict is not None
-            and self.observed_pinn_in_dict.keys() != self.observed_eq_params_dict.keys()
-        ):
-            raise ValueError(
-                "Keys must be the same in observed_eq_params_dict"
-                " and observed_pinn_in_dict and observed_values_dict"
-            )
+
         if self.observed_eq_params_dict is None:
             self.observed_eq_params_dict = {
-                k: None for k in self.observed_pinn_in_dict.keys()
+                k: {} for k in self.observed_pinn_in_dict.keys()
             }
+        elif self.observed_pinn_in_dict.keys() != self.observed_eq_params_dict.keys():
+            raise ValueError(
+                f"Keys must be the same in observed_eq_params_dict"
+                f" and observed_pinn_in_dict and observed_values_dict"
+            )
 
         keys = dict(
             zip(
