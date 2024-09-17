@@ -14,7 +14,7 @@ import equinox as eqx
 from jaxtyping import Float, Array, Int
 from jinns.data._DataGenerators import ODEBatch
 import jinns.loss
-from jinns.loss._Losses import (
+from jinns.loss._loss_utils import (
     dynamic_loss_apply,
     constraints_system_loss_apply,
     observations_loss_apply,
@@ -238,7 +238,7 @@ class LossODE(_LossODEAbstract):
                 (batch.obs_batch_dict["pinn_in"],),
                 params_with_derivatives_at_loss_terms.observations,
                 self.vmap_in_axes + vmap_in_axes_params,
-                batch.obs_batch_dict.val,
+                batch.obs_batch_dict["val"],
                 self.loss_weights.observations,
                 self.obs_slice,
             )
@@ -412,7 +412,7 @@ class SystemLossODE(eqx.Module):
         for k in fields(loss_weights_init):
             v = getattr(loss_weights_init, k.name)
             if isinstance(v, dict):
-                for vv in v.keys():
+                for vv in v.values():
                     if not isinstance(vv, (int, float)) and not (
                         isinstance(vv, Array)
                         and ((vv.shape == (1,) or len(vv.shape) == 0))
@@ -437,7 +437,7 @@ class SystemLossODE(eqx.Module):
                             "Keys in nested dictionary of loss_weights"
                             " do not match u_dict keys"
                         )
-            if v is None:
+            elif v is None:
                 _loss_weights[k.name] = {kk: 0 for kk in self.u_dict.keys()}
             else:
                 if not isinstance(v, (int, float)) and not (

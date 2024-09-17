@@ -11,7 +11,7 @@ import jax
 import jax.numpy as jnp
 import equinox as eqx
 from jaxtyping import Float, Array, Key, Int
-from jinns.loss._Losses import (
+from jinns.loss._loss_utils import (
     dynamic_loss_apply,
     boundary_condition_apply,
     normalization_loss_apply,
