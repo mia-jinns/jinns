@@ -4,12 +4,11 @@ Implements abstract classes for dynamic losses
 
 import equinox as eqx
 from typing import Union, Callable, Dict, TYPE_CHECKING, ClassVar
-from jaxtyping import Float
+from jaxtyping import Float, Array
 from functools import partial
 import abc
 
-import jinns.utils
-import jinns.utils
+from jinns.parameters import Params, ParamsDict
 
 # See : https://docs.kidger.site/equinox/api/module/advanced_fields/#equinox.AbstractClassVar--known-issues
 if TYPE_CHECKING:
@@ -174,7 +173,12 @@ class ODE(DynamicLoss):
 
     _eq_type: ClassVar[str] = "ODE"
 
-    def evaluate(self, t, u, params):
+    def evaluate(
+        self,
+        t: Float[Array, "1"],
+        u: eqx.Module | Dict[str, eqx.Module],
+        params: Params | ParamsDict,
+    ):
         """Here we call DynamicLoss._evaluate with x=None"""
         return self._evaluate(t, None, u, params)
 
