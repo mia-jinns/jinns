@@ -472,7 +472,7 @@ def store_loss_and_params(
     return (stored_params, stored_loss_terms, train_loss_values)
 
 
-def get_break_fun(n_iter, verbose: str):
+def get_break_fun(n_iter, verbose: bool):
     """
     Wrapper to get the break_fun with appropriate `n_iter`.
     The verbose argument is here to control printing (or not) when exiting
