@@ -36,18 +36,23 @@ class _LossODEAbstract(eqx.Module):
     Parameters
     ----------
 
-    loss_weights
-        XXX
-    derivative_keys
-        XXXX
-    initial_condition
-        tuple of length 2 with initial condition $(t_0, u(t_0))$.
-        Can be None in order to
-        access only some part of the evaluate call results.
-    obs_slice
-        slice object specifying the begininning/ending
-        slice of u output(s) that is observed (this is then useful for
-        multidim PINN). Default is None.
+    loss_weights : LossWeightsODE, default=None
+        The loss weights for the differents term : dynamic loss,
+        initial condition and eventually observations if any. All fields are
+        set to 1.0 by default.
+    derivative_keys : DerivativeKeysODE, default=None
+        Specify which field of `params` should be differentiated for each
+        composant of the total loss. Particularily useful for inverse problems.
+        Fields can be "nn_params", "eq_params" or "both". Those that should not
+        be updated will have a `jax.lax.stop_gradient` called on them. Default
+        is `"nn_params"` for each composant of the loss.
+    initial_condition : tuple, default=None
+        tuple of length 2 with initial condition $(t_0, u_0)$.
+    obs_slice Slice, default=None
+        Slice object specifying the begininning/ending
+        slice of u output(s) that is observed. This is useful for
+        multidimensional PINN, with partially observed outputs.
+        Default is None (whole output is observed).
     """
 
     # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
@@ -108,8 +113,6 @@ class LossODE(_LossODEAbstract):
 
     Parameters
     ----------
-    a : int, default=1
-        eeee
     loss_weights : LossWeightsODE, default=None
         The loss weights for the differents term : dynamic loss,
         initial condition and eventually observations if any. All fields are
