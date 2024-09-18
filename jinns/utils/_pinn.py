@@ -2,45 +2,49 @@
 Implements utility function to create PINNs
 """
 
+from dataclasses import InitVar
 import jax
 import jax.numpy as jnp
 import equinox as eqx
 
 from typing import Callable
-from jaxtyping import Array
+from jaxtyping import Array, Key, PyTree, Float
+
+from jinns.parameters._params import Params
 
 
 class _MLP(eqx.Module):
     """
     Class to construct an equinox module from a key and a eqx_list. To be used
     in pair with the function `create_PINN`
+
+    Parameters
+    ----------
+    key : Key
+        A jax random key for the layer initializations
+    eqx_list :
+        A tuple of tuples of successive equinox modules and activation functions to
+        describe the PINN architecture. The inner tuples must have the eqx module or
+        axtivation function as first item, other items represents arguments
+        that could be required (eg. the size of the layer).
+        __Note:__ the `key` argument need not be given.
+        Thus typical example is `eqx_list=
+        ((eqx.nn.Linear, 2, 20),
+            jax.nn.tanh,
+            (eqx.nn.Linear, 20, 20),
+            jax.nn.tanh,
+            (eqx.nn.Linear, 20, 20),
+            jax.nn.tanh,
+            (eqx.nn.Linear, 20, 1)
+        )`
     """
 
-    layers: list
+    key: InitVar[Key]
+    eqx_list: InitVar[tuple[tuple[Callable, int, int] | Callable, ...]]
 
-    def __init__(self, key, eqx_list):
-        """
-        Parameters
-        ----------
-        key
-            A jax random key
-        eqx_list
-            A list of list of successive equinox modules and activation functions to
-            describe the PINN architecture. The inner lists have the eqx module or
-            axtivation function as first item, other items represents arguments
-            that could be required (eg. the size of the layer).
-            __Note:__ the `key` argument need not be given.
-            Thus typical example is `eqx_list=
-            [[eqx.nn.Linear, 2, 20],
-                [jax.nn.tanh],
-                [eqx.nn.Linear, 20, 20],
-                [jax.nn.tanh],
-                [eqx.nn.Linear, 20, 20],
-                [jax.nn.tanh],
-                [eqx.nn.Linear, 20, 1]
-            ]`
-        """
+    layers: list = eqx.field(init=False, static=True)
 
+    def __post_init__(self, key, eqx_list):
         self.layers = []
         for l in eqx_list:
             if len(l) == 1:
@@ -49,7 +53,7 @@ class _MLP(eqx.Module):
                 key, subkey = jax.random.split(key, 2)
                 self.layers.append(l[0](*l[1:], key=subkey))
 
-    def __call__(self, t):
+    def __call__(self, t: Float[Array, "input_dim"]) -> Float[Array, "output_dim"]:
         for layer in self.layers:
             t = layer(t)
         return t
@@ -57,38 +61,35 @@ class _MLP(eqx.Module):
 
 class PINN(eqx.Module):
     """
-    Basically a wrapper around the `__call__` function to be able to give a type to our former `self.u`
-    The function create_PINN has the role to populate the `__call__` function
+    A PINN object
+
+    Parameters
+    ----------
+    slice_solution : slice
+    eq_type : str
+    input_transform : Callable
+    output_transform : Callable
+    output_slice : slice, default=None
     """
 
-    slice_solution: slice = eqx.field(static=True)
-    eq_type: str = eqx.field(static=True)
-    input_transform: Callable = eqx.field(static=True)
-    output_transform: Callable = eqx.field(static=True)
-    output_slice: slice = eqx.field(static=True)
-    params: eqx.Module
-    static: eqx.Module = eqx.field(static=True)
+    slice_solution: slice = eqx.field(static=True, kw_only=True)
+    eq_type: str = eqx.field(static=True, kw_only=True)
+    input_transform: Callable = eqx.field(static=True, kw_only=True)
+    output_transform: Callable = eqx.field(static=True, kw_only=True)
+    output_slice: slice = eqx.field(static=True, kw_only=True, default=None)
 
-    def __init__(
-        self,
-        mlp,
-        slice_solution,
-        eq_type,
-        input_transform,
-        output_transform,
-        output_slice,
-    ):
+    mlp: InitVar[eqx.Module] = eqx.field(kw_only=True)
+
+    params: PyTree = eqx.field(init=False, kw_only=True)
+    static: PyTree = eqx.field(init=False, kw_only=True, static=True)
+
+    def __post_init__(self, mlp):
         self.params, self.static = eqx.partition(mlp, eqx.is_inexact_array)
-        self.slice_solution = slice_solution
-        self.eq_type = eq_type
-        self.input_transform = input_transform
-        self.output_transform = output_transform
-        self.output_slice = output_slice
 
-    def init_params(self):
+    def init_params(self) -> PyTree:
         return self.params
 
-    def __call__(self, *args):
+    def __call__(self, *args) -> Float[Array, "output_dim"]:
         if self.eq_type == "ODE":
             (t, params) = args
             if len(t.shape) == 0:
@@ -107,7 +108,13 @@ class PINN(eqx.Module):
             )
         raise ValueError("Wrong value for self.eq_type")
 
-    def _eval_nn(self, inputs, params, input_transform, output_transform):
+    def _eval_nn(
+        self,
+        inputs: Float[Array, "input_dim"],
+        params: Params | PyTree,
+        input_transform: Callable,
+        output_transform: Callable,
+    ) -> Float[Array, "output_dim"]:
         """
         inner function to factorize code. apply_fn (which takes varying forms)
         call _eval_nn which always have the same content.
@@ -128,14 +135,14 @@ class PINN(eqx.Module):
 
 
 def create_PINN(
-    key,
-    eqx_list,
-    eq_type,
-    dim_x=0,
-    input_transform=None,
-    output_transform=None,
-    shared_pinn_outputs=None,
-    slice_solution=None,
+    key: Key,
+    eqx_list: tuple[tuple[Callable, int, int] | Callable, ...],
+    eq_type: str,
+    dim_x: int = 0,
+    input_transform: Callable = None,
+    output_transform: Callable = None,
+    shared_pinn_outputs: slice = None,
+    slice_solution: slice = None,
 ):
     r"""
     Utility function to create a standard PINN neural network with the equinox
@@ -146,20 +153,20 @@ def create_PINN(
     key
         A jax random key that will be used to initialize the network parameters
     eqx_list
-        A list of list of successive equinox modules and activation functions to
-        describe the PINN architecture. The inner lists have the eqx module or
+        A tuple of tuples of successive equinox modules and activation functions to
+        describe the PINN architecture. The inner tuples must have the eqx module or
         axtivation function as first item, other items represents arguments
         that could be required (eg. the size of the layer).
         __Note:__ the `key` argument need not be given.
         Thus typical example is `eqx_list=
-        [[eqx.nn.Linear, 2, 20],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 20, 20],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 20, 20],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 20, 1]
-        ]`
+        ((eqx.nn.Linear, 2, 20),
+            jax.nn.tanh,
+            (eqx.nn.Linear, 20, 20),
+            jax.nn.tanh,
+            (eqx.nn.Linear, 20, 20),
+            jax.nn.tanh,
+            (eqx.nn.Linear, 20, 1)
+        )`
     eq_type
         A string with three possibilities.
         "ODE": the PINN is called with one input `t`.
@@ -200,7 +207,10 @@ def create_PINN(
 
     Returns
     -------
-    `u`, a :class:`.PINN` object which inherits from `eqx.Module` (hence callable). This comes with a bound method :func:`u.init_params() <PINN.init_params>`. When `shared_pinn_ouput` is not None, a list of :class:`.PINN` with the same structure is returned, only differing by there final slicing of the network output.
+    pinn : PINN | list[PINN]
+        A PINN instance or, when `shared_pinn_ouput` is not None,
+        a list of PINN instances with the same structure is returned,
+        only differing by there final slicing of the network output.
 
     Raises
     ------
@@ -249,14 +259,21 @@ def create_PINN(
         pinns = []
         for output_slice in shared_pinn_outputs:
             pinn = PINN(
-                mlp,
-                slice_solution,
-                eq_type,
-                input_transform,
-                output_transform,
-                output_slice,
+                mlp=mlp,
+                slice_solution=slice_solution,
+                eq_type=eq_type,
+                input_transform=input_transform,
+                output_transform=output_transform,
+                output_slice=output_slice,
             )
             pinns.append(pinn)
         return pinns
-    pinn = PINN(mlp, slice_solution, eq_type, input_transform, output_transform, None)
+    pinn = PINN(
+        mlp=mlp,
+        slice_solution=slice_solution,
+        eq_type=eq_type,
+        input_transform=input_transform,
+        output_transform=output_transform,
+        output_slice=None,
+    )
     return pinn

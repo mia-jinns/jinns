@@ -5,29 +5,34 @@ https://arxiv.org/pdf/2111.01008.pdf
 
 import copy
 from math import prod
-import numpy as onp
 import jax
 import jax.numpy as jnp
 from jax.tree_util import tree_leaves, tree_map
-from jax.typing import ArrayLike
+from jaxtyping import Array, Float, PyTree, Int
 import equinox as eqx
 
 from jinns.utils._pinn import PINN, _MLP
+from jinns.parameters._params import Params
 
 
-def _get_param_nb(params):
-    """
-    Returns the number of parameters in a equinox module whose parameters
-    are stored in the pytree of parameters params but also the cumulative
-    sum when parsing the pytree
-    In reality, multiply the dimensions of the Arrays in this  pytree and
-    sum everything, using pytree utility functions
+def _get_param_nb(params: Params) -> tuple[Float[Array, "1"], Float[Array, "1"]]:
+    """Returns the number of parameters in a Params object and also
+    the cumulative sum when parsing the object.
+
+
+    Parameters
+    ----------
+
+    params :
+        A Params object.
     """
     dim_prod_all_arrays = [
         prod(a.shape)
         for a in tree_leaves(params, is_leaf=lambda x: isinstance(x, jnp.ndarray))
     ]
-    return sum(dim_prod_all_arrays), onp.cumsum(dim_prod_all_arrays)
+    return jnp.sum(jnp.asarray(dim_prod_all_arrays)), jnp.cumsum(
+        jnp.asarray(dim_prod_all_arrays)
+    )
 
 
 class HYPERPINN(PINN):
@@ -35,12 +40,12 @@ class HYPERPINN(PINN):
     Composed of a PINN and an hypernetwork
     """
 
-    params_hyper: eqx.Module
-    static_hyper: eqx.Module = eqx.field(static=True)
+    params_hyper: PyTree
+    static_hyper: PyTree = eqx.field(static=True)
     hyperparams: list = eqx.field(static=True)
     hypernet_input_size: int
-    pinn_params_sum: ArrayLike = eqx.field(static=True)
-    pinn_params_cumsum: ArrayLike = eqx.field(static=True)
+    pinn_params_sum: Int[Array, "1"] = eqx.field(static=True)
+    pinn_params_cumsum: Int[Array, "n_layers"] = eqx.field(static=True)
 
     def __init__(
         self,
