@@ -20,9 +20,9 @@ class _MLP(eqx.Module):
 
     Parameters
     ----------
-    key : Key
+    key : InitVar[Key]
         A jax random key for the layer initializations
-    eqx_list :
+    eqx_list : InitVar[tuple[tuple[Callable, int, int] | Callable, ...]]
         A tuple of tuples of successive equinox modules and activation functions to
         describe the PINN architecture. The inner tuples must have the eqx module or
         axtivation function as first item, other items represents arguments
@@ -42,7 +42,9 @@ class _MLP(eqx.Module):
     key: InitVar[Key]
     eqx_list: InitVar[tuple[tuple[Callable, int, int] | Callable, ...]]
 
-    layers: list = eqx.field(init=False, static=True)
+    # NOTE that the following should NOT be declared as static otherwise the
+    # eqx.partition that we use in the PINN module will misbehave!!!
+    layers: list = eqx.field(init=False)
 
     def __post_init__(self, key, eqx_list):
         self.layers = []
@@ -70,6 +72,7 @@ class PINN(eqx.Module):
     input_transform : Callable
     output_transform : Callable
     output_slice : slice, default=None
+    mlp : _MLP
     """
 
     slice_solution: slice = eqx.field(static=True, kw_only=True)
@@ -78,10 +81,10 @@ class PINN(eqx.Module):
     output_transform: Callable = eqx.field(static=True, kw_only=True)
     output_slice: slice = eqx.field(static=True, kw_only=True, default=None)
 
-    mlp: InitVar[eqx.Module] = eqx.field(kw_only=True)
+    mlp: InitVar[eqx.Module] = eqx.field(kw_only=True, static=True)
 
-    params: PyTree = eqx.field(init=False, kw_only=True)
-    static: PyTree = eqx.field(init=False, kw_only=True, static=True)
+    params: PyTree = eqx.field(init=False)
+    static: PyTree = eqx.field(init=False, static=True)
 
     def __post_init__(self, mlp):
         self.params, self.static = eqx.partition(mlp, eqx.is_inexact_array)
@@ -143,7 +146,7 @@ def create_PINN(
     output_transform: Callable = None,
     shared_pinn_outputs: slice = None,
     slice_solution: slice = None,
-):
+) -> PINN | list[PINN]:
     r"""
     Utility function to create a standard PINN neural network with the equinox
     library.
@@ -253,7 +256,7 @@ def create_PINN(
         def output_transform(_in_pinn, _out_pinn):
             return _out_pinn
 
-    mlp = _MLP(key, eqx_list)
+    mlp = _MLP(key=key, eqx_list=eqx_list)
 
     if shared_pinn_outputs is not None:
         pinns = []

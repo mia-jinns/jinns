@@ -3,12 +3,14 @@ Implements utility function to create HYPERPINNs
 https://arxiv.org/pdf/2111.01008.pdf
 """
 
+from dataclasses import InitVar
+from typing import Callable
 import copy
 from math import prod
 import jax
 import jax.numpy as jnp
 from jax.tree_util import tree_leaves, tree_map
-from jaxtyping import Array, Float, PyTree, Int
+from jaxtyping import Array, Float, PyTree, Int, Key
 import equinox as eqx
 
 from jinns.utils._pinn import PINN, _MLP
@@ -38,46 +40,44 @@ def _get_param_nb(params: Params) -> tuple[Float[Array, "1"], Float[Array, "1"]]
 class HYPERPINN(PINN):
     """
     Composed of a PINN and an hypernetwork
-    """
 
-    params_hyper: PyTree
-    static_hyper: PyTree = eqx.field(static=True)
+    Parameters
+    ----------
     hyperparams: list = eqx.field(static=True)
     hypernet_input_size: int
-    pinn_params_sum: Int[Array, "1"] = eqx.field(static=True)
-    pinn_params_cumsum: Int[Array, "n_layers"] = eqx.field(static=True)
+    slice_solution : slice
+    eq_type : str
+    input_transform : Callable
+    output_transform : Callable
+    output_slice : slice, default=None
+    mlp : _MLP
+    hyper_mlp : _MLP
+    """
 
-    def __init__(
-        self,
-        mlp,
-        hyper_mlp,
-        slice_solution,
-        eq_type,
-        input_transform,
-        output_transform,
-        hyperparams,
-        hypernet_input_size,
-        output_slice,
-    ):
-        super().__init__(
+    hyperparams: list = eqx.field(static=True, kw_only=True)
+    hypernet_input_size: int = eqx.field(kw_only=True)
+
+    hyper_mlp: InitVar[eqx.Module] = eqx.field(kw_only=True, static=True)
+    mlp: InitVar[eqx.Module] = eqx.field(kw_only=True, static=True)
+
+    params_hyper: PyTree = eqx.field(init=False)
+    static_hyper: PyTree = eqx.field(init=False, static=True)
+    pinn_params_sum: Int[Array, "1"] = eqx.field(init=False, static=True)
+    pinn_params_cumsum: Int[Array, "n_layers"] = eqx.field(init=False, static=True)
+
+    def __post_init__(self, mlp, hyper_mlp):
+        super().__post_init__(
             mlp,
-            slice_solution,
-            eq_type,
-            input_transform,
-            output_transform,
-            output_slice,
         )
         self.params_hyper, self.static_hyper = eqx.partition(
             hyper_mlp, eqx.is_inexact_array
         )
-        self.hyperparams = hyperparams
-        self.hypernet_input_size = hypernet_input_size
         self.pinn_params_sum, self.pinn_params_cumsum = _get_param_nb(self.params)
 
-    def init_params(self):
+    def init_params(self) -> Params:
         return self.params_hyper
 
-    def hyper_to_pinn(self, hyper_output):
+    def hyper_to_pinn(self, hyper_output: Float[Array, "output_dim"]) -> PyTree:
         """
         From the output of the hypernetwork we set the well formed
         parameters of the pinn (`self.params`)
@@ -95,7 +95,13 @@ class HYPERPINN(PINN):
             is_leaf=lambda x: isinstance(x, jnp.ndarray),
         )
 
-    def _eval_nn(self, inputs, params, input_transform, output_transform):
+    def _eval_nn(
+        self,
+        inputs: Float[Array, "input_dim"],
+        params: Params | PyTree,
+        input_transform: Callable,
+        output_transform: Callable,
+    ) -> Float[Array, "output_dim"]:
         """
         inner function to factorize code. apply_fn (which takes varying forms)
         call _eval_nn which always have the same content.
@@ -126,18 +132,18 @@ class HYPERPINN(PINN):
 
 
 def create_HYPERPINN(
-    key,
-    eqx_list,
-    eq_type,
-    hyperparams,
-    hypernet_input_size,
-    dim_x=0,
-    input_transform=None,
-    output_transform=None,
-    slice_solution=None,
-    shared_pinn_outputs=None,
-    eqx_list_hyper=None,
-):
+    key: Key,
+    eqx_list: tuple[tuple[Callable, int, int] | Callable, ...],
+    eq_type: str,
+    hyperparams: list,
+    hypernet_input_size: int,
+    dim_x: int = 0,
+    input_transform: Callable = None,
+    output_transform: Callable = None,
+    slice_solution: slice = None,
+    shared_pinn_outputs: slice = None,
+    eqx_list_hyper: tuple[tuple[Callable, int, int] | Callable, ...] = None,
+) -> HYPERPINN | list[HYPERPINN]:
     r"""
     Utility function to create a standard PINN neural network with the equinox
     library.
@@ -284,27 +290,27 @@ def create_HYPERPINN(
         hyperpinns = []
         for output_slice in shared_pinn_outputs:
             hyperpinn = HYPERPINN(
-                mlp,
-                hyper_mlp,
-                slice_solution,
-                eq_type,
-                input_transform,
-                output_transform,
-                hyperparams,
-                hypernet_input_size,
-                output_slice,
+                mlp=mlp,
+                hyper_mlp=hyper_mlp,
+                slice_solution=slice_solution,
+                eq_type=eq_type,
+                input_transform=input_transform,
+                output_transform=output_transform,
+                hyperparams=hyperparams,
+                hypernet_input_size=hypernet_input_size,
+                output_slice=output_slice,
             )
             hyperpinns.append(hyperpinn)
         return hyperpinns
     hyperpinn = HYPERPINN(
-        mlp,
-        hyper_mlp,
-        slice_solution,
-        eq_type,
-        input_transform,
-        output_transform,
-        hyperparams,
-        hypernet_input_size,
-        None,
+        mlp=mlp,
+        hyper_mlp=hyper_mlp,
+        slice_solution=slice_solution,
+        eq_type=eq_type,
+        input_transform=input_transform,
+        output_transform=output_transform,
+        hyperparams=hyperparams,
+        hypernet_input_size=hypernet_input_size,
+        output_slice=None,
     )
     return hyperpinn
