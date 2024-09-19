@@ -83,7 +83,7 @@ def train_NSPipeFlow_init():
     d = 2 * R
 
     # initiate parameters dictionary
-    init_params = jinns.parameters.Params(
+    init_params = jinns.parameters.ParamsDict(
         nn_params={"u": u_init_nn_params, "p": p_init_nn_params},
         eq_params={"rho": rho, "nu": nu},
     )

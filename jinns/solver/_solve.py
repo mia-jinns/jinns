@@ -198,12 +198,12 @@ def solve(
     )
     optimization = OptimizationContainer(
         params=init_params,
-        last_non_nan_params=copy.deepcopy(init_params),
+        last_non_nan_params=init_params,
         opt_state=opt_state,
     )
     optimization_extra = OptimizationExtraContainer(
         curr_seq=curr_seq,
-        best_val_params=copy.deepcopy(init_params),
+        best_val_params=init_params,
     )
     loss_container = LossContainer(
         stored_loss_terms=stored_loss_terms,
