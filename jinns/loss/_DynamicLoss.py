@@ -127,8 +127,9 @@ class GeneralizedLotkaVolterra(ODE):
         heterogeneity for no parameters.
     """
 
-    key_main: list[str]
-    keys_other: list[str]
+    # they should be static because they are list of strings
+    key_main: list[str] = eqx.field(static=True)
+    keys_other: list[str] = eqx.field(static=True)
 
     def equation(
         self,
@@ -553,7 +554,8 @@ class MassConservation2DStatio(PDEStatio):
         heterogeneity for no parameters.
     """
 
-    nn_key: str
+    # an str field should be static (not a valid JAX type)
+    nn_key: str = eqx.field(static=True)
 
     def equation(
         self,
