@@ -27,23 +27,23 @@ class DerivativeKeysODE(eqx.Module):
 class DerivativeKeysPDEStatio(eqx.Module):
 
     dyn_loss: Literal["nn_params", "eq_params", "both"] | None = eqx.field(
-        kw_only=True, default="nn_params"
+        kw_only=True, default="nn_params", static=True
     )
     observations: Literal["nn_params", "eq_params", "both"] | None = eqx.field(
-        kw_only=True, default="nn_params"
+        kw_only=True, default="nn_params", static=True
     )
     boundary_loss: Literal["nn_params", "eq_params", "both"] | None = eqx.field(
-        kw_only=True, default="nn_params"
+        kw_only=True, default="nn_params", static=True
     )
     norm_loss: Literal["nn_params", "eq_params", "both"] | None = eqx.field(
-        kw_only=True, default="nn_params"
+        kw_only=True, default="nn_params", static=True
     )
 
 
 class DerivativeKeysPDENonStatio(DerivativeKeysPDEStatio):
 
     initial_condition: Literal["nn_params", "eq_params", "both"] = eqx.field(
-        kw_only=True, default="nn_params"
+        kw_only=True, default="nn_params", static=True
     )
 
 
