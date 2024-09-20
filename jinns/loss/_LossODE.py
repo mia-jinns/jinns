@@ -13,7 +13,6 @@ from jax import vmap
 import equinox as eqx
 from jaxtyping import Float, Array, Int
 from jinns.data._DataGenerators import ODEBatch
-import jinns.loss
 from jinns.loss._loss_utils import (
     dynamic_loss_apply,
     constraints_system_loss_apply,
@@ -60,9 +59,7 @@ class _LossODEAbstract(eqx.Module):
         kw_only=True, default=None, static=True
     )
     loss_weights: Union[LossWeightsODE, None] = eqx.field(kw_only=True, default=None)
-    initial_condition: Union[tuple, None] = eqx.field(
-        kw_only=True, default=None, static=True
-    )
+    initial_condition: Union[tuple, None] = eqx.field(kw_only=True, default=None)
     obs_slice: Union[slice, None] = eqx.field(kw_only=True, default=None, static=True)
 
     def __post_init__(self):
@@ -310,14 +307,15 @@ class SystemLossODE(eqx.Module):
     # valid JAX type (and not because of the ODE or eqx.Module)
     # We could consider notusing a dict here, but that's a lot of technical
     # work maybe not worth it
-    u_dict: Dict[str, eqx.Module] = eqx.field(static=True)
-    dynamic_loss_dict: Dict[str, ODE] = eqx.field(static=True)
+    u_dict: Dict[str, eqx.Module] = eqx.field()  #  static=True)
+    dynamic_loss_dict: Dict[str, ODE] = eqx.field()  # static=True)
     derivative_keys_dict: Union[Dict[str, Union[DerivativeKeysODE, None]], None] = (
         eqx.field(kw_only=True, default=None, static=True)
     )
     initial_condition_dict: Union[Dict[str, tuple], None] = eqx.field(
         kw_only=True, default=None, static=True
     )
+
     obs_slice_dict: Union[Dict[str, Union[slice, None]], None] = eqx.field(
         kw_only=True, default=None, static=True
     )
@@ -325,13 +323,13 @@ class SystemLossODE(eqx.Module):
     # For the user loss_weights are passed as a LossWeightsODEDict (with internal
     # dictionary having keys in u_dict and / or dynamic_loss_dict)
     loss_weights: InitVar[Union[LossWeightsODEDict, None]] = eqx.field(
-        kw_only=True, default=None, static=True
-    )
-
+        kw_only=True, default=None
+    )  # , static=True)
     u_constraints_dict: Dict[str, list] = eqx.field(init=False, static=True)
     derivative_keys_dyn_loss_dict: Dict[str, DerivativeKeysODE] = eqx.field(
         init=False, static=True
     )
+
     u_dict_with_none: Dict[str, None] = eqx.field(init=False, static=True)
     # internally the loss weights are handled with a dictionary
     _loss_weights: Dict[str, dict] = eqx.field(init=False, static=True)
