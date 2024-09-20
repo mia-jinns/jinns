@@ -347,17 +347,13 @@ class LossPDEStatio(_LossPDEAbstract):
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
-        params_with_derivatives_at_loss_terms = _set_derivatives(
-            params, self.derivative_keys
-        )
-
         # dynamic part
         if self.dynamic_loss is not None:
             mse_dyn_loss = dynamic_loss_apply(
                 self.dynamic_loss.evaluate,
                 self.u,
                 self._get_dynamic_loss_batch(batch),
-                params_with_derivatives_at_loss_terms.dyn_loss,
+                _set_derivatives(params, self.derivative_keys.dyn_loss),
                 self.vmap_in_axes + vmap_in_axes_params,
                 self.loss_weights.dyn_loss,
             )
@@ -369,7 +365,7 @@ class LossPDEStatio(_LossPDEAbstract):
             mse_norm_loss = normalization_loss_apply(
                 self.u,
                 self._get_normalization_loss_batch(batch),
-                params_with_derivatives_at_loss_terms.norm_loss,
+                _set_derivatives(params, self.derivative_keys.norm_loss),
                 self.vmap_in_axes + vmap_in_axes_params,
                 self.norm_int_length,
                 self.loss_weights.norm_loss,
@@ -382,7 +378,7 @@ class LossPDEStatio(_LossPDEAbstract):
             mse_boundary_loss = boundary_condition_apply(
                 self.u,
                 batch,
-                params_with_derivatives_at_loss_terms.boundary_loss,
+                _set_derivatives(params, self.derivative_keys.boundary_loss),
                 self.omega_boundary_fun,
                 self.omega_boundary_condition,
                 self.omega_boundary_dim,
@@ -399,7 +395,7 @@ class LossPDEStatio(_LossPDEAbstract):
             mse_observation_loss = observations_loss_apply(
                 self.u,
                 self._get_observations_loss_batch(batch),
-                params_with_derivatives_at_loss_terms.observations,
+                _set_derivatives(params, self.derivative_keys.observations),
                 self.vmap_in_axes + vmap_in_axes_params,
                 batch.obs_batch_dict["val"],
                 self.loss_weights.observations,
@@ -581,20 +577,6 @@ class LossPDENonStatio(LossPDEStatio):
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
-        # we create a small class DerivativeKeysPDENonStatio with only
-        # initial_condition in order to get only the param with gradient for
-        # initial_condition. All the rest is computed in super().evaluate()
-        params_with_derivatives_at_loss_terms = _set_derivatives(
-            params,
-            DerivativeKeysPDENonStatio(
-                dyn_loss=None,
-                observations=None,
-                boundary_loss=None,
-                norm_loss=None,
-                initial_condition=self.derivative_keys.initial_condition,
-            ),
-        )
-
         # For mse_dyn_loss, mse_norm_loss, mse_boundary_loss,
         # mse_observation_loss we use the evaluate from parent class
         partial_mse, partial_mse_terms = super().evaluate(params, batch)
@@ -604,7 +586,7 @@ class LossPDENonStatio(LossPDEStatio):
             mse_initial_condition = initial_condition_apply(
                 self.u,
                 omega_batch,
-                params_with_derivatives_at_loss_terms.initial_condition,
+                _set_derivatives(params, self.derivative_keys.initial_condition),
                 (0,) + vmap_in_axes_params,
                 self.initial_condition_fun,
                 omega_batch.shape[0],
@@ -1003,21 +985,11 @@ class SystemLossPDE(eqx.Module):
 
         def dyn_loss_for_one_key(dyn_loss, derivative_key, loss_weight):
             """The function used in tree_map"""
-            params_dict_with_derivatives_at_loss_terms = _set_derivatives(
-                params_dict,
-                DerivativeKeysPDEStatio(  # this will do, even if strictly
-                    # speaking we are in the DerivativeKeysPDENonStatio case
-                    dyn_loss=derivative_key.dyn_loss,
-                    observations=None,
-                    boundary_loss=None,
-                    norm_loss=None,
-                ),
-            )
             return dynamic_loss_apply(
                 dyn_loss.evaluate,
                 self.u_dict,
                 batches,
-                params_dict_with_derivatives_at_loss_terms.dyn_loss,
+                _set_derivatives(params_dict, derivative_key.dyn_loss),
                 vmap_in_axes_x_or_x_t + vmap_in_axes_params,
                 loss_weight,
                 u_type=type(list(self.u_dict.values())[0]),

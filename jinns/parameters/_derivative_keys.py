@@ -88,8 +88,7 @@ def _set_derivatives(params, derivative_keys):
             for k, params_ in params
         }
 
-    params_with_derivatives_at_loss_terms = jax.tree.map(
-        _set_derivatives_ if not isinstance(params, dict) else _set_derivatives_dict,
-        derivative_keys,
-    )
-    return params_with_derivatives_at_loss_terms
+    if not isinstance(params, dict):
+        return _set_derivatives_(derivative_keys)
+    else:
+        return _set_derivatives_dict(derivative_keys)

@@ -182,17 +182,13 @@ class LossODE(_LossODEAbstract):
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
-        params_with_derivatives_at_loss_terms = _set_derivatives(
-            params, self.derivative_keys
-        )
-
         ## dynamic part
         if self.dynamic_loss is not None:
             mse_dyn_loss = dynamic_loss_apply(
                 self.dynamic_loss.evaluate,
                 self.u,
                 (temporal_batch,),
-                params_with_derivatives_at_loss_terms.dyn_loss,
+                _set_derivatives(params, self.derivative_keys.dyn_loss),
                 self.vmap_in_axes + vmap_in_axes_params,
                 self.loss_weights.dyn_loss,
             )
@@ -215,7 +211,12 @@ class LossODE(_LossODEAbstract):
                 self.loss_weights.initial_condition
                 * jnp.sum(
                     (
-                        v_u(t0, params_with_derivatives_at_loss_terms.initial_condition)
+                        v_u(
+                            t0,
+                            _set_derivatives(
+                                params, self.derivative_keys.initial_condition
+                            ),
+                        )
                         - u0
                     )
                     ** 2,
@@ -233,7 +234,7 @@ class LossODE(_LossODEAbstract):
             mse_observation_loss = observations_loss_apply(
                 self.u,
                 (batch.obs_batch_dict["pinn_in"],),
-                params_with_derivatives_at_loss_terms.observations,
+                _set_derivatives(params, self.derivative_keys.observations),
                 self.vmap_in_axes + vmap_in_axes_params,
                 batch.obs_batch_dict["val"],
                 self.loss_weights.observations,
@@ -494,22 +495,11 @@ class SystemLossODE(eqx.Module):
 
         def dyn_loss_for_one_key(dyn_loss, derivative_key, loss_weight):
             """This function is used in tree_map"""
-            # we create a small class DerivativeKeysODE with only
-            # dyn_loss in order to get only the param with gradient for
-            # dyn_loss. All the rest
-            params_dict_with_derivatives_at_loss_terms = _set_derivatives(
-                params_dict,
-                DerivativeKeysODE(
-                    dyn_loss=derivative_key.dyn_loss,
-                    observations=None,
-                    initial_condition=None,
-                ),
-            )
             return dynamic_loss_apply(
                 dyn_loss.evaluate,
                 self.u_dict,
                 (temporal_batch,),
-                params_dict_with_derivatives_at_loss_terms.dyn_loss,
+                _set_derivatives(params_dict, derivative_key.dyn_loss),
                 vmap_in_axes_t + vmap_in_axes_params,
                 loss_weight,
                 u_type=PINN,
