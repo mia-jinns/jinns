@@ -622,13 +622,13 @@ class NavierStokes2DStatio(PDEStatio):
     Parameters
     ----------
     u_key
-        A dictionary key which indices in `u_dict`
+        A dictionary key which indices the NN u in `u_dict`
         the PINN with the role of the velocity in the equation.
         Its input is bimensional (points in $\Omega\subset\mathbb{R}^2$).
         Its output is bimensional as it represents a velocity vector
         field
     p_key
-        A dictionary key which indices in `u_dict`
+        A dictionary key which indices the NN p in `u_dict`
         the PINN with the role of the pressure in the equation.
         Its input is bimensional (points in $\Omega\subset\mathbb{R}^2).
         Its output is unidimensional as it represents a pressure scalar
@@ -642,8 +642,8 @@ class NavierStokes2DStatio(PDEStatio):
         heterogeneity for no parameters.
     """
 
-    u_key: dict[str, eqx.Module]
-    p_key: dict[str, eqx.Module]
+    u_key: str = eqx.field(static=True)
+    p_key: str = eqx.field(static=True)
 
     def equation(
         self,

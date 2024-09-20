@@ -69,12 +69,14 @@ class _LossPDEAbstract(eqx.Module):
         multidim PINN). Default is None.
     """
 
+    # NOTE static=True only for leaf attributes that are not valid JAX types
+    # (ie. jax.Array cannot be static) and that we do not expect to change
     # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
     derivative_keys: Union[
         Union[DerivativeKeysPDEStatio, DerivativeKeysPDENonStatio], None
-    ] = eqx.field(kw_only=True, default=None, static=True)
+    ] = eqx.field(kw_only=True, default=None)
     loss_weights: Union[Union[LossWeightsPDEStatio, LossWeightsPDENonStatio], None] = (
-        eqx.field(kw_only=True, default=None, static=True)
+        eqx.field(kw_only=True, default=None)
     )
     omega_boundary_fun: Union[Callable, Dict[str, Callable], None] = eqx.field(
         kw_only=True, default=None, static=True
@@ -293,6 +295,9 @@ class LossPDEStatio(_LossPDEAbstract):
         are not respected
     """
 
+    # NOTE static=True only for leaf attributes that are not valid JAX types
+    # (ie. jax.Array cannot be static) and that we do not expect to change
+
     u: eqx.Module
     dynamic_loss: Union[eqx.Module, None]
     key: Union[Key, None] = eqx.field(kw_only=True, default=None)
@@ -500,6 +505,8 @@ class LossPDENonStatio(LossPDEStatio):
 
     """
 
+    # NOTE static=True only for leaf attributes that are not valid JAX types
+    # (ie. jax.Array cannot be static) and that we do not expect to change
     initial_condition_fun: Union[Callable, None] = eqx.field(
         kw_only=True, default=None, static=True
     )
@@ -677,21 +684,16 @@ class SystemLossPDE(eqx.Module):
         if the dictionaries that should share the keys of u_dict do not
     """
 
-    # Contrary to the losses above, we need to declare u_dict and
-    # dynamic_loss_dict as static because of the str typed keys which are not
-    # valid JAX type (and not because of the ODE or eqx.Module)
-    # We could consider notusing a dict here, but that's a lot of technical
-    # work maybe not worth it
-    u_dict: Dict[str, eqx.Module] = eqx.field(static=True)
-    dynamic_loss_dict: Dict[str, Union[PDEStatio, PDENonStatio]] = eqx.field(
-        static=True
-    )
+    # NOTE static=True only for leaf attributes that are not valid JAX types
+    # (ie. jax.Array cannot be static) and that we do not expect to change
+    u_dict: Dict[str, eqx.Module]
+    dynamic_loss_dict: Dict[str, Union[PDEStatio, PDENonStatio]]
     key_dict: Union[Dict[Union[Key, None], None]] = eqx.field(
         kw_only=True, default=None
     )
     derivative_keys_dict: Union[
         Union[DerivativeKeysPDEStatio, DerivativeKeysPDENonStatio], None
-    ] = eqx.field(kw_only=True, default=None, static=True)
+    ] = eqx.field(kw_only=True, default=None)
     omega_boundary_fun_dict: Union[
         Dict[str, Union[Callable, Dict[str, Callable]]], None
     ] = eqx.field(kw_only=True, default=None, static=True)
@@ -717,16 +719,22 @@ class SystemLossPDE(eqx.Module):
     # For the user loss_weights are passed as a LossWeightsPDEDict (with internal
     # dictionary having keys in u_dict and / or dynamic_loss_dict)
     loss_weights: InitVar[Union[LossWeightsPDEDict, None]] = eqx.field(
-        kw_only=True, default=None, static=True
+        kw_only=True, default=None
     )
 
     # following have init=False and are set in the __post_init__
-    u_constraints_dict: Dict[str, list] = eqx.field(init=False, static=True)
-    derivative_keys_u_dict: Dict[str, list] = eqx.field(init=False, static=True)
-    derivative_keys_dyn_loss_dict: Dict[str, list] = eqx.field(init=False, static=True)
-    u_dict_with_none: Dict[str, None] = eqx.field(init=False, static=True)
+    u_constraints_dict: Dict[str, LossPDEStatio | LossPDENonStatio] = eqx.field(
+        init=False
+    )
+    derivative_keys_u_dict: Dict[
+        str, DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio
+    ] = eqx.field(init=False)
+    derivative_keys_dyn_loss_dict: Dict[
+        str, DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio
+    ] = eqx.field(init=False)
+    u_dict_with_none: Dict[str, None] = eqx.field(init=False)
     # internally the loss weights are handled with a dictionary
-    _loss_weights: Dict[str, dict] = eqx.field(init=False, static=True)
+    _loss_weights: Dict[str, dict] = eqx.field(init=False)
 
     def __post_init__(self, loss_weights):
         # a dictionary that will be useful at different places
@@ -777,15 +785,15 @@ class SystemLossPDE(eqx.Module):
             if self.derivative_keys_dict[k] is None:
                 try:
                     if self.u_dict[k].eq_type == "statio_PDE":
-                        self.derivative_keys_dict[k] = DerivativeKeysPDEStatio
+                        self.derivative_keys_dict[k] = DerivativeKeysPDEStatio()
                     else:
-                        self.derivative_keys_dict[k] = DerivativeKeysPDENonStatio
+                        self.derivative_keys_dict[k] = DerivativeKeysPDENonStatio()
                 except KeyError:  # We are in a key that is not in u_dict but in
                     # dynamic_loss_dict
                     if isinstance(self.dynamic_loss_dict[k], PDEStatio):
-                        self.derivative_keys_dict[k] = DerivativeKeysPDEStatio
+                        self.derivative_keys_dict[k] = DerivativeKeysPDEStatio()
                     else:
-                        self.derivative_keys_dict[k] = DerivativeKeysPDENonStatio
+                        self.derivative_keys_dict[k] = DerivativeKeysPDENonStatio()
 
         # Second we make sure that all the dicts (except dynamic_loss_dict) have the same keys
         if (
