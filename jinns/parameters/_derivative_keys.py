@@ -11,38 +11,39 @@ from jinns.parameters._params import Params
 
 
 class DerivativeKeysODE(eqx.Module):
-
+    # we use static = True because all fields are string, hence should be
+    # invisible by JAX transforms (JIT, etc.)
     dyn_loss: Literal["nn_params", "eq_params", "both"] | None = eqx.field(
-        kw_only=True, default="nn_params"
+        kw_only=True, default="nn_params", static=True
     )
     observations: Literal["nn_params", "eq_params", "both"] | None = eqx.field(
-        kw_only=True, default="nn_params"
+        kw_only=True, default="nn_params", static=True
     )
     initial_condition: Literal["nn_params", "eq_params", "both"] | None = eqx.field(
-        kw_only=True, default="nn_params"
+        kw_only=True, default="nn_params", static=True
     )
 
 
 class DerivativeKeysPDEStatio(eqx.Module):
 
     dyn_loss: Literal["nn_params", "eq_params", "both"] | None = eqx.field(
-        kw_only=True, default="nn_params"
+        kw_only=True, default="nn_params", static=True
     )
     observations: Literal["nn_params", "eq_params", "both"] | None = eqx.field(
-        kw_only=True, default="nn_params"
+        kw_only=True, default="nn_params", static=True
     )
     boundary_loss: Literal["nn_params", "eq_params", "both"] | None = eqx.field(
-        kw_only=True, default="nn_params"
+        kw_only=True, default="nn_params", static=True
     )
     norm_loss: Literal["nn_params", "eq_params", "both"] | None = eqx.field(
-        kw_only=True, default="nn_params"
+        kw_only=True, default="nn_params", static=True
     )
 
 
 class DerivativeKeysPDENonStatio(DerivativeKeysPDEStatio):
 
     initial_condition: Literal["nn_params", "eq_params", "both"] = eqx.field(
-        kw_only=True, default="nn_params"
+        kw_only=True, default="nn_params", static=True
     )
 
 
@@ -87,8 +88,7 @@ def _set_derivatives(params, derivative_keys):
             for k, params_ in params
         }
 
-    params_with_derivatives_at_loss_terms = jax.tree.map(
-        _set_derivatives_ if not isinstance(params, dict) else _set_derivatives_dict,
-        derivative_keys,
-    )
-    return params_with_derivatives_at_loss_terms
+    if not isinstance(params, dict):
+        return _set_derivatives_(derivative_keys)
+    else:
+        return _set_derivatives_dict(derivative_keys)

@@ -104,7 +104,9 @@ def test_no_nan_params_check(train_1it):
 
 def test_init_params_equals_params(train_1it):
     init_params, params, _ = train_1it
-    assert jax.tree_util.tree_all(jax.tree_map(jnp.allclose, params, init_params))
+    assert jax.tree_util.tree_all(
+        jax.tree_util.tree_map(jnp.allclose, params, init_params)
+    )
 
 
 def test_break_reason(train_1it):

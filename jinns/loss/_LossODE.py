@@ -13,7 +13,6 @@ from jax import vmap
 import equinox as eqx
 from jaxtyping import Float, Array, Int
 from jinns.data._DataGenerators import ODEBatch
-import jinns.loss
 from jinns.loss._loss_utils import (
     dynamic_loss_apply,
     constraints_system_loss_apply,
@@ -55,14 +54,14 @@ class _LossODEAbstract(eqx.Module):
         Default is None (whole output is observed).
     """
 
+    # NOTE static=True only for leaf attributes that are not valid JAX types
+    # (ie. jax.Array cannot be static) and that we do not expect to change
     # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
     derivative_keys: Union[DerivativeKeysODE, None] = eqx.field(
-        kw_only=True, default=None, static=True
+        kw_only=True, default=None
     )
     loss_weights: Union[LossWeightsODE, None] = eqx.field(kw_only=True, default=None)
-    initial_condition: Union[tuple, None] = eqx.field(
-        kw_only=True, default=None, static=True
-    )
+    initial_condition: Union[tuple, None] = eqx.field(kw_only=True, default=None)
     obs_slice: Union[slice, None] = eqx.field(kw_only=True, default=None, static=True)
 
     def __post_init__(self):
@@ -144,6 +143,8 @@ class LossODE(_LossODEAbstract):
         if initial condition is not a tuple.
     """
 
+    # NOTE static=True only for leaf attributes that are not valid JAX types
+    # (ie. jax.Array cannot be static) and that we do not expect to change
     u: eqx.Module
     dynamic_loss: Union[DynamicLoss, None]
 
@@ -185,17 +186,13 @@ class LossODE(_LossODEAbstract):
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
-        params_with_derivatives_at_loss_terms = _set_derivatives(
-            params, self.derivative_keys
-        )
-
         ## dynamic part
         if self.dynamic_loss is not None:
             mse_dyn_loss = dynamic_loss_apply(
                 self.dynamic_loss.evaluate,
                 self.u,
                 (temporal_batch,),
-                params_with_derivatives_at_loss_terms.dyn_loss,
+                _set_derivatives(params, self.derivative_keys.dyn_loss),
                 self.vmap_in_axes + vmap_in_axes_params,
                 self.loss_weights.dyn_loss,
             )
@@ -218,7 +215,12 @@ class LossODE(_LossODEAbstract):
                 self.loss_weights.initial_condition
                 * jnp.sum(
                     (
-                        v_u(t0, params_with_derivatives_at_loss_terms.initial_condition)
+                        v_u(
+                            t0,
+                            _set_derivatives(
+                                params, self.derivative_keys.initial_condition
+                            ),
+                        )
                         - u0
                     )
                     ** 2,
@@ -236,7 +238,7 @@ class LossODE(_LossODEAbstract):
             mse_observation_loss = observations_loss_apply(
                 self.u,
                 (batch.obs_batch_dict["pinn_in"],),
-                params_with_derivatives_at_loss_terms.observations,
+                _set_derivatives(params, self.derivative_keys.observations),
                 self.vmap_in_axes + vmap_in_axes_params,
                 batch.obs_batch_dict["val"],
                 self.loss_weights.observations,
@@ -305,36 +307,35 @@ class SystemLossODE(eqx.Module):
         if the dictionaries that should share the keys of u_dict do not.
     """
 
-    # Contrary to the losses above, we need to declare u_dict and
-    # dynamic_loss_dict as static because of the str typed keys which are not
-    # valid JAX type (and not because of the ODE or eqx.Module)
-    # We could consider notusing a dict here, but that's a lot of technical
-    # work maybe not worth it
-    u_dict: Dict[str, eqx.Module] = eqx.field(static=True)
-    dynamic_loss_dict: Dict[str, ODE] = eqx.field(static=True)
+    # NOTE static=True only for leaf attributes that are not valid JAX types
+    # (ie. jax.Array cannot be static) and that we do not expect to change
+    u_dict: Dict[str, eqx.Module]
+    dynamic_loss_dict: Dict[str, ODE]
     derivative_keys_dict: Union[Dict[str, Union[DerivativeKeysODE, None]], None] = (
-        eqx.field(kw_only=True, default=None, static=True)
+        eqx.field(kw_only=True, default=None)
     )
     initial_condition_dict: Union[Dict[str, tuple], None] = eqx.field(
-        kw_only=True, default=None, static=True
+        kw_only=True, default=None
     )
+
     obs_slice_dict: Union[Dict[str, Union[slice, None]], None] = eqx.field(
         kw_only=True, default=None, static=True
-    )
+    )  # We are at an "leaf" attribute here (slice, not valid JAX type). Since
+    # we do not expect it to change with put a static=True here. But note that
+    # this is the only static for all the SystemLossODE attribute, since all
+    # other are composed of more complex structures ("non-leaf")
 
     # For the user loss_weights are passed as a LossWeightsODEDict (with internal
     # dictionary having keys in u_dict and / or dynamic_loss_dict)
     loss_weights: InitVar[Union[LossWeightsODEDict, None]] = eqx.field(
-        kw_only=True, default=None, static=True
+        kw_only=True, default=None
     )
+    u_constraints_dict: Dict[str, LossODE] = eqx.field(init=False)
+    derivative_keys_dyn_loss_dict: Dict[str, DerivativeKeysODE] = eqx.field(init=False)
 
-    u_constraints_dict: Dict[str, list] = eqx.field(init=False, static=True)
-    derivative_keys_dyn_loss_dict: Dict[str, DerivativeKeysODE] = eqx.field(
-        init=False, static=True
-    )
-    u_dict_with_none: Dict[str, None] = eqx.field(init=False, static=True)
+    u_dict_with_none: Dict[str, None] = eqx.field(init=False)
     # internally the loss weights are handled with a dictionary
-    _loss_weights: Dict[str, dict] = eqx.field(init=False, static=True)
+    _loss_weights: Dict[str, dict] = eqx.field(init=False)
 
     def __post_init__(self, loss_weights):
         # a dictionary that will be useful at different places
@@ -496,22 +497,11 @@ class SystemLossODE(eqx.Module):
 
         def dyn_loss_for_one_key(dyn_loss, derivative_key, loss_weight):
             """This function is used in tree_map"""
-            # we create a small class DerivativeKeysODE with only
-            # dyn_loss in order to get only the param with gradient for
-            # dyn_loss. All the rest
-            params_dict_with_derivatives_at_loss_terms = _set_derivatives(
-                params_dict,
-                DerivativeKeysODE(
-                    dyn_loss=derivative_key.dyn_loss,
-                    observations=None,
-                    initial_condition=None,
-                ),
-            )
             return dynamic_loss_apply(
                 dyn_loss.evaluate,
                 self.u_dict,
                 (temporal_batch,),
-                params_dict_with_derivatives_at_loss_terms.dyn_loss,
+                _set_derivatives(params_dict, derivative_key.dyn_loss),
                 vmap_in_axes_t + vmap_in_axes_params,
                 loss_weight,
                 u_type=PINN,
