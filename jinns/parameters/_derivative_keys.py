@@ -11,15 +11,16 @@ from jinns.parameters._params import Params
 
 
 class DerivativeKeysODE(eqx.Module):
-
+    # we use static = True because all fields are string, hence should be
+    # invisible by JAX transforms (JIT, etc.)
     dyn_loss: Literal["nn_params", "eq_params", "both"] | None = eqx.field(
-        kw_only=True, default="nn_params"
+        kw_only=True, default="nn_params", static=True
     )
     observations: Literal["nn_params", "eq_params", "both"] | None = eqx.field(
-        kw_only=True, default="nn_params"
+        kw_only=True, default="nn_params", static=True
     )
     initial_condition: Literal["nn_params", "eq_params", "both"] | None = eqx.field(
-        kw_only=True, default="nn_params"
+        kw_only=True, default="nn_params", static=True
     )
 
 
