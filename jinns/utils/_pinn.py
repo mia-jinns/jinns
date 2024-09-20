@@ -81,7 +81,7 @@ class PINN(eqx.Module):
     output_transform: Callable = eqx.field(static=True, kw_only=True)
     output_slice: slice = eqx.field(static=True, kw_only=True, default=None)
 
-    mlp: InitVar[eqx.Module] = eqx.field(kw_only=True, static=True)
+    mlp: InitVar[eqx.Module] = eqx.field(kw_only=True)
 
     params: PyTree = eqx.field(init=False)
     static: PyTree = eqx.field(init=False, static=True)

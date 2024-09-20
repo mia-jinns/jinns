@@ -56,8 +56,8 @@ class HYPERPINN(PINN):
     hyperparams: list = eqx.field(static=True, kw_only=True)
     hypernet_input_size: int = eqx.field(kw_only=True)
 
-    hyper_mlp: InitVar[eqx.Module] = eqx.field(kw_only=True, static=True)
-    mlp: InitVar[eqx.Module] = eqx.field(kw_only=True, static=True)
+    hyper_mlp: InitVar[eqx.Module] = eqx.field(kw_only=True)
+    mlp: InitVar[eqx.Module] = eqx.field(kw_only=True)
 
     params_hyper: PyTree = eqx.field(init=False)
     static_hyper: PyTree = eqx.field(init=False, static=True)

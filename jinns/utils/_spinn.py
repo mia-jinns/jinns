@@ -3,54 +3,58 @@ Implements utility function to create Separable PINNs
 https://arxiv.org/abs/2211.08761
 """
 
+from dataclasses import InitVar
+from typing import Callable
 import jax
 import jax.numpy as jnp
 import equinox as eqx
+from jaxtyping import Key, Array, Float, PyTree
 
 
 class _SPINN(eqx.Module):
     """
     Construct a Separable PINN as proposed in
     Cho et al., _Separable Physics-Informed Neural Networks_, NeurIPS, 2023
+
+    Parameters
+    ----------
+    key : InitVar[Key]
+        A jax random key
+    d : int
+        An integer. The number of dimensions to treat separately
+    r : int
+        An integer. The dimension of the embedding
+    eqx_list : InitVar[tuple[tuple[Callable, int, int] | Callable, ...]]
+        A list of list of successive equinox modules and activation functions to
+        describe *each separable PINN architecture*.
+        The inner lists have the eqx module or
+        axtivation function as first item, other items represents arguments
+        that could be required (eg. the size of the layer).
+        __Note:__ the `key` argument need not be given.
+        Thus typical example is `eqx_list=
+        ((eqx.nn.Linear, 1, 20),
+            (jax.nn.tanh),
+            (eqx.nn.Linear, 20, 20),
+            (jax.nn.tanh),
+            (eqx.nn.Linear, 20, 20),
+            (jax.nn.tanh),
+            (eqx.nn.Linear, 20, r)
+        )`
     """
 
-    layers: list
-    separated_mlp: list
-    d: int = eqx.field(static=True)
-    r: int = eqx.field(static=True)
-    m: int = eqx.field(static=True)
+    d: int = eqx.field(static=True, kw_only=True)
+    r: int = eqx.field(static=True, kw_only=True)
+    m: int = eqx.field(static=True, default=1, kw_only=True)
 
-    def __init__(self, key, d, r, eqx_list, m=1):
-        """
-        Parameters
-        ----------
-        key
-            A jax random key
-        d
-            An integer. The number of dimensions to treat separately
-        r
-            An integer. The dimension of the embedding
-        eqx_list
-            A list of list of successive equinox modules and activation functions to
-            describe *each separable PINN architecture*.
-            The inner lists have the eqx module or
-            axtivation function as first item, other items represents arguments
-            that could be required (eg. the size of the layer).
-            __Note:__ the `key` argument need not be given.
-            Thus typical example is `eqx_list=
-            [[eqx.nn.Linear, 1, 20],
-                [jax.nn.tanh],
-                [eqx.nn.Linear, 20, 20],
-                [jax.nn.tanh],
-                [eqx.nn.Linear, 20, 20],
-                [jax.nn.tanh],
-                [eqx.nn.Linear, 20, r]
-            ]`
-        """
-        self.d = d
-        self.r = r
-        self.m = m
+    key: InitVar[Key] = eqx.field(kw_only=True)
+    eqx_list: InitVar[tuple[tuple[Callable, int, int] | Callable, ...]] = eqx.field(
+        kw_only=True
+    )
 
+    layers: list = eqx.field(init=False)
+    separated_mlp: list = eqx.field(init=False)
+
+    def __post_init__(self, key, eqx_list):
         self.separated_mlp = []
         for _ in range(self.d):
             self.layers = []
@@ -84,24 +88,29 @@ class SPINN(eqx.Module):
 
     **NOTE**: SPINNs with `t` and `x` as inputs are best used with a
     DataGenerator with `self.cartesian_product=False` for memory consideration
+
+    Parameters
+    ----------
+    d : int
     """
 
-    d: int = eqx.field(static=True)
-    r: int = eqx.field(static=True)
-    eq_type: str = eqx.field(static=True)
-    m: int = eqx.field(static=True)
-    params: eqx.Module
-    static: eqx.Module = eqx.field(static=True)
+    d: int = eqx.field(static=True, kw_only=True)
+    r: int = eqx.field(static=True, kw_only=True)
+    eq_type: str = eqx.field(static=True, kw_only=True)
+    m: int = eqx.field(static=True, kw_only=True)
 
-    def __init__(self, spinn_mlp, d, r, eq_type, m):
-        self.d, self.r, self.m = d, r, m
+    spinn_mlp: InitVar[eqx.Module] = eqx.field(kw_only=True)
+
+    params: PyTree = eqx.field(init=False)
+    static: PyTree = eqx.field(init=False, static=True)
+
+    def __post_init__(self, spinn_mlp):
         self.params, self.static = eqx.partition(spinn_mlp, eqx.is_inexact_array)
-        self.eq_type = eq_type
 
-    def init_params(self):
+    def init_params(self) -> PyTree:
         return self.params
 
-    def __call__(self, *args):
+    def __call__(self, *args) -> Float[Array, "output_dim"]:
         if self.eq_type == "statio_PDE":
             (x, params) = args
             try:
@@ -148,7 +157,14 @@ class SPINN(eqx.Module):
         return res
 
 
-def create_SPINN(key, d, r, eqx_list, eq_type, m=1):
+def create_SPINN(
+    key: Key,
+    d: int,
+    r: int,
+    eqx_list: tuple[tuple[Callable, int, int] | Callable, ...],
+    eq_type: str,
+    m: int = 1,
+) -> SPINN:
     """
     Utility function to create a SPINN neural network with the equinox
     library.
@@ -235,7 +251,7 @@ def create_SPINN(key, d, r, eqx_list, eq_type, m=1):
             "Too many dimensions, not enough letters available in jnp.einsum"
         )
 
-    spinn_mlp = _SPINN(key, d, r, eqx_list, m)
-    spinn = SPINN(spinn_mlp, d, r, eq_type, m)
+    spinn_mlp = _SPINN(key=key, d=d, r=r, eqx_list=eqx_list, m=m)
+    spinn = SPINN(spinn_mlp=spinn_mlp, d=d, r=r, eq_type=eq_type, m=m)
 
     return spinn
