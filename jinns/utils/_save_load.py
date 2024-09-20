@@ -2,58 +2,64 @@
 Implements save and load functions
 """
 
+from typing import Callable, Literal
 import pickle
 import jax
 import equinox as eqx
 
-from jinns.utils._pinn import create_PINN
-from jinns.utils._spinn import create_SPINN
-from jinns.utils._hyperpinn import create_HYPERPINN
+from jinns.utils._pinn import create_PINN, PINN
+from jinns.utils._spinn import create_SPINN, SPINN
+from jinns.utils._hyperpinn import create_HYPERPINN, HYPERPINN
+from jinns.parameters._params import Params
 
 
-def function_to_string(eqx_list):
+def function_to_string(
+    eqx_list: tuple[tuple[Callable, int, int] | Callable, ...]
+) -> tuple[tuple[str, int, int] | str, ...]:
     """
     We need this transformation for eqx_list to be pickled
 
-    From `[[eqx.nn.Linear, 2, 20],
-            [jax.nn.tanh],
-            [eqx.nn.Linear, 20, 20],
-            [jax.nn.tanh],
-            [eqx.nn.Linear, 20, 20],
-            [jax.nn.tanh],
-            [eqx.nn.Linear, 20, 1]` to
-    `[["Linear", 2, 20],
-                ["tanh"],
-                ["Linear", 20, 20],
-                ["tanh"],
-                ["Linear", 20, 20],
-                ["tanh"],
-                ["Linear", 20, 1]`
+    From `((eqx.nn.Linear, 2, 20),
+            (jax.nn.tanh),
+            (eqx.nn.Linear, 20, 20),
+            (jax.nn.tanh),
+            (eqx.nn.Linear, 20, 20),
+            (jax.nn.tanh),
+            (eqx.nn.Linear, 20, 1))` to
+    `(("Linear", 2, 20),
+                ("tanh"),
+                ("Linear", 20, 20),
+                ("tanh"),
+                ("Linear", 20, 20),
+                ("tanh"),
+                ("Linear", 20, 1))`
     """
     return jax.tree_util.tree_map(
         lambda x: x.__name__ if hasattr(x, "__call__") else x, eqx_list
     )
 
 
-def string_to_function(eqx_list_with_string):
+def string_to_function(
+    eqx_list_with_string: tuple[tuple[str, int, int] | str, ...]
+) -> tuple[tuple[Callable, int, int] | Callable, ...]:
     """
     We need this transformation for eqx_list at the loading ("unpickling")
     operation.
 
-    From `[["Linear", 2, 20],
-                ["tanh"],
-                ["Linear", 20, 20],
-                ["tanh"],
-                ["Linear", 20, 20],
-                ["tanh"],
-                ["Linear", 20, 1]`
-    to  `[[eqx.nn.Linear, 2, 20],
-            [jax.nn.tanh],
-            [eqx.nn.Linear, 20, 20],
-            [jax.nn.tanh],
-            [eqx.nn.Linear, 20, 20],
-            [jax.nn.tanh],
-            [eqx.nn.Linear, 20, 1]` to
+    From `(("Linear", 2, 20),
+                ("tanh"),
+                ("Linear", 20, 20),
+                ("tanh"),
+                ("Linear", 20, 20),
+                ("tanh"),
+                ("Linear", 20, 1))`
+    to  `((eqx.nn.Linear, 2, 20),
+            (jax.nn.tanh),
+            (eqx.nn.Linear, 20, 20),
+            (jax.nn.tanh),
+            (eqx.nn.Linear, 20, 20),
+            (jax.nn.tanh),
+            (eqx.nn.Linear, 20, 1))`
     """
 
     def _str_to_fun(l):
@@ -76,7 +82,9 @@ def string_to_function(eqx_list_with_string):
     )
 
 
-def save_pinn(filename, u, params, kwargs_creation):
+def save_pinn(
+    filename: str, u: PINN | HYPERPINN | SPINN, params: Params, kwargs_creation
+):
     """
     Save a PINN / HyperPINN / SPINN model
     This function creates 3 files, beggining by `filename`
@@ -94,17 +102,21 @@ def save_pinn(filename, u, params, kwargs_creation):
     u
         The PINN
     params
-        The dictionary of parameters of the model.
-        Typically, it is a dictionary of
-        dictionaries: `eq_params` and `nn_params`, respectively the
-        differential equation parameters and the neural network parameter
+        Params
     kwargs_creation
         The dictionary of arguments that were used to create the PINN, e.g.
         the layers list, O/PDE type, etc.
     """
+    if isinstance(u, HYPERPINN):
+        u = eqx.tree_at(lambda m: m.params_hyper, u, params)
+    elif isinstance(u, (PINN, SPINN)):
+        u = eqx.tree_at(lambda m: m.params, u, params)
     eqx.tree_serialise_leaves(filename + "-module.eqx", u)
-    with open(filename + "-parameters.pkl", "wb") as f:
-        pickle.dump(params, f)
+
+    if isinstance(params, Params):
+        with open(filename + "-eq_params.pkl", "wb") as f:
+            pickle.dump(params.eq_params, f)
+
     kwargs_creation = kwargs_creation.copy()  # avoid side-effect that would be
     # very probably harmless anyway
 
@@ -124,7 +136,7 @@ def save_pinn(filename, u, params, kwargs_creation):
         pickle.dump(kwargs_creation, f)
 
 
-def load_pinn(filename, type_):
+def load_pinn(filename: str, type_: Literal["pinn", "hyperpinn", "spinn"]):
     """
     Load a PINN model. This function needs to access 3 files :
     `{filename}-module.eqx`, `{filename}-parameters.pkl` and
@@ -151,8 +163,12 @@ def load_pinn(filename, type_):
     """
     with open(filename + "-arguments.pkl", "rb") as f:
         kwargs_reloaded = pickle.load(f)
-    with open(filename + "-parameters.pkl", "rb") as f:
-        params_reloaded = pickle.load(f)
+    try:
+        with open(filename + "-eq_params.pkl", "rb") as f:
+            eq_params_reloaded = pickle.load(f)
+    except FileNotFoundError:
+        eq_params_reloaded = None
+        print("No pickle file for equation parameters found!")
     kwargs_reloaded["eqx_list"] = string_to_function(kwargs_reloaded["eqx_list"])
     if type_ == "pinn":
         # next line creates a shallow model, the jax arrays are just shapes and
@@ -172,4 +188,10 @@ def load_pinn(filename, type_):
     u_reloaded = eqx.tree_deserialise_leaves(
         filename + "-module.eqx", u_reloaded_shallow
     )
-    return u_reloaded, params_reloaded
+    if eq_params_reloaded is None:
+        params = u_reloaded.init_params()
+    else:
+        params = Params(
+            nn_params=u_reloaded.init_params(), eq_params=eq_params_reloaded
+        )
+    return u_reloaded, params

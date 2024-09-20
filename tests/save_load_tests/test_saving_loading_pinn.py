@@ -26,7 +26,6 @@ def save_reload(tmpdir):
 
     params = u.init_params()
     params = jinns.parameters.Params(nn_params=params, eq_params={})
-
     # Save
     filename = str(tmpdir.join("test"))
     kwargs_creation = {

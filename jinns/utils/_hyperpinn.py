@@ -12,6 +12,7 @@ import jax.numpy as jnp
 from jax.tree_util import tree_leaves, tree_map
 from jaxtyping import Array, Float, PyTree, Int, Key
 import equinox as eqx
+import numpy as onp
 
 from jinns.utils._pinn import PINN, _MLP
 from jinns.parameters._params import Params
@@ -32,9 +33,7 @@ def _get_param_nb(params: Params) -> tuple[Float[Array, "1"], Float[Array, "1"]]
         prod(a.shape)
         for a in tree_leaves(params, is_leaf=lambda x: isinstance(x, jnp.ndarray))
     ]
-    return jnp.sum(jnp.asarray(dim_prod_all_arrays)), jnp.cumsum(
-        jnp.asarray(dim_prod_all_arrays)
-    )
+    return sum(dim_prod_all_arrays), onp.cumsum(dim_prod_all_arrays)
 
 
 class HYPERPINN(PINN):
@@ -62,8 +61,10 @@ class HYPERPINN(PINN):
 
     params_hyper: PyTree = eqx.field(init=False)
     static_hyper: PyTree = eqx.field(init=False, static=True)
-    pinn_params_sum: Int[Array, "1"] = eqx.field(init=False, static=True)
-    pinn_params_cumsum: Int[Array, "n_layers"] = eqx.field(init=False, static=True)
+    pinn_params_sum: Int[onp.ndarray, "1"] = eqx.field(init=False, static=True)
+    pinn_params_cumsum: Int[onp.ndarray, "n_layers"] = eqx.field(
+        init=False, static=True
+    )
 
     def __post_init__(self, mlp, hyper_mlp):
         super().__post_init__(
@@ -108,7 +109,7 @@ class HYPERPINN(PINN):
         """
         try:
             hyper = eqx.combine(params.nn_params, self.static_hyper)
-        except (KeyError, TypeError) as e:  # give more flexibility
+        except (AttributeError, TypeError) as e:  # give more flexibility
             hyper = eqx.combine(params, self.static_hyper)
 
         eq_params_batch = jnp.concatenate(

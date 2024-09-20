@@ -6,6 +6,7 @@ from jax import random
 import equinox as eqx
 import jinns
 from jinns.utils import save_pinn, load_pinn
+from jinns.parameters._params import _get_vmap_in_axes_params
 
 
 @pytest.fixture
@@ -71,7 +72,6 @@ def save_reload(tmpdir):
         nn_params=params,
         eq_params={"D": jnp.empty((10, 1)), "r": jnp.empty((10, 1))},
     )
-
     # Save
     filename = str(tmpdir.join("test"))
     kwargs_creation = {
@@ -97,12 +97,17 @@ def test_equality_save_reload(save_reload):
     key, params, u, params_reloaded, u_reloaded = save_reload
     key, subkey = jax.random.split(key, 2)
     test_points = jax.random.normal(subkey, shape=(10, 5))
+    vmap_axes_params = _get_vmap_in_axes_params({"D": None, "r": None}, params)
     v_u = jax.vmap(
-        u, (0, 0, jinns.parameters.Params(nn_params=None, eq_params={"D": 0, "r": 0}))
+        u,
+        (0, 0)
+        + vmap_axes_params,  # (0, 0, jinns.parameters.Params(nn_params=None, eq_params={"D": 0, "r": 0}))
     )
+    vmap_axes_params = _get_vmap_in_axes_params({"D": None, "r": None}, params_reloaded)
     v_u_reloaded = jax.vmap(
         u_reloaded,
-        (0, 0, jinns.parameters.Params(nn_params=None, eq_params={"D": 0, "r": 0})),
+        (0, 0)
+        + vmap_axes_params,  # (0, 0, jinns.parameters.Params(nn_params=None, eq_params={"D": 0, "r": 0})),
     )
 
     assert jnp.allclose(
