@@ -69,12 +69,14 @@ class _LossPDEAbstract(eqx.Module):
         multidim PINN). Default is None.
     """
 
+    # NOTE static=True only for leaf attributes that are not valid JAX types
+    # (ie. jax.Array cannot be static) and that we do not expect to change
     # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
     derivative_keys: Union[
         Union[DerivativeKeysPDEStatio, DerivativeKeysPDENonStatio], None
-    ] = eqx.field(kw_only=True, default=None, static=True)
+    ] = eqx.field(kw_only=True, default=None)
     loss_weights: Union[Union[LossWeightsPDEStatio, LossWeightsPDENonStatio], None] = (
-        eqx.field(kw_only=True, default=None, static=True)
+        eqx.field(kw_only=True, default=None)
     )
     omega_boundary_fun: Union[Callable, Dict[str, Callable], None] = eqx.field(
         kw_only=True, default=None, static=True
@@ -293,6 +295,9 @@ class LossPDEStatio(_LossPDEAbstract):
         are not respected
     """
 
+    # NOTE static=True only for leaf attributes that are not valid JAX types
+    # (ie. jax.Array cannot be static) and that we do not expect to change
+
     u: eqx.Module
     dynamic_loss: Union[eqx.Module, None]
     key: Union[Key, None] = eqx.field(kw_only=True, default=None)
@@ -347,17 +352,13 @@ class LossPDEStatio(_LossPDEAbstract):
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
-        params_with_derivatives_at_loss_terms = _set_derivatives(
-            params, self.derivative_keys
-        )
-
         # dynamic part
         if self.dynamic_loss is not None:
             mse_dyn_loss = dynamic_loss_apply(
                 self.dynamic_loss.evaluate,
                 self.u,
                 self._get_dynamic_loss_batch(batch),
-                params_with_derivatives_at_loss_terms.dyn_loss,
+                _set_derivatives(params, self.derivative_keys.dyn_loss),
                 self.vmap_in_axes + vmap_in_axes_params,
                 self.loss_weights.dyn_loss,
             )
@@ -369,7 +370,7 @@ class LossPDEStatio(_LossPDEAbstract):
             mse_norm_loss = normalization_loss_apply(
                 self.u,
                 self._get_normalization_loss_batch(batch),
-                params_with_derivatives_at_loss_terms.norm_loss,
+                _set_derivatives(params, self.derivative_keys.norm_loss),
                 self.vmap_in_axes + vmap_in_axes_params,
                 self.norm_int_length,
                 self.loss_weights.norm_loss,
@@ -382,7 +383,7 @@ class LossPDEStatio(_LossPDEAbstract):
             mse_boundary_loss = boundary_condition_apply(
                 self.u,
                 batch,
-                params_with_derivatives_at_loss_terms.boundary_loss,
+                _set_derivatives(params, self.derivative_keys.boundary_loss),
                 self.omega_boundary_fun,
                 self.omega_boundary_condition,
                 self.omega_boundary_dim,
@@ -399,7 +400,7 @@ class LossPDEStatio(_LossPDEAbstract):
             mse_observation_loss = observations_loss_apply(
                 self.u,
                 self._get_observations_loss_batch(batch),
-                params_with_derivatives_at_loss_terms.observations,
+                _set_derivatives(params, self.derivative_keys.observations),
                 self.vmap_in_axes + vmap_in_axes_params,
                 batch.obs_batch_dict["val"],
                 self.loss_weights.observations,
@@ -504,6 +505,8 @@ class LossPDENonStatio(LossPDEStatio):
 
     """
 
+    # NOTE static=True only for leaf attributes that are not valid JAX types
+    # (ie. jax.Array cannot be static) and that we do not expect to change
     initial_condition_fun: Union[Callable, None] = eqx.field(
         kw_only=True, default=None, static=True
     )
@@ -581,20 +584,6 @@ class LossPDENonStatio(LossPDEStatio):
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
-        # we create a small class DerivativeKeysPDENonStatio with only
-        # initial_condition in order to get only the param with gradient for
-        # initial_condition. All the rest is computed in super().evaluate()
-        params_with_derivatives_at_loss_terms = _set_derivatives(
-            params,
-            DerivativeKeysPDENonStatio(
-                dyn_loss=None,
-                observations=None,
-                boundary_loss=None,
-                norm_loss=None,
-                initial_condition=self.derivative_keys.initial_condition,
-            ),
-        )
-
         # For mse_dyn_loss, mse_norm_loss, mse_boundary_loss,
         # mse_observation_loss we use the evaluate from parent class
         partial_mse, partial_mse_terms = super().evaluate(params, batch)
@@ -604,7 +593,7 @@ class LossPDENonStatio(LossPDEStatio):
             mse_initial_condition = initial_condition_apply(
                 self.u,
                 omega_batch,
-                params_with_derivatives_at_loss_terms.initial_condition,
+                _set_derivatives(params, self.derivative_keys.initial_condition),
                 (0,) + vmap_in_axes_params,
                 self.initial_condition_fun,
                 omega_batch.shape[0],
@@ -695,21 +684,16 @@ class SystemLossPDE(eqx.Module):
         if the dictionaries that should share the keys of u_dict do not
     """
 
-    # Contrary to the losses above, we need to declare u_dict and
-    # dynamic_loss_dict as static because of the str typed keys which are not
-    # valid JAX type (and not because of the ODE or eqx.Module)
-    # We could consider notusing a dict here, but that's a lot of technical
-    # work maybe not worth it
-    u_dict: Dict[str, eqx.Module] = eqx.field(static=True)
-    dynamic_loss_dict: Dict[str, Union[PDEStatio, PDENonStatio]] = eqx.field(
-        static=True
-    )
+    # NOTE static=True only for leaf attributes that are not valid JAX types
+    # (ie. jax.Array cannot be static) and that we do not expect to change
+    u_dict: Dict[str, eqx.Module]
+    dynamic_loss_dict: Dict[str, Union[PDEStatio, PDENonStatio]]
     key_dict: Union[Dict[Union[Key, None], None]] = eqx.field(
         kw_only=True, default=None
     )
     derivative_keys_dict: Union[
         Union[DerivativeKeysPDEStatio, DerivativeKeysPDENonStatio], None
-    ] = eqx.field(kw_only=True, default=None, static=True)
+    ] = eqx.field(kw_only=True, default=None)
     omega_boundary_fun_dict: Union[
         Dict[str, Union[Callable, Dict[str, Callable]]], None
     ] = eqx.field(kw_only=True, default=None, static=True)
@@ -735,16 +719,22 @@ class SystemLossPDE(eqx.Module):
     # For the user loss_weights are passed as a LossWeightsPDEDict (with internal
     # dictionary having keys in u_dict and / or dynamic_loss_dict)
     loss_weights: InitVar[Union[LossWeightsPDEDict, None]] = eqx.field(
-        kw_only=True, default=None, static=True
+        kw_only=True, default=None
     )
 
     # following have init=False and are set in the __post_init__
-    u_constraints_dict: Dict[str, list] = eqx.field(init=False, static=True)
-    derivative_keys_u_dict: Dict[str, list] = eqx.field(init=False, static=True)
-    derivative_keys_dyn_loss_dict: Dict[str, list] = eqx.field(init=False, static=True)
-    u_dict_with_none: Dict[str, None] = eqx.field(init=False, static=True)
+    u_constraints_dict: Dict[str, LossPDEStatio | LossPDENonStatio] = eqx.field(
+        init=False
+    )
+    derivative_keys_u_dict: Dict[
+        str, DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio
+    ] = eqx.field(init=False)
+    derivative_keys_dyn_loss_dict: Dict[
+        str, DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio
+    ] = eqx.field(init=False)
+    u_dict_with_none: Dict[str, None] = eqx.field(init=False)
     # internally the loss weights are handled with a dictionary
-    _loss_weights: Dict[str, dict] = eqx.field(init=False, static=True)
+    _loss_weights: Dict[str, dict] = eqx.field(init=False)
 
     def __post_init__(self, loss_weights):
         # a dictionary that will be useful at different places
@@ -795,15 +785,15 @@ class SystemLossPDE(eqx.Module):
             if self.derivative_keys_dict[k] is None:
                 try:
                     if self.u_dict[k].eq_type == "statio_PDE":
-                        self.derivative_keys_dict[k] = DerivativeKeysPDEStatio
+                        self.derivative_keys_dict[k] = DerivativeKeysPDEStatio()
                     else:
-                        self.derivative_keys_dict[k] = DerivativeKeysPDENonStatio
+                        self.derivative_keys_dict[k] = DerivativeKeysPDENonStatio()
                 except KeyError:  # We are in a key that is not in u_dict but in
                     # dynamic_loss_dict
                     if isinstance(self.dynamic_loss_dict[k], PDEStatio):
-                        self.derivative_keys_dict[k] = DerivativeKeysPDEStatio
+                        self.derivative_keys_dict[k] = DerivativeKeysPDEStatio()
                     else:
-                        self.derivative_keys_dict[k] = DerivativeKeysPDENonStatio
+                        self.derivative_keys_dict[k] = DerivativeKeysPDENonStatio()
 
         # Second we make sure that all the dicts (except dynamic_loss_dict) have the same keys
         if (
@@ -1003,21 +993,11 @@ class SystemLossPDE(eqx.Module):
 
         def dyn_loss_for_one_key(dyn_loss, derivative_key, loss_weight):
             """The function used in tree_map"""
-            params_dict_with_derivatives_at_loss_terms = _set_derivatives(
-                params_dict,
-                DerivativeKeysPDEStatio(  # this will do, even if strictly
-                    # speaking we are in the DerivativeKeysPDENonStatio case
-                    dyn_loss=derivative_key.dyn_loss,
-                    observations=None,
-                    boundary_loss=None,
-                    norm_loss=None,
-                ),
-            )
             return dynamic_loss_apply(
                 dyn_loss.evaluate,
                 self.u_dict,
                 batches,
-                params_dict_with_derivatives_at_loss_terms.dyn_loss,
+                _set_derivatives(params_dict, derivative_key.dyn_loss),
                 vmap_in_axes_x_or_x_t + vmap_in_axes_params,
                 loss_weight,
                 u_type=type(list(self.u_dict.values())[0]),
