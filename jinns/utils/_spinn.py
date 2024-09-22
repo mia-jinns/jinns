@@ -218,7 +218,8 @@ def create_SPINN(
 
     Returns
     -------
-    `u`, a :class:`.SPINN` object which inherits from `eqx.Module` (hence callable).
+    spinn
+        An instanciated SPINN
 
     Raises
     ------

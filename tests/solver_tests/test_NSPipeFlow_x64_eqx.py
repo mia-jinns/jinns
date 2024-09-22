@@ -40,7 +40,9 @@ def train_NSPipeFlow_init():
         [eqx.nn.Linear, 50, 2],
     ]
     key, subkey = random.split(key)
-    u_output_transform = lambda pinn_in, pinn_out: pinn_out * (R**2 - pinn_in[1] ** 2)
+    u_output_transform = lambda pinn_in, pinn_out, params: pinn_out * (
+        R**2 - pinn_in[1] ** 2
+    )
     # This output transform is equivalent to defining afterwards:
     # u = lambda x, nn_params, eq_params: u_raw(x, nn_params, eq_params) * (
     #    R**2 - x[1] ** 2
@@ -59,7 +61,7 @@ def train_NSPipeFlow_init():
         [eqx.nn.Linear, 50, 1],
     ]
     key, subkey = random.split(key)
-    p_output_transform = lambda pinn_in, pinn_out: (
+    p_output_transform = lambda pinn_in, pinn_out, params: (
         (pinn_in[0] - xmin) / (xmax - xmin) * p_out
         + (xmax - pinn_in[0]) / (xmax - xmin) * p_in
         + (xmin - pinn_in[0]) * (xmax - pinn_in[0]) * pinn_out

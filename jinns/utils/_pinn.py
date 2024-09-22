@@ -91,8 +91,15 @@ class PINN(eqx.Module):
         **Note**: the input dimension as given in eqx_list has to match the sum
         of the dimension of `t` + the dimension of `x` or the output dimension
         after the `input_transform` function.
-    input_transform : Callable
-    output_transform : Callable
+    input_transform : Callable[[Float[Array, "input_dim"], Params], Float[Array, "output_dim"]]
+        A function that will be called before entering the PINN. Its output(s)
+        must match the PINN inputs (except for the parameters).
+        Its inputs are the PINN inputs (`t` and/or `x` concatenated together)
+        and the parameters. Default is no operation.
+    output_transform : Callable[[Float[Array, "input_dim"], Float[Array, "output_dim"], Params], Float[Array, "output_dim"]]
+        A function with arguments begin the same input as the PINN, the PINN
+        output and the parameter. This function will be called after exiting the PINN.
+        Default is no operation.
     output_slice : slice, default=None
         A jnp.s\_[] to determine the different dimension for the PINN.
         See `shared_pinn_outputs` argument of `create_PINN`.
@@ -126,24 +133,20 @@ class PINN(eqx.Module):
                 t = t[..., None]  #  Add mandatory dimension which can be lacking
                 # (eg. for the ODE batches) but this dimension can already
                 # exists (eg. for user provided observation times)
-            return self._eval_nn(t, params, self.input_transform, self.output_transform)
+            return self._eval_nn(t, params)
         if self.eq_type == "statio_PDE":
             (x, params) = args
-            return self._eval_nn(x, params, self.input_transform, self.output_transform)
+            return self._eval_nn(x, params)
         if self.eq_type == "nonstatio_PDE":
             (t, x, params) = args
             t_x = jnp.concatenate([t, x], axis=-1)
-            return self._eval_nn(
-                t_x, params, self.input_transform, self.output_transform
-            )
+            return self._eval_nn(t_x, params)
         raise ValueError("Wrong value for self.eq_type")
 
     def _eval_nn(
         self,
         inputs: Float[Array, "input_dim"],
         params: Params | PyTree,
-        input_transform: Callable,
-        output_transform: Callable,
     ) -> Float[Array, "output_dim"]:
         """
         inner function to factorize code. apply_fn (which takes varying forms)
@@ -153,7 +156,9 @@ class PINN(eqx.Module):
             model = eqx.combine(params.nn_params, self.static)
         except (AttributeError, TypeError) as e:  # give more flexibility
             model = eqx.combine(params, self.static)
-        res = output_transform(inputs, model(input_transform(inputs, params)).squeeze())
+        res = self.output_transform(
+            inputs, model(self.input_transform(inputs, params)).squeeze(), params
+        )
 
         if self.output_slice is not None:
             res = res[self.output_slice]
@@ -169,8 +174,13 @@ def create_PINN(
     eqx_list: tuple[tuple[Callable, int, int] | Callable, ...],
     eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"],
     dim_x: int = 0,
-    input_transform: Callable = None,
-    output_transform: Callable = None,
+    input_transform: Callable[
+        [Float[Array, "input_dim"], Params], Float[Array, "output_dim"]
+    ] = None,
+    output_transform: Callable[
+        [Float[Array, "input_dim"], Float[Array, "output_dim"], Params],
+        Float[Array, "output_dim"],
+    ] = None,
     shared_pinn_outputs: tuple[slice] = None,
     slice_solution: slice = None,
 ) -> PINN | list[PINN]:
@@ -212,12 +222,13 @@ def create_PINN(
         An integer. The dimension of `x`. Default `0`.
     input_transform
         A function that will be called before entering the PINN. Its output(s)
-        must match the PINN inputs. Its inputs are the PINN inputs (`t` and/or
-        `x` concatenated together and the parameters). Default is the No operation
+        must match the PINN inputs (except for the parameters).
+        Its inputs are the PINN inputs (`t` and/or `x` concatenated together)
+        and the parameters. Default is no operation.
     output_transform
-        A function with arguments the same input(s) as the PINN AND the PINN
-        output that will be called after exiting the PINN. Default is the No
-        operation
+        A function with arguments begin the same input as the PINN, the PINN
+        output and the parameter. This function will be called after exiting the PINN.
+        Default is no operation.
     shared_pinn_outputs
         Default is None, for a stantard PINN.
         A tuple of jnp.s\_[] (slices) to determine the different output for each
@@ -281,7 +292,7 @@ def create_PINN(
 
     if output_transform is None:
 
-        def output_transform(_in_pinn, _out_pinn):
+        def output_transform(_in_pinn, _out_pinn, _params):
             return _out_pinn
 
     mlp = _MLP(key=key, eqx_list=eqx_list)

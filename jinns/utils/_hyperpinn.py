@@ -73,8 +73,15 @@ class HYPERPINN(PINN):
         **Note**: the input dimension as given in eqx_list has to match the sum
         of the dimension of `t` + the dimension of `x` or the output dimension
         after the `input_transform` function
-    input_transform : Callable
-    output_transform : Callable
+    input_transform : Callable[[Float[Array, "input_dim"], Params], Float[Array, "output_dim"]]
+        A function that will be called before entering the PINN. Its output(s)
+        must match the PINN inputs (except for the parameters).
+        Its inputs are the PINN inputs (`t` and/or `x` concatenated together)
+        and the parameters. Default is no operation.
+    output_transform : Callable[[Float[Array, "input_dim"], Float[Array, "output_dim"], Params], Float[Array, "output_dim"]]
+        A function with arguments begin the same input as the PINN, the PINN
+        output and the parameter. This function will be called after exiting the PINN.
+        Default is no operation.
     output_slice : slice, default=None
         A jnp.s\_[] to determine the different dimension for the HYPERPINN.
         See `shared_pinn_outputs` argument of `create_HYPERPINN`.
@@ -131,8 +138,6 @@ class HYPERPINN(PINN):
         self,
         inputs: Float[Array, "input_dim"],
         params: Params | PyTree,
-        input_transform: Callable,
-        output_transform: Callable,
     ) -> Float[Array, "output_dim"]:
         """
         inner function to factorize code. apply_fn (which takes varying forms)
@@ -152,7 +157,9 @@ class HYPERPINN(PINN):
         pinn_params = self.hyper_to_pinn(hyper_output)
 
         pinn = eqx.combine(pinn_params, self.static)
-        res = output_transform(inputs, pinn(input_transform(inputs, params)).squeeze())
+        res = self.output_transform(
+            inputs, pinn(self.input_transform(inputs, params), params).squeeze()
+        )
 
         if self.output_slice is not None:
             res = res[self.output_slice]
@@ -170,8 +177,13 @@ def create_HYPERPINN(
     hyperparams: list[str],
     hypernet_input_size: int,
     dim_x: int = 0,
-    input_transform: Callable = None,
-    output_transform: Callable = None,
+    input_transform: Callable[
+        [Float[Array, "input_dim"], Params], Float[Array, "output_dim"]
+    ] = None,
+    output_transform: Callable[
+        [Float[Array, "input_dim"], Float[Array, "output_dim"], Params],
+        Float[Array, "output_dim"],
+    ] = None,
     slice_solution: slice = None,
     shared_pinn_outputs: slice = None,
     eqx_list_hyper: tuple[tuple[Callable, int, int] | Callable, ...] = None,
@@ -221,12 +233,13 @@ def create_HYPERPINN(
         An integer. The dimension of `x`. Default `0`.
     input_transform
         A function that will be called before entering the PINN. Its output(s)
-        must match the PINN inputs. Its inputs are the PINN inputs (`t` and/or
-        `x` concatenated together and the parameters). Default is the No operation
+        must match the PINN inputs (except for the parameters).
+        Its inputs are the PINN inputs (`t` and/or `x` concatenated together)
+        and the parameters. Default is no operation.
     output_transform
-        A function with arguments the same input(s) as the PINN AND the PINN
-        output that will be called after exiting the PINN. Default is the No
-        operation
+        A function with arguments begin the same input as the PINN, the PINN
+        output and the parameter. This function will be called after exiting the PINN.
+        Default is no operation.
     slice_solution
         A jnp.s\_ object which indicates which axis of the PINN output is
         dedicated to the actual equation solution. Default None
@@ -301,7 +314,7 @@ def create_HYPERPINN(
 
     if output_transform is None:
 
-        def output_transform(_in_pinn, _out_pinn):
+        def output_transform(_in_pinn, _out_pinn, _params):
             return _out_pinn
 
     key, subkey = jax.random.split(key, 2)
