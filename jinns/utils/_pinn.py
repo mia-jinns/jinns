@@ -111,8 +111,13 @@ class PINN(eqx.Module):
     eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"] = eqx.field(
         static=True, kw_only=True
     )
-    input_transform: Callable = eqx.field(static=True, kw_only=True)
-    output_transform: Callable = eqx.field(static=True, kw_only=True)
+    input_transform: Callable[
+        [Float[Array, "input_dim"], Params], Float[Array, "output_dim"]
+    ] = eqx.field(static=True, kw_only=True)
+    output_transform: Callable[
+        [Float[Array, "input_dim"], Float[Array, "output_dim"], Params],
+        Float[Array, "output_dim"],
+    ] = eqx.field(static=True, kw_only=True)
     output_slice: slice = eqx.field(static=True, kw_only=True, default=None)
 
     mlp: InitVar[eqx.Module] = eqx.field(kw_only=True)
