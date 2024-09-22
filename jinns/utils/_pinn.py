@@ -2,12 +2,12 @@
 Implements utility function to create PINNs
 """
 
+from typing import Callable, Literal
 from dataclasses import InitVar
 import jax
 import jax.numpy as jnp
 import equinox as eqx
 
-from typing import Callable
 from jaxtyping import Array, Key, PyTree, Float
 
 from jinns.parameters._params import Params
@@ -16,18 +16,18 @@ from jinns.parameters._params import Params
 class _MLP(eqx.Module):
     """
     Class to construct an equinox module from a key and a eqx_list. To be used
-    in pair with the function `create_PINN`
+    in pair with the function `create_PINN`.
 
     Parameters
     ----------
     key : InitVar[Key]
-        A jax random key for the layer initializations
+        A jax random key for the layer initializations.
     eqx_list : InitVar[tuple[tuple[Callable, int, int] | Callable, ...]]
         A tuple of tuples of successive equinox modules and activation functions to
         describe the PINN architecture. The inner tuples must have the eqx module or
-        axtivation function as first item, other items represents arguments
+        activation function as first item, other items represents arguments
         that could be required (eg. the size of the layer).
-        __Note:__ the `key` argument need not be given.
+        The `key` argument need not be given.
         Thus typical example is `eqx_list=
         ((eqx.nn.Linear, 2, 20),
             jax.nn.tanh,
@@ -36,15 +36,17 @@ class _MLP(eqx.Module):
             (eqx.nn.Linear, 20, 20),
             jax.nn.tanh,
             (eqx.nn.Linear, 20, 1)
-        )`
+        )`.
     """
 
-    key: InitVar[Key]
-    eqx_list: InitVar[tuple[tuple[Callable, int, int] | Callable, ...]]
+    key: InitVar[Key] = eqx.field(kw_only=True)
+    eqx_list: InitVar[tuple[tuple[Callable, int, int] | Callable, ...]] = eqx.field(
+        kw_only=True
+    )
 
     # NOTE that the following should NOT be declared as static otherwise the
-    # eqx.partition that we use in the PINN module will misbehave!!!
-    layers: list = eqx.field(init=False)
+    # eqx.partition that we use in the PINN module will misbehave
+    layers: list[eqx.Module] = eqx.field(init=False)
 
     def __post_init__(self, key, eqx_list):
         self.layers = []
@@ -62,21 +64,46 @@ class _MLP(eqx.Module):
 
 
 class PINN(eqx.Module):
-    """
-    A PINN object
+    r"""
+    A PINN object, i.e., a neural network compatible with the rest of jinns.
+    This is typically created with `create_PINN` which creates iternally a
+    `_MLP` object. However, a user could directly creates their PINN using this
+    class by passing a eqx.Module (for argument `mlp`)
+    that plays the role of the NN and that is
+    already instanciated.
 
     Parameters
     ----------
     slice_solution : slice
-    eq_type : str
+        A jnp.s\_ object which indicates which axis of the PINN output is
+        dedicated to the actual equation solution. Default None
+        means that slice_solution = the whole PINN output. This argument is useful
+        when the PINN is also used to output equation parameters for example
+        Note that it must be a slice and not an integer (a preprocessing of the
+        user provided argument takes care of it).
+    eq_type : Literal["ODE", "statio_PDE", "nonstatio_PDE"]
+        A string with three possibilities.
+        "ODE": the PINN is called with one input `t`.
+        "statio_PDE": the PINN is called with one input `x`, `x`
+        can be high dimensional.
+        "nonstatio_PDE": the PINN is called with two inputs `t` and `x`, `x`
+        can be high dimensional.
+        **Note**: the input dimension as given in eqx_list has to match the sum
+        of the dimension of `t` + the dimension of `x` or the output dimension
+        after the `input_transform` function.
     input_transform : Callable
     output_transform : Callable
     output_slice : slice, default=None
-    mlp : _MLP
+        A jnp.s\_[] to determine the different dimension for the PINN.
+        See `shared_pinn_outputs` argument of `create_PINN`.
+    mlp : eqx.Module
+        The actual neural network instanciated as an eqx.Module.
     """
 
     slice_solution: slice = eqx.field(static=True, kw_only=True)
-    eq_type: str = eqx.field(static=True, kw_only=True)
+    eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"] = eqx.field(
+        static=True, kw_only=True
+    )
     input_transform: Callable = eqx.field(static=True, kw_only=True)
     output_transform: Callable = eqx.field(static=True, kw_only=True)
     output_slice: slice = eqx.field(static=True, kw_only=True, default=None)
@@ -140,11 +167,11 @@ class PINN(eqx.Module):
 def create_PINN(
     key: Key,
     eqx_list: tuple[tuple[Callable, int, int] | Callable, ...],
-    eq_type: str,
+    eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"],
     dim_x: int = 0,
     input_transform: Callable = None,
     output_transform: Callable = None,
-    shared_pinn_outputs: slice = None,
+    shared_pinn_outputs: tuple[slice] = None,
     slice_solution: slice = None,
 ) -> PINN | list[PINN]:
     r"""
@@ -154,13 +181,14 @@ def create_PINN(
     Parameters
     ----------
     key
-        A jax random key that will be used to initialize the network parameters
+        A JAX random key that will be used to initialize the network
+        parameters.
     eqx_list
         A tuple of tuples of successive equinox modules and activation functions to
         describe the PINN architecture. The inner tuples must have the eqx module or
-        axtivation function as first item, other items represents arguments
+        activation function as first item, other items represent arguments
         that could be required (eg. the size of the layer).
-        __Note:__ the `key` argument need not be given.
+        The `key` argument need not be given.
         Thus typical example is `eqx_list=
         ((eqx.nn.Linear, 2, 20),
             jax.nn.tanh,
@@ -169,7 +197,7 @@ def create_PINN(
             (eqx.nn.Linear, 20, 20),
             jax.nn.tanh,
             (eqx.nn.Linear, 20, 1)
-        )`
+        )`.
     eq_type
         A string with three possibilities.
         "ODE": the PINN is called with one input `t`.
@@ -179,9 +207,9 @@ def create_PINN(
         can be high dimensional.
         **Note**: the input dimension as given in eqx_list has to match the sum
         of the dimension of `t` + the dimension of `x` or the output dimension
-        after the `input_transform` function
+        after the `input_transform` function.
     dim_x
-        An integer. The dimension of `x`. Default `0`
+        An integer. The dimension of `x`. Default `0`.
     input_transform
         A function that will be called before entering the PINN. Its output(s)
         must match the PINN inputs. Its inputs are the PINN inputs (`t` and/or
@@ -205,12 +233,12 @@ def create_PINN(
         means that slice_solution = the whole PINN output. This argument is useful
         when the PINN is also used to output equation parameters for example
         Note that it must be a slice and not an integer (a preprocessing of the
-        user provided argument takes care of it)
+        user provided argument takes care of it).
 
 
     Returns
     -------
-    pinn : PINN | list[PINN]
+    pinn
         A PINN instance or, when `shared_pinn_ouput` is not None,
         a list of PINN instances with the same structure is returned,
         only differing by there final slicing of the network output.

@@ -4,7 +4,7 @@ https://arxiv.org/pdf/2111.01008.pdf
 """
 
 from dataclasses import InitVar
-from typing import Callable
+from typing import Callable, Literal
 import copy
 from math import prod
 import jax
@@ -18,14 +18,15 @@ from jinns.utils._pinn import PINN, _MLP
 from jinns.parameters._params import Params
 
 
-def _get_param_nb(params: Params) -> tuple[Float[Array, "1"], Float[Array, "1"]]:
+def _get_param_nb(
+    params: Params,
+) -> tuple[Int[onp.ndarray, "1"], Int[onp.ndarray, "n_layers"]]:
     """Returns the number of parameters in a Params object and also
     the cumulative sum when parsing the object.
 
 
     Parameters
     ----------
-
     params :
         A Params object.
     """
@@ -38,22 +39,52 @@ def _get_param_nb(params: Params) -> tuple[Float[Array, "1"], Float[Array, "1"]]
 
 class HYPERPINN(PINN):
     """
-    Composed of a PINN and an hypernetwork
+    A HYPERPINN object compatible with the rest of jinns.
+    Composed of a PINN and an HYPER network. The HYPERPINN is typically
+    instanciated using with `create_HYPERPINN`. However, a user could directly
+    creates their HYPERPINN using this
+    class by passing an eqx.Module for argument `mlp` (resp. for argument
+    `hyper_mlp`) that plays the role of the NN (resp. hyper NN) and that is
+    already instanciated.
 
     Parameters
     ----------
     hyperparams: list = eqx.field(static=True)
+        A list of keys from Params.eq_params that will be considered as
+        hyperparameters for metamodeling.
     hypernet_input_size: int
+        An integer. The input size of the MLP used for the hypernetwork. Must
+        be equal to the flattened concatenations for the array of parameters
+        designated by the `hyperparams` argument.
     slice_solution : slice
+        A jnp.s\_ object which indicates which axis of the PINN output is
+        dedicated to the actual equation solution. Default None
+        means that slice_solution = the whole PINN output. This argument is useful
+        when the PINN is also used to output equation parameters for example
+        Note that it must be a slice and not an integer (a preprocessing of the
+        user provided argument takes care of it).
     eq_type : str
+        A string with three possibilities.
+        "ODE": the HYPERPINN is called with one input `t`.
+        "statio_PDE": the HYPERPINN is called with one input `x`, `x`
+        can be high dimensional.
+        "nonstatio_PDE": the HYPERPINN is called with two inputs `t` and `x`, `x`
+        can be high dimensional.
+        **Note**: the input dimension as given in eqx_list has to match the sum
+        of the dimension of `t` + the dimension of `x` or the output dimension
+        after the `input_transform` function
     input_transform : Callable
     output_transform : Callable
     output_slice : slice, default=None
-    mlp : _MLP
-    hyper_mlp : _MLP
+        A jnp.s\_[] to determine the different dimension for the HYPERPINN.
+        See `shared_pinn_outputs` argument of `create_HYPERPINN`.
+    mlp : eqx.Module
+        The actual neural network instanciated as an eqx.Module.
+    hyper_mlp : eqx.Module
+        The actual hyper neural network instanciated as an eqx.Module.
     """
 
-    hyperparams: list = eqx.field(static=True, kw_only=True)
+    hyperparams: list[str] = eqx.field(static=True, kw_only=True)
     hypernet_input_size: int = eqx.field(kw_only=True)
 
     hyper_mlp: InitVar[eqx.Module] = eqx.field(kw_only=True)
@@ -135,8 +166,8 @@ class HYPERPINN(PINN):
 def create_HYPERPINN(
     key: Key,
     eqx_list: tuple[tuple[Callable, int, int] | Callable, ...],
-    eq_type: str,
-    hyperparams: list,
+    eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"],
+    hyperparams: list[str],
     hypernet_input_size: int,
     dim_x: int = 0,
     input_transform: Callable = None,
@@ -152,41 +183,42 @@ def create_HYPERPINN(
     Parameters
     ----------
     key
-        A jax random key that will be used to initialize the network parameters
+        A JAX random key that will be used to initialize the network
+        parameters.
     eqx_list
-        A list of list of successive equinox modules and activation functions to
-        describe the PINN architecture. The inner lists have the eqx module or
-        axtivation function as first item, other items represents arguments
+        A tuple of tuples of successive equinox modules and activation functions to
+        describe the PINN architecture. The inner tuples must have the eqx module or
+        activation function as first item, other items represent arguments
         that could be required (eg. the size of the layer).
-        __Note:__ the `key` argument need not be given.
+        The `key` argument need not be given.
         Thus typical example is `eqx_list=
-        [[eqx.nn.Linear, 2, 20],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 20, 20],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 20, 20],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 20, 1]
-        ]`
+        ((eqx.nn.Linear, 2, 20),
+            jax.nn.tanh,
+            (eqx.nn.Linear, 20, 20),
+            jax.nn.tanh,
+            (eqx.nn.Linear, 20, 20),
+            jax.nn.tanh,
+            (eqx.nn.Linear, 20, 1)
+        )`.
     eq_type
         A string with three possibilities.
-        "ODE": the PINN is called with one input `t`.
-        "statio_PDE": the PINN is called with one input `x`, `x`
+        "ODE": the HYPERPINN is called with one input `t`.
+        "statio_PDE": the HYPERPINN is called with one input `x`, `x`
         can be high dimensional.
-        "nonstatio_PDE": the PINN is called with two inputs `t` and `x`, `x`
+        "nonstatio_PDE": the HYPERPINN is called with two inputs `t` and `x`, `x`
         can be high dimensional.
         **Note**: the input dimension as given in eqx_list has to match the sum
         of the dimension of `t` + the dimension of `x` or the output dimension
         after the `input_transform` function
     hyperparams
-        A list of keys from params["eq_params"] that will be considered as
-        hyperparameters for metamodeling
+        A list of keys from Params.eq_params that will be considered as
+        hyperparameters for metamodeling.
     hypernet_input_size
         An integer. The input size of the MLP used for the hypernetwork. Must
         be equal to the flattened concatenations for the array of parameters
-        designated by the `hyperparams` argument
+        designated by the `hyperparams` argument.
     dim_x
-        An integer. The dimension of `x`. Default `0`
+        An integer. The dimension of `x`. Default `0`.
     input_transform
         A function that will be called before entering the PINN. Its output(s)
         must match the PINN inputs. Its inputs are the PINN inputs (`t` and/or
@@ -201,10 +233,10 @@ def create_HYPERPINN(
         means that slice_solution = the whole PINN output. This argument is useful
         when the PINN is also used to output equation parameters for example
         Note that it must be a slice and not an integer (a preprocessing of the
-        user provided argument takes care of it)
+        user provided argument takes care of it).
     shared_pinn_outputs
         Default is None, for a stantard PINN.
-        A tuple of jnp.s_[] (slices) to determine the different output for each
+        A tuple of jnp.s\_[] (slices) to determine the different output for each
         network. In this case we return a list of PINNs, one for each output in
         shared_pinn_outputs. This is useful to create PINNs that share the
         same network and same parameters; **the user must then use the same
@@ -222,7 +254,11 @@ def create_HYPERPINN(
 
     Returns
     -------
-    `u`, a :class:`.HyperPINN` object which inherits from `eqx.Module` (hence callable).
+    hyperpinn
+        A HYPERPINN instance or, when `shared_pinn_ouput` is not None,
+        a list of HYPERPINN instances with the same structure is returned,
+        only differing by there final slicing of the network output.
+
 
     Raises
     ------
@@ -269,7 +305,7 @@ def create_HYPERPINN(
             return _out_pinn
 
     key, subkey = jax.random.split(key, 2)
-    mlp = _MLP(subkey, eqx_list)
+    mlp = _MLP(key=subkey, eqx_list=eqx_list)
     # quick partitioning to get the params to get the correct number of neurons
     # for the last layer of hyper network
     params_mlp, _ = eqx.partition(mlp, eqx.is_inexact_array)
@@ -285,7 +321,7 @@ def create_HYPERPINN(
     except IndexError:
         eqx_list_hyper[1][1] = hypernet_input_size
     key, subkey = jax.random.split(key, 2)
-    hyper_mlp = _MLP(subkey, eqx_list_hyper)
+    hyper_mlp = _MLP(key=subkey, eqx_list_hyper=eqx_list_hyper)
 
     if shared_pinn_outputs is not None:
         hyperpinns = []

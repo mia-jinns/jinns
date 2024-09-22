@@ -1,12 +1,11 @@
 """
-NamedTuples definition
+equinox Modules used as containers
 """
 
-from typing import NamedTuple
-from jaxtyping import PyTree, Array, Float, Int, Bool
-import optax
+from typing import Dict
+from jaxtyping import PyTree, Array, Float, Bool
 from optax import OptState
-import jax.numpy as jnp
+import equinox as eqx
 from jinns.loss._LossODE import LossODE, SystemLossODE
 from jinns.loss._LossPDE import (
     LossPDEStatio,
@@ -24,7 +23,7 @@ from jinns.data._DataGenerators import (
 from jinns.parameters._params import Params
 
 
-class DataGeneratorContainer(NamedTuple):
+class DataGeneratorContainer(eqx.Module):
     data: DataGeneratorODE | CubicMeshPDEStatio | CubicMeshPDENonStatio
     param_data: DataGeneratorParameter | None = None
     obs_data: DataGeneratorObservations | DataGeneratorObservationsMultiPINNs | None = (
@@ -32,7 +31,7 @@ class DataGeneratorContainer(NamedTuple):
     )
 
 
-class ValidationContainer(NamedTuple):
+class ValidationContainer(eqx.Module):
     loss: (
         LossODE
         | SystemLossODE
@@ -46,22 +45,22 @@ class ValidationContainer(NamedTuple):
     loss_values: Float[Array, "n_iter"] | None = None
 
 
-class OptimizationContainer(NamedTuple):
+class OptimizationContainer(eqx.Module):
     params: Params
-    last_non_nan_params: dict
+    last_non_nan_params: Params
     opt_state: OptState
 
 
-class OptimizationExtraContainer(NamedTuple):
-    curr_seq: Int
+class OptimizationExtraContainer(eqx.Module):
+    curr_seq: int
     best_val_params: Params
     early_stopping: Bool = False
 
 
-class LossContainer(NamedTuple):
-    stored_loss_terms: dict
+class LossContainer(eqx.Module):
+    stored_loss_terms: Dict[str, Float[Array, "n_iter"]]
     train_loss_values: Float[Array, "n_iter"]
 
 
-class StoredObjectContainer(NamedTuple):
+class StoredObjectContainer(eqx.Module):
     stored_params: list | None
