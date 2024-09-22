@@ -4,7 +4,7 @@ https://arxiv.org/abs/2211.08761
 """
 
 from dataclasses import InitVar
-from typing import Callable
+from typing import Callable, Literal
 import jax
 import jax.numpy as jnp
 import equinox as eqx
@@ -19,32 +19,27 @@ class _SPINN(eqx.Module):
     Parameters
     ----------
     key : InitVar[Key]
-        A jax random key
+        A jax random key for the layer initializations.
     d : int
-        An integer. The number of dimensions to treat separately
-    r : int
-        An integer. The dimension of the embedding
+        The number of dimensions to treat separately.
     eqx_list : InitVar[tuple[tuple[Callable, int, int] | Callable, ...]]
-        A list of list of successive equinox modules and activation functions to
-        describe *each separable PINN architecture*.
-        The inner lists have the eqx module or
-        axtivation function as first item, other items represents arguments
+        A tuple of tuples of successive equinox modules and activation functions to
+        describe the PINN architecture. The inner tuples must have the eqx module or
+        activation function as first item, other items represents arguments
         that could be required (eg. the size of the layer).
-        __Note:__ the `key` argument need not be given.
+        The `key` argument need not be given.
         Thus typical example is `eqx_list=
-        ((eqx.nn.Linear, 1, 20),
-            (jax.nn.tanh),
+        ((eqx.nn.Linear, 2, 20),
+            jax.nn.tanh,
             (eqx.nn.Linear, 20, 20),
-            (jax.nn.tanh),
+            jax.nn.tanh,
             (eqx.nn.Linear, 20, 20),
-            (jax.nn.tanh),
-            (eqx.nn.Linear, 20, r)
-        )`
+            jax.nn.tanh,
+            (eqx.nn.Linear, 20, 1)
+        )`.
     """
 
     d: int = eqx.field(static=True, kw_only=True)
-    r: int = eqx.field(static=True, kw_only=True)
-    m: int = eqx.field(static=True, default=1, kw_only=True)
 
     key: InitVar[Key] = eqx.field(kw_only=True)
     eqx_list: InitVar[tuple[tuple[Callable, int, int] | Callable, ...]] = eqx.field(
@@ -66,7 +61,9 @@ class _SPINN(eqx.Module):
                     self.layers.append(l[0](*l[1:], key=subkey))
             self.separated_mlp.append(self.layers)
 
-    def __call__(self, t, x):
+    def __call__(
+        self, t: Float[Array, "1"], x: Float[Array, "omega_dim"]
+    ) -> Float[Array, "d embed_dim*output_dim"]:
         if t is not None:
             dimensions = jnp.concatenate([t, x.flatten()], axis=0)
         else:
@@ -82,9 +79,8 @@ class _SPINN(eqx.Module):
 
 class SPINN(eqx.Module):
     """
-    Basically a wrapper around the `__call__` function to be able to give a type to
-    our former `self.u`
-    The function create_SPINN has the role to population the `__call__` function
+    A SPINN object compatible with the rest of jinns.
+    This is typically created with `create_SPINN`.
 
     **NOTE**: SPINNs with `t` and `x` as inputs are best used with a
     DataGenerator with `self.cartesian_product=False` for memory consideration
@@ -92,6 +88,8 @@ class SPINN(eqx.Module):
     Parameters
     ----------
     d : int
+        The number of dimensions to treat separately.
+
     """
 
     d: int = eqx.field(static=True, kw_only=True)
@@ -131,7 +129,9 @@ class SPINN(eqx.Module):
             return self._eval_nn(res)
         raise RuntimeError("Wrong parameter value for eq_type")
 
-    def _eval_nn(self, res):
+    def _eval_nn(
+        self, res: Float[Array, "d embed_dim*output_dim"]
+    ) -> Float[Array, "output_dim"]:
         """
         common content of apply_fn put here in order to factorize code
         """
@@ -162,7 +162,7 @@ def create_SPINN(
     d: int,
     r: int,
     eqx_list: tuple[tuple[Callable, int, int] | Callable, ...],
-    eq_type: str,
+    eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"],
     m: int = 1,
 ) -> SPINN:
     """
@@ -176,36 +176,38 @@ def create_SPINN(
     Parameters
     ----------
     key
-        A jax random key that will be used to initialize the network parameters
+        A JAX random key that will be used to initialize the network parameters
     d
-        An integer. The number of dimensions to treat separately
+        The number of dimensions to treat separately.
     r
-        An integer. The dimension of the embedding
+        An integer. The dimension of the embedding.
     eqx_list
-        A list of list of successive equinox modules and activation functions to
-        describe *each separable PINN architecture*.
-        The inner lists have the eqx module or
-        axtivation function as first item, other items represents arguments
+        A tuple of tuples of successive equinox modules and activation functions to
+        describe the PINN architecture. The inner tuples must have the eqx module or
+        activation function as first item, other items represents arguments
         that could be required (eg. the size of the layer).
-        __Note:__ the `key` argument need not be given.
+        The `key` argument need not be given.
         Thus typical example is `eqx_list=
-        [[eqx.nn.Linear, 1, 20],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 20, 20],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 20, 20],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 20, r]
-        ]`
-    eq_type
+        ((eqx.nn.Linear, 2, 20),
+            jax.nn.tanh,
+            (eqx.nn.Linear, 20, 20),
+            jax.nn.tanh,
+            (eqx.nn.Linear, 20, 20),
+            jax.nn.tanh,
+            (eqx.nn.Linear, 20, 1)
+        )`.
+    eq_type : Literal["ODE", "statio_PDE", "nonstatio_PDE"]
         A string with three possibilities.
         "ODE": the PINN is called with one input `t`.
         "statio_PDE": the PINN is called with one input `x`, `x`
         can be high dimensional.
         "nonstatio_PDE": the PINN is called with two inputs `t` and `x`, `x`
         can be high dimensional.
+        **Note**: the input dimension as given in eqx_list has to match the sum
+        of the dimension of `t` + the dimension of `x` or the output dimension
+        after the `input_transform` function.
     m
-        An integer. The output dimension of the neural network. According to
+        The output dimension of the neural network. According to
         the SPINN article, a total embedding dimension of `r*m` is defined. We
         then sum groups of `r` embedding dimensions to compute each output.
         Default is 1.
@@ -251,7 +253,7 @@ def create_SPINN(
             "Too many dimensions, not enough letters available in jnp.einsum"
         )
 
-    spinn_mlp = _SPINN(key=key, d=d, r=r, eqx_list=eqx_list, m=m)
+    spinn_mlp = _SPINN(key=key, d=d, eqx_list=eqx_list)
     spinn = SPINN(spinn_mlp=spinn_mlp, d=d, r=r, eq_type=eq_type, m=m)
 
     return spinn
