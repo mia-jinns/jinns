@@ -90,10 +90,19 @@ def save_pinn(
     This function creates 3 files, beggining by `filename`
 
      1. an eqx file to save the eqx.Module (the PINN, HyperPINN, ...)
-     2. a pickle file for the parameters
-     3. a pickle file for the arguments that have been used at PINN
+     2. a pickle file for the parameters of the equation
+     3. a pickle file for the arguments that have been used at PINN creation and that we need to reconstruct the eqx.module later on.
 
-     creation and that we need to reconstruct the eqx.module later on.
+    Note that the equation parameters (typically `Params.eq_params`) go in the
+    pickle file while the neural network parameters (typically
+    `Params.nn_params`) go in the `"*-module.eqx"` file (normal behaviour with
+    `eqx.tree_serialise_leaves`. Currently, equation parameters are saved apart
+    because the initial type of attribute `params` in PINN / HYPERPINN / SPINN
+    is not `Params` but `PyTree` as inherited from `eqx.partition`.
+    Therefore, if we want to ensure a proper serialization/deserialization we
+    cannot save a `Params` object at this attribute field ; the `Params` object
+    must be split into `Params.nn_params` (type `PyTree`)
+    and `Params.eq_params` (type `dict`).
 
     Parameters
     ----------
@@ -144,8 +153,10 @@ def load_pinn(filename: str, type_: Literal["pinn", "hyperpinn", "spinn"]):
 
     These files are created by `jinns.utils.save_pinn`.
 
-    Note that this requires equinox v0.11.3 (currently latest version) for the
+    Note that this requires equinox>v0.11.3 for the
     `eqx.filter_eval_shape` to work.
+
+    See note in `save_pinn` for more details about the saving process
 
     Parameters
     ----------
@@ -158,7 +169,7 @@ def load_pinn(filename: str, type_: Literal["pinn", "hyperpinn", "spinn"]):
     -------
     u_reloaded
         The reloaded PINN
-    params_reloaded
+    params
         The reloaded parameters
     """
     with open(filename + "-arguments.pkl", "rb") as f:

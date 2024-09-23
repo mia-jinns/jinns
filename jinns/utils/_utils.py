@@ -7,9 +7,10 @@ from operator import getitem
 import numpy as np
 import jax
 import jax.numpy as jnp
+from jaxtyping import PyTree, Array
 
 
-def _check_nan_in_pytree(pytree):
+def _check_nan_in_pytree(pytree: PyTree) -> bool:
     """
     Check if there is a NaN value anywhere is the pytree
 
@@ -56,7 +57,7 @@ def _tracked_parameters(params, tracked_params_key_list):
     return tracked_params
 
 
-def _get_grid(in_array):
+def _get_grid(in_array: Array) -> Array:
     """
     From an array of shape (B, D), D > 1, get the grid array, i.e., an array of
     shape (B, B, ...(D times)..., B, D): along the last axis we have the array
@@ -72,7 +73,7 @@ def _get_grid(in_array):
     return in_array
 
 
-def _check_user_func_return(r, shape):
+def _check_user_func_return(r: Array | int, shape: tuple) -> Array | int:
     """
     Correctly handles the result from a user defined function (eg a boundary
     condition) to get the correct broadcast
