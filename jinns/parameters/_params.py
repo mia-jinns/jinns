@@ -89,7 +89,7 @@ def _update_eq_params_dict(
 
 
 def _get_vmap_in_axes_params(
-    eq_params_batch_dict: Dict[str, Array], params: Params
+    eq_params_batch_dict: Dict[str, Array], params: Params | ParamsDict
 ) -> tuple[Params]:
     """
     Return the input vmap axes when there is batch(es) of parameters to vmap
@@ -104,7 +104,7 @@ def _get_vmap_in_axes_params(
     # this is for a fine-grained vmaping
     # scheme over the params
     vmap_in_axes_params = (
-        Params(
+        type(params)(
             nn_params=None,
             eq_params={
                 k: (0 if k in eq_params_batch_dict.keys() else None)
