@@ -2,7 +2,6 @@
 Implements some validation functions and their associated hyperparameter
 """
 
-import copy
 import abc
 from typing import Union
 import equinox as eqx
@@ -53,9 +52,11 @@ class ValidationLoss(AbstractValidationModule):
     for more complicated validation strategy.
     """
 
-    loss: Union[callable, LossODE, LossPDEStatio, LossPDENonStatio] = eqx.field(
-        converter=copy.deepcopy
-    )
+    loss: Union[callable, LossODE, LossPDEStatio, LossPDENonStatio]  # NOTE that
+    # there used to be a deepcopy here which has been suppressed. 1) No need
+    # because loss are now eqx.Module (immutable) so no risk of in-place
+    # modification. 2) deepcopy is buggy with equinox, InitVar etc. (see issue
+    # #857 on equinox github)
     validation_data: Union[DataGeneratorODE, CubicMeshPDEStatio, CubicMeshPDENonStatio]
     validation_param_data: Union[DataGeneratorParameter, None] = None
     validation_obs_data: Union[
