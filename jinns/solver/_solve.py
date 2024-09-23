@@ -10,7 +10,7 @@ import jax
 from jax import jit
 import jax.numpy as jnp
 from jinns.solver._rar import init_rar, trigger_rar
-from jinns.utils._utils import _check_nan_in_pytree, _tracked_parameters
+from jinns.utils._utils import _check_nan_in_pytree
 from jinns.data._DataGenerators import (
     append_obs_batch,
     append_param_batch,
