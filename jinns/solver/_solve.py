@@ -18,8 +18,6 @@ from jinns.data._DataGenerators import (
     CubicMeshPDEStatio,
     CubicMeshPDENonStatio,
     DataGeneratorObservations,
-    DataGeneratorParameter,
-    DataGeneratorObservationsMultiPINNs,
 )
 from jinns.utils._containers import *
 
@@ -555,35 +553,16 @@ def get_get_batch(obs_batch_sharding):
         This function is used at each loop but it cannot be jitted because of
         device_put
         """
-        if isinstance(
-            data,
-            (DataGeneratorODE, CubicMeshPDEStatio, CubicMeshPDENonStatio),
-        ):
-            # to comply with new datagenerators
-            data, batch = data.get_batch()
-        else:
-            batch = data.get_batch()
+        data, batch = data.get_batch()
         if param_data is not None:
-            if isinstance(param_data, DataGeneratorParameter):
-                param_data, param_batch = param_data.get_batch()
-            else:
-                param_batch = param_data.get_batch()
+            param_data, param_batch = param_data.get_batch()
             batch = append_param_batch(batch, param_batch)
         if obs_data is not None:
             # This is the part that motivated the transition from scan to for loop
             # Indeed we need to be transit obs_batch from CPU to GPU when we have
             # huge observations that cannot fit on GPU. Such transfer wasn't meant
             # to be jitted, i.e. in a scan loop
-            if isinstance(
-                obs_data,
-                (
-                    DataGeneratorObservations,
-                    DataGeneratorObservationsMultiPINNs,
-                ),
-            ):
-                obs_data, obs_batch = obs_data.get_batch()
-            else:
-                obs_batch = obs_data.get_batch()
+            obs_data, obs_batch = obs_data.get_batch()
             obs_batch = jax.device_put(obs_batch, obs_batch_sharding)
             batch = append_obs_batch(batch, obs_batch)
         return batch, data, param_data, obs_data
@@ -593,31 +572,12 @@ def get_get_batch(obs_batch_sharding):
         """
         Original get_batch with no sharding
         """
-        if isinstance(
-            data,
-            (DataGeneratorODE, CubicMeshPDEStatio, CubicMeshPDENonStatio),
-        ):
-            # to comply with new datagenerators
-            data, batch = data.get_batch()
-        else:
-            batch = data.get_batch()
+        data, batch = data.get_batch()
         if param_data is not None:
-            if isinstance(param_data, DataGeneratorParameter):
-                param_data, param_batch = param_data.get_batch()
-            else:
-                param_batch = param_data.get_batch()
+            param_data, param_batch = param_data.get_batch()
             batch = append_param_batch(batch, param_batch)
         if obs_data is not None:
-            if isinstance(
-                obs_data,
-                (
-                    DataGeneratorObservations,
-                    DataGeneratorObservationsMultiPINNs,
-                ),
-            ):
-                obs_data, obs_batch = obs_data.get_batch()
-            else:
-                obs_batch = obs_data.get_batch()
+            obs_data, obs_batch = obs_data.get_batch()
             batch = append_obs_batch(batch, obs_batch)
         return batch, data, param_data, obs_data
 
