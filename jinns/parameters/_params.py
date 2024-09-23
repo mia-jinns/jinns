@@ -14,16 +14,16 @@ class Params(eqx.Module):
 
     Parameters
     ----------
-    nn_params
+    nn_params : Pytree
         A PyTree of the non-static part of the PINN eqx.Module, i.e., the
         parameters of the PINN
-    eq_params
+    eq_params : Dict[str, Array]
         A dictionary of the equation parameters. Keys are the parameter name,
         values are their corresponding value
     """
 
-    nn_params: PyTree = eqx.field(kw_only=True)
-    eq_params: dict[str, Array] = eqx.field(kw_only=True)
+    nn_params: PyTree = eqx.field(kw_only=True, default=None)
+    eq_params: Dict[str, Array] = eqx.field(kw_only=True, default=None)
 
 
 class ParamsDict(eqx.Module):
@@ -33,16 +33,16 @@ class ParamsDict(eqx.Module):
 
     Parameters
     ----------
-    nn_params: Dict[str, PyTree]
+    nn_params : Dict[str, PyTree]
         The neural network's parameters. Most of the time, it will be the
         Array part of an `eqx.Module` obtained by
         `eqx.partition(module, eqx.is_inexact_array)`.
-    eq_params: Dict[str, Array]
+    eq_params : Dict[str, Array]
         A dictionary of the equation parameters. Dict keys are the parameter name as defined your custom loss.
     """
 
-    nn_params: Dict[str, PyTree] = eqx.field(kw_only=True)
-    eq_params: Dict[str, Array] = eqx.field(kw_only=True)
+    nn_params: Dict[str, PyTree] = eqx.field(kw_only=True, default=None)
+    eq_params: Dict[str, Array] = eqx.field(kw_only=True, default=None)
 
     def extract_params(self, nn_key: str) -> Params:
         """
