@@ -145,7 +145,7 @@ class HYPERPINN(PINN):
         """
         try:
             hyper = eqx.combine(params.nn_params, self.static_hyper)
-        except (AttributeError, TypeError) as e:  # give more flexibility
+        except (KeyError, AttributeError, TypeError) as e:  # give more flexibility
             hyper = eqx.combine(params, self.static_hyper)
 
         eq_params_batch = jnp.concatenate(
