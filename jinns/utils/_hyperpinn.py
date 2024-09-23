@@ -159,7 +159,7 @@ class HYPERPINN(PINN):
 
         pinn = eqx.combine(pinn_params, self.static)
         res = self.output_transform(
-            inputs, pinn(self.input_transform(inputs, params), params).squeeze()
+            inputs, pinn(self.input_transform(inputs, params)).squeeze(), params
         )
 
         if self.output_slice is not None:
