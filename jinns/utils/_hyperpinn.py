@@ -3,6 +3,7 @@ Implements utility function to create HYPERPINNs
 https://arxiv.org/pdf/2111.01008.pdf
 """
 
+import warnings
 from dataclasses import InitVar
 from typing import Callable, Literal
 import copy
@@ -34,7 +35,7 @@ def _get_param_nb(
         prod(a.shape)
         for a in tree_leaves(params, is_leaf=lambda x: isinstance(x, jnp.ndarray))
     ]
-    return sum(dim_prod_all_arrays), onp.cumsum(dim_prod_all_arrays)
+    return onp.asarray(sum(dim_prod_all_arrays)), onp.cumsum(dim_prod_all_arrays)
 
 
 class HYPERPINN(PINN):
@@ -334,33 +335,47 @@ def create_HYPERPINN(
     except IndexError:
         eqx_list_hyper[1][1] = hypernet_input_size
     key, subkey = jax.random.split(key, 2)
-    hyper_mlp = _MLP(key=subkey, eqx_list_hyper=eqx_list_hyper)
+    hyper_mlp = _MLP(key=subkey, eqx_list=eqx_list_hyper)
 
     if shared_pinn_outputs is not None:
         hyperpinns = []
         for output_slice in shared_pinn_outputs:
-            hyperpinn = HYPERPINN(
-                mlp=mlp,
-                hyper_mlp=hyper_mlp,
-                slice_solution=slice_solution,
-                eq_type=eq_type,
-                input_transform=input_transform,
-                output_transform=output_transform,
-                hyperparams=hyperparams,
-                hypernet_input_size=hypernet_input_size,
-                output_slice=output_slice,
-            )
+            with warnings.catch_warnings():
+                # Catch the equinox warning because we put the number of
+                # parameters as static while being jnp.Array. This this time
+                # this is correct to do so, because they are used as indices
+                # and will never be modified
+                warnings.filterwarnings(
+                    "ignore", message="A JAX array is being set as static!"
+                )
+                hyperpinn = HYPERPINN(
+                    mlp=mlp,
+                    hyper_mlp=hyper_mlp,
+                    slice_solution=slice_solution,
+                    eq_type=eq_type,
+                    input_transform=input_transform,
+                    output_transform=output_transform,
+                    hyperparams=hyperparams,
+                    hypernet_input_size=hypernet_input_size,
+                    output_slice=output_slice,
+                )
             hyperpinns.append(hyperpinn)
         return hyperpinns
-    hyperpinn = HYPERPINN(
-        mlp=mlp,
-        hyper_mlp=hyper_mlp,
-        slice_solution=slice_solution,
-        eq_type=eq_type,
-        input_transform=input_transform,
-        output_transform=output_transform,
-        hyperparams=hyperparams,
-        hypernet_input_size=hypernet_input_size,
-        output_slice=None,
-    )
+    with warnings.catch_warnings():
+        # Catch the equinox warning because we put the number of
+        # parameters as static while being jnp.Array. This this time
+        # this is correct to do so, because they are used as indices
+        # and will never be modified
+        warnings.filterwarnings("ignore", message="A JAX array is being set as static!")
+        hyperpinn = HYPERPINN(
+            mlp=mlp,
+            hyper_mlp=hyper_mlp,
+            slice_solution=slice_solution,
+            eq_type=eq_type,
+            input_transform=input_transform,
+            output_transform=output_transform,
+            hyperparams=hyperparams,
+            hypernet_input_size=hypernet_input_size,
+            output_slice=None,
+        )
     return hyperpinn
