@@ -2,5 +2,6 @@
 
 
 ::: jinns.loss.LossODE
-    members:
-        - evaluate
+    options:
+        members:
+            - evaluate

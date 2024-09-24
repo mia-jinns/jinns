@@ -106,6 +106,7 @@ nav:
         - 'api/pinn/pinn.md'
         - 'api/pinn/spinn.md'
         - 'api/pinn/hyperpinn.md'
+        - 'api/pinn/save_load.md'
       - Plot: 'api/plot.md'
     - Advanced API:
       - 'api/differential_operators.md'
