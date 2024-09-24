@@ -335,7 +335,12 @@ def create_HYPERPINN(
     except IndexError:
         eqx_list_hyper[1][1] = hypernet_input_size
     key, subkey = jax.random.split(key, 2)
-    hyper_mlp = _MLP(key=subkey, eqx_list=eqx_list_hyper)
+
+    with warnings.catch_warnings():
+        # TODO check why this warning is raised here and not in the PINN
+        # context ?
+        warnings.filterwarnings("ignore", message="A JAX array is being set as static!")
+        hyper_mlp = _MLP(key=subkey, eqx_list=eqx_list_hyper)
 
     if shared_pinn_outputs is not None:
         hyperpinns = []
