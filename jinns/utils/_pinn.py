@@ -129,33 +129,38 @@ class PINN(eqx.Module):
         self.params, self.static = eqx.partition(mlp, eqx.is_inexact_array)
 
     def init_params(self) -> PyTree:
+        """
+        Returns an initial set of parameters
+        """
         return self.params
 
     def __call__(self, *args) -> Float[Array, "output_dim"]:
+        """
+        Calls `eval_nn` with rearranged arguments
+        """
         if self.eq_type == "ODE":
             (t, params) = args
             if len(t.shape) == 0:
                 t = t[..., None]  #  Add mandatory dimension which can be lacking
                 # (eg. for the ODE batches) but this dimension can already
                 # exists (eg. for user provided observation times)
-            return self._eval_nn(t, params)
+            return self.eval_nn(t, params)
         if self.eq_type == "statio_PDE":
             (x, params) = args
-            return self._eval_nn(x, params)
+            return self.eval_nn(x, params)
         if self.eq_type == "nonstatio_PDE":
             (t, x, params) = args
             t_x = jnp.concatenate([t, x], axis=-1)
-            return self._eval_nn(t_x, params)
+            return self.eval_nn(t_x, params)
         raise ValueError("Wrong value for self.eq_type")
 
-    def _eval_nn(
+    def eval_nn(
         self,
         inputs: Float[Array, "input_dim"],
         params: Params | PyTree,
     ) -> Float[Array, "output_dim"]:
         """
-        inner function to factorize code. apply_fn (which takes varying forms)
-        call _eval_nn which always have the same content.
+        Evaluate the PINN on some inputs with some params.
         """
         try:
             model = eqx.combine(params.nn_params, self.static)

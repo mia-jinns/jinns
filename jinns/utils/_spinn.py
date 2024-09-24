@@ -106,9 +106,15 @@ class SPINN(eqx.Module):
         self.params, self.static = eqx.partition(spinn_mlp, eqx.is_inexact_array)
 
     def init_params(self) -> PyTree:
+        """
+        Returns an initial set of parameters
+        """
         return self.params
 
     def __call__(self, *args) -> Float[Array, "output_dim"]:
+        """
+        Calls `eval_nn` with rearranged arguments
+        """
         if self.eq_type == "statio_PDE":
             (x, params) = args
             try:
@@ -117,7 +123,7 @@ class SPINN(eqx.Module):
                 spinn = eqx.combine(params, self.static)
             v_model = jax.vmap(spinn, (0))
             res = v_model(t=None, x=x)
-            return self._eval_nn(res)
+            return self.eval_nn(res)
         if self.eq_type == "nonstatio_PDE":
             (t, x, params) = args
             try:
@@ -126,14 +132,14 @@ class SPINN(eqx.Module):
                 spinn = eqx.combine(params, self.static)
             v_model = jax.vmap(spinn, ((0, 0)))
             res = v_model(t, x)
-            return self._eval_nn(res)
+            return self.eval_nn(res)
         raise RuntimeError("Wrong parameter value for eq_type")
 
-    def _eval_nn(
+    def eval_nn(
         self, res: Float[Array, "d embed_dim*output_dim"]
     ) -> Float[Array, "output_dim"]:
         """
-        common content of apply_fn put here in order to factorize code
+        Evaluate the SPINN on some inputs with some params.
         """
         a = ", ".join([f"{chr(97 + d)}z" for d in range(res.shape[1])])
         b = "".join([f"{chr(97 + d)}" for d in range(res.shape[1])])

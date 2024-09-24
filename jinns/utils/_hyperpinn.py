@@ -115,6 +115,9 @@ class HYPERPINN(PINN):
         self.pinn_params_sum, self.pinn_params_cumsum = _get_param_nb(self.params)
 
     def init_params(self) -> Params:
+        """
+        Returns an initial set of parameters
+        """
         return self.params_hyper
 
     def _hyper_to_pinn(self, hyper_output: Float[Array, "output_dim"]) -> PyTree:
@@ -135,14 +138,13 @@ class HYPERPINN(PINN):
             is_leaf=lambda x: isinstance(x, jnp.ndarray),
         )
 
-    def _eval_nn(
+    def eval_nn(
         self,
         inputs: Float[Array, "input_dim"],
         params: Params | PyTree,
     ) -> Float[Array, "output_dim"]:
         """
-        inner function to factorize code. apply_fn (which takes varying forms)
-        call _eval_nn which always have the same content.
+        Evaluate the HYPERPINN on some inputs with some params.
         """
         try:
             hyper = eqx.combine(params.nn_params, self.static_hyper)
