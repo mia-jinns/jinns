@@ -117,7 +117,7 @@ class HYPERPINN(PINN):
     def init_params(self) -> Params:
         return self.params_hyper
 
-    def hyper_to_pinn(self, hyper_output: Float[Array, "output_dim"]) -> PyTree:
+    def _hyper_to_pinn(self, hyper_output: Float[Array, "output_dim"]) -> PyTree:
         """
         From the output of the hypernetwork we set the well formed
         parameters of the pinn (`self.params`)
@@ -155,7 +155,7 @@ class HYPERPINN(PINN):
 
         hyper_output = hyper(eq_params_batch)
 
-        pinn_params = self.hyper_to_pinn(hyper_output)
+        pinn_params = self._hyper_to_pinn(hyper_output)
 
         pinn = eqx.combine(pinn_params, self.static)
         res = self.output_transform(
