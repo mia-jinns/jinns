@@ -10,7 +10,7 @@ import equinox as eqx
 from jinns.utils._pinn import create_PINN, PINN
 from jinns.utils._spinn import create_SPINN, SPINN
 from jinns.utils._hyperpinn import create_HYPERPINN, HYPERPINN
-from jinns.parameters._params import Params
+from jinns.parameters._params import Params, ParamsDict
 
 
 def function_to_string(
@@ -83,7 +83,10 @@ def string_to_function(
 
 
 def save_pinn(
-    filename: str, u: PINN | HYPERPINN | SPINN, params: Params, kwargs_creation
+    filename: str,
+    u: PINN | HYPERPINN | SPINN,
+    params: Params | ParamsDict,
+    kwargs_creation,
 ):
     """
     Save a PINN / HyperPINN / SPINN model
@@ -100,11 +103,15 @@ def save_pinn(
     tree_serialise_leaves`).
 
     Equation parameters are saved apart because the initial type of attribute
-    `params` in PINN / HYPERPINN / SPINN is not `Params` but `PyTree` as
-    inherited from `eqx.partition`. Therefore, if we want to ensure a proper
-    serialization/deserialization we cannot save a `Params` object at this
-    attribute field ; the `Params` object must be split into `Params.nn_params`
-    (type `PyTree`) and `Params.eq_params` (type `dict`).
+    `params` in PINN / HYPERPINN / SPINN is not `Params` nor `ParamsDict`
+    but `PyTree` as inherited from `eqx.partition`.
+    Therefore, if we want to ensure a proper serialization/deserialization:
+    - we cannot save a `Params` object at this
+      attribute field ; the `Params` object must be split into `Params.nn_params`
+      (type `PyTree`) and `Params.eq_params` (type `dict`).
+    - in the case of a `ParamsDict` we cannot save `ParamsDict.nn_params` at
+      the attribute field `params` because it is not a `PyTree` (as expected in
+      the PINN / HYPERPINN / SPINN signature) but it is still a dictionary.
 
     Parameters
     ----------
@@ -113,20 +120,31 @@ def save_pinn(
     u
         The PINN
     params
-        Params
+        Params or ParamsDict to be save
     kwargs_creation
         The dictionary of arguments that were used to create the PINN, e.g.
         the layers list, O/PDE type, etc.
     """
-    if isinstance(u, HYPERPINN):
-        u = eqx.tree_at(lambda m: m.params_hyper, u, params)
-    elif isinstance(u, (PINN, SPINN)):
-        u = eqx.tree_at(lambda m: m.params, u, params)
-    eqx.tree_serialise_leaves(filename + "-module.eqx", u)
-
     if isinstance(params, Params):
-        with open(filename + "-eq_params.pkl", "wb") as f:
-            pickle.dump(params.eq_params, f)
+        if isinstance(u, HYPERPINN):
+            u = eqx.tree_at(lambda m: m.params_hyper, u, params)
+        elif isinstance(u, (PINN, SPINN)):
+            u = eqx.tree_at(lambda m: m.params, u, params)
+        eqx.tree_serialise_leaves(filename + "-module.eqx", u)
+
+    elif isinstance(params, ParamsDict):
+        for key, params_ in params.nn_params.items():
+            if isinstance(u, HYPERPINN):
+                u = eqx.tree_at(lambda m: m.params_hyper, u, params_)
+            elif isinstance(u, (PINN, SPINN)):
+                u = eqx.tree_at(lambda m: m.params, u, params_)
+            eqx.tree_serialise_leaves(filename + f"-module_{key}.eqx", u)
+
+    else:
+        raise ValueError("The parameters to be saved must be a Params or a ParamsDict")
+
+    with open(filename + "-eq_params.pkl", "wb") as f:
+        pickle.dump(params.eq_params, f)
 
     kwargs_creation = kwargs_creation.copy()  # avoid side-effect that would be
     # very probably harmless anyway
@@ -147,7 +165,11 @@ def save_pinn(
         pickle.dump(kwargs_creation, f)
 
 
-def load_pinn(filename: str, type_: Literal["pinn", "hyperpinn", "spinn"]):
+def load_pinn(
+    filename: str,
+    type_: Literal["pinn", "hyperpinn", "spinn"],
+    key_list_for_paramsdict: list[str] = None,
+) -> tuple[eqx.Module, Params | ParamsDict]:
     """
     Load a PINN model. This function needs to access 3 files :
     `{filename}-module.eqx`, `{filename}-parameters.pkl` and
@@ -166,6 +188,10 @@ def load_pinn(filename: str, type_: Literal["pinn", "hyperpinn", "spinn"]):
         Filename (prefix) without extension.
     type_
         Type of model to load. Must be in ["pinn", "hyperpinn", "spinn"].
+    key_list_for_paramsdict
+        Default is Non. In this case, we expect to retrieve a ParamsDict. We
+        must give the function the name of the keys of the
+        `ParamsDict.nn_params` dictionary.
 
     Returns
     -------
@@ -180,7 +206,7 @@ def load_pinn(filename: str, type_: Literal["pinn", "hyperpinn", "spinn"]):
         with open(filename + "-eq_params.pkl", "rb") as f:
             eq_params_reloaded = pickle.load(f)
     except FileNotFoundError:
-        eq_params_reloaded = None
+        eq_params_reloaded = {}
         print("No pickle file for equation parameters found!")
     kwargs_reloaded["eqx_list"] = string_to_function(kwargs_reloaded["eqx_list"])
     if type_ == "pinn":
@@ -196,15 +222,21 @@ def load_pinn(filename: str, type_: Literal["pinn", "hyperpinn", "spinn"]):
         u_reloaded_shallow = eqx.filter_eval_shape(create_HYPERPINN, **kwargs_reloaded)
     else:
         raise ValueError(f"{type_} is not valid")
-    # now the empty structure is populated with the actual saved array values
-    # stored in the eqx file
-    u_reloaded = eqx.tree_deserialise_leaves(
-        filename + "-module.eqx", u_reloaded_shallow
-    )
-    if eq_params_reloaded is None:
-        params = u_reloaded.init_params()
-    else:
+    if key_list_for_paramsdict is None:
+        # now the empty structure is populated with the actual saved array values
+        # stored in the eqx file
+        u_reloaded = eqx.tree_deserialise_leaves(
+            filename + "-module.eqx", u_reloaded_shallow
+        )
         params = Params(
             nn_params=u_reloaded.init_params(), eq_params=eq_params_reloaded
         )
+    else:
+        nn_params_dict = {}
+        for key in key_list_for_paramsdict:
+            u_reloaded = eqx.tree_deserialise_leaves(
+                filename + f"-module_{key}.eqx", u_reloaded_shallow
+            )
+            nn_params_dict[key] = u_reloaded.init_params()
+        params = ParamsDict(nn_params=nn_params_dict, eq_params=eq_params_reloaded)
     return u_reloaded, params
