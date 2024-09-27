@@ -204,12 +204,14 @@ def create_PINN(
         A JAX random key that will be used to initialize the network
         parameters.
     eqx_list
-        A tuple of tuples of successive equinox modules and activation functions to
-        describe the PINN architecture. The inner tuples must have the eqx module or
-        activation function as first item, other items represent arguments
-        that could be required (eg. the size of the layer).
-        The `key` argument need not be given.
-        Thus typical example is `eqx_list=
+        A tuple of tuples of successive equinox modules and activation
+        functions to describe the PINN architecture. The inner tuples must have
+        the eqx module or activation function as first item, other items
+        represent arguments that could be required (eg. the size of the layer).
+
+        The `key` argument do not need to be given.
+
+        A typical example is `eqx_list=
         ((eqx.nn.Linear, 2, 20),
             jax.nn.tanh,
             (eqx.nn.Linear, 20, 20),
@@ -237,7 +239,8 @@ def create_PINN(
         and the parameters. Default is no operation.
     output_transform
         A function with arguments begin the same input as the PINN, the PINN
-        output and the parameter. This function will be called after exiting the PINN.
+        output and the parameter. This function will be called after exiting
+        the PINN.
         Default is no operation.
     shared_pinn_outputs
         Default is None, for a stantard PINN.
@@ -251,10 +254,10 @@ def create_PINN(
     slice_solution
         A jnp.s\_ object which indicates which axis of the PINN output is
         dedicated to the actual equation solution. Default None
-        means that slice_solution = the whole PINN output. This argument is useful
-        when the PINN is also used to output equation parameters for example
-        Note that it must be a slice and not an integer (a preprocessing of the
-        user provided argument takes care of it).
+        means that slice_solution = the whole PINN output. This argument is
+        useful when the PINN is also used to output equation parameters for
+        example Note that it must be a slice and not an integer (a
+        preprocessing of the user provided argument takes care of it).
 
 
     Returns

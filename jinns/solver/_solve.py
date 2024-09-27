@@ -3,7 +3,6 @@ This modules implements the main `solve()` function of jinns which
 handles the optimization process
 """
 
-import copy
 from functools import partial
 import optax
 import jax
@@ -17,7 +16,6 @@ from jinns.data._DataGenerators import (
     DataGeneratorODE,
     CubicMeshPDEStatio,
     CubicMeshPDENonStatio,
-    DataGeneratorObservations,
 )
 from jinns.utils._containers import *
 
