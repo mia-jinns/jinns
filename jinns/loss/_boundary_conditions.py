@@ -17,7 +17,7 @@ from jinns.parameters._params import _get_vmap_in_axes_params
 from jinns.data._DataGenerators import PDEStatioBatch, PDENonStatioBatch
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
-from jinns.parameters import Params
+from jinns.parameters import Params, ParamsDict
 
 
 def _compute_boundary_loss(
@@ -25,7 +25,7 @@ def _compute_boundary_loss(
     f: Callable,
     batch: PDEStatioBatch | PDENonStatioBatch,
     u: eqx.Module,
-    params: Params,
+    params: Params | ParamsDict,
     facet: int,
     dim_to_apply: slice,
 ) -> float:
@@ -64,7 +64,7 @@ def _compute_boundary_loss(
     u
         a PINN
     params
-        Params object
+        Params or ParamsDict
     facet
         An integer which represents the id of the facet which is currently
         considered (in the order provided by the DataGenerator which is fixed)
@@ -103,7 +103,7 @@ def boundary_dirichlet_statio(
     f: Callable,
     batch: PDEStatioBatch,
     u: eqx.Module,
-    params: Params,
+    params: Params | ParamsDict,
     facet: int,
     dim_to_apply: slice,
 ) -> float:
@@ -124,7 +124,7 @@ def boundary_dirichlet_statio(
     u
         The PINN
     params
-        Params
+        Params or ParamsDict
     dim_to_apply
         A jnp.s\_ object. The dimension of u on which to apply the boundary condition
     """
@@ -160,7 +160,7 @@ def boundary_neumann_statio(
     f: Callable,
     batch: PDEStatioBatch,
     u: eqx.Module,
-    params: Params,
+    params: Params | ParamsDict,
     facet: int,
     dim_to_apply: slice,
 ) -> float:
@@ -278,7 +278,7 @@ def boundary_dirichlet_nonstatio(
     f: Callable,
     batch: PDENonStatioBatch,
     u: eqx.Module,
-    params: Params,
+    params: Params | ParamsDict,
     facet: int,
     dim_to_apply: slice,
 ) -> float:
@@ -348,7 +348,7 @@ def boundary_neumann_nonstatio(
     f: Callable,
     batch: PDENonStatioBatch,
     u: eqx.Module,
-    params: Params,
+    params: Params | ParamsDict,
     facet: int,
     dim_to_apply: slice,
 ) -> float:

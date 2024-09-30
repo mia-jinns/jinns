@@ -17,14 +17,14 @@ else:
     from equinox import AbstractClassVar
 
 
-def decorator_heteregeneous_params(evaluate, eq_type):
+def _decorator_heteregeneous_params(evaluate, eq_type):
 
     def wrapper_ode(*args):
         self, t, u, params = args
         _params = eqx.tree_at(
             lambda p: p.eq_params,
             params,
-            self.eval_heterogeneous_parameters(
+            self._eval_heterogeneous_parameters(
                 t, None, u, params, self.eq_params_heterogeneity
             ),
         )
@@ -37,7 +37,7 @@ def decorator_heteregeneous_params(evaluate, eq_type):
         _params = eqx.tree_at(
             lambda p: p.eq_params,
             params,
-            self.eval_heterogeneous_parameters(
+            self._eval_heterogeneous_parameters(
                 None, x, u, params, self.eq_params_heterogeneity
             ),
         )
@@ -50,7 +50,7 @@ def decorator_heteregeneous_params(evaluate, eq_type):
         _params = eqx.tree_at(
             lambda p: p.eq_params,
             params,
-            self.eval_heterogeneous_parameters(
+            self._eval_heterogeneous_parameters(
                 t, x, u, params, self.eq_params_heterogeneity
             ),
         )
@@ -76,11 +76,11 @@ class DynamicLoss(eqx.Module):
 
     Parameters
     ----------
-    Tmax
+    Tmax : Float, default=1
         Tmax needs to be given when the PINN time input is normalized in
         [0, 1], ie. we have performed renormalization of the differential
         equation
-    eq_params_heterogeneity
+    eq_params_heterogeneity : Dict[str, Callable | None], default=None
         A dict with the same keys as eq_params and the value being either None
         (no heterogeneity) or a function which encodes for the spatio-temporal
         heterogeneity of the parameter.
@@ -98,13 +98,18 @@ class DynamicLoss(eqx.Module):
     _eq_type = AbstractClassVar[str]  # class variable denoting the type of
     # differential equation
     Tmax: Float = eqx.field(kw_only=True, default=1)
-    eq_params_heterogeneity: Dict[str, Union[Callable, None]] = eqx.field(
+    eq_params_heterogeneity: Dict[str, Callable | None] = eqx.field(
         kw_only=True, default=None, static=True
     )
 
-    def eval_heterogeneous_parameters(
-        self, t, x, u, params, eq_params_heterogeneity=None
-    ):
+    def _eval_heterogeneous_parameters(
+        self,
+        t: Float[Array, "1"],
+        x: Float[Array, "dim"],
+        u: eqx.Module,
+        params: Params | ParamsDict,
+        eq_params_heterogeneity: Dict[str, Callable | None] = None,
+    ) -> Dict[str, float | Float[Array, "parameter_dimension"]]:
         eq_params_ = {}
         if eq_params_heterogeneity is None:
             return params.eq_params
@@ -127,7 +132,13 @@ class DynamicLoss(eqx.Module):
                 eq_params_[k] = p
         return eq_params_
 
-    def _evaluate(self, t, x, u, params):
+    def _evaluate(
+        self,
+        t: Float[Array, "1"],
+        x: Float[Array, "dim"],
+        u: eqx.Module,
+        params: Params | ParamsDict,
+    ) -> float:
         # Here we handle the various possible signature
         if self._eq_type == "ODE":
             ans = self.equation(t, u, params)
@@ -153,11 +164,11 @@ class ODE(DynamicLoss):
 
     Attributes
     ----------
-    Tmax
+    Tmax : float, default=1
         Tmax needs to be given when the PINN time input is normalized in
         [0, 1], ie. we have performed renormalization of the differential
         equation
-    eq_params_heterogeneity
+    eq_params_heterogeneity : Dict[str, Callable | None], default=None
         Default None. A dict with the keys being the same as in eq_params
         and the value being either None (no heterogeneity) or a function
         which encodes for the spatio-temporal heterogeneity of the parameter.
@@ -173,50 +184,107 @@ class ODE(DynamicLoss):
 
     _eq_type: ClassVar[str] = "ODE"
 
+    @partial(_decorator_heteregeneous_params, eq_type="ODE")
     def evaluate(
         self,
         t: Float[Array, "1"],
         u: eqx.Module | Dict[str, eqx.Module],
         params: Params | ParamsDict,
-    ):
+    ) -> float:
         """Here we call DynamicLoss._evaluate with x=None"""
         return self._evaluate(t, None, u, params)
 
     @abc.abstractmethod
-    def equation(t, params):
+    def equation(
+        self, t: Float[Array, "1"], u: eqx.Module, params: Params | ParamsDict
+    ) -> float:
         raise NotImplementedError
 
 
 class PDEStatio(DynamicLoss):
     r"""
     Abstract base class for stationnary PDE dynamic losses
+
+    Attributes
+    ----------
+    Tmax : float, default=1
+        Tmax needs to be given when the PINN time input is normalized in
+        [0, 1], ie. we have performed renormalization of the differential
+        equation
+    eq_params_heterogeneity : Dict[str, Callable | None], default=None
+        Default None. A dict with the keys being the same as in eq_params
+        and the value being either None (no heterogeneity) or a function
+        which encodes for the spatio-temporal heterogeneity of the parameter.
+        Such a function must be jittable and take four arguments `t`, `x`,
+        `u` and `params` even if one is not used. Therefore,
+        one can introduce spatio-temporal covariates upon which a particular
+        parameter can depend, e.g. in a GLM fashion. The effect of these
+        covariables can themselves be estimated by being in `eq_params` too.
+        Some key can be missing, in this case there is no heterogeneity (=None).
+        If eq_params_heterogeneity is None this means there is no
+        heterogeneity for no parameters.
     """
 
     _eq_type: ClassVar[str] = "Statio PDE"
 
-    @partial(decorator_heteregeneous_params, eq_type="Statio PDE")
-    def evaluate(self, x, u, params):
+    @partial(_decorator_heteregeneous_params, eq_type="Statio PDE")
+    def evaluate(
+        self, x: Float[Array, "dimension"], u: eqx.Module, params: Params | ParamsDict
+    ) -> float:
         """Here we call the DynamicLoss._evaluate with t=None"""
         return self._evaluate(None, x, u, params)
 
     @abc.abstractmethod
-    def equation(x, u, params):
+    def equation(
+        self, x: Float[Array, "dimension"], u: eqx.Module, params: Params | ParamsDict
+    ) -> float:
         raise NotImplementedError
 
 
 class PDENonStatio(DynamicLoss):
     r"""
     Abstract base class for non-stationnary PDE dynamic losses
+
+    Attributes
+    ----------
+    Tmax : float, default=1
+        Tmax needs to be given when the PINN time input is normalized in
+        [0, 1], ie. we have performed renormalization of the differential
+        equation
+    eq_params_heterogeneity : Dict[str, Callable | None], default=None
+        Default None. A dict with the keys being the same as in eq_params
+        and the value being either None (no heterogeneity) or a function
+        which encodes for the spatio-temporal heterogeneity of the parameter.
+        Such a function must be jittable and take four arguments `t`, `x`,
+        `u` and `params` even if one is not used. Therefore,
+        one can introduce spatio-temporal covariates upon which a particular
+        parameter can depend, e.g. in a GLM fashion. The effect of these
+        covariables can themselves be estimated by being in `eq_params` too.
+        Some key can be missing, in this case there is no heterogeneity (=None).
+        If eq_params_heterogeneity is None this means there is no
+        heterogeneity for no parameters.
     """
 
     _eq_type: ClassVar[str] = "Non-statio PDE"
 
-    @partial(decorator_heteregeneous_params, eq_type="Non-statio PDE")
-    def evaluate(self, t, x, u, params):
+    @partial(_decorator_heteregeneous_params, eq_type="Non-statio PDE")
+    def evaluate(
+        self,
+        t: Float[Array, "1"],
+        x: Float[Array, "dim"],
+        u: eqx.Module,
+        params: Params | ParamsDict,
+    ) -> float:
         """Here we call the DynamicLoss._evaluate with full arguments"""
         ans = self._evaluate(t, x, u, params)
         return ans
 
     @abc.abstractmethod
-    def equation(t, x, u, params):
+    def equation(
+        self,
+        t: Float[Array, "1"],
+        x: Float[Array, "dim"],
+        u: eqx.Module,
+        params: Params | ParamsDict,
+    ) -> float:
         raise NotImplementedError
