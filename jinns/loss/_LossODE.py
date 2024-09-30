@@ -275,12 +275,12 @@ class SystemLossODE(eqx.Module):
     ----------
     u_dict : Dict[str, eqx.Module]
         dict of PINNs
-    loss_weights : Dict[str, eqx]
+    loss_weights : LossWeightsODEDict
         A dictionary of LossWeightsODE
     derivative_keys_dict : Dict[str, DerivativeKeysODE], default=None
         A dictionnary of DerivativeKeysODE specifying what field of `params`
-        should be used during graident computations for each of the terms of
-        the total loss, for each of the loss in the system. Default in
+        should be used during gradient computations for each of the terms of
+        the total loss, for each of the loss in the system. Default is
         `"nn_params`" everywhere.
     initial_condition_dict : Dict[str, tuple], default=None
         dict of tuple of length 2 with initial condition $(t_0, u_0)$

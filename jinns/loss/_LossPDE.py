@@ -31,6 +31,7 @@ from jinns.loss._loss_weights import (
 )
 from jinns.parameters._params import (
     Params,
+    ParamsDict,
     _get_vmap_in_axes_params,
     _update_eq_params_dict,
 )
@@ -85,7 +86,7 @@ class _LossPDEAbstract(eqx.Module):
         will be forced to match the boundary condition.
         Note that it must be a slice and not an integer
         (but a preprocessing of the user provided argument takes care of it)
-    norm_samples : Float[Array, "nb_norm_sample dimension"], default=None
+    norm_samples : Float[Array, "nb_norm_samples dimension"], default=None
         Fixed sample point in the space over which to compute the
         normalization constant. Default is None.
     norm_int_length : float, default=None
@@ -115,7 +116,7 @@ class _LossPDEAbstract(eqx.Module):
     omega_boundary_dim: slice | Dict[str, slice] | None = eqx.field(
         kw_only=True, default=None, static=True
     )
-    norm_samples: Float[Array, "nb_norm_sample dimension"] | None = eqx.field(
+    norm_samples: Float[Array, "nb_norm_samples dimension"] | None = eqx.field(
         kw_only=True, default=None
     )
     norm_int_length: float | None = eqx.field(kw_only=True, default=None)
@@ -259,7 +260,7 @@ class LossPDEStatio(_LossPDEAbstract):
 
     Parameters
     ----------
-    u: eqx.Module
+    u : eqx.Module
         the PINN
     dynamic_loss : DynamicLoss
         the stationary PDE dynamic part of the loss, basically the differential
@@ -306,7 +307,7 @@ class LossPDEStatio(_LossPDEAbstract):
         will be forced to match the boundary condition.
         Note that it must be a slice and not an integer
         (but a preprocessing of the user provided argument takes care of it)
-    norm_samples : Float[Array, "nb_norm_sample dimension"], default=None
+    norm_samples : Float[Array, "nb_norm_samples dimension"], default=None
         Fixed sample point in the space over which to compute the
         normalization constant. Default is None.
     norm_int_length : float, default=None
@@ -351,7 +352,7 @@ class LossPDEStatio(_LossPDEAbstract):
 
     def _get_normalization_loss_batch(
         self, _
-    ) -> Float[Array, "nb_norm_sample dimension"]:
+    ) -> Float[Array, "nb_norm_samples dimension"]:
         return (self.norm_samples,)
 
     def _get_observations_loss_batch(
@@ -465,80 +466,80 @@ class LossPDEStatio(_LossPDEAbstract):
 class LossPDENonStatio(LossPDEStatio):
     r"""Loss object for a stationary partial differential equation
 
-    .. math::
+    $$
         \mathcal{N}[u](t, x) = 0, \forall t \in I, \forall x \in \Omega
+    $$
 
-    where :math:`\mathcal{N}[\cdot]` is a differential operator.
-    The boundary condition is :math:`u(t, x)=u_b(t, x),\forall
-    x\in\delta\Omega, \forall t`.
-    The initial condition is :math:`u(0, x)=u_0(x), \forall x\in\Omega`
+    where $\mathcal{N}[\cdot]$ is a differential operator.
+    The boundary condition is $u(t, x)=u_b(t, x),\forall
+    x\in\delta\Omega, \forall t$.
+    The initial condition is $u(0, x)=u_0(x), \forall x\in\Omega$
     The additional condition of
-    integrating to 1 can be included, i.e., :math:`\int u(t, x)\mathrm{d}x=1`.
+    integrating to 1 can be included, i.e., $\int u(t, x)\mathrm{d}x=1$.
 
     Parameters
     ----------
-    u
-        the PINN object
-    loss_weights
-        XXX
-    dynamic_loss
-        A Dynamic loss object whose evaluate method corresponds to the
-        dynamic term in the loss
+    u : eqx.Module
+        the PINN
+    dynamic_loss : DynamicLoss
+        the non stationary PDE dynamic part of the loss, basically the differential
+        operator $\mathcal{N}[u](t, x)$. Should implement a method
+        `dynamic_loss.evaluate(t, x, u, params)`.
         Can be None in order to access only some part of the evaluate call
         results.
-    derivative_keys
-        A dict of lists of strings. In the dict, the key must correspond to
-        the loss term keywords. Then each of the values must correspond to keys in the parameter
-        dictionary (*at top level only of the parameter dictionary*).
-        It enables selecting the set of parameters
-        with respect to which the gradients of the dynamic
-        loss are computed. If nothing is provided, we set ["nn_params"] for all loss term
-        keywords, this is what is typically
-        done in solving forward problems, when we only estimate the
-        equation solution with a PINN. If some loss terms keywords are
-        missing we set their value to ["nn_params"] by default for the same
+    key : Key
+        A JAX PRNG Key for the loss class treated as an attribute. Default is
+        None. This field is provided for future developments and additional
+        losses that might need some randomness. Note that special care must be
+        taken when splitting the key because in-place updates are forbidden in
+        eqx.Modules.
         reason
-    omega_boundary_fun
-        The function to be matched in the border condition (can be None)
-        or a dictionary of such function. In this case, the keys are the
-        facets and the values are the functions. The keys must be in the
-        following order: 1D -> ["xmin", "xmax"], 2D -> ["xmin", "xmax",
-        "ymin", "ymax"]. Note that high order boundaries are currently not
-        implemented. A value in the dict can be None, this means we do not
-        enforce a particular boundary condition on this facet.
-        The facet called "xmin", resp. "xmax" etc., in 2D,
-        refers to the set of 2D points with fixed "xmin", resp. "xmax", etc.
-    omega_boundary_condition
-        Either None (no condition), or a string defining the boundary
-        condition e.g. Dirichlet or Von Neumann, or a dictionary of such
-        strings. In this case, the keys are the
-        facets and the values are the strings. The keys must be in the
-        following order: 1D -> ["xmin", "xmax"], 2D -> ["xmin", "xmax",
-        "ymin", "ymax"]. Note that high order boundaries are currently not
-        implemented. A value in the dict can be None, this means we do not
-        enforce a particular boundary condition on this facet.
-        The facet called "xmin", resp. "xmax" etc., in 2D,
-        refers to the set of 2D points with fixed "xmin", resp. "xmax", etc.
-    omega_boundary_dim
-        Either None, or a jnp.s\_ or a dict of jnp.s\_ with keys following
-        the logic of omega_boundary_fun. It indicates which dimension(s) of
-        the PINN will be forced to match the boundary condition
-        Note that it must be a slice and not an integer (a preprocessing of the
-        user provided argument takes care of it)
-    initial_condition_fun
-        A function representing the temporal initial condition. If None
-        (default) then no initial condition is applied
-    norm_samples
+    loss_weights : LossWeightsPDENonStatio, default=None
+        The loss weights for the differents term : dynamic loss,
+        boundary conditions if any, initial condition, normalization loss if any and
+        observations if any.
+        All fields are set to 1.0 by default.
+    derivative_keys : DerivativeKeysPDENonStatio, default=None
+        Specify which field of `params` should be differentiated for each
+        composant of the total loss. Particularily useful for inverse problems.
+        Fields can be "nn_params", "eq_params" or "both". Those that should not
+        be updated will have a `jax.lax.stop_gradient` called on them. Default
+        is `"nn_params"` for each composant of the loss.
+    omega_boundary_fun : Callable | Dict[str, Callable], default=None
+         The function to be matched in the border condition (can be None) or a
+         dictionary of such functions as values and keys as described
+         in `omega_boundary_condition`.
+    omega_boundary_condition : str | Dict[str, str], default=None
+        Either None (no condition, by default), or a string defining
+        the boundary condition (Dirichlet or Von Neumann),
+        or a dictionary with such strings as values. In this case,
+        the keys are the facets and must be in the following order:
+        1D -> [“xmin”, “xmax”], 2D -> [“xmin”, “xmax”, “ymin”, “ymax”].
+        Note that high order boundaries are currently not implemented.
+        A value in the dict can be None, this means we do not enforce
+        a particular boundary condition on this facet.
+        The facet called “xmin”, resp. “xmax” etc., in 2D,
+        refers to the set of 2D points with fixed “xmin”, resp. “xmax”, etc.
+    omega_boundary_dim : slice | Dict[str, slice], default=None
+        Either None, or a slice object or a dictionary of slice objects as
+        values and keys as described in `omega_boundary_condition`.
+        `omega_boundary_dim` indicates which dimension(s) of the PINN
+        will be forced to match the boundary condition.
+        Note that it must be a slice and not an integer
+        (but a preprocessing of the user provided argument takes care of it)
+    norm_samples : Float[Array, "nb_norm_samples dimension"], default=None
         Fixed sample point in the space over which to compute the
-        normalization constant. Default is None
-    norm_int_length
-        A Float. Must be provided if norm_samples is provided. The domain area
+        normalization constant. Default is None.
+    norm_int_length : float, default=None
+        A float. Must be provided if `norm_samples` is provided. The domain area
         (or interval length in 1D) upon which we perform the numerical
         integration. Default None
-    obs_slice
-        slice object specifying the begininning/ending
-        slice of u output(s) that is observed (this is then useful for
-        multidim PINN). Default is None.
+    obs_slice : slice, default=None
+        slice object specifying the begininning/ending of the PINN output
+        that is observed (this is then useful for multidim PINN). Default is None.
+    initial_condition_fun : Callable, default=None
+        A function representing the temporal initial condition. If None
+        (default) then no initial condition is applied
 
     """
 
@@ -564,18 +565,24 @@ class LossPDENonStatio(LossPDEStatio):
                 "case (e.g by. hardcoding it into the PINN output)."
             )
 
-    def _get_dynamic_loss_batch(self, batch):
+    def _get_dynamic_loss_batch(
+        self, batch: PDENonStatioBatch
+    ) -> tuple[Float[Array, "batch_size 1"], Float[Array, "batch_size dimension"]]:
         times_batch = batch.times_x_inside_batch[:, 0:1]
         omega_batch = batch.times_x_inside_batch[:, 1:]
         return (times_batch, omega_batch)
 
-    def _get_normalization_loss_batch(self, batch):
+    def _get_normalization_loss_batch(
+        self, batch: PDENonStatioBatch
+    ) -> tuple[Float[Array, "batch_size 1"], Float[Array, "nb_norm_samples dimension"]]:
         return (
             batch.times_x_inside_batch[:, 0:1],
             self.norm_samples,
         )
 
-    def _get_observations_loss_batch(self, batch):
+    def _get_observations_loss_batch(
+        self, batch: PDENonStatioBatch
+    ) -> tuple[Float[Array, "batch_size 1"], Float[Array, "batch_size dimension"]]:
         return (
             batch.obs_batch_dict["pinn_in"][:, 0:1],
             batch.obs_batch_dict["pinn_in"][:, 1:],
@@ -585,10 +592,8 @@ class LossPDENonStatio(LossPDEStatio):
         return self.evaluate(*args, **kwargs)
 
     def evaluate(
-        self,
-        params,
-        batch,
-    ):
+        self, params: Params, batch: PDENonStatioBatch
+    ) -> tuple[Float[Array, "1"], dict[str, float]]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -596,10 +601,9 @@ class LossPDENonStatio(LossPDEStatio):
         Parameters
         ---------
         params
-            A Params object
+            Parameters at which the loss is evaluated
         batch
-            A PDENonStatioBatch object.
-            Such a named tuple is composed of a batch of points in
+            Composed of a batch of points in
             the domain, a batch of points in the domain
             border, a batch of time points and an optional additional batch
             of parameters (eg. for metamodeling) and an optional additional batch of observed
@@ -665,60 +669,60 @@ class SystemLossPDE(eqx.Module):
 
     Parameters
     ----------
-    u_dict
-        A dict of PINNs
-    loss_weights
-        XXX
-    dynamic_loss_dict
+    u_dict : Dict[str, eqx.Module]
+        dict of PINNs
+    loss_weights : LossWeightsPDEDict
+        A dictionary of LossWeightsODE
+    derivative_keys_dict : Dict[str, DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio], default=None
+        A dictionnary of DerivativeKeysPDEStatio or DerivativeKeysPDENonStatio
+        specifying what field of `params`
+        should be used during gradient computations for each of the terms of
+        the total loss, for each of the loss in the system. Default is
+        `"nn_params`" everywhere.
+    dynamic_loss_dict : Dict[str, PDEStatio | PDENonStatio]
         A dict of dynamic part of the loss, basically the differential
-        operator :math:`\mathcal{N}[u](t)`.
-    key_dict
+        operator $\mathcal{N}[u](t, x)$ or $\mathcal{N}[u](x)$.
+    key_dict : Dict[str, Key], default=None
         A dictionary of JAX PRNG keys. The dictionary keys of key_dict must
         match that of u_dict. See LossPDEStatio or LossPDENonStatio for
         more details.
-    derivative_keys_dict
-        XXX
-    omega_boundary_fun_dict
-        A dict of dict of functions (see doc for `omega_boundary_fun` in
+    omega_boundary_fun_dict : Dict[str, Callable | Dict[str, Callable] | None], default=None
+        A dict of of function or of dict of functions or of None
+        (see doc for `omega_boundary_fun` in
         LossPDEStatio or LossPDENonStatio). Default is None.
         Must share the keys of `u_dict`.
-    omega_boundary_condition_dict
-        A dict of dict of strings (see doc for
-        `omega_boundary_condition_dict` in
+    omega_boundary_condition_dict : Dict[str, str | Dict[str, str] | None], default=None
+        A dict of strings or of dict of strings or of None
+        (see doc for `omega_boundary_condition_dict` in
         LossPDEStatio or LossPDENonStatio). Default is None.
         Must share the keys of `u_dict`
-    omega_boundary_dim_dict
-        A dict of dict of slices (see doc for `omega_boundary_dim` in
+    omega_boundary_dim_dict : Dict[str, slice | Dict[str, slice] | None], default=None
+        A dict of slices or of dict of slices or of None
+        (see doc for `omega_boundary_dim` in
         LossPDEStatio or LossPDENonStatio). Default is None.
         Must share the keys of `u_dict`
-    initial_condition_fun_dict
-        A dict of functions representing the temporal initial condition. If None
+    initial_condition_fun_dict : Dict[str, Callable | None], default=None
+        A dict of functions representing the temporal initial condition (None
+        value is possible). If None
         (default) then no temporal boundary condition is applied
         Must share the keys of `u_dict`
-    norm_samples_dict
+    norm_samples_dict : Dict[str, Float[Array, "nb_norm_samples dimension"] | None, default=None
         A dict of fixed sample point in the space over which to compute the
         normalization constant. Default is None
         Must share the keys of `u_dict`
-    norm_int_length_dict
+    norm_int_length_dict : Dict[str, float | None] | None, default=None
         A dict of Float. The domain area
         (or interval length in 1D) upon which we perform the numerical
         integration for each element of u_dict.
         Default is None
         Must share the keys of `u_dict`
-    obs_slice_dict
+    obs_slice_dict : Dict[str, slice | None] | None, default=None
         dict of obs_slice, with keys from `u_dict` to designate the
         output(s) channels that are forced to observed values, for each
         PINNs. Default is None. But if a value is given, all the entries of
         `u_dict` must be represented here with default value `jnp.s_[...]`
         if no particular slice is to be given
 
-
-    Raises
-    ------
-    ValueError
-        if initial condition is not a dict of tuple
-    ValueError
-        if the dictionaries that should share the keys of u_dict do not
     """
 
     # NOTE static=True only for leaf attributes that are not valid JAX types
@@ -726,25 +730,25 @@ class SystemLossPDE(eqx.Module):
     u_dict: Dict[str, eqx.Module]
     dynamic_loss_dict: Dict[str, PDEStatio | PDENonStatio]
     key_dict: Dict[str, Key] | None = eqx.field(kw_only=True, default=None)
-    derivative_keys_dict: (
-        DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio | None
-    ) = eqx.field(kw_only=True, default=None)
-    omega_boundary_fun_dict: Dict[str, Callable | Dict[str, Callable]] | None = (
+    derivative_keys_dict: Dict[
+        str, DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio | None
+    ] = eqx.field(kw_only=True, default=None)
+    omega_boundary_fun_dict: Dict[str, Callable | Dict[str, Callable] | None] | None = (
         eqx.field(kw_only=True, default=None, static=True)
     )
-    omega_boundary_condition_dict: Dict[str, str | Dict[str, str]] | None = eqx.field(
-        kw_only=True, default=None, static=True
+    omega_boundary_condition_dict: Dict[str, str | Dict[str, str] | None] | None = (
+        eqx.field(kw_only=True, default=None, static=True)
     )
-    omega_boundary_dim_dict: Dict[str, slice | Dict[str, slice]] | None = eqx.field(
-        kw_only=True, default=None, static=True
+    omega_boundary_dim_dict: Dict[str, slice | Dict[str, slice] | None] | None = (
+        eqx.field(kw_only=True, default=None, static=True)
     )
     initial_condition_fun_dict: Dict[str, Callable | None] | None = eqx.field(
         kw_only=True, default=None, static=True
     )
-    norm_samples_dict: Dict[str, Array | None] | None = eqx.field(
-        kw_only=True, default=None
+    norm_samples_dict: Dict[str, Float[Array, "nb_norm_samples dimension"]] | None = (
+        eqx.field(kw_only=True, default=None)
     )
-    norm_int_length_dict: Dict[str, Float | None] | None = eqx.field(
+    norm_int_length_dict: Dict[str, float | None] | None = eqx.field(
         kw_only=True, default=None
     )
     obs_slice_dict: Dict[str, slice | None] | None = eqx.field(
@@ -917,7 +921,9 @@ class SystemLossPDE(eqx.Module):
                 "We only accept dictionary of PINNs or dictionary of SPINNs"
             )
 
-    def set_loss_weights(self, loss_weights_init):
+    def set_loss_weights(
+        self, loss_weights_init: LossWeightsPDEDict
+    ) -> dict[str, dict]:
         """
         This rather complex function enables the user to specify a simple
         loss_weights=LossWeightsPDEDict(dyn_loss=1., initial_condition=Tmax)
@@ -974,9 +980,9 @@ class SystemLossPDE(eqx.Module):
 
     def evaluate(
         self,
-        params_dict,
-        batch,
-    ):
+        params_dict: ParamsDict,
+        batch: PDEStatioBatch | PDENonStatioBatch,
+    ) -> tuple[Float[Array, "1"], dict[str, float]]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -984,9 +990,8 @@ class SystemLossPDE(eqx.Module):
         Parameters
         ---------
         params_dict
-            XXX
+            Parameters at which the losses of the system are evaluated
         batch
-            A PDEStatioBatch or PDENonStatioBatch object.
             Such named tuples are composed of  batch of points in the
             domain, a batch of points in the domain
             border, (a batch of time points a for PDENonStatioBatch) and an
