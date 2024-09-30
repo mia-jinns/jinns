@@ -3,23 +3,19 @@ This modules implements the main `solve()` function of jinns which
 handles the optimization process
 """
 
-import copy
 from functools import partial
 import optax
 import jax
 from jax import jit
 import jax.numpy as jnp
 from jinns.solver._rar import init_rar, trigger_rar
-from jinns.utils._utils import _check_nan_in_pytree, _tracked_parameters
+from jinns.utils._utils import _check_nan_in_pytree
 from jinns.data._DataGenerators import (
     append_obs_batch,
     append_param_batch,
     DataGeneratorODE,
     CubicMeshPDEStatio,
     CubicMeshPDENonStatio,
-    DataGeneratorObservations,
-    DataGeneratorParameter,
-    DataGeneratorObservationsMultiPINNs,
 )
 from jinns.utils._containers import *
 
@@ -57,7 +53,7 @@ def solve(
     optimizer,
     print_loss_every=1000,
     opt_state=None,
-    tracked_params_key_list=None,
+    tracked_params: Params | None = None,
     param_data=None,
     obs_data=None,
     validation=None,
@@ -94,10 +90,13 @@ def solve(
     opt_state
         Default None. Provide an optional initial optional state to the
         optimizer. Not valid for all optimizers.
-    tracked_params_key_list
-        Default None. Otherwise it is a list of list of strings
-        to access a leaf in params. Each selected leaf will be tracked
-        and stored at each iteration and returned by the solve function
+    tracked_params
+        Default None. An eqx.Module of type Params non None values for
+        parameters that needs to be tracked along the iterations.
+        None values in tracked_params will not be traversed. Thus
+        the user can provide something like `tracked_params = jinns.parameters.Params(
+        nn_params=None, eq_params={"nu": True})` while init_params.nn_params
+        being a complex data structure.
     param_data
         Default None. A DataGeneratorParameter object which can be used to
         sample equation parameters.
@@ -144,8 +143,8 @@ def solve(
     opt_state
         The final optimized state
     stored_params
-        A dictionary. At each key an array of the values of the parameters
-        given in tracked_params_key_list is stored
+        A Params objects with the stored values of the desired parameters (as
+        signified in tracked_params argument)
     validation_crit_values
         An array containing the validation criterion values of the training
     best_val_params
@@ -176,16 +175,22 @@ def solve(
     # we need to get a loss_term to init stuff
     batch_ini, data, param_data, obs_data = get_batch(data, param_data, obs_data)
     _, loss_terms = loss(init_params, batch_ini)
-    if tracked_params_key_list is None:
-        tracked_params_key_list = []
-    # TODO check next function
-    tracked_params = _tracked_parameters(init_params, tracked_params_key_list)
+
+    # initialize parameter tracking
+    if tracked_params is None:
+        tracked_params = jax.tree.map(lambda p: None, init_params)
     stored_params = jax.tree_util.tree_map(
         lambda tracked_param, param: (
-            jnp.zeros((n_iter,) + param.shape) if tracked_param else None
+            jnp.zeros((n_iter,) + jnp.asarray(param).shape)
+            if tracked_param is not None
+            else None
         ),
         tracked_params,
         init_params,
+        is_leaf=lambda x: x is None,  # None values in tracked_params will not
+        # be traversed. Thus the user can provide something like `tracked_params = jinns.parameters.Params(
+        # nn_params=None, eq_params={"nu": True})` while init_params.nn_params
+        # being a complex data structure
     )
 
     # initialize the dict for stored loss values
@@ -546,35 +551,16 @@ def get_get_batch(obs_batch_sharding):
         This function is used at each loop but it cannot be jitted because of
         device_put
         """
-        if isinstance(
-            data,
-            (DataGeneratorODE, CubicMeshPDEStatio, CubicMeshPDENonStatio),
-        ):
-            # to comply with new datagenerators
-            data, batch = data.get_batch()
-        else:
-            batch = data.get_batch()
+        data, batch = data.get_batch()
         if param_data is not None:
-            if isinstance(param_data, DataGeneratorParameter):
-                param_data, param_batch = param_data.get_batch()
-            else:
-                param_batch = param_data.get_batch()
+            param_data, param_batch = param_data.get_batch()
             batch = append_param_batch(batch, param_batch)
         if obs_data is not None:
             # This is the part that motivated the transition from scan to for loop
             # Indeed we need to be transit obs_batch from CPU to GPU when we have
             # huge observations that cannot fit on GPU. Such transfer wasn't meant
             # to be jitted, i.e. in a scan loop
-            if isinstance(
-                obs_data,
-                (
-                    DataGeneratorObservations,
-                    DataGeneratorObservationsMultiPINNs,
-                ),
-            ):
-                obs_data, obs_batch = obs_data.get_batch()
-            else:
-                obs_batch = obs_data.get_batch()
+            obs_data, obs_batch = obs_data.get_batch()
             obs_batch = jax.device_put(obs_batch, obs_batch_sharding)
             batch = append_obs_batch(batch, obs_batch)
         return batch, data, param_data, obs_data
@@ -584,31 +570,12 @@ def get_get_batch(obs_batch_sharding):
         """
         Original get_batch with no sharding
         """
-        if isinstance(
-            data,
-            (DataGeneratorODE, CubicMeshPDEStatio, CubicMeshPDENonStatio),
-        ):
-            # to comply with new datagenerators
-            data, batch = data.get_batch()
-        else:
-            batch = data.get_batch()
+        data, batch = data.get_batch()
         if param_data is not None:
-            if isinstance(param_data, DataGeneratorParameter):
-                param_data, param_batch = param_data.get_batch()
-            else:
-                param_batch = param_data.get_batch()
+            param_data, param_batch = param_data.get_batch()
             batch = append_param_batch(batch, param_batch)
         if obs_data is not None:
-            if isinstance(
-                obs_data,
-                (
-                    DataGeneratorObservations,
-                    DataGeneratorObservationsMultiPINNs,
-                ),
-            ):
-                obs_data, obs_batch = obs_data.get_batch()
-            else:
-                obs_batch = obs_data.get_batch()
+            obs_data, obs_batch = obs_data.get_batch()
             batch = append_obs_batch(batch, obs_batch)
         return batch, data, param_data, obs_data
 

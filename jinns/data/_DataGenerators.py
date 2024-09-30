@@ -1137,8 +1137,8 @@ class DataGeneratorParameter(eqx.Module):
     keys: Union[Key, dict[str, Key]]
     n: Int
     param_batch_size: Int = eqx.field(static=True)
-    method: str = eqx.field(static=True, default="uniform")
     param_ranges: dict[str, tuple] = eqx.field(static=True, default_factory=lambda: {})
+    method: str = eqx.field(static=True, default="uniform")
     user_data: dict[str, Array] = eqx.field(static=True, default_factory=lambda: {})
 
     curr_param_idx: dict[str, Int] = eqx.field(init=False)

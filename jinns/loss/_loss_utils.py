@@ -36,6 +36,8 @@ def dynamic_loss_apply(
     elif u_type == SPINN or isinstance(u, SPINN):
         residuals = dyn_loss(*batches, u, params)
         mse_dyn_loss = jnp.mean(jnp.sum(loss_weight * residuals**2, axis=-1))
+    else:
+        raise ValueError(f"wrong type of u or wrong u_type, got {u=}, {u_type=}")
 
     return mse_dyn_loss
 

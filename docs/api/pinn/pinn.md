@@ -1,3 +1,5 @@
 # PINN
 
-::: jinns.utils
+::: jinns.utils.PINN
+
+::: jinns.utils.create_PINN
