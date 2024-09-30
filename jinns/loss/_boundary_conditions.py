@@ -2,9 +2,11 @@
 Implements the main boundary conditions for all kinds of losses in jinns
 """
 
+from typing import Callable
 import jax
 import jax.numpy as jnp
 from jax import vmap, grad
+import equinox as eqx
 from jinns.utils._utils import (
     _get_grid,
     _check_user_func_return,
@@ -15,21 +17,18 @@ from jinns.parameters._params import _get_vmap_in_axes_params
 from jinns.data._DataGenerators import PDEStatioBatch, PDENonStatioBatch
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
-
-import equinox as eqx
-from typing import Callable
 from jinns.parameters import Params
 
 
 def _compute_boundary_loss(
     boundary_condition_type: str,
     f: Callable,
-    batch,
+    batch: PDEStatioBatch | PDENonStatioBatch,
     u: eqx.Module,
     params: Params,
     facet: int,
     dim_to_apply: slice,
-):
+) -> float:
     r"""A generic function that will compute the mini-batch MSE of a
     boundary condition in the stationary case, resp. non-stationary, given by:
 
@@ -59,17 +58,14 @@ def _compute_boundary_loss(
         unitary outgoing vector normal to $\partial\Omega$
     f
         the function to be matched in the boundary condition. It should have
-        one argument only (other are ignored).
+        one or two arguments only (other are ignored).
     batch
-        a PDEStatioBatch object or PDENonStatioBatch
+        a PDEStatioBatch or PDENonStatioBatch
     u
         a PINN
     params
-        The dictionary of parameters of the model.
-        Typically, it is a dictionary of
-        dictionaries: `eq_params` and `nn_params`, respectively the
-        differential equation parameters and the neural network parameter
-    facet:
+        Params object
+    facet
         An integer which represents the id of the facet which is currently
         considered (in the order provided by the DataGenerator which is fixed)
     dim_to_apply
@@ -103,7 +99,14 @@ def _compute_boundary_loss(
     return mse
 
 
-def boundary_dirichlet_statio(f, batch, u, params, facet, dim_to_apply):
+def boundary_dirichlet_statio(
+    f: Callable,
+    batch: PDEStatioBatch,
+    u: eqx.Module,
+    params: Params,
+    facet: int,
+    dim_to_apply: slice,
+) -> float:
     r"""
     This omega boundary condition enforces a solution that is equal to f on
     border batch.
@@ -114,17 +117,14 @@ def boundary_dirichlet_statio(f, batch, u, params, facet, dim_to_apply):
 
     Parameters
     ----------
-    f:
+    f
         the constraint function
     batch
         A PDEStatioBatch object.
     u
         The PINN
     params
-        The dictionary of parameters of the model.
-        Typically, it is a dictionary of
-        dictionaries: `eq_params` and `nn_params``, respectively the
-        differential equation parameters and the neural network parameter
+        Params
     dim_to_apply
         A jnp.s\_ object. The dimension of u on which to apply the boundary condition
     """
@@ -151,17 +151,19 @@ def boundary_dirichlet_statio(f, batch, u, params, facet, dim_to_apply):
             res**2,
             axis=-1,
         )
+    else:
+        raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
     return mse_u_boundary
 
 
 def boundary_neumann_statio(
     f: Callable,
-    batch: tuple,
+    batch: PDEStatioBatch,
     u: eqx.Module,
     params: Params,
     facet: int,
     dim_to_apply: slice,
-):
+) -> float:
     r"""
     This omega boundary condition enforces a solution where $\nabla u\cdot
     n$ is equal to `f` on omega borders. $n$ is the unitary
@@ -184,7 +186,7 @@ def boundary_neumann_statio(
         Typically, it is a dictionary of
         dictionaries: `eq_params` and `nn_params``, respectively the
         differential equation parameters and the neural network parameter
-    facet:
+    facet
         An integer which represents the id of the facet which is currently
         considered (in the order provided wy the DataGenerator which is fixed)
     dim_to_apply
@@ -267,17 +269,19 @@ def boundary_neumann_statio(
         boundaries = _check_user_func_return(f(x_grid), values.shape)
         res = values - boundaries
         mse_u_boundary = jnp.sum(res**2, axis=-1)
+    else:
+        raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
     return mse_u_boundary
 
 
 def boundary_dirichlet_nonstatio(
     f: Callable,
-    batch: tuple,
+    batch: PDENonStatioBatch,
     u: eqx.Module,
     params: Params,
     facet: int,
     dim_to_apply: slice,
-):
+) -> float:
     r"""
     This omega boundary condition enforces a solution that is equal to `f`
     at `times_batch` x `omega borders`
@@ -335,17 +339,19 @@ def boundary_dirichlet_nonstatio(
         )
         res = values - boundaries
         mse_u_boundary = jnp.sum(res**2, axis=-1)
+    else:
+        raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
     return mse_u_boundary
 
 
 def boundary_neumann_nonstatio(
     f: Callable,
-    batch: tuple,
+    batch: PDENonStatioBatch,
     u: eqx.Module,
     params: Params,
     facet: int,
     dim_to_apply: slice,
-):
+) -> float:
     r"""
     This omega boundary condition enforces a solution where $\nabla u\cdot
     n$ is equal to `f` at the cartesian product of `time_batch` x `omega
@@ -458,4 +464,6 @@ def boundary_neumann_nonstatio(
             res**2,
             axis=-1,
         )
+    else:
+        raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
     return mse_u_boundary
