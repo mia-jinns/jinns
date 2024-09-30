@@ -2,23 +2,33 @@
 Interface for diverse loss functions to factorize code
 """
 
+from typing import Callable, Dict
 import jax
 import jax.numpy as jnp
 from jax import vmap
-
+import equinox as eqx
+from jaxtyping import Float, Array, PyTree
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
 from jinns.utils._hyperpinn import HYPERPINN
+from jinns.loss import DynamicLoss
 from jinns.loss._boundary_conditions import (
     _compute_boundary_loss,
 )
 from jinns.utils._utils import _check_user_func_return, _get_grid
-from jinns.parameters._params import Params
+from jinns.parameters._params import Params, ParamsDict
+from jinns.data._DataGenerators import PDEStatioBatch, PDENonStatioBatch, ODEBatch
 
 
 def dynamic_loss_apply(
-    dyn_loss, u, batches, params, vmap_axes, loss_weight, u_type=None
-):
+    dyn_loss: DynamicLoss,
+    u: eqx.Module,
+    batches: ODEBatch | PDEStatioBatch | PDENonStatioBatch,
+    params: Params | ParamsDict,
+    vmap_axes: tuple[int | None, ...],
+    loss_weight: float | Float[Array, "dyn_loss_dimension"],
+    u_type: PINN | HYPERPINN | None = None,
+) -> float:
     """
     Sometimes when u is a lambda function a or dict we do not have access to
     its type here, hence the last argument
@@ -37,12 +47,19 @@ def dynamic_loss_apply(
         residuals = dyn_loss(*batches, u, params)
         mse_dyn_loss = jnp.mean(jnp.sum(loss_weight * residuals**2, axis=-1))
     else:
-        raise ValueError(f"wrong type of u or wrong u_type, got {u=}, {u_type=}")
+        raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
 
     return mse_dyn_loss
 
 
-def normalization_loss_apply(u, batches, params, vmap_axes, int_length, loss_weight):
+def normalization_loss_apply(
+    u: eqx.Module,
+    batches: ODEBatch | PDEStatioBatch | PDENonStatioBatch,
+    params: Params | ParamsDict,
+    vmap_axes: tuple[int | None, ...],
+    int_length: int,
+    loss_weight: float,
+) -> float:
     # TODO merge stationary and non stationary cases
     if isinstance(u, (PINN, HYPERPINN)):
         if len(batches) == 1:
@@ -98,19 +115,21 @@ def normalization_loss_apply(u, batches, params, vmap_axes, int_length, loss_wei
                 )
                 ** 2
             )
+    else:
+        raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
 
     return mse_norm_loss
 
 
 def boundary_condition_apply(
-    u,
-    batch,
-    params,
-    omega_boundary_fun,
-    omega_boundary_condition,
-    omega_boundary_dim,
-    loss_weight,
-):
+    u: eqx.Module,
+    batch: PDEStatioBatch | PDENonStatioBatch,
+    params: Params | ParamsDict,
+    omega_boundary_fun: Callable,
+    omega_boundary_condition: str,
+    omega_boundary_dim: int,
+    loss_weight: float | Float[Array, "boundary_cond_dim"],
+) -> float:
     if isinstance(omega_boundary_fun, dict):
         # We must create the facet tree dictionary as we do not have the
         # enumerate from the for loop to pass the id integer
@@ -164,8 +183,14 @@ def boundary_condition_apply(
 
 
 def observations_loss_apply(
-    u, batches, params, vmap_axes, observed_values, loss_weight, obs_slice
-):
+    u: eqx.Module,
+    batches: ODEBatch | PDEStatioBatch | PDENonStatioBatch,
+    params: Params | ParamsDict,
+    vmap_axes: tuple[int | None, ...],
+    observed_values: Float[Array, "batch_size observation_dim"],
+    loss_weight: float | Float[Array, "observation_dim"],
+    obs_slice: slice,
+) -> float:
     # TODO implement for SPINN
     if isinstance(u, (PINN, HYPERPINN)):
         v_u = vmap(
@@ -184,12 +209,20 @@ def observations_loss_apply(
         )
     elif isinstance(u, SPINN):
         raise RuntimeError("observation loss term not yet implemented for SPINNs")
+    else:
+        raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
     return mse_observation_loss
 
 
 def initial_condition_apply(
-    u, omega_batch, params, vmap_axes, initial_condition_fun, n, loss_weight
-):
+    u: eqx.Module,
+    omega_batch: Float[Array, "dimension"],
+    params: Params | ParamsDict,
+    vmap_axes: tuple[int | None, ...],
+    initial_condition_fun: Callable,
+    n: int,
+    loss_weight: float | Float[Array, "initial_condition_dimension"],
+) -> float:
     if isinstance(u, (PINN, HYPERPINN)):
         v_u_t0 = vmap(
             lambda x, params: initial_condition_fun(x) - u(jnp.zeros((1,)), x, params),
@@ -215,11 +248,17 @@ def initial_condition_apply(
         )
         res = ini - v_ini
         mse_initial_condition = jnp.mean(jnp.sum(loss_weight * res**2, axis=-1))
+    else:
+        raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
     return mse_initial_condition
 
 
 def constraints_system_loss_apply(
-    u_constraints_dict, batch, params_dict, loss_weights, loss_weight_struct
+    u_constraints_dict: Dict,
+    batch: ODEBatch | PDEStatioBatch | PDENonStatioBatch,
+    params_dict: ParamsDict,
+    loss_weights: Dict[str, float | Array],
+    loss_weight_struct: PyTree,
 ):
     """
     Same function for systemlossODE and systemlossPDE!
