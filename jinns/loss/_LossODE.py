@@ -4,7 +4,7 @@ Main module to implement a ODE loss in jinns
 """
 
 from dataclasses import InitVar, fields
-from typing import Union, Dict
+from typing import Dict
 import abc
 import warnings
 import jax
@@ -47,7 +47,7 @@ class _LossODEAbstract(eqx.Module):
         is `"nn_params"` for each composant of the loss.
     initial_condition : tuple, default=None
         tuple of length 2 with initial condition $(t_0, u_0)$.
-    obs_slice Slice, default=None
+    obs_slice : Slice, default=None
         Slice object specifying the begininning/ending
         slice of u output(s) that is observed. This is useful for
         multidimensional PINN, with partially observed outputs.
@@ -57,12 +57,10 @@ class _LossODEAbstract(eqx.Module):
     # NOTE static=True only for leaf attributes that are not valid JAX types
     # (ie. jax.Array cannot be static) and that we do not expect to change
     # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
-    derivative_keys: Union[DerivativeKeysODE, None] = eqx.field(
-        kw_only=True, default=None
-    )
-    loss_weights: Union[LossWeightsODE, None] = eqx.field(kw_only=True, default=None)
-    initial_condition: Union[tuple, None] = eqx.field(kw_only=True, default=None)
-    obs_slice: Union[slice, None] = eqx.field(kw_only=True, default=None, static=True)
+    derivative_keys: DerivativeKeysODE | None = eqx.field(kw_only=True, default=None)
+    loss_weights: LossWeightsODE | None = eqx.field(kw_only=True, default=None)
+    initial_condition: tuple | None = eqx.field(kw_only=True, default=None)
+    obs_slice: slice | None = eqx.field(kw_only=True, default=None, static=True)
 
     def __post_init__(self):
         if self.loss_weights is None:
@@ -146,7 +144,7 @@ class LossODE(_LossODEAbstract):
     # NOTE static=True only for leaf attributes that are not valid JAX types
     # (ie. jax.Array cannot be static) and that we do not expect to change
     u: eqx.Module
-    dynamic_loss: Union[DynamicLoss, None]
+    dynamic_loss: DynamicLoss | None
 
     vmap_in_axes: tuple[Int] = eqx.field(init=False, static=True)
 
@@ -159,7 +157,9 @@ class LossODE(_LossODEAbstract):
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
-    def evaluate(self, params: Params, batch: ODEBatch) -> Float[Array, "1"]:
+    def evaluate(
+        self, params: Params, batch: ODEBatch
+    ) -> tuple[Float[Array, "1"], dict[str, float]]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -167,10 +167,9 @@ class LossODE(_LossODEAbstract):
         Parameters
         ---------
         params
-            A Params object
+            Parameters at which the loss is evaluated
         batch
-            An ODEBatch object.
-            Such a named tuple is composed of a batch of time points
+            Composed of a batch of time points
             at which to evaluate an optional additional batch of parameters
             (eg. for metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
@@ -311,14 +310,14 @@ class SystemLossODE(eqx.Module):
     # (ie. jax.Array cannot be static) and that we do not expect to change
     u_dict: Dict[str, eqx.Module]
     dynamic_loss_dict: Dict[str, ODE]
-    derivative_keys_dict: Union[Dict[str, Union[DerivativeKeysODE, None]], None] = (
-        eqx.field(kw_only=True, default=None)
+    derivative_keys_dict: Dict[str, DerivativeKeysODE | None] | None = eqx.field(
+        kw_only=True, default=None
     )
-    initial_condition_dict: Union[Dict[str, tuple], None] = eqx.field(
+    initial_condition_dict: Dict[str, tuple] | None = eqx.field(
         kw_only=True, default=None
     )
 
-    obs_slice_dict: Union[Dict[str, Union[slice, None]], None] = eqx.field(
+    obs_slice_dict: Dict[str, slice | None] | None = eqx.field(
         kw_only=True, default=None, static=True
     )  # We are at an "leaf" attribute here (slice, not valid JAX type). Since
     # we do not expect it to change with put a static=True here. But note that
@@ -327,7 +326,7 @@ class SystemLossODE(eqx.Module):
 
     # For the user loss_weights are passed as a LossWeightsODEDict (with internal
     # dictionary having keys in u_dict and / or dynamic_loss_dict)
-    loss_weights: InitVar[Union[LossWeightsODEDict, None]] = eqx.field(
+    loss_weights: InitVar[LossWeightsODEDict | None] = eqx.field(
         kw_only=True, default=None
     )
     u_constraints_dict: Dict[str, LossODE] = eqx.field(init=False)
