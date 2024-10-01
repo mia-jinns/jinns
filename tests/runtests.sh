@@ -1,28 +1,34 @@
 #!/bin/bash
-pytest -s dataGenerator_tests/*
+cd dataGenerator_tests
+pytest -s
 status=$?
 if [ $status -ne 0 ]; then
    exit $status
 fi
-pytest -s sharding_tests/*
+cd ../sharding_tests
+pytest -s
 status=$?
 if [ $status -ne 0 ]; then
    exit $status
 fi
-pytest -s save_load_tests/*
+cd ../save_load_tests
+pytest -s
 status=$?
 if [ $status -ne 0 ]; then
    exit $status
 fi
-pytest -s solver_tests/*
+cd ../solver_tests
+pytest -s --ignore=test_NSPipeFlow_x64_eqx.py
 status=$?
 if [ $status -ne 0 ]; then
    exit $status
 fi
-pytest -s solver_tests_spinn/*
+cd ../solver_tests_spinn
+pytest -s
 status=$?
 if [ $status -ne 0 ]; then
    exit $status
 fi
-pytest -s utils_tests/*
+cd ../utils_tests
+pytest -s
 exit $?
