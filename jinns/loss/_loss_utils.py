@@ -17,7 +17,12 @@ from jinns.loss._boundary_conditions import (
 )
 from jinns.utils._utils import _check_user_func_return, _get_grid
 from jinns.parameters._params import Params, ParamsDict
-from jinns.data._DataGenerators import PDEStatioBatch, PDENonStatioBatch, ODEBatch
+from jinns.data._DataGenerators import (
+    PDEStatioBatch,
+    PDENonStatioBatch,
+    ODEBatch,
+    append_obs_batch,
+)
 
 
 def dynamic_loss_apply(
@@ -160,7 +165,10 @@ def boundary_condition_apply(
         # Note that to keep the behaviour given in the comment above we neede
         # to specify is_leaf according to the note in the release of 0.4.29
     else:
-        facet_tuple = tuple(f for f in range(batch[1].shape[-1]))
+        if isinstance(batch, PDEStatioBatch):
+            facet_tuple = tuple(f for f in range(batch.border_batch.shape[-1]))
+        else:
+            facet_tuple = tuple(f for f in range(batch.times_x_border_batch.shape[-1]))
         b_losses_by_facet = jax.tree_util.tree_map(
             lambda fa: jnp.mean(
                 loss_weight
@@ -281,7 +289,7 @@ def constraints_system_loss_apply(
                     nn_params=nn_params,
                     eq_params=params_dict.eq_params,
                 ),
-                batch._replace(obs_batch_dict=obs_batch_u),
+                append_obs_batch(batch, obs_batch_u),
             )[1]
             res_dict_ponderated = jax.tree_util.tree_map(
                 lambda w, l: w * l, res_dict_for_u, loss_weights_for_u
@@ -311,7 +319,7 @@ def constraints_system_loss_apply(
         def apply_u_constraint(u_constraint, loss_weights_for_u, obs_batch_u):
             res_dict_for_u = u_constraint.evaluate(
                 params_dict,
-                batch._replace(obs_batch_dict=obs_batch_u),
+                append_obs_batch(batch, obs_batch_u),
             )[1]
             res_dict_ponderated = jax.tree_util.tree_map(
                 lambda w, l: w * l, res_dict_for_u, loss_weights_for_u

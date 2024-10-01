@@ -19,7 +19,11 @@ from jinns.loss._loss_utils import (
     initial_condition_apply,
     constraints_system_loss_apply,
 )
-from jinns.data._DataGenerators import PDEStatioBatch, PDENonStatioBatch
+from jinns.data._DataGenerators import (
+    PDEStatioBatch,
+    PDENonStatioBatch,
+    append_obs_batch,
+)
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
 from jinns.loss import DynamicLoss
@@ -1072,7 +1076,7 @@ class SystemLossPDE(eqx.Module):
         }
         # we need to do the following for the tree_mapping to work
         if batch.obs_batch_dict is None:
-            batch = batch._replace(obs_batch_dict=self.u_dict_with_none)
+            batch = append_obs_batch(batch, self.u_dict_with_none)
         total_loss, res_dict = constraints_system_loss_apply(
             self.u_constraints_dict,
             batch,
