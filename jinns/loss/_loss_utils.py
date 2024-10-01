@@ -138,10 +138,20 @@ def boundary_condition_apply(
     if isinstance(omega_boundary_fun, dict):
         # We must create the facet tree dictionary as we do not have the
         # enumerate from the for loop to pass the id integer
-        if batch[1].shape[-1] == 2:
+        if (
+            isinstance(batch, PDEStatioBatch) and batch.border_batch.shape[-1] == 2
+        ) or (
+            isinstance(batch, PDENonStatioBatch)
+            and batch.times_x_border_batch.shape[-1] == 2
+        ):
             # 1D
             facet_tree = {"xmin": 0, "xmax": 1}
-        elif batch[1].shape[-1] == 4:
+        elif (
+            isinstance(batch, PDEStatioBatch) and batch.border_batch.shape[-1] == 4
+        ) or (
+            isinstance(batch, PDENonStatioBatch)
+            and batch.times_x_border_batch.shape[-1] == 4
+        ):
             # 2D
             facet_tree = {"xmin": 0, "xmax": 1, "ymin": 2, "ymax": 3}
         else:
