@@ -6,7 +6,7 @@
  * inverse problem: learning the parameters of a PDE.
  * meta-modeling: learning a family of PDE indexed by its parameters.
 
-It is built on [Equinox](https://docs.kidger.site/equinox/) and uses [Optax](https://optax.readthedocs.io/en/latest/) for optimization. Discover more by navigating the documentation on the left.
+Discover more by navigating the example section on the left.
 
 # Installation
 
@@ -15,6 +15,8 @@ pip install jinns
 ```
 
 Requires Python 3.11+ and JAX 0.4.31+
+
+**JAX ecosystem**: depends on [Equinox](https://docs.kidger.site/equinox/) and [Optax](https://optax.readthedocs.io/en/latest/).
 
 # Examples
 

@@ -175,9 +175,9 @@ def create_SPINN(
     Utility function to create a SPINN neural network with the equinox
     library.
 
-    *Note* that a SPINN is not vmapped from the outside and expects batch of the
-    same size for each input. It outputs directly a solution of shape
-    (batchsize, batchsize). See the paper for more details.
+    *Note* that a SPINN is not vmapped and expects the
+    same batch size for each of its input axis. It directly outputs a solution
+    of shape `(batchsize, batchsize)`. See the paper for more details.
 
     Parameters
     ----------
@@ -193,8 +193,8 @@ def create_SPINN(
         activation function as first item, other items represents arguments
         that could be required (eg. the size of the layer).
         The `key` argument need not be given.
-        Thus typical example is `eqx_list=
-        ((eqx.nn.Linear, 2, 20),
+        Thus typical example is
+        `eqx_list=((eqx.nn.Linear, 2, 20),
             jax.nn.tanh,
             (eqx.nn.Linear, 20, 20),
             jax.nn.tanh,

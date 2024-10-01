@@ -102,7 +102,7 @@ nav:
       - Loss:
         - Dynamic loss: 'api/loss/dynamic_loss.md'
         - Total loss: 'api/loss/loss_xde.md'
-      - Networks:
+      - Neural Networks:
         - 'api/pinn/pinn.md'
         - 'api/pinn/spinn.md'
         - 'api/pinn/hyperpinn.md'
@@ -110,6 +110,7 @@ nav:
       - Plot: 'api/plot.md'
     - Advanced API:
       - 'api/differential_operators.md'
+      - 'api/derivative_keys.md'
     - Misc:
       - Maths backgroung:
         - 'maths/fokker_planck.md'
