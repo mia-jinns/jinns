@@ -63,7 +63,9 @@ def append_obs_batch(
     )
 
 
-def make_cartesian_product(b1: Array, b2: Array) -> Array:
+def make_cartesian_product(
+    b1: Float[Array, "batch_size dim1"], b2: Float[Array, "batch_size dim2"]
+) -> Float[Array, "(batch_size*batch_size) (dim1+dim2)"]:
     """
     Create the cartesian product of a time and a border omega batches
     by tiling and repeating
@@ -76,8 +78,8 @@ def make_cartesian_product(b1: Array, b2: Array) -> Array:
 
 
 def _reset_batch_idx_and_permute(
-    operands: tuple[Key, Array, Int, None, Array]
-) -> tuple[Key, Array, Int]:
+    operands: tuple[Key, Float[Array, "n dimension"], Int, None, Float[Array, "n"]]
+) -> tuple[Key, Float[Array, "n dimension"], Int]:
     key, domain, curr_idx, _, p = operands
     # resetting counter
     curr_idx = 0
@@ -95,8 +97,8 @@ def _reset_batch_idx_and_permute(
 
 
 def _increment_batch_idx(
-    operands: tuple[Key, Array, Int, None, Array]
-) -> tuple[Key, Array, Int]:
+    operands: tuple[Key, Float[Array, "n dimension"], Int, None, Float[Array, "n"]]
+) -> tuple[Key, Float[Array, "n dimension"], Int]:
     key, domain, curr_idx, batch_size, _ = operands
     # simply increases counter and get the batch
     curr_idx += batch_size
@@ -104,8 +106,10 @@ def _increment_batch_idx(
 
 
 def _reset_or_increment(
-    bend: Int, n_eff: Int, operands: tuple[Key, Array, Int, None, Array]
-) -> tuple[Key, Array, Int]:
+    bend: Int,
+    n_eff: Int,
+    operands: tuple[Key, Float[Array, "n dimension"], Int, None, Float[Array, "n"]],
+) -> tuple[Key, Float[Array, "n dimension"], Int]:
     """
     Factorize the code of the jax.lax.cond which checks if we have seen all the
     batches in an epoch
@@ -136,7 +140,7 @@ def _reset_or_increment(
 
 def _check_and_set_rar_parameters(
     rar_parameters: dict, n: Int, n_start: Int
-) -> tuple[Int, Array, Int, Int]:
+) -> tuple[Int, Float[Array, "n"], Int, Int]:
     if rar_parameters is not None and n_start is None:
         raise ValueError(
             "nt_start must be provided in the context of RAR sampling scheme"
@@ -222,11 +226,11 @@ class DataGeneratorODE(eqx.Module):
 
     # all the init=False fields are set in __post_init__, even after a _replace
     # or eqx.tree_at __post_init__ is called
-    p_times: Array = eqx.field(init=False)
+    p_times: Float[Array, "nt"] = eqx.field(init=False)
     rar_iter_from_last_sampling: Int = eqx.field(init=False)
     rar_iter_nb: Int = eqx.field(init=False)
     curr_time_idx: Int = eqx.field(init=False)
-    times: Array = eqx.field(init=False)
+    times: Float[Array, "nt"] = eqx.field(init=False)
 
     def __post_init__(self):
         (
@@ -252,7 +256,9 @@ class DataGeneratorODE(eqx.Module):
         # key from generate_*_data is to easily align key with legacy
         # DataGenerators to use same unit tests
 
-    def sample_in_time_domain(self, key: Key, sample_size: Int = None) -> Array:
+    def sample_in_time_domain(
+        self, key: Key, sample_size: Int = None
+    ) -> Float[Array, "nt"]:
         return jax.random.uniform(
             key,
             (self.nt if sample_size is None else sample_size,),
@@ -260,7 +266,7 @@ class DataGeneratorODE(eqx.Module):
             maxval=self.tmax,
         )
 
-    def generate_time_data(self, key: Key) -> tuple[Key, Array]:
+    def generate_time_data(self, key: Key) -> tuple[Key, Float[Array, "nt"]]:
         """
         Construct a complete set of `self.nt` time points according to the
         specified `self.method`
@@ -276,7 +282,9 @@ class DataGeneratorODE(eqx.Module):
             return key, self.sample_in_time_domain(subkey)
         raise ValueError("Method " + self.method + " is not implemented.")
 
-    def _get_time_operands(self) -> tuple[Key, Array, Int, Int, Array]:
+    def _get_time_operands(
+        self,
+    ) -> tuple[Key, Float[Array, "nt"], Int, Int, Float[Array, "nt"]]:
         return (
             self.key,
             self.times,
@@ -285,7 +293,9 @@ class DataGeneratorODE(eqx.Module):
             self.p_times,
         )
 
-    def temporal_batch(self) -> tuple["DataGeneratorODE", Array]:
+    def temporal_batch(
+        self,
+    ) -> tuple["DataGeneratorODE", Float[Array, "temporal_batch_size"]]:
         """
         Return a batch of time points. If all the batches have been seen, we
         reshuffle them, otherwise we just return the next unseen batch.
@@ -334,11 +344,11 @@ class CubicMeshPDEStatio(eqx.Module):
     key
         Jax random key to sample new time points and to shuffle batches
     n
-        An integer. The number of total :math:`\Omega` points that will be divided in
+        An integer. The number of total $\Omega$ points that will be divided in
         batches. Batches are made so that each data point is seen only
         once during 1 epoch.
     nb
-        An integer. The total number of points in :math:`\partial\Omega`.
+        An integer. The total number of points in $\partial\Omega$.
         Can be `None` not to lose performance generating the border
         batch if they are not used
     omega_batch_size
@@ -350,15 +360,15 @@ class CubicMeshPDEStatio(eqx.Module):
         Can be `None` not to lose performance generating the border
         batch if they are not used
     dim
-        An integer. dimension of :math:`\Omega` domain
+        An integer. dimension of $\Omega$ domain
     min_pts
         A tuple of minimum values of the domain along each dimension. For a sampling
-        in `n` dimension, this represents :math:`(x_{1, min}, x_{2,min}, ...,
-        x_{n, min})`
+        in `n` dimension, this represents $(x_{1, min}, x_{2,min}, ...,
+        x_{n, min})$
     max_pts
         A tuple of maximum values of the domain along each dimension. For a sampling
-        in `n` dimension, this represents :math:`(x_{1, max}, x_{2,max}, ...,
-        x_{n,max})`
+        in `n` dimension, this represents $(x_{1, max}, x_{2,max}, ...,
+        x_{n,max})$
     method
         Either `grid` or `uniform`, default is `grid`.
         The method that generates the `nt` time points. `grid` means
@@ -409,14 +419,16 @@ class CubicMeshPDEStatio(eqx.Module):
 
     # all the init=False fields are set in __post_init__, even after a _replace
     # or eqx.tree_at __post_init__ is called
-    p_omega: Array = eqx.field(init=False)
-    p_border: Array = eqx.field(init=False)
+    p_omega: Float[Array, "n"] = eqx.field(init=False)
+    p_border: None = eqx.field(init=False)
     rar_iter_from_last_sampling: Int = eqx.field(init=False)
     rar_iter_nb: Int = eqx.field(init=False)
     curr_omega_idx: Int = eqx.field(init=False)
     curr_omega_border_idx: Int = eqx.field(init=False)
-    omega: Array = eqx.field(init=False)
-    omega_border: Array = eqx.field(init=False)
+    omega: Float[Array, "n dim"] = eqx.field(init=False)
+    omega_border: Float[Array, "1 2"] | Float[Array, "(nb//4) 2 4"] | None = eqx.field(
+        init=False
+    )
 
     def __post_init__(self):
         assert self.dim == len(self.min_pts) and isinstance(self.min_pts, tuple)
@@ -470,7 +482,9 @@ class CubicMeshPDEStatio(eqx.Module):
         self.key, self.omega, self.omega_border = self.generate_data(self.key)
         # see explaination in DataGeneratorODE for the key
 
-    def sample_in_omega_domain(self, keys: Key, sample_size: Int = None) -> Array:
+    def sample_in_omega_domain(
+        self, keys: Key, sample_size: Int = None
+    ) -> Float[Array, "n dim"]:
         sample_size = self.n if sample_size is None else sample_size
         if self.dim == 1:
             xmin, xmax = self.min_pts[0], self.max_pts[0]
@@ -491,7 +505,9 @@ class CubicMeshPDEStatio(eqx.Module):
             axis=-1,
         )
 
-    def sample_in_omega_border_domain(self, keys: Key) -> Array:
+    def sample_in_omega_border_domain(
+        self, keys: Key
+    ) -> Float[Array, "1 2"] | Float[Array, "(nb//4) 2 4"] | None:
         if self.omega_border_batch_size is None:
             return None
         if self.dim == 1:
@@ -554,11 +570,15 @@ class CubicMeshPDEStatio(eqx.Module):
             + f"implemented yet. You are asking for generation in dimension d={self.dim}."
         )
 
-    def generate_data(self, key: Key) -> tuple[Key, Array, Array]:
+    def generate_data(self, key: Key) -> tuple[
+        Key,
+        Float[Array, "n dim"],
+        Float[Array, "1 2"] | Float[Array, "(nb//4) 2 4"] | None,
+    ]:
         r"""
-        Construct a complete set of `self.n` :math:`\Omega` points according to the
+        Construct a complete set of `self.n` $\Omega$ points according to the
         specified `self.method`. Also constructs a complete set of `self.nb`
-        :math:`\partial\Omega` points if `self.omega_border_batch_size` is not
+        $\partial\Omega$ points if `self.omega_border_batch_size` is not
         `None`. If the latter is `None` we set `self.omega_border` to `None`.
         """
         # Generate Omega
@@ -599,7 +619,9 @@ class CubicMeshPDEStatio(eqx.Module):
 
         return key, omega, omega_border
 
-    def _get_omega_operands(self) -> tuple[Key, Array, Int, Int, Array]:
+    def _get_omega_operands(
+        self,
+    ) -> tuple[Key, Float[Array, "n dim"], Int, Int, Float[Array, "n"]]:
         return (
             self.key,
             self.omega,
@@ -608,9 +630,11 @@ class CubicMeshPDEStatio(eqx.Module):
             self.p_omega,
         )
 
-    def inside_batch(self) -> tuple["CubicMeshPDEStatio", Array]:
+    def inside_batch(
+        self,
+    ) -> tuple["CubicMeshPDEStatio", Float[Array, "omega_batch_size dim"]]:
         r"""
-        Return a batch of points in :math:`\Omega`.
+        Return a batch of points in $\Omega$.
         If all the batches have been seen, we reshuffle them,
         otherwise we just return the next unseen batch.
         """
@@ -637,7 +661,11 @@ class CubicMeshPDEStatio(eqx.Module):
             slice_sizes=(new.omega_batch_size, new.dim),
         )
 
-    def _get_omega_border_operands(self) -> tuple[Key, Array, Int, Int, Array]:
+    def _get_omega_border_operands(
+        self,
+    ) -> tuple[
+        Key, Float[Array, "1 2"] | Float[Array, "(nb//4) 2 4"] | None, Int, Int, None
+    ]:
         return (
             self.key,
             self.omega_border,
@@ -646,17 +674,22 @@ class CubicMeshPDEStatio(eqx.Module):
             self.p_border,
         )
 
-    def border_batch(self) -> tuple["CubicMeshPDEStatio", Array]:
+    def border_batch(
+        self,
+    ) -> tuple[
+        "CubicMeshPDEStatio",
+        Float[Array, "1 1 2"] | Float[Array, "omega_border_batch_size 2 4"] | None,
+    ]:
         r"""
         Return
 
         - The value `None` if `self.omega_border_batch_size` is `None`.
 
-        - a jnp array with two fixed values :math:`(x_{min}, x_{max})` if
+        - a jnp array with two fixed values $(x_{min}, x_{max})$ if
           `self.dim` = 1. There is no sampling here, we return the entire
-          :math:`\partial\Omega`
+          $\partial\Omega$
 
-        - a batch of points in :math:`\partial\Omega` otherwise, stacked by
+        - a batch of points in $\partial\Omega$ otherwise, stacked by
           facet on the last axis.
           If all the batches have been seen, we reshuffle them,
           otherwise we just return the next unseen batch.
@@ -708,11 +741,11 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
     key
         Jax random key to sample new time points and to shuffle batches
     n
-        An integer. The number of total :math:`\Omega` points that will be divided in
+        An integer. The number of total $\Omega$ points that will be divided in
         batches. Batches are made so that each data point is seen only
         once during 1 epoch.
     nb
-        An integer. The total number of points in :math:`\partial\Omega`.
+        An integer. The total number of points in $\partial\Omega$.
         Can be `None` not to lose performance generating the border
         batch if they are not used
     nt
@@ -731,15 +764,15 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         An integer. The size of the batch of randomly selected points among
         the `nt` points.
     dim
-        An integer. dimension of :math:`\Omega` domain
+        An integer. dimension of $\Omega$ domain
     min_pts
         A tuple of minimum values of the domain along each dimension. For a sampling
-        in `n` dimension, this represents :math:`(x_{1, min}, x_{2,min}, ...,
-        x_{n, min})`
+        in `n` dimension, this represents $(x_{1, min}, x_{2,min}, ...,
+        x_{n, min})$
     max_pts
         A tuple of maximum values of the domain along each dimension. For a sampling
-        in `n` dimension, this represents :math:`(x_{1, max}, x_{2,max}, ...,
-        x_{n,max})`
+        in `n` dimension, this represents $(x_{1, max}, x_{2,max}, ...,
+        x_{n,max})$
     tmin
         A float. The minimum value of the time domain to consider
     tmax
