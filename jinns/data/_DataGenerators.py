@@ -3,7 +3,7 @@
 Define the DataGeneratorODE equinox module
 """
 
-from typing import Union, NamedTuple
+from typing import Dict
 from dataclasses import InitVar
 import equinox as eqx
 import jax
@@ -175,25 +175,25 @@ class DataGeneratorODE(eqx.Module):
 
     Parameters
     ----------
-    key
+    key : Key
         Jax random key to sample new time points and to shuffle batches
-    nt
-        An integer. The number of total time points that will be divided in
+    nt : Int
+        The number of total time points that will be divided in
         batches. Batches are made so that each data point is seen only
         once during 1 epoch.
-    tmin
-        A float. The minimum value of the time domain to consider
-    tmax
-        A float. The maximum value of the time domain to consider
-    temporal_batch_size
-        An integer. The size of the batch of randomly selected points among
+    tmin : float
+        The minimum value of the time domain to consider
+    tmax : float
+        The maximum value of the time domain to consider
+    temporal_batch_size : int
+        The size of the batch of randomly selected points among
         the `nt` points.
-    method
+    method : str, default="uniform"
         Either `grid` or `uniform`, default is `uniform`.
         The method that generates the `nt` time points. `grid` means
         regularly spaced points over the domain. `uniform` means uniformly
         sampled points over the domain
-    rar_parameters
+    rar_parameters : Dict[str, Int], default=None
         Default to None: do not use Residual Adaptative Resampling.
         Otherwise a dictionary with keys. `start_iter`: the iteration at
         which we start the RAR sampling scheme (we first have a burn in
@@ -203,9 +203,7 @@ class DataGeneratorODE(eqx.Module):
         collocation points. `selected_sample_size_times`: the number of selected
         points from the sample to be added to the current collocation
         points
-        "DeepXDE: A deep learning library for solving differential
-        equations", L. Lu, SIAM Review, 2021
-    nt_start
+    nt_start : Int, default=None
         Defaults to None. The effective size of nt used at start time.
         This value must be
         provided when rar_parameters is not None. Otherwise we set internally
@@ -221,7 +219,7 @@ class DataGeneratorODE(eqx.Module):
     temporal_batch_size: Int = eqx.field(static=True)  # static cause used as a
     # shape in jax.lax.dynamic_slice
     method: str = eqx.field(static=True, default_factory=lambda: "uniform")
-    rar_parameters: PyTree = None
+    rar_parameters: Dict[str, Int] = None
     nt_start: Int = eqx.field(static=True, default=None)
 
     # all the init=False fields are set in __post_init__, even after a _replace
@@ -341,40 +339,40 @@ class CubicMeshPDEStatio(eqx.Module):
 
     Parameters
     ----------
-    key
+    key : Key
         Jax random key to sample new time points and to shuffle batches
-    n
-        An integer. The number of total $\Omega$ points that will be divided in
+    n : Int
+        The number of total $\Omega$ points that will be divided in
         batches. Batches are made so that each data point is seen only
         once during 1 epoch.
-    nb
-        An integer. The total number of points in $\partial\Omega$.
+    nb : Int | None
+        The total number of points in $\partial\Omega$.
         Can be `None` not to lose performance generating the border
         batch if they are not used
-    omega_batch_size
-        An integer. The size of the batch of randomly selected points among
+    omega_batch_size : Int
+        The size of the batch of randomly selected points among
         the `n` points.
-    omega_border_batch_size
-        An integer. The size of the batch of points randomly selected
+    omega_border_batch_size : Int | None
+        The size of the batch of points randomly selected
         among the `nb` points.
         Can be `None` not to lose performance generating the border
         batch if they are not used
-    dim
-        An integer. dimension of $\Omega$ domain
-    min_pts
+    dim : Int
+        Dimension of $\Omega$ domain
+    min_pts : tuple[tuple[Float, Float], ...]
         A tuple of minimum values of the domain along each dimension. For a sampling
         in `n` dimension, this represents $(x_{1, min}, x_{2,min}, ...,
         x_{n, min})$
-    max_pts
+    max_pts : tuple[tuple[Float, Float], ...]
         A tuple of maximum values of the domain along each dimension. For a sampling
         in `n` dimension, this represents $(x_{1, max}, x_{2,max}, ...,
         x_{n,max})$
-    method
-        Either `grid` or `uniform`, default is `grid`.
+    method : str, default="uniform"
+        Either `grid` or `uniform`, default is `uniform`.
         The method that generates the `nt` time points. `grid` means
         regularly spaced points over the domain. `uniform` means uniformly
         sampled points over the domain
-    rar_parameters
+    rar_parameters : Dict[str, Int], default=None
         Default to None: do not use Residual Adaptative Resampling.
         Otherwise a dictionary with keys. `start_iter`: the iteration at
         which we start the RAR sampling scheme (we first have a burn in
@@ -384,9 +382,7 @@ class CubicMeshPDEStatio(eqx.Module):
         collocation points. `selected_sample_size_omega`: the number of selected
         points from the sample to be added to the current collocation
         points
-        "DeepXDE: A deep learning library for solving differential
-        equations", L. Lu, SIAM Review, 2021
-    n_start
+    n_start : Int, default=None
         Defaults to None. The effective size of n used at start time.
         This value must be
         provided when rar_parameters is not None. Otherwise we set internally
@@ -398,24 +394,24 @@ class CubicMeshPDEStatio(eqx.Module):
     # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
     key: Key = eqx.field(kw_only=True)
     n: Int = eqx.field(kw_only=True)
-    nb: Int = eqx.field(kw_only=True)
+    nb: Int | None = eqx.field(kw_only=True)
     omega_batch_size: Int = eqx.field(
         kw_only=True, static=True
     )  # static cause used as a
     # shape in jax.lax.dynamic_slice
-    omega_border_batch_size: Int = eqx.field(
+    omega_border_batch_size: Int | None = eqx.field(
         kw_only=True, static=True
     )  # static cause used as a
     # shape in jax.lax.dynamic_slice
     dim: Int = eqx.field(kw_only=True, static=True)  # static cause used as a
     # shape in jax.lax.dynamic_slice
-    min_pts: tuple[Float] = eqx.field(kw_only=True)
-    max_pts: tuple[Float] = eqx.field(kw_only=True)
+    min_pts: tuple[tuple[Float, Float], ...] = eqx.field(kw_only=True)
+    max_pts: tuple[tuple[Float, Float], ...] = eqx.field(kw_only=True)
     method: str = eqx.field(
         kw_only=True, static=True, default_factory=lambda: "uniform"
     )
-    rar_parameters: PyTree = eqx.field(kw_only=True, default=None)
-    n_start: int = eqx.field(kw_only=True, default=None, static=True)
+    rar_parameters: Dict[str, Int] = eqx.field(kw_only=True, default=None)
+    n_start: Int = eqx.field(kw_only=True, default=None, static=True)
 
     # all the init=False fields are set in __post_init__, even after a _replace
     # or eqx.tree_at __post_init__ is called
@@ -738,51 +734,51 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
     Parameters
     ----------
-    key
+    key : Key
         Jax random key to sample new time points and to shuffle batches
-    n
-        An integer. The number of total $\Omega$ points that will be divided in
+    n : Int
+        The number of total $\Omega$ points that will be divided in
         batches. Batches are made so that each data point is seen only
         once during 1 epoch.
-    nb
-        An integer. The total number of points in $\partial\Omega$.
+    nb : Int | None
+        The total number of points in $\partial\Omega$.
         Can be `None` not to lose performance generating the border
         batch if they are not used
-    nt
-        An integer. The number of total time points that will be divided in
+    nt : Int
+        The number of total time points that will be divided in
         batches. Batches are made so that each data point is seen only
         once during 1 epoch.
-    omega_batch_size
-        An integer. The size of the batch of randomly selected points among
+    omega_batch_size : Int
+        The size of the batch of randomly selected points among
         the `n` points.
-    omega_border_batch_size
-        An integer. The size of the batch of points randomly selected
+    omega_border_batch_size : Int | None
+        The size of the batch of points randomly selected
         among the `nb` points.
         Can be `None` not to lose performance generating the border
         batch if they are not used
-    temporal_batch_size
-        An integer. The size of the batch of randomly selected points among
+    temporal_batch_size : Int
+        The size of the batch of randomly selected points among
         the `nt` points.
-    dim
+    dim : Int
         An integer. dimension of $\Omega$ domain
-    min_pts
+    min_pts : tuple[tuple[Float, Float], ...]
         A tuple of minimum values of the domain along each dimension. For a sampling
         in `n` dimension, this represents $(x_{1, min}, x_{2,min}, ...,
         x_{n, min})$
-    max_pts
+    max_pts : tuple[tuple[Float, Float], ...]
         A tuple of maximum values of the domain along each dimension. For a sampling
         in `n` dimension, this represents $(x_{1, max}, x_{2,max}, ...,
         x_{n,max})$
-    tmin
-        A float. The minimum value of the time domain to consider
-    tmax
-        A float. The maximum value of the time domain to consider
-    method
-        Either `grid` or `uniform`, default is `grid`.
+    tmin : float
+        The minimum value of the time domain to consider
+    tmax : float
+        The maximum value of the time domain to consider
+    method : str, default="uniform"
+        Either `grid` or `uniform`, default is `uniform`.
         The method that generates the `nt` time points. `grid` means
         regularly spaced points over the domain. `uniform` means uniformly
         sampled points over the domain
-    rar_parameters
+    rar_parameters : Dict[str, Int], default=None
         Default to None: do not use Residual Adaptative Resampling.
         Otherwise a dictionary with keys. `start_iter`: the iteration at
         which we start the RAR sampling scheme (we first have a burn in
@@ -792,18 +788,18 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         collocation points. `selected_sample_size_omega`: the number of selected
         points from the sample to be added to the current collocation
         points.
-    n_start
+    n_start : Int, default=None
         Defaults to None. The effective size of n used at start time.
         This value must be
         provided when rar_parameters is not None. Otherwise we set internally
         n_start = n and this is hidden from the user.
         In RAR, n_start
         then corresponds to the initial number of omega points we train the PINN.
-    nt_start
+    nt_start : Int, default=None
         Defaults to None. A RAR hyper-parameter. Same as ``n_start`` but
         for times collocation point. See also ``DataGeneratorODE``
         documentation.
-    cartesian_product
+    cartesian_product : Bool, default=True
         Defaults to True. Whether we return the cartesian product of the
         temporal batch with the inside and border batches. If False we just
         return their concatenation.
@@ -866,7 +862,9 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         self.key, self.times = self.generate_time_data(self.key)
         # see explaination in DataGeneratorODE for the key
 
-    def sample_in_time_domain(self, key: Key, sample_size: Int = None) -> Array:
+    def sample_in_time_domain(
+        self, key: Key, sample_size: Int = None
+    ) -> Float[Array, "nt"]:
         return jax.random.uniform(
             key,
             (self.nt if sample_size is None else sample_size,),
@@ -874,7 +872,9 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             maxval=self.tmax,
         )
 
-    def _get_time_operands(self) -> tuple[Key, Array, Int, Int, Array]:
+    def _get_time_operands(
+        self,
+    ) -> tuple[Key, Float[Array, "nt"], Int, Int, Float[Array, "nt"]]:
         return (
             self.key,
             self.times,
@@ -883,7 +883,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.p_times,
         )
 
-    def generate_time_data(self, key: Key) -> tuple[Key, Array]:
+    def generate_time_data(self, key: Key) -> tuple[Key, Float[Array, "nt"]]:
         """
         Construct a complete set of `self.nt` time points according to the
         specified `self.method`
@@ -899,7 +899,9 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             return key, self.sample_in_time_domain(subkey)
         raise ValueError("Method " + self.method + " is not implemented.")
 
-    def temporal_batch(self) -> tuple["CubicMeshPDENonStatio", Array]:
+    def temporal_batch(
+        self,
+    ) -> tuple["CubicMeshPDENonStatio", Float[Array, "temporal_batch_size"]]:
         """
         Return a batch of time points. If all the batches have been seen, we
         reshuffle them, otherwise we just return the next unseen batch.
@@ -964,12 +966,12 @@ class DataGeneratorObservations(eqx.Module):
 
     Parameters
     ----------
-    key
+    key : Key
         Jax random key to shuffle batches
-    obs_batch_size
-        An integer. The size of the batch of randomly selected points among
+    obs_batch_size : Int
+        The size of the batch of randomly selected points among
         the `n` points. `obs_batch_size` will be the same for all
-        elements of the obs dict.
+        elements of the return observation dict batch.
         NOTE: no check is done BUT users should be careful that
         `obs_batch_size` must be equal to `temporal_batch_size` or
         `omega_batch_size` or the product of both. In the first case, the
@@ -979,26 +981,25 @@ class DataGeneratorObservations(eqx.Module):
         `temporal_batch_size * omega_batch_size` if the present
         DataGeneratorParameter complements a PDENonStatioBatch
         with self.cartesian_product = True
-    observed_pinn_in
-        A jnp.array with 2 dimensions.
+    observed_pinn_in : Float[Array, "n_obs nb_pinn_in"]
         Observed values corresponding to the input of the PINN
         (eg. the time at which we recorded the observations). The first
         dimension must corresponds to the number of observed_values.
         The second dimension depends on the input dimension of the PINN,
         that is `1` for ODE, `n_dim_x` for stationnary PDE and `n_dim_x + 1`
         for non-stationnary PDE.
-    observed_values
-        A jnp.array with 2 dimensions.
+    observed_values : Float[Array, "n_obs, nb_pinn_out"]
         Observed values that the PINN should learn to fit. The first
         dimension must be aligned with observed_pinn_in.
-    observed_eq_params
-        Optional. Default is empty dict {}. A dict with keys corresponding to
+    observed_eq_params : Dict[str, Float[Array, "n_obs 1"]], default={}
+        A dict with keys corresponding to
         the parameter name. The keys must match the keys in
         `params["eq_params"]`. The values are jnp.array with 2 dimensions
         with values corresponding to the parameter value for which we also
         have observed_pinn_in and observed_values. Hence the first
         dimension must be aligned with observed_pinn_in and observed_values.
-    sharding_device
+        Optional argument.
+    sharding_device : jax.sharding.Sharding, default=None
         Default None. An optional sharding object to constraint the storage
         of observed inputs, values and parameters. Typically, a
         SingleDeviceSharding(cpu_device) to avoid loading on GPU huge
@@ -1010,9 +1011,9 @@ class DataGeneratorObservations(eqx.Module):
 
     key: Key
     obs_batch_size: Int = eqx.field(static=True)
-    observed_pinn_in: Array
-    observed_values: Array
-    observed_eq_params: dict[str, Array] = eqx.field(
+    observed_pinn_in: Float[Array, "n_obs nb_pinn_in"]
+    observed_values: Float[Array, "n_obs nb_pinn_out"]
+    observed_eq_params: Dict[str, Float[Array, "n_obs 1"]] = eqx.field(
         static=True, default_factory=lambda: {}
     )
     sharding_device: jax.sharding.Sharding = eqx.field(static=True, default=None)
@@ -1076,7 +1077,7 @@ class DataGeneratorObservations(eqx.Module):
         self.key, _ = jax.random.split(self.key, 2)  # to make it equivalent to
         # the call to _reset_batch_idx_and_permute in legacy DG
 
-    def _get_operands(self) -> tuple[Key, Array, Int, Int, None]:
+    def _get_operands(self) -> tuple[Key, Int[Array, "n"], Int, Int, None]:
         return (
             self.key,
             self.indices,
@@ -1085,7 +1086,11 @@ class DataGeneratorObservations(eqx.Module):
             None,
         )
 
-    def obs_batch(self) -> tuple["DataGeneratorObservations", Array]:
+    def obs_batch(
+        self,
+    ) -> tuple[
+        "DataGeneratorObservations", Dict[str, Float[Array, "obs_batch_size dim"]]
+    ]:
         """
         Return a dictionary with (keys, values): (pinn_in, a mini batch of pinn
         inputs), (obs, a mini batch of corresponding observations), (eq_params,
@@ -1124,7 +1129,11 @@ class DataGeneratorObservations(eqx.Module):
         }
         return new, obs_batch
 
-    def get_batch(self) -> tuple["DataGeneratorObservations", Array]:
+    def get_batch(
+        self,
+    ) -> tuple[
+        "DataGeneratorObservations", Dict[str, Float[Array, "obs_batch_size dim"]]
+    ]:
         """
         Generic method to return a batch
         """
@@ -1137,15 +1146,15 @@ class DataGeneratorParameter(eqx.Module):
 
     Parameters
     ----------
-    keys
+    keys : Key | Dict[str, Key]
         Jax random key to sample new time points and to shuffle batches
         or a dict of Jax random keys with key entries from param_ranges
-    n
-        An integer. The number of total points that will be divided in
+    n : Int
+        The number of total points that will be divided in
         batches. Batches are made so that each data point is seen only
         once during 1 epoch.
-    param_batch_size
-        An integer. The size of the batch of randomly selected points among
+    param_batch_size : Int
+        The size of the batch of randomly selected points among
         the `n` points. `param_batch_size` will be the same for all
         additional batch of parameter.
         NOTE: no check is done BUT users should be careful that
@@ -1157,7 +1166,7 @@ class DataGeneratorParameter(eqx.Module):
         `temporal_batch_size * omega_batch_size` if the present
         DataGeneratorParameter complements a PDENonStatioBatch
         with self.cartesian_product = True
-    param_ranges
+    param_ranges : Dict[str, tuple[Float, Float] | None, default={}
         A dict. A dict of tuples (min, max), which
         reprensents the range of real numbers where to sample batches (of
         length `param_batch_size` among `n` points).
@@ -1165,12 +1174,13 @@ class DataGeneratorParameter(eqx.Module):
         keys in `params["eq_params"]`.
         By providing several entries in this dictionary we can sample
         an arbitrary number of parameters.
-        __Note__ that we currently only support unidimensional parameters
-    method
-        Either `grid` or `uniform`, default is `grid`. `grid` means
+        **Note** that we currently only support unidimensional parameters.
+        This argument can be done if we only use `user_data`.
+    method : str, default="uniform"
+        Either `grid` or `uniform`, default is `uniform`. `grid` means
         regularly spaced points over the domain. `uniform` means uniformly
         sampled points over the domain
-    user_data
+    user_data : Dict[str, Float[Array, "n"]] | None, default={}
         A dictionary containing user-provided data for parameters.
         As for `param_ranges`, the key corresponds to the parameter name,
         the keys must match the keys in `params["eq_params"]` and only
@@ -1181,17 +1191,25 @@ class DataGeneratorParameter(eqx.Module):
         Defaults to None.
     """
 
-    keys: Union[Key, dict[str, Key]]
+    keys: Key | Dict[str, Key]
     n: Int
     param_batch_size: Int = eqx.field(static=True)
-    param_ranges: dict[str, tuple] = eqx.field(static=True, default_factory=lambda: {})
+    param_ranges: Dict[str, tuple[Float, Float]] = eqx.field(
+        static=True, default_factory=lambda: {}
+    )
     method: str = eqx.field(static=True, default="uniform")
-    user_data: dict[str, Array] = eqx.field(static=True, default_factory=lambda: {})
+    user_data: Dict[str, Float[Array, "n"]] | None = eqx.field(
+        static=True, default_factory=lambda: {}
+    )
 
-    curr_param_idx: dict[str, Int] = eqx.field(init=False)
-    param_n_samples: dict[str, Array] = eqx.field(init=False)
+    curr_param_idx: Dict[str, Int] = eqx.field(init=False)
+    param_n_samples: Dict[str, Array] = eqx.field(init=False)
 
     def __post_init__(self):
+        if self.user_data is None:
+            self.user_data = {}
+        if self.param_ranges is None:
+            self.param_ranges = {}
         if self.n < self.param_batch_size:
             raise ValueError(
                 f"Number of data points ({self.n}) is smaller than the"
@@ -1214,8 +1232,8 @@ class DataGeneratorParameter(eqx.Module):
         self.keys, self.param_n_samples = self.generate_data(self.keys)
 
     def generate_data(
-        self, keys: dict[str, Key]
-    ) -> tuple[dict[str, Key], dict[str, Array]]:
+        self, keys: Dict[str, Key]
+    ) -> tuple[Dict[str, Key], Dict[str, Float[Array, "n"]]]:
         """
         Generate parameter samples, either through generation
         or using user-provided data.
@@ -1254,7 +1272,9 @@ class DataGeneratorParameter(eqx.Module):
 
         return keys, param_n_samples
 
-    def _get_param_operands(self, k):
+    def _get_param_operands(
+        self, k: str
+    ) -> tuple[Key, Float[Array, "n"], Int, Int, None]:
         return (
             self.keys[k],
             self.param_n_samples[k],
@@ -1326,8 +1346,8 @@ class DataGeneratorObservationsMultiPINNs(eqx.Module):
 
     Parameters
     ----------
-    obs_batch_size
-        An integer. The size of the batch of randomly selected observations
+    obs_batch_size : Int
+        The size of the batch of randomly selected observations
         `obs_batch_size` will be the same for all the
         elements of the obs dict.
         NOTE: no check is done BUT users should be careful that
@@ -1339,22 +1359,22 @@ class DataGeneratorObservationsMultiPINNs(eqx.Module):
         `temporal_batch_size * omega_batch_size` if the present
         DataGeneratorParameter complements a PDENonStatioBatch
         with self.cartesian_product = True
-    observed_pinn_in_dict
+    observed_pinn_in_dict : Dict[str, Float[Array, "n_obs nb_pinn_in"] | None]
         A dict of observed_pinn_in as defined in DataGeneratorObservations.
         Keys must be that of `u_dict`.
         If no observation exists for a particular entry of `u_dict` the
         corresponding key must still exist in observed_pinn_in_dict with
         value None
-    observed_values_dict
+    observed_values_dict : Dict[str, Float[Array, "n_obs, nb_pinn_out"] | None]
         A dict of observed_values as defined in DataGeneratorObservations.
         Keys must be that of `u_dict`.
         If no observation exists for a particular entry of `u_dict` the
         corresponding key must still exist in observed_values_dict with
         value None
-    observed_eq_params_dict
+    observed_eq_params_dict : Dict[str, Dict[str, Float[Array, "n_obs 1"]]]
         A dict of observed_eq_params as defined in DataGeneratorObservations.
         Keys must be that of `u_dict`.
-        If no observation exists for a particular entry of `u_dict` the
+        **Note**: if no observation exists for a particular entry of `u_dict` the
         corresponding key must still exist in observed_eq_params_dict with
         value `{}` (empty dictionnary).
     key
@@ -1362,12 +1382,14 @@ class DataGeneratorObservationsMultiPINNs(eqx.Module):
     """
 
     obs_batch_size: Int
-    observed_pinn_in_dict: dict[str, Array]
-    observed_values_dict: dict[str, Array]
-    observed_eq_params_dict: dict[str, Array] = eqx.field(default=None, kw_only=True)
+    observed_pinn_in_dict: Dict[str, Float[Array, "n_obs nb_pinn_in"] | None]
+    observed_values_dict: Dict[str, Float[Array, "n_obs nb_pinn_out"] | None]
+    observed_eq_params_dict: Dict[str, Dict[str, Float[Array, "n_obs 1"]]] = eqx.field(
+        default=None, kw_only=True
+    )
     key: InitVar[Key]
 
-    data_gen_obs: dict[str, "DataGeneratorObservations"] = eqx.field(init=False)
+    data_gen_obs: Dict[str, "DataGeneratorObservations"] = eqx.field(init=False)
 
     def __post_init__(self, key):
         if self.observed_pinn_in_dict is None or self.observed_values_dict is None:
@@ -1410,7 +1432,7 @@ class DataGeneratorObservationsMultiPINNs(eqx.Module):
             self.observed_eq_params_dict,
         )
 
-    def obs_batch(self):
+    def obs_batch(self) -> tuple["DataGeneratorObservationsMultiPINNs", PyTree]:
         """
         Returns a dictionary of DataGeneratorObservations.obs_batch with keys
         from `u_dict`
@@ -1436,7 +1458,7 @@ class DataGeneratorObservationsMultiPINNs(eqx.Module):
 
         return new, batches
 
-    def get_batch(self):
+    def get_batch(self) -> tuple["DataGeneratorObservationsMultiPINNs", PyTree]:
         """
         Generic method to return a batch
         """
