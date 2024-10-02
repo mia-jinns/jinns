@@ -6,6 +6,38 @@ Recently, the machine learning litterature have been interested in tackling the 
 
 The **jinns** package implements this approach using the JAX ecosystem.
 
+## Dynamic loss
+A dynamical system is described by a differential operator $\mathcal{N}_\theta$
+where $\theta$ represents the parameters of the system such as a diffusion
+coefficient, a viscosity or a growth rate. A solution $u$ satisfies the identity
+
+$$
+\begin{equation*}
+\mathcal{N}_\theta[u] = 0,
+\end{equation*}
+$$
+
+with possible border an initial conditions depending on the type of equation
+at hand.
+
+The **jinns** package allows to tackle two different types of problems:
+
+ 1. **Forward problem :** for a given set of equation parameters $\theta$, find a parametric function $u_{\hat{\nu}}$ forming a good approximation of the solution $u$ in the sense of minimising some "physics-loss" that we precise in the following sections
+    $$
+    \hat{u} = u_{\hat{\nu}} \quad \textrm{with:} \quad \hat{\nu} \in \arg \min_{\nu} L_{PINN}(\nu),
+    $$
+  The physics-informed neural network (PINNS) litterature proposed to use neural networks with weights and bias $\nu$ to find the best candidate minimizing the loss. The training is usually done by stochastic gradient descent on mini-batches of collocation points in the domain of $u$. In addition, automatic differentiation may both be used for computing the differential operator $\mathcal{N}_\theta$ and loss' gradients with respect to $\nu$.
+
+ 2. **Inverse problem :** for a given set of observation of the dynamic $\mathcal{D} = \{ u_i \}_{i=1}^{n_{obs}}$, find the set of equation parameters $\theta$ that best fits the data. Thus, we have some combination of the physics-loss with a data-fitting term. The latter could be a standard MSE, or more refined losses such as the likelihood of a statistical model.
+
+    $$
+    (\hat{\nu}, \hat{\theta})  \in \arg \min_{\nu, \theta}  \left\{ L_{PINN}(\nu, \theta) + w_{obs} L_{obs}(\nu, \theta; \mathcal{D}) \right\},
+    $$
+
+ 3. **Meta-modeling** The problem of meta-modeling consists in learning a function $u_{\nu}(theta)$ outputting approximate solution for any values $\theta$ (within a reasonable range). In this case, the training involves feeding the function training values of equation parameters $\{\theta_j\}$.
+
+## Ordinary differential equation
+
 
 ## Partial differential equation
 
@@ -23,30 +55,12 @@ $$
 \end{equation}
 $$
 
-The operator $\mathcal{N}_\theta$ is a differential operator involving partial derivatives w.r.t. $t$ and $x$ and depends on a set of equation parameters $\theta$. The operator $\mathcal{B}$ acts on $\partial \Omega$, the border of $\Omega$. The PDE is said to be stationnary (in time), if $u$ does not change with $t$.
+In this case, the operator $\mathcal{N}_\theta$ is a differential operator involving partial derivatives w.r.t. $t$ and $x$ and depends on a set of equation parameters $\theta$. The operator $\mathcal{B}$ acts on $\partial \Omega$, the border of $\Omega$. The PDE is said to be stationnary (in time) if $u$ does not depend on $t$.
 
-
-The **jinns** package allows to tackle two different types of problems:
-
- 1. **Forward problem :** for a given set of equation parameters $\theta$, find a parametric function $u_{\hat{\nu}}$ which is a good approximation of the solution $u$ in some sense made precise below.
- 2. **Inverse problem :** for a given set of observation of the dynamic $\mathcal{D} = \{ u_{obs}(t_i, x_i))\}_{i=1}^{n_{obs}}$, find the set of equation parameters $\theta$ that best fits the data.
-
-In forward problems, our goal is to learn a parametric function $u_\nu$ which approximates a solution of (PDE). The physics-informed neural network (PINNS) litterature proposed to use neural networks with weights and bias $\nu$ to find the best candidate minimizing the loss
+The physics-loss in this case is described through
 
 $$
-\hat{u} = u_{\hat{\nu}} \quad \textrm{with:} \quad \hat{\nu} \in \arg \min_{\nu} \left\{ L(\nu) = \Vert  \mathcal{N}_\theta[u_\nu] \Vert^2_{dyn} + w_{init} \Vert u_{\nu}(\cdot, 0) - u_0 \Vert^2_{init} + w_b \Vert \mathcal{B}[u_{\nu}] - f \Vert^2_{border} \right\},
+L_{PINN}(\nu, \theta) = \Vert  \mathcal{N}_\theta[u_\nu] \Vert^2_{dyn} + w_{init} \Vert u_{\nu}(\cdot, 0) - u_0 \Vert^2_{init} + w_b \Vert \mathcal{B}[u_{\nu}] - f \Vert^2_{border},
 $$
 
-where the $(w_b, w_{init})$ are loss weights allowing to calibrate between the different terms. Here, the notation $\Vert \cdot \Vert^2$ corresponds to MSE computed on a discretization of the time interval $I$, the space $\Omega$ and its border $\partial \Omega$. The training may be done via stochastic gradient descent on batches of the training sets. In addition, automatic differentiation can be used both for computing the differential operator $\mathcal{N}_\theta$ and gradients with respect to $\nu$.
-
-For inverse problem, we define a function $u_{\nu, \theta}$ and wish to find an estimate of the equation parameters $\hat{\theta}$ so that
-
-$$
-(\hat{\nu}, \hat{\theta})  \in \arg \min_{\nu, \theta}  \left\{ L(\nu, \theta) + w_{obs} \Vert u_{\nu, \theta} - u_{obs}\Vert_{\mathcal{D}}^2 \right\},
-$$
-
-**New:** The problem of meta-model learning a function $u_{\nu, \theta}$ giving an approximate solution for any values $\theta$ (within a reasonable range) is not now tackled by the package. In this case, the function is learnt over a grid of values $\{\theta_j\}$.
-
-
-## Ordinary differential equation
-TODO
+where $w_b$ and $w_{init}$ are loss weights allowing to calibrate between the different terms. Here, the notation $\Vert \cdot \Vert^2$ corresponds to MSE computed on a discretization of the time interval $I$, the space $\Omega$ and its border $\partial \Omega$.

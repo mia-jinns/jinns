@@ -114,6 +114,6 @@ nav:
       - 'api/derivative_keys.md'
     - Misc:
       - Maths backgroung:
-        - 'maths/fokker_planck.md'
         - Forward problem: 'maths/pinn_forward.md'
         - Inverse problem: 'maths/pinn_inverse.md'
+        - 'maths/fokker_planck.md'

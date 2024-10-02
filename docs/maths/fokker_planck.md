@@ -28,7 +28,7 @@ Thus, we wish to solve FPE to learn $u_{\hat{\nu}}(x, t)$ with a PINN loss
 
 $$
 \begin{equation}
-  L_{\textrm{FPE}}(\nu) = \Vert - \frac{\partial}{\partial t} u_\nu - \frac{\partial}{\partial x} \left[  \mu u_\nu \right] +   \frac{1}{2} \frac{\partial^2}{\partial x^2}  \left[  \sigma^2  u_\nu \right] \Vert_{dyn} + w_t \Vert u_{\nu}(\cdot, 0) - u_0 \Vert_{temp} + w_{pdf} \Vert u_{\nu} \Vert_{L^1(\Omega)} ,
+  L_{\textrm{FPE}}(\nu) = \Vert - \frac{\partial}{\partial t} u_\nu - \frac{\partial}{\partial x} \left[  \mu u_\nu \right] +   \frac{1}{2} \frac{\partial^2}{\partial x^2}  \left[  \sigma^2  u_\nu \right] \Vert_{dyn}^2 + w_t \Vert u_{\nu}(\cdot, 0) - u_0 \Vert_{temp}^2 + w_{pdf} \Vert \int_{\Omega} u_{\nu}(\cdot, x) \textrm{d} x - 1 \Vert_{pdf}^2.
 \end{equation}
 $$
 If we wish to learn the stationary distribution, the $- \frac{\partial}{\partial t} u$ is set to 0 in the FPE loss.
@@ -36,9 +36,10 @@ If we wish to learn the stationary distribution, the $- \frac{\partial}{\partial
 !!! info "Important"
 
     There is no border condition on $\partial \Omega$ here, but an additional
-    loss term: the p.d.f. condition which prevents the neural-network from learning
-    the trivial solution $u_\nu = 0$. The $L^1$ loss is approximated via
-    Monte-Carlo integration on $\Omega$.
+    loss term: the network must learn a p.d.f. with normalization constant
+    equals to 1 at any time $t$. This also prevents the neural-network from learning
+    the trivial solution $u_\nu = 0$. The normalization constant at time $t$ is
+    approximated via Monte-Carlo integration on $\Omega$.
 
 
 ## Examples
