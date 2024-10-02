@@ -42,8 +42,12 @@ def _div_fwd(
     field from $\mathbb{R}^{b \times d}$ to $\mathbb{R}^{b \times b
     \times d}$. The result is then in $\mathbb{R}^{b\times b}$.
     Because of the embedding that happens in SPINNs the
-    computation is most efficient with forward AD. This is the idea behind Separable PINNs.
-    This function is to be used in the context of SPINNs only.
+    computation is most efficient with forward AD. This is the idea behind
+    Separable PINNs.
+
+    !!! info "Warning"
+
+        This function is to be used in the context of SPINNs only.
     """
 
     def scan_fun(_, i):
@@ -119,8 +123,12 @@ def _laplacian_fwd(
     for $\mathbf{x}$ of arbitrary dimension $d$ with batch
     dimension $b$.
     Because of the embedding that happens in SPINNs the
-    computation is most efficient with forward AD. This is the idea behind Separable PINNs.
-    This function is to be used in the context of SPINNs only.
+    computation is most efficient with forward AD. This is the idea behind
+    Separable PINNs.
+
+    !!! info "Warning"
+
+        This function is to be used in the context of SPINNs only.
     """
 
     def scan_fun(_, i):

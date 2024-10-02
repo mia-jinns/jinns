@@ -16,3 +16,11 @@ from ._loss_weights import (
     LossWeightsPDEStatio,
     LossWeightsPDEDict,
 )
+
+from ._operators import (
+    _div_fwd,
+    _div_rev,
+    _laplacian_fwd,
+    _laplacian_rev,
+    _vectorial_laplacian,
+)
