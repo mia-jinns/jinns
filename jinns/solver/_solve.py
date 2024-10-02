@@ -3,24 +3,24 @@ This modules implements the main `solve()` function of jinns which
 handles the optimization process
 """
 
+from typing import NamedTuple, Dict, Union
 from functools import partial
 import optax
 import jax
 from jax import jit
 import jax.numpy as jnp
+from jaxtyping import Int, Bool, Float, Array
 from jinns.solver._rar import init_rar, trigger_rar
 from jinns.utils._utils import _check_nan_in_pytree
-from jinns.data._DataGenerators import (
-    append_obs_batch,
-    append_param_batch,
-    DataGeneratorODE,
-    CubicMeshPDEStatio,
-    CubicMeshPDENonStatio,
-)
+from jinns.data._DataGenerators import *
+from jinns.loss._LossODE import *
+from jinns.loss._LossPDE import *
 from jinns.utils._containers import *
+from jinns.validation._validation import AbstractValidationModule
+from jinns.parameters._params import Params, ParamsDict
 
 
-def check_batch_size(other_data, main_data, attr_name):
+def _check_batch_size(other_data, main_data, attr_name):
     if (
         (
             isinstance(main_data, DataGeneratorODE)
@@ -46,20 +46,32 @@ def check_batch_size(other_data, main_data, attr_name):
 
 
 def solve(
-    n_iter,
-    init_params,
-    data,
-    loss,
-    optimizer,
-    print_loss_every=1000,
-    opt_state=None,
-    tracked_params: Params | None = None,
-    param_data=None,
-    obs_data=None,
-    validation=None,
-    obs_batch_sharding=None,
-    verbose=True,
-):
+    n_iter: Int,
+    init_params: Params | ParamsDict,
+    data: DataGeneratorODE | CubicMeshPDEStatio | CubicMeshPDENonStatio,
+    loss: LossODE | SystemLossODE | LossPDEStatio | LossPDENonStatio | SystemLossPDE,
+    optimizer: optax.GradientTransformation,
+    print_loss_every: Int = 1000,
+    opt_state: Union[NamedTuple, None] = None,
+    tracked_params: Params | ParamsDict | None = None,
+    param_data: DataGeneratorParameter | None = None,
+    obs_data: (
+        DataGeneratorObservations | DataGeneratorObservationsMultiPINNs | None
+    ) = None,
+    validation: AbstractValidationModule | None = None,
+    obs_batch_sharding: jax.sharding.Sharding | None = None,
+    verbose: Bool = True,
+) -> tuple[
+    Params | ParamsDict,
+    Float[Array, "n_iter"],
+    Dict[str, Float[Array, "n_iter"]],
+    DataGeneratorODE | CubicMeshPDEStatio | CubicMeshPDENonStatio,
+    LossODE | SystemLossODE | LossPDEStatio | LossPDENonStatio | SystemLossPDE,
+    NamedTuple,
+    Params | ParamsDict,
+    Float[Array, "n_iter"],
+    Params | ParamsDict,
+]:
     """
     Performs the optimization process via stochastic gradient descent
     algorithm. We minimize the function defined `loss.evaluate()` with
@@ -70,28 +82,22 @@ def solve(
     Parameters
     ----------
     n_iter
-        The number of iterations in the optimization
+        The maximum number of iterations in the optimization.
     init_params
-        The initial jinns.parameters.Params object
+        The initial jinns.parameters.Params object.
     data
-        A DataGenerator object which implements a `get_batch()`
-        method which returns a 3-tuple with (omega_grid, omega_border, time grid).
-        It must be jittable (e.g. implements via a pytree
-        registration)
+        A DataGenerator object to retrieve batches of collocation points.
     loss
-        A loss object (e.g. a LossODE, SystemLossODE, LossPDEStatio [...]
-        object). It must be jittable (e.g. implements via a pytree
-        registration)
+        The loss function to minimize.
     optimizer
-        An `optax` optimizer (e.g. `optax.adam`).
+        An optax optimizer.
     print_loss_every
-        Integer. Default 100. The rate at which we print the loss value in the
+        Default 1000. The rate at which we print the loss value in the
         gradient step loop.
     opt_state
-        Default None. Provide an optional initial optional state to the
-        optimizer. Not valid for all optimizers.
+        Provide an optional initial state to the optimizer.
     tracked_params
-        Default None. An eqx.Module of type Params non None values for
+        Default None. An eqx.Module of type Params with non-None values for
         parameters that needs to be tracked along the iterations.
         None values in tracked_params will not be traversed. Thus
         the user can provide something like `tracked_params = jinns.parameters.Params(
@@ -101,13 +107,14 @@ def solve(
         Default None. A DataGeneratorParameter object which can be used to
         sample equation parameters.
     obs_data
-        Default None. A DataGeneratorObservations object which can be used to
-        sample minibatches of observations
+        Default None. A DataGeneratorObservations or
+        DataGeneratorObservationsMultiPINNs
+        object which can be used to sample minibatches of observations.
     validation
         Default None. Otherwise, a callable ``eqx.Module`` which implements a
-        validation strategy. See documentation of :obj:`~jinns.validation.
+        validation strategy. See documentation of `jinns.validation.
         _validation.AbstractValidationModule` for the general interface, and
-        :obj:`~jinns.validation._validation.ValidationLoss` for a practical
+        `jinns.validation._validation.ValidationLoss` for a practical
         implementation of a vanilla validation stategy on a validation set of
         collocation points.
 
@@ -121,9 +128,9 @@ def solve(
         Default None. An optional sharding object to constraint the obs_batch.
         Typically, a SingleDeviceSharding(gpu_device) when obs_data has been
         created with sharding_device=SingleDeviceSharding(cpu_device) to avoid
-        loading on GPU huge datasets of observations
-    verbose:
-        Boolean, default True. If False, no std output (loss or cause of
+        loading on GPU huge datasets of observations.
+    verbose
+        Default True. If False, no std output (loss or cause of
         exiting the optimization loop) will be produced.
 
     Returns
@@ -151,10 +158,10 @@ def solve(
         The best parameters according to the validation criterion
     """
     if param_data is not None:
-        check_batch_size(param_data, data, "param_batch_size")
+        _check_batch_size(param_data, data, "param_batch_size")
 
     if obs_data is not None:
-        check_batch_size(obs_data, data, "obs_batch_size")
+        _check_batch_size(obs_data, data, "obs_batch_size")
 
     if opt_state is None:
         opt_state = optimizer.init(init_params)
@@ -169,7 +176,7 @@ def solve(
     train_loss_values = jnp.zeros((n_iter))
     # depending on obs_batch_sharding we will get the simple get_batch or the
     # get_batch with device_put, the latter is not jittable
-    get_batch = get_get_batch(obs_batch_sharding)
+    get_batch = _get_get_batch(obs_batch_sharding)
 
     # initialize the dict for stored parameter values
     # we need to get a loss_term to init stuff
@@ -223,7 +230,7 @@ def solve(
     else:
         validation_crit_values = None
 
-    break_fun = get_break_fun(n_iter, verbose)
+    break_fun = _get_break_fun(n_iter, verbose)
 
     iteration = 0
     carry = (
@@ -238,7 +245,29 @@ def solve(
         validation_crit_values,
     )
 
-    def one_iteration(carry):
+    def _one_iteration(
+        carry: tuple[
+            Int,
+            LossODE | SystemLossODE | LossPDEStatio | LossPDENonStatio | SystemLossPDE,
+            OptimizationContainer,
+            OptimizationExtraContainer,
+            DataGeneratorContainer,
+            AbstractValidationModule,
+            LossContainer,
+            StoredObjectContainer,
+            Float[Array, "n_iter"],
+        ]
+    ) -> tuple[
+        Int,
+        LossODE | SystemLossODE | LossPDEStatio | LossPDENonStatio | SystemLossPDE,
+        OptimizationContainer,
+        OptimizationExtraContainer,
+        DataGeneratorContainer,
+        AbstractValidationModule,
+        LossContainer,
+        StoredObjectContainer,
+        Float[Array, "n_iter"],
+    ]:
         (
             i,
             loss,
@@ -263,7 +292,7 @@ def solve(
             params,
             opt_state,
             last_non_nan_params,
-        ) = gradient_step(
+        ) = _gradient_step(
             loss,
             optimizer,
             batch,
@@ -274,7 +303,7 @@ def solve(
 
         # Print train loss value during optimization
         if verbose:
-            print_fn(i, train_loss_value, print_loss_every, prefix="[train] ")
+            _print_fn(i, train_loss_value, print_loss_every, prefix="[train] ")
 
         if validation is not None:
             # there is a jax.lax.cond because we do not necesarily call the
@@ -300,7 +329,7 @@ def solve(
             )
             # Print validation loss value during optimization
             if verbose:
-                print_fn(
+                _print_fn(
                     i, validation_criterion, print_loss_every, prefix="[validation] "
                 )
             validation_crit_values = validation_crit_values.at[i].set(
@@ -324,7 +353,7 @@ def solve(
         )
 
         # save loss value and selected parameters
-        stored_params, stored_loss_terms, train_loss_values = store_loss_and_params(
+        stored_params, stored_loss_terms, train_loss_values = _store_loss_and_params(
             i,
             params,
             stored_objects.stored_params,
@@ -355,9 +384,9 @@ def solve(
     # concern obs_batch, but it could lead to more complex scheme in the future
     if obs_batch_sharding is not None:
         while break_fun(carry):
-            carry = one_iteration(carry)
+            carry = _one_iteration(carry)
     else:
-        carry = jax.lax.while_loop(break_fun, one_iteration, carry)
+        carry = jax.lax.while_loop(break_fun, _one_iteration, carry)
 
     (
         i,
@@ -397,7 +426,21 @@ def solve(
 
 
 @partial(jit, static_argnames=["optimizer"])
-def gradient_step(loss, optimizer, batch, params, opt_state, last_non_nan_params):
+def _gradient_step(
+    loss: LossODE | SystemLossODE | LossPDEStatio | LossPDENonStatio | SystemLossPDE,
+    optimizer: optax.GradientTransformation,
+    batch: ODEBatch | PDEStatioBatch | PDENonStatioBatch,
+    params: Params | ParamsDict,
+    opt_state: NamedTuple,
+    last_non_nan_params: Params | ParamsDict,
+) -> tuple[
+    LossODE | SystemLossODE | LossPDEStatio | LossPDENonStatio | SystemLossPDE,
+    float,
+    Dict[str, float],
+    Params | ParamsDict,
+    NamedTuple,
+    Params | ParamsDict,
+]:
     """
     optimizer cannot be jit-ted.
     """
@@ -425,7 +468,7 @@ def gradient_step(loss, optimizer, batch, params, opt_state, last_non_nan_params
 
 
 @partial(jit, static_argnames=["prefix"])
-def print_fn(i, loss_val, print_loss_every, prefix=""):
+def _print_fn(i: Int, loss_val: Float, print_loss_every: Int, prefix: str = ""):
     # note that if the following is not jitted in the main lor loop, it is
     # super slow
     _ = jax.lax.cond(
@@ -441,16 +484,18 @@ def print_fn(i, loss_val, print_loss_every, prefix=""):
 
 
 @jit
-def store_loss_and_params(
-    i,
-    params,
-    stored_params,
-    stored_loss_terms,
-    train_loss_values,
-    train_loss_val,
-    loss_terms,
-    tracked_params,
-):
+def _store_loss_and_params(
+    i: Int,
+    params: Params | ParamsDict,
+    stored_params: Params | ParamsDict,
+    stored_loss_terms: Dict[str, Float[Array, "n_iter"]],
+    train_loss_values: Float[Array, "n_iter"],
+    train_loss_val: float,
+    loss_terms: Dict[str, float],
+    tracked_params: Params | ParamsDict,
+) -> tuple[
+    Params | ParamsDict, Dict[str, Float[Array, "n_iter"]], Float[Array, "n_iter"]
+]:
     stored_params = jax.tree_util.tree_map(
         lambda stored_value, param, tracked_param: (
             None
@@ -477,7 +522,20 @@ def store_loss_and_params(
     return (stored_params, stored_loss_terms, train_loss_values)
 
 
-def get_break_fun(n_iter, verbose: bool):
+def _get_break_fun(n_iter: Int, verbose: Bool) -> Callable[
+    tuple[
+        Int,
+        LossODE | SystemLossODE | LossPDEStatio | LossPDENonStatio | SystemLossPDE,
+        OptimizationContainer,
+        OptimizationExtraContainer,
+        DataGeneratorContainer,
+        AbstractValidationModule,
+        LossContainer,
+        StoredObjectContainer,
+        Float[Array, "n_iter"],
+    ],
+    Bool,
+]:
     """
     Wrapper to get the break_fun with appropriate `n_iter`.
     The verbose argument is here to control printing (or not) when exiting
@@ -540,7 +598,23 @@ def get_break_fun(n_iter, verbose: bool):
     return break_fun
 
 
-def get_get_batch(obs_batch_sharding):
+def _get_get_batch(
+    obs_batch_sharding: jax.sharding.Sharding,
+) -> Callable[
+    [
+        DataGeneratorODE | CubicMeshPDEStatio | CubicMeshPDENonStatio,
+        DataGeneratorParameter | None,
+        DataGeneratorObservations | DataGeneratorObservationsMultiPINNs | None,
+    ],
+    tuple[
+        ODEBatch,
+        PDEStatioBatch,
+        PDENonStatioBatch,
+        DataGeneratorODE | CubicMeshPDEStatio | CubicMeshPDENonStatio,
+        DataGeneratorParameter | None,
+        DataGeneratorObservations | DataGeneratorObservationsMultiPINNs | None,
+    ],
+]:
     """
     Return the get_batch function that will be used either the jittable one or
     the non-jittable one with sharding using jax.device.put()
