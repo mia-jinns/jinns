@@ -170,9 +170,8 @@ class LossODE(_LossODEAbstract):
             Parameters at which the loss is evaluated
         batch
             Composed of a batch of time points
-            at which to evaluate an optional additional batch of parameters
-            (eg. for metamodeling) and an optional additional batch of observed
-            inputs/outputs/parameters
+            at which to evaluate the differential operator. An optional additional batch of parameters (eg. for metamodeling) and an optional additional batch of observed inputs/outputs/parameters can
+            be supplied.
         """
         temporal_batch = batch.temporal_batch
 

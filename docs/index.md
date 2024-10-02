@@ -6,8 +6,6 @@
  * inverse problem: learning the parameters of a PDE.
  * meta-modeling: learning a family of PDE indexed by its parameters.
 
-Discover more by navigating the example section on the left.
-
 # Installation
 
 ```
@@ -20,7 +18,7 @@ Requires Python 3.11+ and JAX 0.4.31+
 
 # Examples
 
-Navigate the tutorials and example sections of the site, with many introductory notebooks, as well as advanced examples.
+Navigate the tutorials and example sections of the left, with many introductory notebooks, as well as advanced examples.
 
 # News and updates
 

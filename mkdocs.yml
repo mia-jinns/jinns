@@ -102,6 +102,7 @@ nav:
       - Loss:
         - Dynamic loss: 'api/loss/dynamic_loss.md'
         - Total loss: 'api/loss/loss_xde.md'
+        - Systems: 'api/loss/systems_of_xde.md'
       - Neural Networks:
         - 'api/pinn/pinn.md'
         - 'api/pinn/spinn.md'

@@ -1,7 +1,7 @@
 # Your model : dynamic (or physics) loss
 
 ::: jinns.loss.ODE
- selection:
+ <!-- selection:
         members:
             - __init__
-            - __call__
+            - __call__ -->
