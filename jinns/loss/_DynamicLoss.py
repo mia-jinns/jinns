@@ -6,7 +6,7 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-from typing import TYPE_CHECKING, Union, Callable, Dict
+from typing import TYPE_CHECKING, Dict
 from jaxtyping import Float
 import jax
 from jax import grad

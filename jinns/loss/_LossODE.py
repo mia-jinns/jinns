@@ -29,7 +29,6 @@ from jinns.parameters._derivative_keys import _set_derivatives, DerivativeKeysOD
 from jinns.loss._loss_weights import LossWeightsODE, LossWeightsODEDict
 from jinns.loss._DynamicLossAbstract import ODE
 from jinns.utils._pinn import PINN
-from jinns.utils._spinn import SPINN
 
 if TYPE_CHECKING:
     from jinns.utils._types import *

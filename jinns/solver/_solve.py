@@ -7,7 +7,7 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-from typing import TYPE_CHECKING, NamedTuple, Dict, Union, NewType
+from typing import TYPE_CHECKING, NamedTuple, Dict, Union
 from functools import partial
 import optax
 import jax

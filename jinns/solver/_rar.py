@@ -2,7 +2,7 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-from typing import TYPE_CHECKING, NewType, Callable
+from typing import TYPE_CHECKING, Callable
 from functools import partial
 import jax
 from jax import vmap
@@ -19,7 +19,6 @@ from jinns.data._DataGenerators import (
     CubicMeshPDENonStatio,
 )
 from jinns.utils._hyperpinn import HYPERPINN
-from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
 
 

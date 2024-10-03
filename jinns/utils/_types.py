@@ -32,8 +32,7 @@ if TYPE_CHECKING:
     from jinns.validation._validation import AbstractValidationModule
 
     AnyLoss: TypeAlias = (
-        LossPDEStatio | LossPDENonStatio | SystemLossPDE,
-        LossODE | SystemLossODE,
+        LossPDEStatio | LossPDENonStatio | SystemLossPDE | LossODE | SystemLossODE
     )
 
     AnyParams: TypeAlias = Params | ParamsDict

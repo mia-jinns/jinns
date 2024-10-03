@@ -7,7 +7,7 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 import equinox as eqx
-from typing import Union, Callable, Dict, TYPE_CHECKING, ClassVar
+from typing import Callable, Dict, TYPE_CHECKING, ClassVar
 from jaxtyping import Float, Array
 from functools import partial
 import abc

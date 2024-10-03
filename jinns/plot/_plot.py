@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import jax.numpy as jnp
 from jax import vmap
 from mpl_toolkits.axes_grid1 import ImageGrid
-from typing import Callable, List, Union
+from typing import Callable, List
 from jaxtyping import Array, Float, Bool
 
 
@@ -40,7 +40,7 @@ def plot2d(
         the function $u$ to plot on the meshgrid, and eventually the time
         slices. It's suppose to have signature `u(x)` in the stationnary case,, and `u(t, x)` in the non-stationnary case. Use `partial` or `lambda to freeze / reorder any other arguments.
     xy_data :
-        A list of 2 `jnp.Array` providing
+        A list of 2 `jnp.Array` providing grid values for meshgrid creation
     times :
         list or Array of time slices where to plot the function. Use Tmax if
         you trained with time-rescaling.
