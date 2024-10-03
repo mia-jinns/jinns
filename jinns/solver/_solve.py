@@ -3,7 +3,11 @@ This modules implements the main `solve()` function of jinns which
 handles the optimization process
 """
 
-from typing import NamedTuple, Dict, Union
+from __future__ import (
+    annotations,
+)  # https://docs.python.org/3/library/typing.html#constant
+
+from typing import TYPE_CHECKING, NamedTuple, Dict, Union, NewType
 from functools import partial
 import optax
 import jax
@@ -12,12 +16,10 @@ import jax.numpy as jnp
 from jaxtyping import Int, Bool, Float, Array
 from jinns.solver._rar import init_rar, trigger_rar
 from jinns.utils._utils import _check_nan_in_pytree
-from jinns.data._DataGenerators import *
-from jinns.loss._LossODE import *
-from jinns.loss._LossPDE import *
 from jinns.utils._containers import *
-from jinns.validation._validation import AbstractValidationModule
-from jinns.parameters._params import Params, ParamsDict
+
+if TYPE_CHECKING:
+    from jinns.utils._types import *
 
 
 def _check_batch_size(other_data, main_data, attr_name):
@@ -47,9 +49,9 @@ def _check_batch_size(other_data, main_data, attr_name):
 
 def solve(
     n_iter: Int,
-    init_params: Params | ParamsDict,
-    data: DataGeneratorODE | CubicMeshPDEStatio | CubicMeshPDENonStatio,
-    loss: LossODE | SystemLossODE | LossPDEStatio | LossPDENonStatio | SystemLossPDE,
+    init_params: AnyParams,
+    data: AnyDataGenerator,
+    loss: AnyLoss,
     optimizer: optax.GradientTransformation,
     print_loss_every: Int = 1000,
     opt_state: Union[NamedTuple, None] = None,
@@ -65,12 +67,12 @@ def solve(
     Params | ParamsDict,
     Float[Array, "n_iter"],
     Dict[str, Float[Array, "n_iter"]],
-    DataGeneratorODE | CubicMeshPDEStatio | CubicMeshPDENonStatio,
-    LossODE | SystemLossODE | LossPDEStatio | LossPDENonStatio | SystemLossPDE,
+    AnyDataGenerator,
+    AnyLoss,
     NamedTuple,
-    Params | ParamsDict,
+    AnyParams,
     Float[Array, "n_iter"],
-    Params | ParamsDict,
+    AnyParams,
 ]:
     """
     Performs the optimization process via stochastic gradient descent
@@ -245,29 +247,7 @@ def solve(
         validation_crit_values,
     )
 
-    def _one_iteration(
-        carry: tuple[
-            Int,
-            LossODE | SystemLossODE | LossPDEStatio | LossPDENonStatio | SystemLossPDE,
-            OptimizationContainer,
-            OptimizationExtraContainer,
-            DataGeneratorContainer,
-            AbstractValidationModule,
-            LossContainer,
-            StoredObjectContainer,
-            Float[Array, "n_iter"],
-        ]
-    ) -> tuple[
-        Int,
-        LossODE | SystemLossODE | LossPDEStatio | LossPDENonStatio | SystemLossPDE,
-        OptimizationContainer,
-        OptimizationExtraContainer,
-        DataGeneratorContainer,
-        AbstractValidationModule,
-        LossContainer,
-        StoredObjectContainer,
-        Float[Array, "n_iter"],
-    ]:
+    def _one_iteration(carry: main_carry) -> main_carry:
         (
             i,
             loss,
@@ -427,19 +407,19 @@ def solve(
 
 @partial(jit, static_argnames=["optimizer"])
 def _gradient_step(
-    loss: LossODE | SystemLossODE | LossPDEStatio | LossPDENonStatio | SystemLossPDE,
+    loss: AnyLoss,
     optimizer: optax.GradientTransformation,
-    batch: ODEBatch | PDEStatioBatch | PDENonStatioBatch,
-    params: Params | ParamsDict,
+    batch: AnyBatch,
+    params: AnyParams,
     opt_state: NamedTuple,
-    last_non_nan_params: Params | ParamsDict,
+    last_non_nan_params: AnyParams,
 ) -> tuple[
-    LossODE | SystemLossODE | LossPDEStatio | LossPDENonStatio | SystemLossPDE,
+    AnyLoss,
     float,
     Dict[str, float],
-    Params | ParamsDict,
+    AnyParams,
     NamedTuple,
-    Params | ParamsDict,
+    AnyParams,
 ]:
     """
     optimizer cannot be jit-ted.
@@ -486,13 +466,13 @@ def _print_fn(i: Int, loss_val: Float, print_loss_every: Int, prefix: str = ""):
 @jit
 def _store_loss_and_params(
     i: Int,
-    params: Params | ParamsDict,
-    stored_params: Params | ParamsDict,
+    params: AnyParams,
+    stored_params: AnyParams,
     stored_loss_terms: Dict[str, Float[Array, "n_iter"]],
     train_loss_values: Float[Array, "n_iter"],
     train_loss_val: float,
     loss_terms: Dict[str, float],
-    tracked_params: Params | ParamsDict,
+    tracked_params: AnyParams,
 ) -> tuple[
     Params | ParamsDict, Dict[str, Float[Array, "n_iter"]], Float[Array, "n_iter"]
 ]:
@@ -522,20 +502,7 @@ def _store_loss_and_params(
     return (stored_params, stored_loss_terms, train_loss_values)
 
 
-def _get_break_fun(n_iter: Int, verbose: Bool) -> Callable[
-    tuple[
-        Int,
-        LossODE | SystemLossODE | LossPDEStatio | LossPDENonStatio | SystemLossPDE,
-        OptimizationContainer,
-        OptimizationExtraContainer,
-        DataGeneratorContainer,
-        AbstractValidationModule,
-        LossContainer,
-        StoredObjectContainer,
-        Float[Array, "n_iter"],
-    ],
-    Bool,
-]:
+def _get_break_fun(n_iter: Int, verbose: Bool) -> Callable[[main_carry], Bool]:
     """
     Wrapper to get the break_fun with appropriate `n_iter`.
     The verbose argument is here to control printing (or not) when exiting
@@ -602,15 +569,13 @@ def _get_get_batch(
     obs_batch_sharding: jax.sharding.Sharding,
 ) -> Callable[
     [
-        DataGeneratorODE | CubicMeshPDEStatio | CubicMeshPDENonStatio,
+        AnyDataGenerator,
         DataGeneratorParameter | None,
         DataGeneratorObservations | DataGeneratorObservationsMultiPINNs | None,
     ],
     tuple[
-        ODEBatch,
-        PDEStatioBatch,
-        PDENonStatioBatch,
-        DataGeneratorODE | CubicMeshPDEStatio | CubicMeshPDENonStatio,
+        AnyBatch,
+        AnyDataGenerator,
         DataGeneratorParameter | None,
         DataGeneratorObservations | DataGeneratorObservationsMultiPINNs | None,
     ],

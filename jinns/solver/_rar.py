@@ -1,24 +1,33 @@
+from __future__ import (
+    annotations,
+)  # https://docs.python.org/3/library/typing.html#constant
+
+from typing import TYPE_CHECKING, NewType, Callable
 from functools import partial
 import jax
 from jax import vmap
 import jax.numpy as jnp
 import equinox as eqx
+from jaxtyping import Int, Bool
+
+from jinns.data._Batchs import *
+from jinns.loss._LossODE import LossODE, SystemLossODE
+from jinns.loss._LossPDE import LossPDEStatio, LossPDENonStatio, SystemLossPDE
 from jinns.data._DataGenerators import (
     DataGeneratorODE,
     CubicMeshPDEStatio,
     CubicMeshPDENonStatio,
 )
-from jinns.loss._LossPDE import (
-    LossPDEStatio,
-    LossPDENonStatio,
-    SystemLossPDE,
-)
-from jinns.loss._LossODE import LossODE, SystemLossODE
 from jinns.utils._hyperpinn import HYPERPINN
+from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
 
 
-def _proceed_to_rar(data, i):
+if TYPE_CHECKING:
+    from jinns.utils._types import *
+
+
+def _proceed_to_rar(data: AnyDataGenerator, i: Int) -> Bool:
     """Utilility function with various check to ensure we can proceed with the rar_step.
     Return True if yes, and False otherwise"""
 
@@ -52,7 +61,14 @@ def _proceed_to_rar(data, i):
 
 
 @partial(jax.jit, static_argnames=["_rar_step_true", "_rar_step_false"])
-def trigger_rar(i, loss, params, data, _rar_step_true, _rar_step_false):
+def trigger_rar(
+    i: Int,
+    loss: AnyLoss,
+    params: AnyParams,
+    data: AnyDataGenerator,
+    _rar_step_true: Callable[[rar_operands], AnyDataGenerator],
+    _rar_step_false: Callable[[rar_operands], AnyDataGenerator],
+) -> tuple[AnyLoss, AnyParams, AnyDataGenerator]:
 
     if data.rar_parameters is None:
         # do nothing.
@@ -68,7 +84,13 @@ def trigger_rar(i, loss, params, data, _rar_step_true, _rar_step_false):
         return loss, params, data
 
 
-def init_rar(data):
+def init_rar(
+    data: AnyDataGenerator,
+) -> tuple[
+    AnyDataGenerator,
+    Callable[[rar_operands], AnyDataGenerator],
+    Callable[[rar_operands], AnyDataGenerator],
+]:
     """
     Separated from the main rar, because the initialization to get _true and
     _false cannot be jit-ted.
@@ -114,7 +136,10 @@ def init_rar(data):
     return data, _rar_step_true, _rar_step_false
 
 
-def _rar_step_init(sample_size, selected_sample_size):
+def _rar_step_init(sample_size: Int, selected_sample_size: Int) -> tuple[
+    Callable[[rar_operands], AnyDataGenerator],
+    Callable[[rar_operands], AnyDataGenerator],
+]:
     """
     This is a wrapper because the sampling size and
     selected_sample_size, must be treated as static
@@ -124,7 +149,7 @@ def _rar_step_init(sample_size, selected_sample_size):
     This is a kind of manual declaration of static argnums
     """
 
-    def rar_step_true(operands):
+    def rar_step_true(operands: rar_operands) -> AnyDataGenerator:
         loss, params, data, i = operands
 
         if isinstance(data, DataGeneratorODE):
@@ -527,7 +552,7 @@ def _rar_step_init(sample_size, selected_sample_size):
         # have side effects in this function that will be jitted
         return data
 
-    def rar_step_false(operands):
+    def rar_step_false(operands: rar_operands) -> AnyDataGenerator:
         _, _, data, i = operands
 
         # Add 1 only if we are after the burn in period

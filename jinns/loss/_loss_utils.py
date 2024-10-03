@@ -2,27 +2,32 @@
 Interface for diverse loss functions to factorize code
 """
 
-from typing import Callable, Dict
+from __future__ import (
+    annotations,
+)  # https://docs.python.org/3/library/typing.html#constant
+
+from typing import TYPE_CHECKING, Callable, Dict
 import jax
 import jax.numpy as jnp
 from jax import vmap
 import equinox as eqx
 from jaxtyping import Float, Array, PyTree
-from jinns.utils._pinn import PINN
-from jinns.utils._spinn import SPINN
-from jinns.utils._hyperpinn import HYPERPINN
-from jinns.loss import DynamicLoss
+
 from jinns.loss._boundary_conditions import (
     _compute_boundary_loss,
 )
 from jinns.utils._utils import _check_user_func_return, _get_grid
-from jinns.parameters._params import Params, ParamsDict
 from jinns.data._DataGenerators import (
-    PDEStatioBatch,
-    PDENonStatioBatch,
-    ODEBatch,
     append_obs_batch,
 )
+from jinns.utils._pinn import PINN
+from jinns.utils._spinn import SPINN
+from jinns.utils._hyperpinn import HYPERPINN
+from jinns.data._Batchs import *
+from jinns.parameters._params import Params, ParamsDict
+
+if TYPE_CHECKING:
+    from jinns.utils._types import *
 
 
 def dynamic_loss_apply(

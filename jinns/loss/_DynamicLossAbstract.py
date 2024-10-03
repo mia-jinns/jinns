@@ -2,17 +2,21 @@
 Implements abstract classes for dynamic losses
 """
 
+from __future__ import (
+    annotations,
+)  # https://docs.python.org/3/library/typing.html#constant
+
 import equinox as eqx
 from typing import Union, Callable, Dict, TYPE_CHECKING, ClassVar
 from jaxtyping import Float, Array
 from functools import partial
 import abc
 
-from jinns.parameters import Params, ParamsDict
 
 # See : https://docs.kidger.site/equinox/api/module/advanced_fields/#equinox.AbstractClassVar--known-issues
 if TYPE_CHECKING:
     from typing import ClassVar as AbstractClassVar
+    from jinns.parameters import Params, ParamsDict
 else:
     from equinox import AbstractClassVar
 

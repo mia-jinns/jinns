@@ -2,10 +2,13 @@
 """
 Main module to implement a PDE loss in jinns
 """
+from __future__ import (
+    annotations,
+)  # https://docs.python.org/3/library/typing.html#constant
 
 import abc
 from dataclasses import InitVar, fields
-from typing import Dict, Callable
+from typing import TYPE_CHECKING, Dict, Callable
 import warnings
 import jax
 import jax.numpy as jnp
@@ -20,30 +23,30 @@ from jinns.loss._loss_utils import (
     constraints_system_loss_apply,
 )
 from jinns.data._DataGenerators import (
-    PDEStatioBatch,
-    PDENonStatioBatch,
     append_obs_batch,
 )
-from jinns.utils._pinn import PINN
-from jinns.utils._spinn import SPINN
-from jinns.loss import DynamicLoss
-from jinns.loss._DynamicLossAbstract import PDEStatio, PDENonStatio
+from jinns.parameters._params import (
+    _get_vmap_in_axes_params,
+    _update_eq_params_dict,
+)
+from jinns.parameters._derivative_keys import (
+    _set_derivatives,
+    DerivativeKeysPDEStatio,
+    DerivativeKeysPDENonStatio,
+)
 from jinns.loss._loss_weights import (
     LossWeightsPDEStatio,
     LossWeightsPDENonStatio,
     LossWeightsPDEDict,
 )
-from jinns.parameters._params import (
-    Params,
-    ParamsDict,
-    _get_vmap_in_axes_params,
-    _update_eq_params_dict,
-)
-from jinns.parameters._derivative_keys import (
-    DerivativeKeysPDEStatio,
-    DerivativeKeysPDENonStatio,
-    _set_derivatives,
-)
+from jinns.loss._DynamicLossAbstract import PDEStatio, PDENonStatio
+from jinns.utils._pinn import PINN
+from jinns.utils._spinn import SPINN
+from jinns.data._Batchs import PDEStatioBatch, PDENonStatioBatch
+
+
+if TYPE_CHECKING:
+    from jinns.utils._types import *
 
 _IMPLEMENTED_BOUNDARY_CONDITIONS = [
     "dirichlet",
