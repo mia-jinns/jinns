@@ -2,9 +2,12 @@
 """
 Main module to implement a ODE loss in jinns
 """
+from __future__ import (
+    annotations,
+)  # https://docs.python.org/3/library/typing.html#constant
 
 from dataclasses import InitVar, fields
-from typing import Dict
+from typing import TYPE_CHECKING, Dict
 import abc
 import warnings
 import jax
@@ -12,22 +15,23 @@ import jax.numpy as jnp
 from jax import vmap
 import equinox as eqx
 from jaxtyping import Float, Array, Int
-from jinns.data._DataGenerators import ODEBatch, append_obs_batch
+from jinns.data._DataGenerators import append_obs_batch
 from jinns.loss._loss_utils import (
     dynamic_loss_apply,
     constraints_system_loss_apply,
     observations_loss_apply,
 )
-from jinns.utils._pinn import PINN
-from jinns.loss import DynamicLoss, ODE
-from jinns.loss._loss_weights import LossWeightsODE, LossWeightsODEDict
 from jinns.parameters._params import (
-    Params,
-    ParamsDict,
     _get_vmap_in_axes_params,
     _update_eq_params_dict,
 )
-from jinns.parameters._derivative_keys import DerivativeKeysODE, _set_derivatives
+from jinns.parameters._derivative_keys import _set_derivatives, DerivativeKeysODE
+from jinns.loss._loss_weights import LossWeightsODE, LossWeightsODEDict
+from jinns.loss._DynamicLossAbstract import ODE
+from jinns.utils._pinn import PINN
+
+if TYPE_CHECKING:
+    from jinns.utils._types import *
 
 
 class _LossODEAbstract(eqx.Module):

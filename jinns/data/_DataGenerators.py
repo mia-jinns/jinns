@@ -2,43 +2,23 @@
 """
 Define the DataGeneratorODE equinox module
 """
+from __future__ import (
+    annotations,
+)  # https://docs.python.org/3/library/typing.html#constant
 
-from typing import Dict
+from typing import TYPE_CHECKING, Dict
 from dataclasses import InitVar
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jaxtyping import Key, Int, PyTree, Array, Float, Bool
+from jinns.data._Batchs import *
+
+if TYPE_CHECKING:
+    from jinns.utils._types import *
 
 
-class ODEBatch(eqx.Module):
-    temporal_batch: Float[Array, "batch_size"]
-    param_batch_dict: dict = eqx.field(default=None)
-    obs_batch_dict: dict = eqx.field(default=None)
-
-
-class PDENonStatioBatch(eqx.Module):
-    times_x_inside_batch: (
-        Float[Array, "batch_size dimension"] | Float[Array, "(batch_size**2) dimension"]
-    )
-    times_x_border_batch: (
-        Float[Array, "border_batch_size dimension n_facets"]
-        | Float[Array, "(border_batch_size**2) dimension n_facets"]
-    )
-    param_batch_dict: dict = eqx.field(default=None)
-    obs_batch_dict: dict = eqx.field(default=None)
-
-
-class PDEStatioBatch(eqx.Module):
-    inside_batch: Float[Array, "batch_size dimension"]
-    border_batch: Float[Array, "batch_size dimension n_facets"]
-    param_batch_dict: dict = eqx.field(default=None)
-    obs_batch_dict: dict = eqx.field(default=None)
-
-
-def append_param_batch(
-    batch: ODEBatch | PDEStatioBatch | PDENonStatioBatch, param_batch_dict: dict
-) -> ODEBatch | PDEStatioBatch | PDENonStatioBatch:
+def append_param_batch(batch: AnyBatch, param_batch_dict: dict) -> AnyBatch:
     """
     Utility function that fill the param_batch_dict of a batch object with a
     param_batch_dict
@@ -51,9 +31,7 @@ def append_param_batch(
     )
 
 
-def append_obs_batch(
-    batch: ODEBatch | PDEStatioBatch | PDENonStatioBatch, obs_batch_dict: dict
-) -> ODEBatch | PDEStatioBatch | PDENonStatioBatch:
+def append_obs_batch(batch: AnyBatch, obs_batch_dict: dict) -> AnyBatch:
     """
     Utility function that fill the obs_batch_dict of a batch object with a
     obs_batch_dict

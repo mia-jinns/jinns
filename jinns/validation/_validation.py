@@ -2,24 +2,24 @@
 Implements some validation functions and their associated hyperparameter
 """
 
+from __future__ import (
+    annotations,
+)  # https://docs.python.org/3/library/typing.html#constant
+
 import abc
-from typing import Union
+from typing import TYPE_CHECKING, Union
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array
-from jinns.loss import LossODE, LossPDENonStatio, LossPDEStatio
+
 from jinns.data._DataGenerators import (
-    DataGeneratorODE,
-    CubicMeshPDEStatio,
-    CubicMeshPDENonStatio,
-    DataGeneratorParameter,
-    DataGeneratorObservations,
-    DataGeneratorObservationsMultiPINNs,
     append_obs_batch,
     append_param_batch,
 )
-from jinns.parameters._params import Params, ParamsDict
+
+if TYPE_CHECKING:
+    from jinns.utils._types import *
 
 # Using eqx Module for the DataClass + Pytree inheritance
 # Abstract class and abstract/final pattern is used
@@ -32,7 +32,9 @@ class AbstractValidationModule(eqx.Module):
     2. implement a ``__call__`` returning ``(AbstractValidationModule, Bool, Array)``
     """
 
-    call_every: eqx.AbstractVar[int]  # Mandatory for all validation step,
+    call_every: eqx.AbstractVar[int] = eqx.field(
+        kw_only=True
+    )  # Mandatory for all validation step,
     # it tells that the validation step is performed every call_every
     # iterations.
 
@@ -50,31 +52,35 @@ class ValidationLoss(AbstractValidationModule):
     for more complicated validation strategy.
     """
 
-    loss: Union[callable, LossODE, LossPDEStatio, LossPDENonStatio]  # NOTE that
+    loss: AnyLoss = eqx.field(kw_only=True)  # NOTE that
     # there used to be a deepcopy here which has been suppressed. 1) No need
     # because loss are now eqx.Module (immutable) so no risk of in-place
     # modification. 2) deepcopy is buggy with equinox, InitVar etc. (see issue
     # #857 on equinox github)
-    validation_data: Union[DataGeneratorODE, CubicMeshPDEStatio, CubicMeshPDENonStatio]
-    validation_param_data: Union[DataGeneratorParameter, None] = None
+    validation_data: Union[AnyDataGenerator] = eqx.field(kw_only=True)
+    validation_param_data: Union[DataGeneratorParameter, None] = eqx.field(
+        kw_only=True, default=None
+    )
     validation_obs_data: Union[
         DataGeneratorObservations, DataGeneratorObservationsMultiPINNs, None
-    ] = None
-    call_every: int = 250  # concrete typing
-    early_stopping: bool = True  # globally control if early stopping happens
+    ] = eqx.field(kw_only=True, default=None)
+    call_every: int = eqx.field(kw_only=True, default=250)  # concrete typing
+    early_stopping: bool = eqx.field(
+        kw_only=True, default=True
+    )  # globally control if early stopping happens
 
-    patience: Union[int] = 10
+    patience: Union[int] = eqx.field(kw_only=True, default=10)
     best_val_loss: Array = eqx.field(
-        converter=jnp.asarray, default_factory=lambda: jnp.array(jnp.inf)
+        converter=jnp.asarray, default_factory=lambda: jnp.array(jnp.inf), kw_only=True
     )
 
     counter: Array = eqx.field(
-        converter=jnp.asarray, default_factory=lambda: jnp.array(0.0)
+        converter=jnp.asarray, default_factory=lambda: jnp.array(0.0), kw_only=True
     )
 
     def __call__(
-        self, params: Params | ParamsDict
-    ) -> tuple["ValidationLoss", bool, float, Params | ParamsDict]:
+        self, params: AnyParams
+    ) -> tuple["ValidationLoss", bool, float, AnyParams]:
         # do in-place mutation
 
         validation_data, val_batch = self.validation_data.get_batch()

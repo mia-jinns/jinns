@@ -2,29 +2,21 @@
 equinox Modules used as containers
 """
 
-from typing import Dict
+from __future__ import (
+    annotations,
+)  # https://docs.python.org/3/library/typing.html#constant
+
+from typing import TYPE_CHECKING, Dict
 from jaxtyping import PyTree, Array, Float, Bool
 from optax import OptState
 import equinox as eqx
-from jinns.loss._LossODE import LossODE, SystemLossODE
-from jinns.loss._LossPDE import (
-    LossPDEStatio,
-    LossPDENonStatio,
-    SystemLossPDE,
-)
-from jinns.data._DataGenerators import (
-    DataGeneratorODE,
-    CubicMeshPDEStatio,
-    CubicMeshPDENonStatio,
-    DataGeneratorParameter,
-    DataGeneratorObservations,
-    DataGeneratorObservationsMultiPINNs,
-)
-from jinns.parameters._params import Params
+
+if TYPE_CHECKING:
+    from jinns.utils._types import *
 
 
 class DataGeneratorContainer(eqx.Module):
-    data: DataGeneratorODE | CubicMeshPDEStatio | CubicMeshPDENonStatio
+    data: AnyDataGenerator
     param_data: DataGeneratorParameter | None = None
     obs_data: DataGeneratorObservations | DataGeneratorObservationsMultiPINNs | None = (
         None
@@ -32,14 +24,7 @@ class DataGeneratorContainer(eqx.Module):
 
 
 class ValidationContainer(eqx.Module):
-    loss: (
-        LossODE
-        | SystemLossODE
-        | LossPDEStatio
-        | LossPDENonStatio
-        | SystemLossPDE
-        | None
-    )
+    loss: AnyLoss | None
     data: DataGeneratorContainer
     hyperparams: PyTree = None
     loss_values: Float[Array, "n_iter"] | None = None

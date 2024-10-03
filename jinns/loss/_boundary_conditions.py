@@ -2,7 +2,11 @@
 Implements the main boundary conditions for all kinds of losses in jinns
 """
 
-from typing import Callable
+from __future__ import (
+    annotations,
+)  # https://docs.python.org/3/library/typing.html#constant
+
+from typing import TYPE_CHECKING, Callable
 import jax
 import jax.numpy as jnp
 from jax import vmap, grad
@@ -11,13 +15,13 @@ from jinns.utils._utils import (
     _get_grid,
     _check_user_func_return,
 )
-
 from jinns.parameters._params import _get_vmap_in_axes_params
-
-from jinns.data._DataGenerators import PDEStatioBatch, PDENonStatioBatch
+from jinns.data._Batchs import *
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
-from jinns.parameters import Params, ParamsDict
+
+if TYPE_CHECKING:
+    from jinns.utils._types import *
 
 
 def _compute_boundary_loss(

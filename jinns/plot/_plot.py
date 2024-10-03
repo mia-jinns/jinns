@@ -8,21 +8,21 @@ import matplotlib.pyplot as plt
 import jax.numpy as jnp
 from jax import vmap
 from mpl_toolkits.axes_grid1 import ImageGrid
-from typing import Callable, List, Union
-from jaxtyping import Array, Float
+from typing import Callable, List
+from jaxtyping import Array, Float, Bool
 
 
 def plot2d(
     fun: Callable,
-    xy_data: List,
-    times: Union[Array, List, None] = None,
+    xy_data: tuple[Float[Array, "nx"], Float[Array, "ny"]],
+    times: Float[Array, "nt"] | List[float] | None = None,
     Tmax: float = 1,
     title: str = "",
     figsize: tuple = (7, 7),
     cmap: str = "inferno",
     spinn: bool = False,
-    vmin_vmax: Union[None, tuple] = None,
-    ax_for_plot: Union[None, plt.Axes] = None,
+    vmin_vmax: tuple[float, float] | None = None,
+    ax_for_plot: plt.Axes | None = None,
 ):
     r"""Generic function for plotting functions over rectangular 2-D domains
     $\Omega$. It handles both the
@@ -40,7 +40,7 @@ def plot2d(
         the function $u$ to plot on the meshgrid, and eventually the time
         slices. It's suppose to have signature `u(x)` in the stationnary case,, and `u(t, x)` in the non-stationnary case. Use `partial` or `lambda to freeze / reorder any other arguments.
     xy_data :
-        A list of 2 `jnp.Array` providing
+        A list of 2 `jnp.Array` providing grid values for meshgrid creation
     times :
         list or Array of time slices where to plot the function. Use Tmax if
         you trained with time-rescaling.
@@ -184,13 +184,13 @@ def plot2d(
 
 def _plot_2D_statio(
     v_fun,
-    mesh,
-    plot=True,
-    colorbar=True,
-    cmap="inferno",
-    figsize=(7, 7),
-    spinn=False,
-    vmin_vmax=None,
+    mesh: Float[Array, "nx*ny nx*ny"],
+    plot: Bool = True,
+    colorbar: Bool = True,
+    cmap: str = "inferno",
+    figsize: tuple[int, int] = (7, 7),
+    spinn: Bool = False,
+    vmin_vmax: tuple[float, float] = None,
 ):
     """Function that plot the function u(x) with 2-D input x using pcolormesh()
 
@@ -243,33 +243,35 @@ def _plot_2D_statio(
 
 
 def plot1d_slice(
-    fun,
-    xdata,
-    time_slices=jnp.array([0]),
-    Tmax=1,
-    title="",
-    figsize=(10, 10),
-    spinn=False,
+    fun: Callable[[float, float], float],
+    xdata: Float[Array, "nx"],
+    time_slices: Float[Array, "nt"] | None = None,
+    Tmax: float = 1.0,
+    title: str = "",
+    figsize: tuple[int, int] = (10, 10),
+    spinn: Bool = False,
 ):
     """Function for plotting time slices of a function :math:`f(t_i, x)` where
     `t` is time (1-D) and x is 1-D
 
     Parameters
     ----------
-    fun : callable with two arguments `t` and `x`
+    fun
         f(t, x)
-    xdata : jnp.array
+    xdata
         the discretization of space
-    time_slices : list, optional
-        the time slices :math:`t_i` at which to plot, by default [0]
-    Tmax : int, optional
+    time_slices
+        the time slices :math:`t_i` at which to plot.
+    Tmax
         Useful if you used time re-scaling in the differential equation, by
         default 1
-    title : str, optional
+    title
         title of the plot, by default ""
-    figsize : tuple, optional
+    figsize
         size of the figure, by default (10, 10)
     """
+    if time_slices is None:
+        time_slices = jnp.array([0])
     plt.figure(figsize=figsize)
     for t in time_slices:
         if not spinn:
@@ -289,16 +291,16 @@ def plot1d_slice(
 
 
 def plot1d_image(
-    fun,
-    xdata,
-    times,
-    Tmax=1,
-    title="",
-    figsize=(10, 10),
-    colorbar=True,
-    cmap="inferno",
-    spinn=False,
-    vmin_vmax=None,
+    fun: Callable[[float, float], float],
+    xdata: Float[Array, "nx"],
+    times: Float[Array, "nt"],
+    Tmax: float = 1.0,
+    title: str = "",
+    figsize: tuple[int, int] = (10, 10),
+    colorbar: Bool = True,
+    cmap: str = "inferno",
+    spinn: Bool = False,
+    vmin_vmax: tuple[float, float] = None,
 ):
     """Function for plotting the 2-D image of a function :math:`f(t, x)` where
     `t` is time (1-D) and x is space (1-D).
@@ -307,19 +309,19 @@ def plot1d_image(
 
     Parameters
     ----------
-    fun : callable with two arguments t and x
-        the function to plot
-    xdata : jnp.array
+    fun :
+        callable with two arguments t and x the function to plot
+    xdata :
         the discretization of space
-    times : jnp.array
+    times :
         the discretization of time
-    Tmax : int, optional
+    Tmax :
         _description_, by default 1
-    title : str, optional
+    title :
         , by default ""
-    figsize : tuple, optional
+    figsize :
         , by default (10, 10)
-    vmin_vmax: tuple
+    vmin_vmax:
         The colorbar minimum and maximum value. Defaults None.
     """
 

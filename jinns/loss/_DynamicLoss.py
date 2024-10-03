@@ -2,7 +2,11 @@
 Implements several dynamic losses
 """
 
-from typing import Union, Callable, Dict
+from __future__ import (
+    annotations,
+)  # https://docs.python.org/3/library/typing.html#constant
+
+from typing import TYPE_CHECKING, Dict
 from jaxtyping import Float
 import jax
 from jax import grad
@@ -25,7 +29,9 @@ from jinns.loss._operators import (
 )
 
 from jaxtyping import Array, Float
-from jinns.parameters import Params, ParamsDict
+
+if TYPE_CHECKING:
+    from jinns.parameters import Params, ParamsDict
 
 
 class FisherKPP(PDENonStatio):
