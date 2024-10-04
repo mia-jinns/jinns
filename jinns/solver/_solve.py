@@ -17,6 +17,13 @@ from jaxtyping import Int, Bool, Float, Array
 from jinns.solver._rar import init_rar, trigger_rar
 from jinns.utils._utils import _check_nan_in_pytree
 from jinns.utils._containers import *
+from jinns.data._DataGenerators import (
+    DataGeneratorODE,
+    CubicMeshPDEStatio,
+    CubicMeshPDENonStatio,
+    append_obs_batch,
+    append_param_batch,
+)
 
 if TYPE_CHECKING:
     from jinns.utils._types import *
