@@ -78,6 +78,7 @@ nav:
     - Examples:
       - Forward problems:
         - ODE:
+          - Linear first-order equation: 'Notebooks/ODE/linear_fo_equation.ipynb'
           - Generalized Lotka-Volterra: 'Notebooks/ODE/1D_Generalized_Lotka_Volterra.ipynb'
         - PDE:
           - Navier-Stokes in pipe flow:

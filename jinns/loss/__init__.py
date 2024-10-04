@@ -4,6 +4,7 @@ from ._LossPDE import LossPDEStatio, LossPDENonStatio, SystemLossPDE
 from ._DynamicLoss import (
     GeneralizedLotkaVolterra,
     BurgerEquation,
+    FPENonStatioLoss2D,
     OU_FPENonStatioLoss2D,
     FisherKPP,
     MassConservation2DStatio,
