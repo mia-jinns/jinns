@@ -48,12 +48,14 @@ def plot2d(
         Useful if you used time rescaling in the differential equation for training, default to 1 (no rescaling).
     title :
         plot title, by default ""
-    figsize : tuple, optional
-        _description_, by default (7, 7)
+    figsize :
+        By default (7, 7)
     cmap :
         the matplotlib color map used in the ImageGrid.
     vmin_vmax :
         The colorbar minimum and maximum value. Defaults None.
+    spinn :
+        True if a SPINN is to be plotted. False for PINNs and HYPERPINNs
     ax_for_plot :
         If None, jinns triggers the plotting. Otherwise this argument
         corresponds to the axis which will host the plot. Default is None.
@@ -205,6 +207,12 @@ def _plot_2D_statio(
         either show or return the plot, by default True
     colorbar : bool, optional
         add a colorbar, by default True
+    cmap :
+        the matplotlib color map used in the ImageGrid.
+    figsize :
+        By default (7, 7)
+    spinn :
+        True if a SPINN is to be plotted. False for PINNs and HYPERPINNs
     vmin_vmax: tuple, optional
         The colorbar minimum and maximum value. Defaults None.
 
@@ -267,6 +275,8 @@ def plot1d_slice(
         default 1
     title
         title of the plot, by default ""
+    spinn :
+        True if a SPINN is to be plotted. False for PINNs and HYPERPINNs
     figsize
         size of the figure, by default (10, 10)
     """
@@ -316,11 +326,17 @@ def plot1d_image(
     times :
         the discretization of time
     Tmax :
-        _description_, by default 1
+        by default 1
     title :
-        , by default ""
+        by default ""
     figsize :
-        , by default (10, 10)
+        by default (10, 10)
+    colorbar :
+        Whether to add a colobar
+    cmap :
+        the matplotlib color map used in the ImageGrid.
+    spinn :
+        True if a SPINN is to be plotted. False for PINNs and HYPERPINNs
     vmin_vmax:
         The colorbar minimum and maximum value. Defaults None.
     """
