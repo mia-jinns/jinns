@@ -189,9 +189,7 @@ def load_pinn(
     type_
         Type of model to load. Must be in ["pinn", "hyperpinn", "spinn"].
     key_list_for_paramsdict
-        Default is Non. In this case, we expect to retrieve a ParamsDict. We
-        must give the function the name of the keys of the
-        `ParamsDict.nn_params` dictionary.
+        Pass the name of the keys of the dictionnary `ParamsDict.nn_params`. Default is None. In this case, we expect to retrieve a ParamsDict.
 
     Returns
     -------
