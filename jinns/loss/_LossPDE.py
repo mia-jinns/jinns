@@ -623,12 +623,8 @@ class LossPDENonStatio(LossPDEStatio):
         # and update eq_params with the latter
         # and update vmap_in_axes
         if batch.param_batch_dict is not None:
-            eq_params_batch_dict = batch.param_batch_dict
-
-            # TODO
-            # feed the eq_params with the batch
-            for k in eq_params_batch_dict.keys():
-                params["eq_params"][k] = eq_params_batch_dict[k]
+            # update eq_params with the batches of generated params
+            params = _update_eq_params_dict(params, batch.param_batch_dict)
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
