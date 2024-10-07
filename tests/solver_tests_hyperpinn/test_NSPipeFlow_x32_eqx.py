@@ -58,39 +58,39 @@ def train_NSPipeFlow_init():
         method,
     )
 
-    eqx_list = [
-        [eqx.nn.Linear, 2, 16],
-        [jax.nn.swish],
-        [eqx.nn.Linear, 16, 16],
-        [jax.nn.swish],
-        [eqx.nn.Linear, 16, 16],
-        [jax.nn.swish],
-        [eqx.nn.Linear, 16, 16],
-        [jax.nn.swish],
-        [eqx.nn.Linear, 16, 16],
-        [jax.nn.swish],
-        [eqx.nn.Linear, 16, 16],
-        [jax.nn.swish],
-        [eqx.nn.Linear, 16, 16],
-        [jax.nn.swish],
-        [eqx.nn.Linear, 16, 3],
-    ]
+    eqx_list = (
+        (eqx.nn.Linear, 2, 16),
+        (jax.nn.swish,),
+        (eqx.nn.Linear, 16, 16),
+        (jax.nn.swish,),
+        (eqx.nn.Linear, 16, 16),
+        (jax.nn.swish,),
+        (eqx.nn.Linear, 16, 16),
+        (jax.nn.swish,),
+        (eqx.nn.Linear, 16, 16),
+        (jax.nn.swish,),
+        (eqx.nn.Linear, 16, 16),
+        (jax.nn.swish,),
+        (eqx.nn.Linear, 16, 16),
+        (jax.nn.swish,),
+        (eqx.nn.Linear, 16, 3),
+    )
 
-    eqx_list_hyper = [
-        [eqx.nn.Linear, 1, 32],  # input is of size 1 for scalar viscosity nu
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 32, 32],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 32, 32],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 32, 32],
-        [jax.nn.tanh],
-        [
+    eqx_list_hyper = (
+        (eqx.nn.Linear, 1, 32),  # input is of size 1 for scalar viscosity nu
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 32, 32),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 32, 32),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 32, 32),
+        (jax.nn.tanh,),
+        (
             eqx.nn.Linear,
             32,
             1000,
-        ],  # 1000 is a random guess, it will automatically be filled with the correct value
-    ]
+        ),  # 1000 is a random guess, it will automatically be filled with the correct value
+    )
 
     def output_transform(pinn_in, pinn_out, params):
         u = pinn_out[:2] * (R**2 - pinn_in[1] ** 2)

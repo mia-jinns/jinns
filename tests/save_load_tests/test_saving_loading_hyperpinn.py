@@ -14,41 +14,41 @@ def save_reload(tmpdir):
     jax.config.update("jax_enable_x64", False)
     key = random.PRNGKey(2)
 
-    eqx_list = [
-        [eqx.nn.Linear, 3, 16],
-        [jax.nn.swish],
-        [eqx.nn.Linear, 16, 16],
-        [jax.nn.swish],
-        [eqx.nn.Linear, 16, 16],
-        [jax.nn.swish],
-        [eqx.nn.Linear, 16, 16],
-        [jax.nn.swish],
-        [eqx.nn.Linear, 16, 16],
-        [jax.nn.swish],
-        [eqx.nn.Linear, 16, 16],
-        [jax.nn.swish],
-        [eqx.nn.Linear, 16, 1],
-    ]
+    eqx_list = (
+        (eqx.nn.Linear, 3, 16),
+        (jax.nn.swish,),
+        (eqx.nn.Linear, 16, 16),
+        (jax.nn.swish,),
+        (eqx.nn.Linear, 16, 16),
+        (jax.nn.swish,),
+        (eqx.nn.Linear, 16, 16),
+        (jax.nn.swish,),
+        (eqx.nn.Linear, 16, 16),
+        (jax.nn.swish,),
+        (eqx.nn.Linear, 16, 16),
+        (jax.nn.swish,),
+        (eqx.nn.Linear, 16, 1),
+    )
 
-    eqx_list_hyper = [
-        [eqx.nn.Linear, 2, 32],  # input is of size 2 for scalar D and scalar r
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 32, 32],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 32, 32],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 32, 32],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 32, 32],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 32, 32],
-        [jax.nn.tanh],
-        [
+    eqx_list_hyper = (
+        (eqx.nn.Linear, 2, 32),  # input is of size 2 for scalar D and scalar r
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 32, 32),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 32, 32),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 32, 32),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 32, 32),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 32, 32),
+        (jax.nn.tanh,),
+        (
             eqx.nn.Linear,
             32,
             1000,
-        ],  # 1000 is a random guess, it will automatically be filled with the correct value
-    ]
+        ),  # 1000 is a random guess, it will automatically be filled with the correct value
+    )
 
     key, subkey = random.split(key)
 

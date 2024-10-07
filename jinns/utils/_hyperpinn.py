@@ -328,14 +328,36 @@ def create_HYPERPINN(
     pinn_params_sum, _ = _get_param_nb(params_mlp)
     # the number of parameters for the pinn will be the number of ouputs
     # for the hyper network
-    try:
-        eqx_list_hyper[-1][2] = pinn_params_sum
-    except IndexError:
-        eqx_list_hyper[-2][2] = pinn_params_sum
-    try:
-        eqx_list_hyper[0][1] = hypernet_input_size
-    except IndexError:
-        eqx_list_hyper[1][1] = hypernet_input_size
+    if len(eqx_list_hyper[-1]) > 1:
+        eqx_list_hyper = eqx_list_hyper[:-1] + (
+            (eqx_list_hyper[-1][:2] + (pinn_params_sum,)),
+        )
+    else:
+        eqx_list_hyper = (
+            eqx_list_hyper[:-2]
+            + ((eqx_list_hyper[-2][:2] + (pinn_params_sum,)),)
+            + eqx_list_hyper[-1]
+        )
+    if len(eqx_list_hyper[0]) > 1:
+        eqx_list_hyper = (
+            (
+                (eqx_list_hyper[0][0],)
+                + (hypernet_input_size,)
+                + (eqx_list_hyper[0][2],)
+            ),
+        ) + eqx_list_hyper[1:]
+    else:
+        eqx_list_hyper = (
+            eqx_list_hyper[0]
+            + (
+                (
+                    (eqx_list_hyper[1][0],)
+                    + (hypernet_input_size,)
+                    + (eqx_list_hyper[1][2],)
+                ),
+            )
+            + eqx_list_hyper[2:]
+        )
     key, subkey = jax.random.split(key, 2)
 
     with warnings.catch_warnings():
