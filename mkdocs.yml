@@ -1,3 +1,5 @@
+# Adapted from : https://github.com/patrick-kidger/equinox/blob/main/mkdocs.yml
+
 site_name: Jinns
 site_description: The documentation for the Jinns software library.
 site_author: Hugo Gangloff & Nicolas Jouvin
@@ -47,7 +49,7 @@ extra_javascript:
 
 extra_css:
   - https://unpkg.com/katex@0/dist/katex.min.css
-  # - _static/custom_css.css
+  - _static/custom_css.css
 
 plugins:
     - search  # default search plugin; needs manually re-enabling when using any other plugins
@@ -128,7 +130,5 @@ nav:
         - Differential operators: 'api/advanced/differential_operators.md'
         - Derivative keys: 'api/advanced/derivative_keys.md'
     - Misc:
-      - Maths backgroung:
-        - Forward problem: 'maths/pinn_forward.md'
-        - Inverse problem: 'maths/pinn_inverse.md'
-        - 'maths/fokker_planck.md'
+      - Framework & notations: 'maths/introduction_to_pinns.md'
+      - 'maths/fokker_planck.md'

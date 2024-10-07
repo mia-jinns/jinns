@@ -1,4 +1,6 @@
-Fix /page#foo going to the top of the viewport and being hidden by the navbar
+/* Taken from : https://github.com/patrick-kidger/equinox/blob/main/docs/_static/custom_css.css */
+
+/* Fix /page#foo going to the top of the viewport and being hidden by the navbar */
 html {
     scroll-padding-top: 50px;
 }
