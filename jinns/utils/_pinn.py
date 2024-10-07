@@ -211,14 +211,14 @@ def create_PINN(
 
         The `key` argument do not need to be given.
 
-        A typical example is `eqx_list=
-        ((eqx.nn.Linear, 2, 20),
-            jax.nn.tanh,
+        A typical example is `eqx_list = (
+            (eqx.nn.Linear, input_dim, 20),
+            (jax.nn.tanh,),
             (eqx.nn.Linear, 20, 20),
-            jax.nn.tanh,
+            (jax.nn.tanh,),
             (eqx.nn.Linear, 20, 20),
-            jax.nn.tanh,
-            (eqx.nn.Linear, 20, 1)
+            (jax.nn.tanh,),
+            (eqx.nn.Linear, 20, output_dim)
         )`.
     eq_type
         A string with three possibilities.

@@ -164,7 +164,8 @@ class DynamicLoss(eqx.Module):
 
 class ODE(DynamicLoss):
     r"""
-    Abstract base class for ODE dynamic losses
+    Abstract base class for ODE dynamic losses. All dynamic loss must subclass
+    this class and override the abstract method `equation`.
 
     Attributes
     ----------
@@ -207,7 +208,7 @@ class ODE(DynamicLoss):
 
 class PDEStatio(DynamicLoss):
     r"""
-    Abstract base class for stationnary PDE dynamic losses
+    Abstract base class for stationnary PDE dynamic losses. All dynamic loss must subclass this class and override the abstract method `equation`.
 
     Attributes
     ----------
@@ -247,7 +248,7 @@ class PDEStatio(DynamicLoss):
 
 class PDENonStatio(DynamicLoss):
     r"""
-    Abstract base class for non-stationnary PDE dynamic losses
+    Abstract base class for non-stationnary PDE dynamic losses. All dynamic loss must subclass this class and override the abstract method `equation`.
 
     Attributes
     ----------
