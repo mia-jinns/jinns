@@ -30,36 +30,36 @@ def train_NSPipeFlow_init():
 
     key = random.PRNGKey(2)
 
-    eqx_list = [
-        [eqx.nn.Linear, 2, 50],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 50, 50],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 50, 50],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 50, 2],
-    ]
+    eqx_list = (
+        (eqx.nn.Linear, 2, 50),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 50, 50),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 50, 50),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 50, 2),
+    )
     key, subkey = random.split(key)
     u_output_transform = lambda pinn_in, pinn_out, params: pinn_out * (
-        R**2 - pinn_in[1] ** 2
+        R**2 - pinn_in(1) ** 2
     )
     # This output transform is equivalent to defining afterwards:
     # u = lambda x, nn_params, eq_params: u_raw(x, nn_params, eq_params) * (
-    #    R**2 - x[1] ** 2
+    #    R**2 - x(1) ** 2
     # )  # multiplies the 2 components
     u = jinns.utils.create_PINN(
         subkey, eqx_list, "statio_PDE", 2, output_transform=u_output_transform
     )
 
-    eqx_list = [
-        [eqx.nn.Linear, 2, 50],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 50, 50],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 50, 50],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 50, 1],
-    ]
+    eqx_list = (
+        (eqx.nn.Linear, 2, 50),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 50, 50),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 50, 50),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 50, 1),
+    )
     key, subkey = random.split(key)
     p_output_transform = lambda pinn_in, pinn_out, params: (
         (pinn_in[0] - xmin) / (xmax - xmin) * p_out

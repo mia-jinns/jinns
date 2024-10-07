@@ -17,29 +17,29 @@ def train_NSPipeFlow_init():
     d_ = 2
     r = 32
     m = 2
-    eqx_list = [
-        [eqx.nn.Linear, 1, 25],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 25, 25],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 25, 25],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 25, r * m],
-    ]
+    eqx_list = (
+        (eqx.nn.Linear, 1, 25),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 25, 25),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 25, 25),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 25, r * m),
+    )
     key, subkey = random.split(key)
     u = jinns.utils.create_SPINN(subkey, d_, r, eqx_list, "statio_PDE", m)
 
     d_ = 2
     r = 32
-    eqx_list = [
-        [eqx.nn.Linear, 1, 25],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 25, 25],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 25, 25],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 25, r],
-    ]
+    eqx_list = (
+        (eqx.nn.Linear, 1, 25),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 25, 25),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 25, 25),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 25, r),
+    )
     key, subkey = random.split(key)
     p = jinns.utils.create_SPINN(subkey, d_, r, eqx_list, "statio_PDE")
 

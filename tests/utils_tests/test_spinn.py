@@ -16,15 +16,15 @@ import jinns.utils
 d = 5
 r = 100  # embedding dim
 m = 1  # output dim
-eqx_list = [
-    [eqx.nn.Linear, 1, 128],
-    [jax.nn.tanh],
-    [eqx.nn.Linear, 128, 128],
-    [jax.nn.tanh],
-    [eqx.nn.Linear, 128, 128],
-    [jax.nn.tanh],
-    [eqx.nn.Linear, 128, r * m],
-]
+eqx_list = (
+    (eqx.nn.Linear, 1, 128),
+    (jax.nn.tanh,),
+    (eqx.nn.Linear, 128, 128),
+    (jax.nn.tanh,),
+    (eqx.nn.Linear, 128, 128),
+    (jax.nn.tanh,),
+    (eqx.nn.Linear, 128, r * m),
+)
 
 
 def _assert_attr_equal(u):

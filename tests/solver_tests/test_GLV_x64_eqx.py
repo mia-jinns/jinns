@@ -13,16 +13,16 @@ def train_GLV_init():
     jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
     key, subkey = random.split(key)
-    eqx_list = [
-        [eqx.nn.Linear, 1, 20],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 20, 20],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 20, 20],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 20, 1],
-        [jnp.exp],
-    ]
+    eqx_list = (
+        (eqx.nn.Linear, 1, 20),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 20, 20),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 20, 20),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 20, 1),
+        (jnp.exp,),
+    )
     key, subkey = random.split(key)
     u = jinns.utils.create_PINN(subkey, eqx_list, "ODE")
 

@@ -13,20 +13,20 @@ import jinns
 def train_Fisher_init():
     jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
-    eqx_list = [
-        [eqx.nn.Linear, 2, 50],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 50, 50],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 50, 50],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 50, 50],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 50, 50],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 50, 1],
-        [jnp.exp],
-    ]
+    eqx_list = (
+        (eqx.nn.Linear, 2, 50),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 50, 50),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 50, 50),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 50, 50),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 50, 50),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 50, 1),
+        (jnp.exp,),
+    )
     key, subkey = random.split(key)
     u = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
 

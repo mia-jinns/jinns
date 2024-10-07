@@ -15,13 +15,21 @@ def train_OU_init():
     key = random.PRNGKey(2)
     eqx_list = [
         [eqx.nn.Linear, 3, 30],
-        [jax.nn.tanh],
+        [
+            jax.nn.tanh,
+        ],
         [eqx.nn.Linear, 30, 30],
-        [jax.nn.tanh],
+        [
+            jax.nn.tanh,
+        ],
         [eqx.nn.Linear, 30, 30],
-        [jax.nn.tanh],
+        [
+            jax.nn.tanh,
+        ],
         [eqx.nn.Linear, 30, 1],
-        [jnp.exp],
+        [
+            jnp.exp,
+        ],
     ]
     key, subkey = random.split(key)
     u = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 2)

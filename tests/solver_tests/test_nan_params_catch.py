@@ -23,15 +23,15 @@ from jinns.utils._utils import _check_nan_in_pytree
 def train_init():
     jax.config.update("jax_enable_x64", False)
     key = random.PRNGKey(2)
-    eqx_list = [
-        [eqx.nn.Linear, 1, 20],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 20, 20],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 20, 20],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 20, 1],
-    ]
+    eqx_list = (
+        (eqx.nn.Linear, 1, 20),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 20, 20),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 20, 20),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 20, 1),
+    )
     key, subkey = random.split(key)
     u = jinns.utils.create_PINN(subkey, eqx_list, "ODE")
 

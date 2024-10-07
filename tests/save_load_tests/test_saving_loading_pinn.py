@@ -12,15 +12,15 @@ from jinns.utils import save_pinn, load_pinn
 def save_reload_with_params(tmpdir):
     jax.config.update("jax_enable_x64", False)
     key = random.PRNGKey(2)
-    eqx_list = [
-        [eqx.nn.Linear, 2, 128],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 128, 128],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 128, 128],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 128, 1],
-    ]
+    eqx_list = (
+        (eqx.nn.Linear, 2, 128),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 128, 128),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 128, 128),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 128, 1),
+    )
     key, subkey = random.split(key)
     u = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
 

@@ -12,15 +12,15 @@ import jinns
 def train_Burger_init():
     jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
-    eqx_list = [
-        [eqx.nn.Linear, 2, 20],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 20, 20],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 20, 20],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 20, 1],
-    ]
+    eqx_list = (
+        (eqx.nn.Linear, 2, 20),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 20, 20),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 20, 20),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 20, 1),
+    )
     key, subkey = random.split(key)
     u = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
 

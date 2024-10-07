@@ -14,15 +14,15 @@ def save_reload(tmpdir):
     key = random.PRNGKey(2)
     d = 2
     r = 256
-    eqx_list = [
-        [eqx.nn.Linear, 1, 128],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 128, 128],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 128, 128],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 128, r],
-    ]
+    eqx_list = (
+        (eqx.nn.Linear, 1, 128),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 128, 128),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 128, 128),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 128, r),
+    )
     key, subkey = random.split(key)
     u = jinns.utils.create_SPINN(subkey, d, r, eqx_list, "nonstatio_PDE")
 

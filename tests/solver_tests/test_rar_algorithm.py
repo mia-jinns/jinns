@@ -42,16 +42,16 @@ mc_samples = jnp.concatenate(
 )
 
 
-eqx_list = [
-    [eqx.nn.Linear, 3, 30],
-    [jax.nn.tanh],
-    [eqx.nn.Linear, 30, 30],
-    [jax.nn.tanh],
-    [eqx.nn.Linear, 30, 30],
-    [jax.nn.tanh],
-    [eqx.nn.Linear, 30, 1],
-    [jnp.exp],
-]
+eqx_list = (
+    (eqx.nn.Linear, 3, 30),
+    (jax.nn.tanh,),
+    (eqx.nn.Linear, 30, 30),
+    (jax.nn.tanh,),
+    (eqx.nn.Linear, 30, 30),
+    (jax.nn.tanh,),
+    (eqx.nn.Linear, 30, 1),
+    (jnp.exp,),
+)
 key, subkey = random.split(key)
 u = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 2)
 

@@ -19,24 +19,24 @@ d = 5
 n_param = 42
 hyperparams = [f"param {i}" for i in range(n_param)]
 
-EQX_LIST = [
-    [jax.nn.swish],
-    [eqx.nn.Linear, 16, 16],
-    [jax.nn.swish],
-    [eqx.nn.Linear, 16, 16],
-]
+EQX_LIST = (
+    (jax.nn.swish,),
+    (eqx.nn.Linear, 16, 16),
+    (jax.nn.swish,),
+    (eqx.nn.Linear, 16, 16),
+)
 
-eqx_list_hyper = [
-    [eqx.nn.Linear, n_param, 32],  # input is of size 42
-    [jax.nn.tanh],
-    [eqx.nn.Linear, 32, 16],
-    [jax.nn.tanh],
-    [
+eqx_list_hyper = (
+    (eqx.nn.Linear, n_param, 32),  # input is of size 42
+    (jax.nn.tanh,),
+    (eqx.nn.Linear, 32, 16),
+    (jax.nn.tanh,),
+    (
         eqx.nn.Linear,
         16,
         1000,
-    ],  # 1000 is a random guess, it will automatically be filled with the correct value
-]
+    ),  # 1000 is a random guess, it will automatically be filled with the correct value
+)
 
 
 @pytest.fixture
