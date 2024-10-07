@@ -1,6 +1,6 @@
 # Welcome to Jinns' documentation
 
-!!! info "jinns is getting a new look!"
+!!! tip "jinns is getting a new look!"
 
     This is the new documentation page for jinns v1.0.0. Checkout the API changes for all the cool changes done to the library: plot, pytree declaration via eqx.Module, notebooks, etc.
 
@@ -18,7 +18,7 @@ pip install jinns
 
 Requires Python 3.11+ and JAX 0.4.31+
 
-**JAX ecosystem**: depends on [Equinox](https://docs.kidger.site/equinox/) and [Optax](https://optax.readthedocs.io/en/latest/).
+JAX ecosystem: jinns depends on [Equinox](https://docs.kidger.site/equinox/) and [Optax](https://optax.readthedocs.io/en/latest/).
 
 # Examples
 
