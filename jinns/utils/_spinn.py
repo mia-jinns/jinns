@@ -218,8 +218,10 @@ def create_SPINN(
         then sum groups of `r` embedding dimensions to compute each output.
         Default is 1.
 
-    **NOTE**: SPINNs with `t` and `x` as inputs are best used with a
-    DataGenerator with `self.cartesian_product=False` for memory consideration
+    !!! note
+        SPINNs with `t` and `x` as inputs are best used with a
+        DataGenerator with `self.cartesian_product=False` for memory
+        consideration
 
 
     Returns
