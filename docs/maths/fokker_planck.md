@@ -33,7 +33,7 @@ $$
 $$
 If we wish to learn the stationary distribution, the $- \frac{\partial}{\partial t} u$ is set to 0 in the FPE loss.
 
-!!! info "Important"
+!!! question "What about the border condition ?"
 
     There is no border condition on $\partial \Omega$ here, but an additional
     loss term: the network must learn a p.d.f. with normalization constant

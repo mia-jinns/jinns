@@ -9,22 +9,36 @@ theme:
       - navigation.sections  # Sections are included in the navigation on the left.
       - toc.integrate  # Table of contents is integrated on the left; does not appear separately on the right.
       - header.autohide  # header disappears as you scroll
-
   icon:
-        repo: fontawesome/brands/gitlab  # GitHub logo in top right
-        logo: "material/oil-lamp"  # Jinns logo in top left
-    # favicon: "_static/favicon.png"
-    # custom_dir: "docs/_overrides"  # Overriding part of the HTML
-
+      repo: fontawesome/brands/gitlab  # GitHub logo in top right
+      logo: "material/oil-lamp"  # Jinns logo in top left
+  favicon: "_static/favicon.png"
+  palette:
+          # Light mode / dark mode
+          # We deliberately don't automatically use `media` to check a user's preferences. We default to light mode as
+          # (a) it looks more professional, and (b) is more obvious about the fact that it offers a (dark mode) toggle.
+          - scheme: default
+            primary: white
+            accent: amber
+            toggle:
+              icon: material/weather-night
+              name: Switch to dark mode
+          - scheme: slate
+            primary: black
+            accent: amber
+            toggle:
+              icon: material/weather-sunny
+              name: Switch to light mode
 markdown_extensions:
+  - toc:
+      permalink: "#"  # Adds a clickable permalink to each section heading
+      toc_depth: 3
   - pymdownx.arithmatex:
       generic: true
   - admonition
   - pymdownx.details
   - pymdownx.superfences
-  # - toc:
-  #   permalink: "¤"  # Adds a clickable permalink to each section heading
-  #   toc_depth: 4
+
 
 extra_javascript:
   - javascripts/katex.js
@@ -62,7 +76,7 @@ plugins:
                 show_if_no_docstring: true
                 show_signature_annotations: true
                 members_order: source  # order methods according to their order of definition in the source code, not alphabetical order
-                heading_level: 4
+                heading_level: 3
 
 
 
@@ -73,8 +87,8 @@ nav:
     - 'index.md'
     - Tutorials:
       - Implementing your own problem: 'Notebooks/Tutorials/implementing_your_own_PDE_problem.ipynb'
-      - Using validation module: 'Notebooks/Tutorials/introducing_validation_loss.ipynb'
       - Saving / loading your model: 'Notebooks/Tutorials/load_save_model.ipynb'
+      - Using validation module: 'Notebooks/Tutorials/introducing_validation_loss.ipynb'
     - Examples:
       - Forward problems:
         - ODE:
@@ -110,9 +124,9 @@ nav:
         - 'api/pinn/hyperpinn.md'
         - 'api/pinn/save_load.md'
       - Plot: 'api/plot.md'
-    - Advanced API:
-      - 'api/differential_operators.md'
-      - 'api/derivative_keys.md'
+      - Advanced:
+        - Differential operators: 'api/advanced/differential_operators.md'
+        - Derivative keys: 'api/advanced/derivative_keys.md'
     - Misc:
       - Maths backgroung:
         - Forward problem: 'maths/pinn_forward.md'

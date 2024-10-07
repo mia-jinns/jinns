@@ -45,7 +45,7 @@ def _div_fwd(
     computation is most efficient with forward AD. This is the idea behind
     Separable PINNs.
 
-    !!! info "Warning"
+    !!! warning "Warning"
 
         This function is to be used in the context of SPINNs only.
     """
@@ -126,7 +126,7 @@ def _laplacian_fwd(
     computation is most efficient with forward AD. This is the idea behind
     Separable PINNs.
 
-    !!! info "Warning"
+    !!! warning "Warning"
 
         This function is to be used in the context of SPINNs only.
     """

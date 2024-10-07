@@ -30,7 +30,7 @@ def plot2d(
      1. the stationary case $u(x)$
      2. the non-stationnary case $u(t, x)$
 
-    When in the non-stationnary case, the `times` argument gives the time
+    In the non-stationnary case, the `times` argument gives the time
     slices $t_i$ at which to plot $u(t_i, x)$.
 
 
@@ -260,7 +260,7 @@ def plot1d_slice(
     spinn: Bool = False,
 ):
     """Function for plotting time slices of a function :math:`f(t_i, x)` where
-    `t` is time (1-D) and x is 1-D
+    `t_i` is time (1-D) and x is 1-D
 
     Parameters
     ----------

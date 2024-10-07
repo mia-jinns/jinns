@@ -203,6 +203,32 @@ class ODE(DynamicLoss):
     def equation(
         self, t: Float[Array, "1"], u: eqx.Module, params: Params | ParamsDict
     ) -> float:
+        r"""
+        The differential operator defining the ODE.
+
+        !!! warning
+
+            This is an abstract method to be implemented by users.
+
+        Parameters
+        ----------
+        t : Float[Array, "1"]
+            A 1-dimensional jnp.array representing the time point.
+        u : eqx.Module
+            The network with a call signature `u(t, params)`.
+        params : Params | ParamsDict
+            The equation and neural network parameters $\theta$ and $\nu$.
+
+        Returns
+        -------
+        float
+            The residual, *i.e.* the differential operator $\mathcal{N}_\theta[u_\nu](t)$ evaluated at point `t`.
+
+        Raises
+        ------
+        NotImplementedError
+            This is an abstract method to be implemented.
+        """
         raise NotImplementedError
 
 
@@ -241,13 +267,38 @@ class PDEStatio(DynamicLoss):
 
     @abc.abstractmethod
     def equation(
-        self, x: Float[Array, "dimension"], u: eqx.Module, params: Params | ParamsDict
+        self, x: Float[Array, "d"], u: eqx.Module, params: Params | ParamsDict
     ) -> float:
+        r"""The differential operator defining the stationnary PDE.
+
+        !!! warning
+
+            This is an abstract method to be implemented by users.
+
+        Parameters
+        ----------
+        x : Float[Array, "d"]
+            A `d` dimensional jnp.array representing a point in the spatial domain $\Omega$.
+        u : eqx.Module
+            The neural network.
+        params : Params | ParamsDict
+            The parameters of the equation and the networks, $\theta$ and $\nu$ respectively.
+
+        Returns
+        -------
+        float
+            The residual, *i.e.* the differential operator $\mathcal{N}_\theta[u_\nu](x)$ evaluated at point `x`.
+
+        Raises
+        ------
+        NotImplementedError
+            This is an abstract method to be implemented.
+        """
         raise NotImplementedError
 
 
 class PDENonStatio(DynamicLoss):
-    r"""
+    """
     Abstract base class for non-stationnary PDE dynamic losses. All dynamic loss must subclass this class and override the abstract method `equation`.
 
     Attributes
@@ -292,4 +343,31 @@ class PDENonStatio(DynamicLoss):
         u: eqx.Module,
         params: Params | ParamsDict,
     ) -> float:
+        r"""The differential operator defining the non-stationnary PDE.
+
+        !!! warning
+
+            This is an abstract method to be implemented by users.
+
+        Parameters
+        ----------
+        t : Float[Array, "1"]
+            A 1-dimensional jnp.array representing the time point.
+        x : Float[Array, "d"]
+            A `d` dimensional jnp.array representing a point in the spatial domain $\Omega$.
+        u : eqx.Module
+            The neural network.
+        params : Params | ParamsDict
+            The parameters of the equation and the networks, $\theta$ and $\nu$ respectively.
+        Returns
+        -------
+        float
+            The residual, *i.e.* the differential operator $\mathcal{N}_\theta[u_\nu](t, x)$ evaluated at point `(t, x)`.
+
+
+        Raises
+        ------
+        NotImplementedError
+            This is an abstract method to be implemented.
+        """
         raise NotImplementedError

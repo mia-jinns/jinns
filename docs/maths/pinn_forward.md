@@ -1,12 +1,9 @@
-# Mathematical foundations of physics-informed neural-networks (PINNs)
-
-
 # Mathematical framework and notations
 Recently, the machine learning litterature have been interested in tackling the problem of learning the solution of partial differential equation (PDE) thanks to parametric function - such as neural-networks - and a dedicated loss function representing the PDE dynamic. This methodology have been coined [physics-informed neural-networks](https://maziarraissi.github.io/PINNs/) (PINNS) in the litterature.
 
 The **jinns** package implements this approach using the JAX ecosystem.
 
-## Dynamic loss
+## A machine-learning approach for a variety of problems
 A dynamical system is described by a differential operator $\mathcal{N}_\theta$
 where $\theta$ represents the parameters of the system such as a diffusion
 coefficient, a viscosity or a growth rate. A solution $u$ satisfies the identity
@@ -36,13 +33,29 @@ The **jinns** package allows to tackle two different types of problems:
 
  3. **Meta-modeling** The problem of meta-modeling consists in learning a function $u_{\nu}(theta)$ outputting approximate solution for any values $\theta$ (within a reasonable range). In this case, the training involves feeding the function training values of equation parameters $\{\theta_j\}$.
 
+
+
 ## Ordinary differential equation
+
+For ODE, we wish to learn a univariate function $u : I \mapsto \mathbb{R}^p$ where $I = [t_0, t_1]$ is the time interval, and $p$ is the number of equation driving the dynamical system. In addition, we have an initial solution $u(t_0) = u_0$. In this case, the differential operator $\mathcal{N}_\theta$ is defined on $I$ and the system is written as
+
+$$
+\begin{equation}
+\begin{cases}
+\tag{ODE}
+& \mathcal{N}_\theta[u](t) = 0, \quad \forall  t \in I, & \textrm{(Dynamic)}\\
+& u(t_0) = u_0 .& \textrm{(Initial condition)} \\
+\end{cases}
+\end{equation}
+$$
+
+One classic example are linear first order ODE $ u =  a u$, where $\mathcal{N}_\theta[u] = u' - a u$ and $\theta = a$. One could also consider refinements where $a_\theta(t)$ is a parametric function of $t$ with parameters $\theta$.
 
 
 ## Partial differential equation
 
 
- Introducing some notations, we wish to learn a solution $u$ to a PDE driven by the a differential operator $\mathcal{N}_\theta$ on a space domain ${\Omega \subset \mathbb{R}^d}$, a time interval $I = [0, T]$, with possible border condition on $\partial \Omega$ and initial condition $u(0, x) = u_0(x)$.
+ Here, we wish to learn a multivariate function $u$, solution to a PDE driven by the a differential operator $\mathcal{N}_\theta$ on a space domain ${\Omega \subset \mathbb{R}^d}$, a time interval $I = [0, T]$, with possible border condition on $\partial \Omega$ and initial condition $u(0, x) = u_0(x)$.
 
 $$
 \begin{equation}
