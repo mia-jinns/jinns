@@ -41,7 +41,7 @@ eqx_list_hyper = (
 
 @pytest.fixture
 def create_pinn_ode():
-    eqx_list = [[eqx.nn.Linear, 1, 16]] + EQX_LIST
+    eqx_list = ((eqx.nn.Linear, 1, 16),) + EQX_LIST
     u_ode = jinns.utils.create_HYPERPINN(
         subkey, eqx_list, "ODE", hyperparams, n_param, 0, eqx_list_hyper
     )
@@ -50,7 +50,7 @@ def create_pinn_ode():
 
 @pytest.fixture
 def create_pinn_statio():
-    eqx_list = [[eqx.nn.Linear, d, 16]] + EQX_LIST
+    eqx_list = ((eqx.nn.Linear, d, 16),) + EQX_LIST
     u_statio = jinns.utils.create_HYPERPINN(
         subkey, eqx_list, "statio_PDE", hyperparams, n_param, d, eqx_list_hyper
     )
@@ -59,7 +59,7 @@ def create_pinn_statio():
 
 @pytest.fixture
 def create_pinn_nonstatio():
-    eqx_list = [[eqx.nn.Linear, d + 1, 16]] + EQX_LIST
+    eqx_list = ((eqx.nn.Linear, d + 1, 16),) + EQX_LIST
     u_nonstatio = jinns.utils.create_HYPERPINN(
         subkey, eqx_list, "nonstatio_PDE", hyperparams, n_param, d + 1, eqx_list_hyper
     )
@@ -76,7 +76,7 @@ def create_pinn_nonstatio_shared_output():
         jnp.s_[2],
     )
 
-    eqx_list = [[eqx.nn.Linear, d, 16]] + EQX_LIST
+    eqx_list = ((eqx.nn.Linear, d, 16),) + EQX_LIST
     u1, u2 = jinns.utils.create_HYPERPINN(
         subkey,
         eqx_list,

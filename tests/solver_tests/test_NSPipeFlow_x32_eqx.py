@@ -41,7 +41,7 @@ def train_NSPipeFlow_init():
     )
     key, subkey = random.split(key)
     u_output_transform = lambda pinn_in, pinn_out, params: pinn_out * (
-        R**2 - pinn_in(1) ** 2
+        R**2 - pinn_in[1] ** 2
     )
     # This output transform is equivalent to defining afterwards:
     # u = lambda x, nn_params, eq_params: u_raw(x, nn_params, eq_params) * (
