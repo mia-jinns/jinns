@@ -12,7 +12,7 @@ dynamic = ["version"]
 description = "Physics Informed Neural Network with JAX"
 readme = "README.md"
 license = {text = "Apache License 2.0"}
-requires-python = ">=3.7"
+requires-python = ">=3.10"
 keywords = []
 authors = [
   {name = "Hugo Gangloff", email = "hugo.gangloff@inrae.fr"},
@@ -27,10 +27,10 @@ classifiers = [
   "Development Status :: 4 - Beta",
   "Programming Language :: Python",
 ]
-dependencies = ["numpy", "jax", "jaxopt", "optax", "equinox", "jax-tqdm", "diffrax", "matplotlib"]
+dependencies = ["numpy", "jax", "jaxopt", "optax", "equinox>0.11.3", "jax-tqdm", "diffrax", "matplotlib"]
 
 [project.optional-dependencies]
-notebook = ["jupyter", "matplotlib"]
+notebook = ["jupyter", "seaborn"]
 
 [project.urls]
 Repository = "https://gitlab.com/mia_jinns/jinns"

@@ -2,14 +2,10 @@ from ._DataGenerators import (
     DataGeneratorODE,
     CubicMeshPDEStatio,
     CubicMeshPDENonStatio,
-    DataGeneratorParameter,
     DataGeneratorObservations,
+    DataGeneratorParameter,
     DataGeneratorObservationsMultiPINNs,
-    append_param_batch,
-    append_obs_batch,
 )
-from ._display import (
-    plot2d,
-    plot1d_slice,
-    plot1d_image,
-)
+from ._Batchs import ODEBatch, PDEStatioBatch, PDENonStatioBatch
+
+from ._DataGenerators import append_obs_batch, append_param_batch
