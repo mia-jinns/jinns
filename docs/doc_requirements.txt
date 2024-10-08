@@ -1,0 +1,6 @@
+mkdocs            # Main documentation generator.
+mkdocs-material   # Theme
+pymdown-extensions  # Markdown extensions e.g. to handle LaTeX.
+mkdocstrings[python]     # Autogenerate documentation from docstrings.
+mknotebooks       # Turn Jupyter Lab notebooks into webpages.
+pytkdocs_tweaks # Tweaks mkdocstrings to improve various aspects

@@ -2,12 +2,21 @@
 Implements several dynamic losses
 """
 
+from __future__ import (
+    annotations,
+)  # https://docs.python.org/3/library/typing.html#constant
+
+from typing import TYPE_CHECKING, Dict
+from jaxtyping import Float
 import jax
-from jax import grad, jacrev
+from jax import grad
 import jax.numpy as jnp
-from jinns.utils._utils import _get_grid, _extract_nn_params
+import equinox as eqx
+
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
+
+from jinns.utils._utils import _get_grid
 from jinns.loss._DynamicLossAbstract import ODE, PDEStatio, PDENonStatio
 from jinns.loss._operators import (
     _laplacian_rev,
@@ -19,52 +28,44 @@ from jinns.loss._operators import (
     _u_dot_nabla_times_u_fwd,
 )
 
+from jaxtyping import Array, Float
+
+if TYPE_CHECKING:
+    from jinns.parameters import Params, ParamsDict
+
 
 class FisherKPP(PDENonStatio):
     r"""
-    Return the Fisher KPP dynamic loss term. Dimension of :math:`x` can be
+    Return the Fisher KPP dynamic loss term. Dimension of $x$ can be
     arbitrary
 
-    .. math::
-        \frac{\partial}{\partial t} u(t,x)=D\Delta u(t,x) + u(t,x)(r(x) - \gamma(x)u(t,x))
-
+    $$
+    \frac{\partial}{\partial t} u(t,x)=D\Delta u(t,x) + u(t,x)(r(x) - \gamma(x)u(t,x))
+    $$
     """
 
-    def __init__(self, Tmax=1, eq_params_heterogeneity=None):
-        """
-        Parameters
-        ----------
-        Tmax
-            Tmax needs to be given when the PINN time input is normalized in
-            [0, 1], ie. we have performed renormalization of the differential
-            equation
-        eq_params_heterogeneity
-            Default None. A dict with the keys being the same as in eq_params
-            and the value being `time`, `space`, `both` or None which corresponds to
-            the heterogeneity of a given parameter. A value can be missing, in
-            this case there is no heterogeneity (=None). If
-            eq_params_heterogeneity is None this means there is no
-            heterogeneity for no parameters.
-        """
-        super().__init__(Tmax, eq_params_heterogeneity)
-
-    @PDENonStatio.evaluate_heterogeneous_parameters
-    def evaluate(self, t, x, u, params):
+    def equation(
+        self,
+        t: Float[Array, "1"],
+        x: Float[Array, "dim"],
+        u: eqx.Module,
+        params: Params,
+    ) -> Float[Array, "1"]:
         r"""
-        Evaluate the dynamic loss at :math:`(t,x)`.
+        Evaluate the dynamic loss at $(t,x)$.
 
         Parameters
         ---------
         t
-            A time point
+            A time point.
         x
-            A point in :math:`\Omega`
+            A point in $\Omega$.
         u
             The PINN
         params
             The dictionary of parameters of the model.
             Typically, it is a dictionary of
-            dictionaries: `eq_params` and `nn_params``, respectively the
+            dictionaries: `eq_params` and `nn_params`, respectively the
             differential equation parameters and the neural network parameter
         """
         if isinstance(u, PINN):
@@ -76,12 +77,9 @@ class FisherKPP(PDENonStatio):
             lap = _laplacian_rev(t, x, u, params)[..., None]
 
             return du_dt + self.Tmax * (
-                -params["eq_params"]["D"] * lap
+                -params.eq_params["D"] * lap
                 - u(t, x, params)
-                * (
-                    params["eq_params"]["r"]
-                    - params["eq_params"]["g"] * u(t, x, params)
-                )
+                * (params.eq_params["r"] - params.eq_params["g"] * u(t, x, params))
             )
         if isinstance(u, SPINN):
             u_tx, du_dt = jax.jvp(
@@ -91,49 +89,129 @@ class FisherKPP(PDENonStatio):
             )
             lap = _laplacian_fwd(t, x, u, params)[..., None]
             return du_dt + self.Tmax * (
-                -params["eq_params"]["D"] * lap
+                -params.eq_params["D"] * lap
                 - u_tx
-                * (
-                    params["eq_params"]["r"][..., None]
-                    - params["eq_params"]["g"] * u_tx
-                )
+                * (params.eq_params["r"][..., None] - params.eq_params["g"] * u_tx)
             )
         raise ValueError("u is not among the recognized types (PINN or SPINN)")
+
+
+class GeneralizedLotkaVolterra(ODE):
+    r"""
+    Return a dynamic loss from an equation of a Generalized Lotka Volterra
+    system. Say we implement the equation for population $i$
+
+    $$
+        \frac{\partial}{\partial t}u_i(t) = r_iu_i(t) - \sum_{j\neq i}\alpha_{ij}u_j(t)
+        -\alpha_{i,i}u_i(t) + c_iu_i(t) + \sum_{j \neq i} c_ju_j(t)
+    $$
+    with $r_i$ the growth rate parameter, $c_i$ the carrying
+    capacities and $\alpha_{ij}$ the interaction terms.
+
+    Parameters
+    ----------
+    key_main
+        The dictionary key (in the dictionaries `u` and `params` that
+        are arguments of the `evaluate` function) of the main population
+        $i$ of the particular equation of the system implemented
+        by this dynamic loss
+    keys_other
+        The list of dictionary keys (in the dictionaries `u` and `params` that
+        are arguments of the `evaluate` function) of the other
+        populations that appear in the equation of the system implemented
+        by this dynamic loss
+    Tmax
+        Tmax needs to be given when the PINN time input is normalized in
+        $[0, 1]$, ie. we have performed renormalization of the differential
+        equation.
+    eq_params_heterogeneity
+        Default None. A dict with the keys being the same as in eq_params
+        and the value being `time`, `space`, `both` or None which corresponds to
+        the heterogeneity of a given parameter. A value can be missing, in
+        this case there is no heterogeneity (=None). If
+        eq_params_heterogeneity is None this means there is no
+        heterogeneity for no parameters.
+    """
+
+    # they should be static because they are list of strings
+    key_main: list[str] = eqx.field(static=True)
+    keys_other: list[str] = eqx.field(static=True)
+
+    def equation(
+        self,
+        t: Float[Array, "1"],
+        u_dict: Dict[str, eqx.Module],
+        params_dict: ParamsDict,
+    ) -> Float[Array, "1"]:
+        """
+        Evaluate the dynamic loss at `t`.
+        For stability we implement the dynamic loss in log space.
+
+        Parameters
+        ---------
+        t
+            A time point
+        u_dict
+            A dictionary of PINNS. Must have the same keys as `params_dict`
+        params_dict
+            The dictionary of dictionaries of parameters of the model. Keys at
+            top level are "nn_params" and "eq_params"
+        """
+        params_main = params_dict.extract_params(self.key_main)
+
+        u = u_dict[self.key_main]
+        # need to index with [0] since u output is nec (1,)
+        du_dt = grad(lambda t: jnp.log(u(t, params_main)[0]), 0)(t)
+        carrying_term = params_main.eq_params["carrying_capacity"] * u(t, params_main)
+        # NOTE the following assumes interaction term with oneself is at idx 0
+        interaction_terms = params_main.eq_params["interactions"][0] * u(t, params_main)
+
+        # TODO write this for loop with tree_util functions?
+        for i, k in enumerate(self.keys_other):
+            params_k = params_dict.extract_params(k)
+            carrying_term += params_main.eq_params["carrying_capacity"] * u_dict[k](
+                t, params_k
+            )
+            interaction_terms += params_main.eq_params["interactions"][i + 1] * u_dict[
+                k
+            ](t, params_k)
+
+        return du_dt + self.Tmax * (
+            -params_main.eq_params["growth_rate"] - interaction_terms + carrying_term
+        )
 
 
 class BurgerEquation(PDENonStatio):
     r"""
     Return the Burger dynamic loss term (in 1 space dimension):
 
-    .. math::
+    $$
         \frac{\partial}{\partial t} u(t,x) + u(t,x)\frac{\partial}{\partial x}
         u(t,x) - \theta \frac{\partial^2}{\partial x^2} u(t,x) = 0
+    $$
 
+    Parameters
+    ----------
+    Tmax
+        Tmax needs to be given when the PINN time input is normalized in
+        [0, 1], ie. we have performed renormalization of the differential
+        equation
+    eq_params_heterogeneity
+        Default None. A dict with the keys being the same as in eq_params
+        and the value being `time`, `space`, `both` or None which corresponds to
+        the heterogeneity of a given parameter. A value can be missing, in
+        this case there is no heterogeneity (=None). If
+        eq_params_heterogeneity is None this means there is no
+        heterogeneity for no parameters.
     """
 
-    def __init__(
+    def equation(
         self,
-        Tmax=1,
-        eq_params_heterogeneity=None,
-    ):
-        """
-        Parameters
-        ----------
-        Tmax
-            Tmax needs to be given when the PINN time input is normalized in
-            [0, 1], ie. we have performed renormalization of the differential
-            equation
-        eq_params_heterogeneity
-            Default None. A dict with the keys being the same as in eq_params
-            and the value being `time`, `space`, `both` or None which corresponds to
-            the heterogeneity of a given parameter. A value can be missing, in
-            this case there is no heterogeneity (=None). If
-            eq_params_heterogeneity is None this means there is no
-            heterogeneity for no parameters.
-        """
-        super().__init__(Tmax, eq_params_heterogeneity)
-
-    def evaluate(self, t, x, u, params):
+        t: Float[Array, "1"],
+        x: Float[Array, "dim"],
+        u: eqx.Module,
+        params: Params,
+    ) -> Float[Array, "1"]:
         r"""
         Evaluate the dynamic loss at :math:`(t,x)`.
 
@@ -142,14 +220,11 @@ class BurgerEquation(PDENonStatio):
         t
             A time point
         x
-            A point in :math:`\Omega`
+            A point in $\Omega$
         u
             The PINN
         params
             The dictionary of parameters of the model.
-            Typically, it is a dictionary of
-            dictionaries: `eq_params` and `nn_params``, respectively the
-            differential equation parameters and the neural network parameter
         """
         if isinstance(u, PINN):
             # Note that the last dim of u is nec. 1
@@ -162,8 +237,7 @@ class BurgerEquation(PDENonStatio):
             )
 
             return du_dt(t, x) + self.Tmax * (
-                u(t, x, params) * du_dx(t, x)
-                - params["eq_params"]["nu"] * d2u_dx2(t, x)
+                u(t, x, params) * du_dx(t, x) - params.eq_params["nu"] * d2u_dx2(t, x)
             )
 
         if isinstance(u, SPINN):
@@ -181,103 +255,8 @@ class BurgerEquation(PDENonStatio):
             )[1]
             du_dx, d2u_dx2 = jax.jvp(du_dx_fun, (x,), (jnp.ones_like(x),))
             # Note that ones_like(x) works because x is Bx1 !
-            return du_dt + self.Tmax * (
-                u_tx * du_dx - params["eq_params"]["nu"] * d2u_dx2
-            )
+            return du_dt + self.Tmax * (u_tx * du_dx - params.eq_params["nu"] * d2u_dx2)
         raise ValueError("u is not among the recognized types (PINN or SPINN)")
-
-
-class GeneralizedLotkaVolterra(ODE):
-    r"""
-    Return a dynamic loss from an equation of a Generalized Lotka Volterra
-    system. Say we implement the equation for population :math:`i`:
-
-    .. math::
-        \frac{\partial}{\partial t}u_i(t) = r_iu_i(t) - \sum_{j\neq i}\alpha_{ij}u_j(t)
-        -\alpha_{i,i}u_i(t) + c_iu_i(t) + \sum_{j \neq i} c_ju_j(t)
-
-    with :math:`r_i` the growth rate parameter, :math:`c_i` the carrying
-    capacities and :math:`\alpha_{ij}` the interaction terms.
-
-    """
-
-    def __init__(
-        self,
-        key_main,
-        keys_other,
-        Tmax=1,
-        eq_params_heterogeneity=None,
-    ):
-        """
-        Parameters
-        ----------
-        key_main
-            The dictionary key (in the dictionaries ``u`` and ``params`` that
-            are arguments of the ``evaluate`` function) of the main population
-            :math:`i` of the particular equation of the system implemented
-            by this dynamic loss
-        keys_other
-            The list of dictionary keys (in the dictionaries ``u`` and ``params`` that
-            are arguments of the ``evaluate`` function) of the other
-            populations that appear in the equation of the system implemented
-            by this dynamic loss
-        Tmax
-            Tmax needs to be given when the PINN time input is normalized in
-            [0, 1], ie. we have performed renormalization of the differential
-            equation
-        eq_params_heterogeneity
-            Default None. A dict with the keys being the same as in eq_params
-            and the value being `time`, `space`, `both` or None which corresponds to
-            the heterogeneity of a given parameter. A value can be missing, in
-            this case there is no heterogeneity (=None). If
-            eq_params_heterogeneity is None this means there is no
-            heterogeneity for no parameters.
-        """
-        super().__init__(Tmax, eq_params_heterogeneity)
-        self.key_main = key_main
-        self.keys_other = keys_other
-
-    def evaluate(self, t, u_dict, params_dict):
-        """
-        Evaluate the dynamic loss at `t`.
-        For stability we implement the dynamic loss in log space.
-
-        Parameters
-        ---------
-        t
-            A time point
-        u_dict
-            A dictionary of PINNS. Must have the same keys as `params_dict`
-        params_dict
-            The dictionary of dictionaries of parameters of the model. Keys at
-            top level are "nn_params" and "eq_params"
-        """
-        params_main = _extract_nn_params(params_dict, self.key_main)
-
-        u = u_dict[self.key_main]
-        # need to index with [0] since u output is nec (1,)
-        du_dt = grad(lambda t: jnp.log(u(t, params_main)[0]), 0)(t)
-        carrying_term = params_main["eq_params"]["carrying_capacity"] * u(
-            t, params_main
-        )
-        # NOTE the following assumes interaction term with oneself is at idx 0
-        interaction_terms = params_main["eq_params"]["interactions"][0] * u(
-            t, params_main
-        )
-
-        # TODO write this for loop with tree_util functions?
-        for i, k in enumerate(self.keys_other):
-            params_k = _extract_nn_params(params_dict, k)
-            carrying_term += params_main["eq_params"]["carrying_capacity"] * u_dict[k](
-                t, params_k
-            )
-            interaction_terms += params_main["eq_params"]["interactions"][
-                i + 1
-            ] * u_dict[k](t, params_k)
-
-        return du_dt + self.Tmax * (
-            -params_main["eq_params"]["growth_rate"] - interaction_terms + carrying_term
-        )
 
 
 class FPENonStatioLoss2D(PDENonStatio):
@@ -285,57 +264,59 @@ class FPENonStatioLoss2D(PDENonStatio):
     Return the dynamic loss for a non-stationary Fokker Planck Equation in two
     dimensions:
 
-    .. math::
+    $$
         -\sum_{i=1}^2\frac{\partial}{\partial \mathbf{x}}
         \left[\mu(t, \mathbf{x})u(t, \mathbf{x})\right] +
         \sum_{i=1}^2\sum_{j=1}^2\frac{\partial^2}{\partial x_i \partial x_j}
         \left[D(t, \mathbf{x})u(t, \mathbf{x})\right]= \frac{\partial}
         {\partial t}u(t,\mathbf{x})
-
-    where :math:`\mu(t, \mathbf{x})` is the drift term and :math:`D(t, \mathbf{x})` is the diffusion
-    term.
+    $$
+    where $\mu(t, \mathbf{x})$ is the drift term and $D(t, \mathbf{x})$ is the
+    diffusion term.
 
     The drift and diffusion terms are not specified here, hence this class
     is `abstract`.
     Other classes inherit from FPENonStatioLoss2D and define the drift and
     diffusion terms, which then defines several other dynamic losses
     (Ornstein-Uhlenbeck, Cox-Ingersoll-Ross, ...)
+
+    Parameters
+    ----------
+    Tmax
+        Tmax needs to be given when the PINN time input is normalized in
+        [0, 1], ie. we have performed renormalization of the differential
+        equation
+    eq_params_heterogeneity
+        Default None. A dict with the keys being the same as in eq_params
+        and the value being `time`, `space`, `both` or None which corresponds to
+        the heterogeneity of a given parameter. A value can be missing, in
+        this case there is no heterogeneity (=None). If
+        eq_params_heterogeneity is None this means there is no
+        heterogeneity for no parameters.
     """
 
-    def __init__(self, Tmax, eq_params_heterogeneity=None):
-        """
-        Parameters
-        ----------
-        Tmax
-            Tmax needs to be given when the PINN time input is normalized in
-            [0, 1], ie. we have performed renormalization of the differential
-            equation
-        eq_params_heterogeneity
-            Default None. A dict with the keys being the same as in eq_params
-            and the value being `time`, `space`, `both` or None which corresponds to
-            the heterogeneity of a given parameter. A value can be missing, in
-            this case there is no heterogeneity (=None). If
-            eq_params_heterogeneity is None this means there is no
-            heterogeneity for no parameters.
-        """
-        super().__init__(Tmax, eq_params_heterogeneity)
-
-    def evaluate(self, t, x, u, params):
+    def equation(
+        self,
+        t: Float[Array, "1"],
+        x: Float[Array, "dim"],
+        u: eqx.Module,
+        params: Params,
+    ) -> Float[Array, "1"]:
         r"""
-        Evaluate the dynamic loss at :math:`(t,\mathbf{x})`.
+        Evaluate the dynamic loss at $(t,\mathbf{x})$.
 
         Parameters
         ---------
         t
             A time point
         x
-            A point in :math:`\Omega`
+            A point in $\Omega$
         u
             The PINN
         params
             The dictionary of parameters of the model.
             Typically, it is a dictionary of
-            dictionaries: `eq_params` and `nn_params``, respectively the
+            dictionaries: `eq_params` and `nn_params`, respectively the
             differential equation parameters and the neural network parameter
         """
         if isinstance(u, PINN):
@@ -344,11 +325,13 @@ class FPENonStatioLoss2D(PDENonStatio):
 
             order_1 = (
                 grad(
-                    lambda t, x: self.drift(t, x, params["eq_params"])[0] * u_(t, x),
+                    lambda t, x: self.drift(t, x, params.eq_params)[0] * u_(t, x),
                     1,
-                )(t, x)[0:1]
+                )(
+                    t, x
+                )[0:1]
                 + grad(
-                    lambda t, x: self.drift(t, x, params["eq_params"])[1] * u_(t, x),
+                    lambda t, x: self.drift(t, x, params.eq_params)[1] * u_(t, x),
                     1,
                 )(t, x)[1:2]
             )
@@ -357,7 +340,7 @@ class FPENonStatioLoss2D(PDENonStatio):
                 grad(
                     lambda t, x: grad(
                         lambda t, x: u_(t, x)
-                        * self.diffusion(t, x, params["eq_params"])[0, 0],
+                        * self.diffusion(t, x, params.eq_params)[0, 0],
                         1,
                     )(t, x)[0],
                     1,
@@ -365,7 +348,7 @@ class FPENonStatioLoss2D(PDENonStatio):
                 + grad(
                     lambda t, x: grad(
                         lambda t, x: u_(t, x)
-                        * self.diffusion(t, x, params["eq_params"])[1, 0],
+                        * self.diffusion(t, x, params.eq_params)[1, 0],
                         1,
                     )(t, x)[1],
                     1,
@@ -373,7 +356,7 @@ class FPENonStatioLoss2D(PDENonStatio):
                 + grad(
                     lambda t, x: grad(
                         lambda t, x: u_(t, x)
-                        * self.diffusion(t, x, params["eq_params"])[0, 1],
+                        * self.diffusion(t, x, params.eq_params)[0, 1],
                         1,
                     )(t, x)[0],
                     1,
@@ -381,7 +364,7 @@ class FPENonStatioLoss2D(PDENonStatio):
                 + grad(
                     lambda t, x: grad(
                         lambda t, x: u_(t, x)
-                        * self.diffusion(t, x, params["eq_params"])[1, 1],
+                        * self.diffusion(t, x, params.eq_params)[1, 1],
                         1,
                     )(t, x)[1],
                     1,
@@ -406,24 +389,20 @@ class FPENonStatioLoss2D(PDENonStatio):
             tangent_vec_0 = jnp.repeat(jnp.array([1.0, 0.0])[None], x.shape[0], axis=0)
             tangent_vec_1 = jnp.repeat(jnp.array([0.0, 1.0])[None], x.shape[0], axis=0)
             _, dau_dx1 = jax.jvp(
-                lambda x: self.drift(t, _get_grid(x), params["eq_params"])[
-                    None, ..., 0:1
-                ]
+                lambda x: self.drift(t, _get_grid(x), params.eq_params)[None, ..., 0:1]
                 * u(t, x, params)[..., 0:1],
                 (x,),
                 (tangent_vec_0,),
             )
             _, dau_dx2 = jax.jvp(
-                lambda x: self.drift(t, _get_grid(x), params["eq_params"])[
-                    None, ..., 1:2
-                ]
+                lambda x: self.drift(t, _get_grid(x), params.eq_params)[None, ..., 1:2]
                 * u(t, x, params)[..., 0:1],
                 (x,),
                 (tangent_vec_1,),
             )
 
             dsu_dx1_fun = lambda x, i, j: jax.jvp(
-                lambda x: self.diffusion(t, _get_grid(x), params["eq_params"], i, j)[
+                lambda x: self.diffusion(t, _get_grid(x), params.eq_params, i, j)[
                     None, None, None, None
                 ]
                 * u(t, x, params)[..., 0:1],
@@ -431,7 +410,7 @@ class FPENonStatioLoss2D(PDENonStatio):
                 (tangent_vec_0,),
             )[1]
             dsu_dx2_fun = lambda x, i, j: jax.jvp(
-                lambda x: self.diffusion(t, _get_grid(x), params["eq_params"], i, j)[
+                lambda x: self.diffusion(t, _get_grid(x), params.eq_params, i, j)[
                     None, None, None, None
                 ]
                 * u(t, x, params)[..., 0:1],
@@ -459,11 +438,11 @@ class FPENonStatioLoss2D(PDENonStatio):
 
     def drift(self, *args, **kwargs):
         # To be implemented in child classes
-        pass
+        raise NotImplementedError("Drift function should be implemented")
 
     def diffusion(self, *args, **kwargs):
         # To be implemented in child classes
-        pass
+        raise NotImplementedError("Diffusion function should be implemented")
 
 
 class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
@@ -471,33 +450,29 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
     Return the dynamic loss for a stationary Fokker Planck Equation in two
     dimensions:
 
-    .. math::
+    $$
         -\sum_{i=1}^2\frac{\partial}{\partial \mathbf{x}}
         \left[(\alpha(\mu - \mathbf{x}))u(t,\mathbf{x})\right] +
         \sum_{i=1}^2\sum_{j=1}^2\frac{\partial^2}{\partial x_i \partial x_j}
         \left[\frac{\sigma^2}{2}u(t,\mathbf{x})\right]=
         \frac{\partial}
         {\partial t}u(t,\mathbf{x})
+    $$
 
+    Parameters
+    ----------
+    Tmax
+        Tmax needs to be given when the PINN time input is normalized in
+        [0, 1], ie. we have performed renormalization of the differential
+        equation
+    eq_params_heterogeneity
+        Default None. A dict with the keys being the same as in eq_params
+        and the value being `time`, `space`, `both` or None which corresponds to
+        the heterogeneity of a given parameter. A value can be missing, in
+        this case there is no heterogeneity (=None). If
+        eq_params_heterogeneity is None this means there is no
+        heterogeneity for no parameters.
     """
-
-    def __init__(self, Tmax=1, eq_params_heterogeneity=None):
-        """
-        Parameters
-        ----------
-        Tmax
-            Tmax needs to be given when the PINN time input is normalized in
-            [0, 1], ie. we have performed renormalization of the differential
-            equation
-        eq_params_heterogeneity
-            Default None. A dict with the keys being the same as in eq_params
-            and the value being `time`, `space`, `both` or None which corresponds to
-            the heterogeneity of a given parameter. A value can be missing, in
-            this case there is no heterogeneity (=None). If
-            eq_params_heterogeneity is None this means there is no
-            heterogeneity for no parameters.
-        """
-        super().__init__(Tmax, eq_params_heterogeneity)
 
     def drift(self, t, x, eq_params):
         r"""
@@ -508,7 +483,7 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
         t
             A time point
         x
-            A point in :math:`\Omega`
+            A point in $\Omega$
         eq_params
             A dictionary containing the equation parameters
         """
@@ -524,7 +499,7 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
         t
             A time point
         x
-            A point in :math:`\Omega`
+            A point in $\Omega$
         eq_params
             A dictionary containing the equation parameters
         """
@@ -541,7 +516,7 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
         t
             A time point
         x
-            A point in :math:`\Omega`
+            A point in $\Omega$
         eq_params
             A dictionary containing the equation parameters
         """
@@ -564,33 +539,36 @@ class MassConservation2DStatio(PDEStatio):
     r"""
     Returns the so-called mass conservation equation.
 
-    .. math::
+    $$
         \nabla \cdot \mathbf{u} = \frac{\partial}{\partial x}u(x,y) +
         \frac{\partial}{\partial y}u(x,y) = 0,
+    $$
+    where $u$ is a stationary function, i.e., it does not depend on
+    $t$.
 
-    where :math:`u` is a stationary function, i.e., it does not depend on
-    :math:`t`.
+    Parameters
+    ----------
+    nn_key
+        A dictionary key which identifies, in `u_dict` the PINN that
+        appears in the mass conservation equation.
+    eq_params_heterogeneity
+        Default None. A dict with the keys being the same as in eq_params
+        and the value being `time`, `space`, `both` or None which corresponds to
+        the heterogeneity of a given parameter. A value can be missing, in
+        this case there is no heterogeneity (=None). If
+        eq_params_heterogeneity is None this means there is no
+        heterogeneity for no parameters.
     """
 
-    def __init__(self, nn_key, eq_params_heterogeneity=None):
-        """
-        Parameters
-        ----------
-        nn_key
-            A dictionary key which identifies, in `u_dict` the PINN that
-            appears in the mass conservation equation.
-        eq_params_heterogeneity
-            Default None. A dict with the keys being the same as in eq_params
-            and the value being `time`, `space`, `both` or None which corresponds to
-            the heterogeneity of a given parameter. A value can be missing, in
-            this case there is no heterogeneity (=None). If
-            eq_params_heterogeneity is None this means there is no
-            heterogeneity for no parameters.
-        """
-        self.nn_key = nn_key
-        super().__init__(eq_params_heterogeneity)
+    # an str field should be static (not a valid JAX type)
+    nn_key: str = eqx.field(static=True)
 
-    def evaluate(self, x, u_dict, params_dict):
+    def equation(
+        self,
+        x: Float[Array, "dim"],
+        u_dict: Dict[str, eqx.Module],
+        params_dict: ParamsDict,
+    ) -> Float[Array, "1"]:
         r"""
         Evaluate the dynamic loss at `\mathbf{x}`.
         For stability we implement the dynamic loss in log space.
@@ -598,17 +576,17 @@ class MassConservation2DStatio(PDEStatio):
         Parameters
         ---------
         x
-            A point in :math:`\Omega\subset\mathbb{R}^2`
+            A point in $\Omega\subset\mathbb{R}^2$
         u_dict
             A dictionary of PINNs. Must have the same keys as `params_dict`
         params_dict
             The dictionary of dictionaries of parameters of the model.
             Typically, each sub-dictionary is a dictionary
-            with keys: `eq_params` and `nn_params``, respectively the
+            with keys: `eq_params` and `nn_params`, respectively the
             differential equation parameters and the neural network parameter.
             Must have the same keys as `u_dict`
         """
-        params = _extract_nn_params(params_dict, self.nn_key)
+        params = params_dict.extract_params(self.nn_key)
 
         if isinstance(u_dict[self.nn_key], PINN):
             u = u_dict[self.nn_key]
@@ -627,15 +605,15 @@ class NavierStokes2DStatio(PDEStatio):
     Return the dynamic loss for all the components of the stationary Navier Stokes
     equation which is a 2D vectorial PDE.
 
-    .. math::
+    $$
        (\mathbf{u}\cdot\nabla)\mathbf{u} + \frac{1}{\rho}\nabla p - \theta
        \nabla^2\mathbf{u}=0,
-
+    $$
 
     or, in 2D,
 
 
-    .. math::
+    $$
         \begin{pmatrix}u_x\frac{\partial}{\partial x} u_x + u_y\frac{\partial}{\partial y} u_x \\
         u_x\frac{\partial}{\partial x} u_y + u_y\frac{\partial}{\partial y} u_y  \end{pmatrix} +
         \frac{1}{\rho} \begin{pmatrix} \frac{\partial}{\partial x} p \\ \frac{\partial}{\partial y} p \end{pmatrix}
@@ -644,61 +622,60 @@ class NavierStokes2DStatio(PDEStatio):
         \frac{\partial^2}{\partial x^2} u_x + \frac{\partial^2}{\partial y^2} u_x \\
         \frac{\partial^2}{\partial x^2} u_y + \frac{\partial^2}{\partial y^2} u_y
         \end{pmatrix} = 0,
-
+    $$
     with $\theta$ the viscosity coefficient and $\rho$ the density coefficient.
 
-    **Note:** Note that the solution to the Navier Stokes equation is a vector
-    field. Hence the MSE must concern all the axes.
+    Parameters
+    ----------
+    u_key
+        A dictionary key which indices the NN u in `u_dict`
+        the PINN with the role of the velocity in the equation.
+        Its input is bimensional (points in $\Omega\subset\mathbb{R}^2$).
+        Its output is bimensional as it represents a velocity vector
+        field
+    p_key
+        A dictionary key which indices the NN p in `u_dict`
+        the PINN with the role of the pressure in the equation.
+        Its input is bimensional (points in $\Omega\subset\mathbb{R}^2).
+        Its output is unidimensional as it represents a pressure scalar
+        field
+    eq_params_heterogeneity
+        Default None. A dict with the keys being the same as in eq_params
+        and the value being `time`, `space`, `both` or None which corresponds to
+        the heterogeneity of a given parameter. A value can be missing, in
+        this case there is no heterogeneity (=None). If
+        eq_params_heterogeneity is None this means there is no
+        heterogeneity for no parameters.
     """
 
-    def __init__(self, u_key, p_key, eq_params_heterogeneity=None):
-        r"""
-        Parameters
-        ----------
-        u_key
-            A dictionary key which indices in `u_dict`
-            the PINN with the role of the velocity in the equation.
-            Its input is bimensional (points in :math:`\Omega\subset\mathbb{R}^2`).
-            Its output is bimensional as it represents a velocity vector
-            field
-        p_key
-            A dictionary key which indices in `u_dict`
-            the PINN with the role of the pressure in the equation.
-            Its input is bimensional (points in :math:`\Omega\subset\mathbb{R}^2`).
-            Its output is unidimensional as it represents a pressure scalar
-            field
-        eq_params_heterogeneity
-            Default None. A dict with the keys being the same as in eq_params
-            and the value being `time`, `space`, `both` or None which corresponds to
-            the heterogeneity of a given parameter. A value can be missing, in
-            this case there is no heterogeneity (=None). If
-            eq_params_heterogeneity is None this means there is no
-            heterogeneity for no parameters.
-        """
-        self.u_key = u_key
-        self.p_key = p_key
-        super().__init__(eq_params_heterogeneity)
+    u_key: str = eqx.field(static=True)
+    p_key: str = eqx.field(static=True)
 
-    def evaluate(self, x, u_dict, params_dict):
+    def equation(
+        self,
+        x: Float[Array, "dim"],
+        u_dict: Dict[str, eqx.Module],
+        params_dict: ParamsDict,
+    ) -> Float[Array, "1"]:
         r"""
-        Evaluate the dynamic loss at `\mathbf{x}`.
+        Evaluate the dynamic loss at `x`.
         For stability we implement the dynamic loss in log space.
 
         Parameters
         ---------
         x
-            A point in :math:`\Omega\subset\mathbb{R}^2`
+            A point in $\Omega\subset\mathbb{R}^2$
         u_dict
             A dictionary of PINNs. Must have the same keys as `params_dict`
         params_dict
             The dictionary of dictionaries of parameters of the model.
             Typically, each sub-dictionary is a dictionary
-            with keys: `eq_params` and `nn_params``, respectively the
+            with keys: `eq_params` and `nn_params`, respectively the
             differential equation parameters and the neural network parameter.
             Must have the same keys as `u_dict`
         """
-        u_params = _extract_nn_params(params_dict, self.u_key)
-        p_params = _extract_nn_params(params_dict, self.p_key)
+        u_params = params_dict.extract_params(self.u_key)
+        p_params = params_dict.extract_params(self.p_key)
 
         if isinstance(u_dict[self.u_key], PINN):
             u = u_dict[self.u_key]
@@ -706,22 +683,22 @@ class NavierStokes2DStatio(PDEStatio):
             u_dot_nabla_x_u = _u_dot_nabla_times_u_rev(None, x, u, u_params)
 
             p = lambda x: u_dict[self.p_key](x, p_params)
-            jac_p = jacrev(p, 0)(x)  # compute the gradient
+            jac_p = jax.jacrev(p, 0)(x)  # compute the gradient
 
             vec_laplacian_u = _vectorial_laplacian(None, x, u, u_params, u_vec_ndim=2)
 
             # dynamic loss on x axis
             result_x = (
                 u_dot_nabla_x_u[0]
-                + 1 / params_dict["eq_params"]["rho"] * jac_p[0, 0]
-                - params_dict["eq_params"]["nu"] * vec_laplacian_u[0]
+                + 1 / params_dict.eq_params["rho"] * jac_p[0, 0]
+                - params_dict.eq_params["nu"] * vec_laplacian_u[0]
             )
 
             # dynamic loss on y axis
             result_y = (
                 u_dot_nabla_x_u[1]
-                + 1 / params_dict["eq_params"]["rho"] * jac_p[0, 1]
-                - params_dict["eq_params"]["nu"] * vec_laplacian_u[1]
+                + 1 / params_dict.eq_params["rho"] * jac_p[0, 1]
+                - params_dict.eq_params["nu"] * vec_laplacian_u[1]
             )
 
             # output is 2D
@@ -748,14 +725,14 @@ class NavierStokes2DStatio(PDEStatio):
             # dynamic loss on x axis
             result_x = (
                 u_dot_nabla_x_u[..., 0]
-                + 1 / params_dict["eq_params"]["rho"] * dp_dx.squeeze()
-                - params_dict["eq_params"]["nu"] * vec_laplacian_u[..., 0]
+                + 1 / params_dict.eq_params["rho"] * dp_dx.squeeze()
+                - params_dict.eq_params["nu"] * vec_laplacian_u[..., 0]
             )
             # dynamic loss on y axis
             result_y = (
                 u_dot_nabla_x_u[..., 1]
-                + 1 / params_dict["eq_params"]["rho"] * dp_dy.squeeze()
-                - params_dict["eq_params"]["nu"] * vec_laplacian_u[..., 1]
+                + 1 / params_dict.eq_params["rho"] * dp_dy.squeeze()
+                - params_dict.eq_params["nu"] * vec_laplacian_u[..., 1]
             )
 
             # output is 2D

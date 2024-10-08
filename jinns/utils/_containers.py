@@ -1,58 +1,51 @@
 """
-NamedTuples definition
+equinox Modules used as containers
 """
 
-from typing import Union, NamedTuple
-from jaxtyping import PyTree
-from jax.typing import ArrayLike
-import optax
-import jax.numpy as jnp
-from jinns.loss._LossODE import LossODE, SystemLossODE
-from jinns.loss._LossPDE import LossPDEStatio, LossPDENonStatio, SystemLossPDE
-from jinns.data._DataGenerators import (
-    DataGeneratorODE,
-    CubicMeshPDEStatio,
-    CubicMeshPDENonStatio,
-    DataGeneratorParameter,
-    DataGeneratorObservations,
-    DataGeneratorObservationsMultiPINNs,
-)
+from __future__ import (
+    annotations,
+)  # https://docs.python.org/3/library/typing.html#constant
+
+from typing import TYPE_CHECKING, Dict
+from jaxtyping import PyTree, Array, Float, Bool
+from optax import OptState
+import equinox as eqx
+
+if TYPE_CHECKING:
+    from jinns.utils._types import *
 
 
-class DataGeneratorContainer(NamedTuple):
-    data: Union[DataGeneratorODE, CubicMeshPDEStatio, CubicMeshPDENonStatio]
-    param_data: Union[DataGeneratorParameter, None] = None
-    obs_data: Union[
-        DataGeneratorObservations, DataGeneratorObservationsMultiPINNs, None
-    ] = None
+class DataGeneratorContainer(eqx.Module):
+    data: AnyDataGenerator
+    param_data: DataGeneratorParameter | None = None
+    obs_data: DataGeneratorObservations | DataGeneratorObservationsMultiPINNs | None = (
+        None
+    )
 
 
-class ValidationContainer(NamedTuple):
-    loss: Union[
-        LossODE, SystemLossODE, LossPDEStatio, LossPDENonStatio, SystemLossPDE, None
-    ]
+class ValidationContainer(eqx.Module):
+    loss: AnyLoss | None
     data: DataGeneratorContainer
     hyperparams: PyTree = None
-    loss_values: Union[ArrayLike, None] = None
+    loss_values: Float[Array, "n_iter"] | None = None
 
 
-class OptimizationContainer(NamedTuple):
-    params: dict
-    last_non_nan_params: dict
-    opt_state: optax.OptState
+class OptimizationContainer(eqx.Module):
+    params: Params
+    last_non_nan_params: Params
+    opt_state: OptState
 
 
-class OptimizationExtraContainer(NamedTuple):
+class OptimizationExtraContainer(eqx.Module):
     curr_seq: int
-    seq2seq: Union[dict, None]
-    best_val_params: dict
-    early_stopping: bool = False
+    best_val_params: Params
+    early_stopping: Bool = False
 
 
-class LossContainer(NamedTuple):
-    stored_loss_terms: dict
-    train_loss_values: ArrayLike
+class LossContainer(eqx.Module):
+    stored_loss_terms: Dict[str, Float[Array, "n_iter"]]
+    train_loss_values: Float[Array, "n_iter"]
 
 
-class StoredObjectContainer(NamedTuple):
-    stored_params: Union[list, None]
+class StoredObjectContainer(eqx.Module):
+    stored_params: list | None

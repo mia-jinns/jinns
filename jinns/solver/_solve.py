@@ -3,26 +3,33 @@ This modules implements the main `solve()` function of jinns which
 handles the optimization process
 """
 
-import copy
+from __future__ import (
+    annotations,
+)  # https://docs.python.org/3/library/typing.html#constant
+
+from typing import TYPE_CHECKING, NamedTuple, Dict, Union
 from functools import partial
 import optax
 import jax
 from jax import jit
 import jax.numpy as jnp
-from jinns.solver._seq2seq import trigger_seq2seq, initialize_seq2seq
+from jaxtyping import Int, Bool, Float, Array
 from jinns.solver._rar import init_rar, trigger_rar
-from jinns.utils._utils import _check_nan_in_pytree, _tracked_parameters
+from jinns.utils._utils import _check_nan_in_pytree
+from jinns.utils._containers import *
 from jinns.data._DataGenerators import (
     DataGeneratorODE,
     CubicMeshPDEStatio,
     CubicMeshPDENonStatio,
-    append_param_batch,
     append_obs_batch,
+    append_param_batch,
 )
-from jinns.utils._containers import *
+
+if TYPE_CHECKING:
+    from jinns.utils._types import *
 
 
-def check_batch_size(other_data, main_data, attr_name):
+def _check_batch_size(other_data, main_data, attr_name):
     if (
         (
             isinstance(main_data, DataGeneratorODE)
@@ -48,21 +55,32 @@ def check_batch_size(other_data, main_data, attr_name):
 
 
 def solve(
-    n_iter,
-    init_params,
-    data,
-    loss,
-    optimizer,
-    print_loss_every=1000,
-    opt_state=None,
-    seq2seq=None,
-    tracked_params_key_list=None,
-    param_data=None,
-    obs_data=None,
-    validation=None,
-    obs_batch_sharding=None,
-    verbose=True,
-):
+    n_iter: Int,
+    init_params: AnyParams,
+    data: AnyDataGenerator,
+    loss: AnyLoss,
+    optimizer: optax.GradientTransformation,
+    print_loss_every: Int = 1000,
+    opt_state: Union[NamedTuple, None] = None,
+    tracked_params: Params | ParamsDict | None = None,
+    param_data: DataGeneratorParameter | None = None,
+    obs_data: (
+        DataGeneratorObservations | DataGeneratorObservationsMultiPINNs | None
+    ) = None,
+    validation: AbstractValidationModule | None = None,
+    obs_batch_sharding: jax.sharding.Sharding | None = None,
+    verbose: Bool = True,
+) -> tuple[
+    Params | ParamsDict,
+    Float[Array, "n_iter"],
+    Dict[str, Float[Array, "n_iter"]],
+    AnyDataGenerator,
+    AnyLoss,
+    NamedTuple,
+    AnyParams,
+    Float[Array, "n_iter"],
+    AnyParams,
+]:
     """
     Performs the optimization process via stochastic gradient descent
     algorithm. We minimize the function defined `loss.evaluate()` with
@@ -73,52 +91,39 @@ def solve(
     Parameters
     ----------
     n_iter
-        The number of iterations in the optimization
+        The maximum number of iterations in the optimization.
     init_params
-        The initial dictionary of parameters. Typically, it is a dictionary of
-        dictionaries: `eq_params` and `nn_params``, respectively the
-        differential equation parameters and the neural network parameter
+        The initial jinns.parameters.Params object.
     data
-        A DataGenerator object which implements a `get_batch()`
-        method which returns a 3-tuple with (omega_grid, omega_border, time grid).
-        It must be jittable (e.g. implements via a pytree
-        registration)
+        A DataGenerator object to retrieve batches of collocation points.
     loss
-        A loss object (e.g. a LossODE, SystemLossODE, LossPDEStatio [...]
-        object). It must be jittable (e.g. implements via a pytree
-        registration)
+        The loss function to minimize.
     optimizer
-        An `optax` optimizer (e.g. `optax.adam`).
+        An optax optimizer.
     print_loss_every
-        Integer. Default 100. The rate at which we print the loss value in the
+        Default 1000. The rate at which we print the loss value in the
         gradient step loop.
     opt_state
-        Default None. Provide an optional initial optional state to the
-        optimizer. Not valid for all optimizers.
-    seq2seq
-        Default None. A dictionary with keys 'times_steps'
-        and 'iter_steps' which mush have same length. The first represents
-        the time steps which represents the different time interval upon
-        which we perform the incremental learning. The second represents
-        the number of iteration we perform in each time interval.
-        The seq2seq approach we reimplements is defined in
-        "Characterizing possible failure modes in physics-informed neural
-        networks", A. S. Krishnapriyan, NeurIPS 2021
-    tracked_params_key_list
-        Default None. Otherwise it is a list of list of strings
-        to access a leaf in params. Each selected leaf will be tracked
-        and stored at each iteration and returned by the solve function
+        Provide an optional initial state to the optimizer.
+    tracked_params
+        Default None. An eqx.Module of type Params with non-None values for
+        parameters that needs to be tracked along the iterations.
+        None values in tracked_params will not be traversed. Thus
+        the user can provide something like `tracked_params = jinns.parameters.Params(
+        nn_params=None, eq_params={"nu": True})` while init_params.nn_params
+        being a complex data structure.
     param_data
         Default None. A DataGeneratorParameter object which can be used to
         sample equation parameters.
     obs_data
-        Default None. A DataGeneratorObservations object which can be used to
-        sample minibatches of observations
+        Default None. A DataGeneratorObservations or
+        DataGeneratorObservationsMultiPINNs
+        object which can be used to sample minibatches of observations.
     validation
         Default None. Otherwise, a callable ``eqx.Module`` which implements a
-        validation strategy. See documentation of :obj:`~jinns.validation.
+        validation strategy. See documentation of `jinns.validation.
         _validation.AbstractValidationModule` for the general interface, and
-        :obj:`~jinns.validation._validation.ValidationLoss` for a practical
+        `jinns.validation._validation.ValidationLoss` for a practical
         implementation of a vanilla validation stategy on a validation set of
         collocation points.
 
@@ -132,15 +137,15 @@ def solve(
         Default None. An optional sharding object to constraint the obs_batch.
         Typically, a SingleDeviceSharding(gpu_device) when obs_data has been
         created with sharding_device=SingleDeviceSharding(cpu_device) to avoid
-        loading on GPU huge datasets of observations
-    verbose:
-        Boolean, default True. If False, no std output (loss or cause of
+        loading on GPU huge datasets of observations.
+    verbose
+        Default True. If False, no std output (loss or cause of
         exiting the optimization loop) will be produced.
 
     Returns
     -------
     params
-        The last non NaN value of the dictionaries of parameters at then end of the
+        The last non NaN value of the params at then end of the
         optimization process
     total_loss_values
         An array of the total loss term along the gradient steps
@@ -154,18 +159,18 @@ def solve(
     opt_state
         The final optimized state
     stored_params
-        A dictionary. At each key an array of the values of the parameters
-        given in tracked_params_key_list is stored
+        A Params objects with the stored values of the desired parameters (as
+        signified in tracked_params argument)
     validation_crit_values
         An array containing the validation criterion values of the training
     best_val_params
         The best parameters according to the validation criterion
     """
     if param_data is not None:
-        check_batch_size(param_data, data, "param_batch_size")
+        _check_batch_size(param_data, data, "param_batch_size")
 
     if obs_data is not None:
-        check_batch_size(obs_data, data, "obs_batch_size")
+        _check_batch_size(obs_data, data, "obs_batch_size")
 
     if opt_state is None:
         opt_state = optimizer.init(init_params)
@@ -176,30 +181,32 @@ def solve(
 
     # Seq2seq
     curr_seq = 0
-    if seq2seq is not None:
-        assert (
-            data.method == "uniform"
-        ), "data.method must be uniform if using seq2seq learning !"
-        data, opt_state = initialize_seq2seq(loss, data, seq2seq, opt_state)
 
     train_loss_values = jnp.zeros((n_iter))
     # depending on obs_batch_sharding we will get the simple get_batch or the
     # get_batch with device_put, the latter is not jittable
-    get_batch = get_get_batch(obs_batch_sharding)
+    get_batch = _get_get_batch(obs_batch_sharding)
 
     # initialize the dict for stored parameter values
     # we need to get a loss_term to init stuff
     batch_ini, data, param_data, obs_data = get_batch(data, param_data, obs_data)
     _, loss_terms = loss(init_params, batch_ini)
-    if tracked_params_key_list is None:
-        tracked_params_key_list = []
-    tracked_params = _tracked_parameters(init_params, tracked_params_key_list)
+
+    # initialize parameter tracking
+    if tracked_params is None:
+        tracked_params = jax.tree.map(lambda p: None, init_params)
     stored_params = jax.tree_util.tree_map(
         lambda tracked_param, param: (
-            jnp.zeros((n_iter,) + param.shape) if tracked_param else None
+            jnp.zeros((n_iter,) + jnp.asarray(param).shape)
+            if tracked_param is not None
+            else None
         ),
         tracked_params,
         init_params,
+        is_leaf=lambda x: x is None,  # None values in tracked_params will not
+        # be traversed. Thus the user can provide something like `tracked_params = jinns.parameters.Params(
+        # nn_params=None, eq_params={"nu": True})` while init_params.nn_params
+        # being a complex data structure
     )
 
     # initialize the dict for stored loss values
@@ -212,13 +219,12 @@ def solve(
     )
     optimization = OptimizationContainer(
         params=init_params,
-        last_non_nan_params=init_params.copy(),
+        last_non_nan_params=init_params,
         opt_state=opt_state,
     )
     optimization_extra = OptimizationExtraContainer(
         curr_seq=curr_seq,
-        seq2seq=seq2seq,
-        best_val_params=init_params.copy(),
+        best_val_params=init_params,
     )
     loss_container = LossContainer(
         stored_loss_terms=stored_loss_terms,
@@ -233,7 +239,7 @@ def solve(
     else:
         validation_crit_values = None
 
-    break_fun = get_break_fun(n_iter, verbose)
+    break_fun = _get_break_fun(n_iter, verbose)
 
     iteration = 0
     carry = (
@@ -248,7 +254,7 @@ def solve(
         validation_crit_values,
     )
 
-    def one_iteration(carry):
+    def _one_iteration(carry: main_carry) -> main_carry:
         (
             i,
             loss,
@@ -273,7 +279,7 @@ def solve(
             params,
             opt_state,
             last_non_nan_params,
-        ) = gradient_step(
+        ) = _gradient_step(
             loss,
             optimizer,
             batch,
@@ -284,7 +290,7 @@ def solve(
 
         # Print train loss value during optimization
         if verbose:
-            print_fn(i, train_loss_value, print_loss_every, prefix="[train] ")
+            _print_fn(i, train_loss_value, print_loss_every, prefix="[train] ")
 
         if validation is not None:
             # there is a jax.lax.cond because we do not necesarily call the
@@ -310,7 +316,7 @@ def solve(
             )
             # Print validation loss value during optimization
             if verbose:
-                print_fn(
+                _print_fn(
                     i, validation_criterion, print_loss_every, prefix="[validation] "
                 )
             validation_crit_values = validation_crit_values.at[i].set(
@@ -333,19 +339,8 @@ def solve(
             i, loss, params, data, _rar_step_true, _rar_step_false
         )
 
-        # Trigger seq2seq
-        loss, params, data, opt_state, curr_seq, seq2seq = trigger_seq2seq(
-            i,
-            loss,
-            params,
-            data,
-            opt_state,
-            optimization_extra.curr_seq,
-            optimization_extra.seq2seq,
-        )
-
         # save loss value and selected parameters
-        stored_params, stored_loss_terms, train_loss_values = store_loss_and_params(
+        stored_params, stored_loss_terms, train_loss_values = _store_loss_and_params(
             i,
             params,
             stored_objects.stored_params,
@@ -363,9 +358,7 @@ def solve(
             i,
             loss,
             OptimizationContainer(params, last_non_nan_params, opt_state),
-            OptimizationExtraContainer(
-                curr_seq, seq2seq, best_val_params, early_stopping
-            ),
+            OptimizationExtraContainer(curr_seq, best_val_params, early_stopping),
             DataGeneratorContainer(data, param_data, obs_data),
             validation,
             LossContainer(stored_loss_terms, train_loss_values),
@@ -378,9 +371,9 @@ def solve(
     # concern obs_batch, but it could lead to more complex scheme in the future
     if obs_batch_sharding is not None:
         while break_fun(carry):
-            carry = one_iteration(carry)
+            carry = _one_iteration(carry)
     else:
-        carry = jax.lax.while_loop(break_fun, one_iteration, carry)
+        carry = jax.lax.while_loop(break_fun, _one_iteration, carry)
 
     (
         i,
@@ -420,7 +413,21 @@ def solve(
 
 
 @partial(jit, static_argnames=["optimizer"])
-def gradient_step(loss, optimizer, batch, params, opt_state, last_non_nan_params):
+def _gradient_step(
+    loss: AnyLoss,
+    optimizer: optax.GradientTransformation,
+    batch: AnyBatch,
+    params: AnyParams,
+    opt_state: NamedTuple,
+    last_non_nan_params: AnyParams,
+) -> tuple[
+    AnyLoss,
+    float,
+    Dict[str, float],
+    AnyParams,
+    NamedTuple,
+    AnyParams,
+]:
     """
     optimizer cannot be jit-ted.
     """
@@ -448,7 +455,7 @@ def gradient_step(loss, optimizer, batch, params, opt_state, last_non_nan_params
 
 
 @partial(jit, static_argnames=["prefix"])
-def print_fn(i, loss_val, print_loss_every, prefix=""):
+def _print_fn(i: Int, loss_val: Float, print_loss_every: Int, prefix: str = ""):
     # note that if the following is not jitted in the main lor loop, it is
     # super slow
     _ = jax.lax.cond(
@@ -464,16 +471,18 @@ def print_fn(i, loss_val, print_loss_every, prefix=""):
 
 
 @jit
-def store_loss_and_params(
-    i,
-    params,
-    stored_params,
-    stored_loss_terms,
-    train_loss_values,
-    train_loss_val,
-    loss_terms,
-    tracked_params,
-):
+def _store_loss_and_params(
+    i: Int,
+    params: AnyParams,
+    stored_params: AnyParams,
+    stored_loss_terms: Dict[str, Float[Array, "n_iter"]],
+    train_loss_values: Float[Array, "n_iter"],
+    train_loss_val: float,
+    loss_terms: Dict[str, float],
+    tracked_params: AnyParams,
+) -> tuple[
+    Params | ParamsDict, Dict[str, Float[Array, "n_iter"]], Float[Array, "n_iter"]
+]:
     stored_params = jax.tree_util.tree_map(
         lambda stored_value, param, tracked_param: (
             None
@@ -500,7 +509,7 @@ def store_loss_and_params(
     return (stored_params, stored_loss_terms, train_loss_values)
 
 
-def get_break_fun(n_iter, verbose: str):
+def _get_break_fun(n_iter: Int, verbose: Bool) -> Callable[[main_carry], Bool]:
     """
     Wrapper to get the break_fun with appropriate `n_iter`.
     The verbose argument is here to control printing (or not) when exiting
@@ -511,8 +520,8 @@ def get_break_fun(n_iter, verbose: str):
     @jit
     def break_fun(carry: tuple):
         """
-        Function to break from the main optimization loop
-        We the following conditions : maximum number of iterations, NaN
+        Function to break from the main optimization loop whe the following
+        conditions are met : maximum number of iterations, NaN
         appearing in the parameters, and early stopping criterion.
         """
 
@@ -563,43 +572,57 @@ def get_break_fun(n_iter, verbose: str):
     return break_fun
 
 
-def get_get_batch(obs_batch_sharding):
+def _get_get_batch(
+    obs_batch_sharding: jax.sharding.Sharding,
+) -> Callable[
+    [
+        AnyDataGenerator,
+        DataGeneratorParameter | None,
+        DataGeneratorObservations | DataGeneratorObservationsMultiPINNs | None,
+    ],
+    tuple[
+        AnyBatch,
+        AnyDataGenerator,
+        DataGeneratorParameter | None,
+        DataGeneratorObservations | DataGeneratorObservationsMultiPINNs | None,
+    ],
+]:
     """
     Return the get_batch function that will be used either the jittable one or
-    the non-jittable one with sharding
+    the non-jittable one with sharding using jax.device.put()
     """
 
     def get_batch_sharding(data, param_data, obs_data):
         """
         This function is used at each loop but it cannot be jitted because of
         device_put
-
-        Note: return all that's modified or unwanted dirty undefined behaviour
         """
-        batch = data.get_batch()
+        data, batch = data.get_batch()
         if param_data is not None:
-            batch = append_param_batch(batch, param_data.get_batch())
+            param_data, param_batch = param_data.get_batch()
+            batch = append_param_batch(batch, param_batch)
         if obs_data is not None:
             # This is the part that motivated the transition from scan to for loop
             # Indeed we need to be transit obs_batch from CPU to GPU when we have
             # huge observations that cannot fit on GPU. Such transfer wasn't meant
             # to be jitted, i.e. in a scan loop
-            obs_batch = jax.device_put(obs_data.get_batch(), obs_batch_sharding)
+            obs_data, obs_batch = obs_data.get_batch()
+            obs_batch = jax.device_put(obs_batch, obs_batch_sharding)
             batch = append_obs_batch(batch, obs_batch)
         return batch, data, param_data, obs_data
 
     @jit
     def get_batch(data, param_data, obs_data):
         """
-        Original get_batch with not sharding
-
-        Note: return all that's modified or unwanted dirty undefined behaviour
+        Original get_batch with no sharding
         """
-        batch = data.get_batch()
+        data, batch = data.get_batch()
         if param_data is not None:
-            batch = append_param_batch(batch, param_data.get_batch())
+            param_data, param_batch = param_data.get_batch()
+            batch = append_param_batch(batch, param_batch)
         if obs_data is not None:
-            batch = append_obs_batch(batch, obs_data.get_batch())
+            obs_data, obs_batch = obs_data.get_batch()
+            batch = append_obs_batch(batch, obs_batch)
         return batch, data, param_data, obs_data
 
     if obs_batch_sharding is not None:

@@ -18,11 +18,11 @@ d = 5
 @pytest.fixture
 def create_pinn_ode():
     key = random.PRNGKey(2)
-    eqx_list = [
-        [eqx.nn.Linear, 1, 128],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 128, 1],
-    ]
+    eqx_list = (
+        (eqx.nn.Linear, 1, 128),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 128, 1),
+    )
     key, subkey = random.split(key)
     u_statio = create_PINN(subkey, eqx_list, "ODE")
 
@@ -32,11 +32,11 @@ def create_pinn_ode():
 @pytest.fixture
 def create_pinn_statio():
     key = random.PRNGKey(2)
-    eqx_list = [
-        [eqx.nn.Linear, d, 128],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 128, 1],
-    ]
+    eqx_list = (
+        (eqx.nn.Linear, d, 128),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 128, 1),
+    )
     key, subkey = random.split(key)
     u_statio = create_PINN(subkey, eqx_list, "statio_PDE", d)
 
@@ -46,11 +46,11 @@ def create_pinn_statio():
 @pytest.fixture
 def create_pinn_nonstatio():
     key = random.PRNGKey(2)
-    eqx_list = [
-        [eqx.nn.Linear, d, 128],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 128, 1],
-    ]
+    eqx_list = (
+        (eqx.nn.Linear, d, 128),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 128, 1),
+    )
     key, subkey = random.split(key)
     u_nonstatio = create_PINN(subkey, eqx_list, "nonstatio_PDE", d)
 
@@ -60,11 +60,11 @@ def create_pinn_nonstatio():
 @pytest.fixture
 def create_pinn_nonstatio_shared_output():
     key = random.PRNGKey(2)
-    eqx_list = [
-        [eqx.nn.Linear, d, 128],
-        [jax.nn.tanh],
-        [eqx.nn.Linear, 128, 1],
-    ]
+    eqx_list = (
+        (eqx.nn.Linear, d, 128),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 128, 1),
+    )
     key, subkey = random.split(key)
     # specific argument since we want to have u1 and u2 as separate nns
     shared_pinn_output = (
