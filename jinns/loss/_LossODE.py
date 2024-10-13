@@ -229,6 +229,7 @@ class LossODE(_LossODEAbstract):
                     axis=-1,
                 )
             )
+            print(self.derivative_keys.initial_condition, mse_initial_condition)
         else:
             mse_initial_condition = jnp.array(0.0)
 

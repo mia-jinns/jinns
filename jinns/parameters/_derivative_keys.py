@@ -82,9 +82,13 @@ class DerivativeKeysODE(eqx.Module):
         content of `Params.eq_params`.
     """
 
-    dyn_loss: Params | None = eqx.field(kw_only=True, default=None)
-    observations: Params | None = eqx.field(kw_only=True, default=None)
-    initial_condition: Params | None = eqx.field(kw_only=True, default=None)
+    # Not that the Params structure below only contain boolean, hence we can
+    # and should treat it as static for JIT compilation
+    dyn_loss: Params | None = eqx.field(kw_only=True, default=None, static=True)
+    observations: Params | None = eqx.field(kw_only=True, default=None, static=True)
+    initial_condition: Params | None = eqx.field(
+        kw_only=True, default=None, static=True
+    )
 
     params: InitVar[Params] = eqx.field(default=None)
 
@@ -105,12 +109,7 @@ class DerivativeKeysODE(eqx.Module):
             self.observations = _get_Params("nn_params", params)
         if self.initial_condition is None:
             self.initial_condition = _get_Params("nn_params", params)
-
-        if params is not None:  # we can afford a sanity check
-            p_struct = jax.tree.structure(params)
-            assert jax.tree.structure(self.dyn_loss) == p_struct
-            assert jax.tree.structure(self.observations) == p_struct
-            assert jax.tree.structure(self.initial_condition) == p_struct
+        print(self.dyn_loss, self.initial_condition)
 
     @classmethod
     def from_str(
@@ -148,7 +147,6 @@ class DerivativeKeysODE(eqx.Module):
             dyn_loss=_get_Params(dyn_loss, params),
             observations=_get_Params(observations, params),
             initial_condition=_get_Params(initial_condition, params),
-            params=params,
         )
 
 
@@ -191,14 +189,22 @@ def _set_derivatives(params, derivative_keys):
         `Params(nn_params=True | False, eq_params={"alpha":True | False,
         "beta":True | False})`.
         """
-        return jax.tree.map(
-            lambda p, d: p if d else jax.lax.stop_gradient(p),
+        return eqx.tree_at(
+            lambda p: tuple(pi for pi, di in zip(p, differentiate_wrt) if di),
             params_,
-            differentiate_wrt,
+            replace_fn=jax.lax.stop_gradient,
             is_leaf=lambda x: isinstance(x, eqx.Module)
             and not isinstance(x, Params),  # do not travers nn_params, more
             # granularity could be imagined here, in the future
         )
+        # return jax.tree.map(
+        #    lambda p, d: p if d else jax.lax.stop_gradient(p),
+        #    params_,
+        #    differentiate_wrt,
+        #    is_leaf=lambda x: isinstance(x, eqx.Module)
+        #    and not isinstance(x, Params),  # do not travers nn_params, more
+        #    # granularity could be imagined here, in the future
+        # )
 
     def _set_derivatives_dict(params_, differentiate_wrt):
         return {
