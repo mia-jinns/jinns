@@ -204,10 +204,13 @@ def test_derivative_keys_via_Params_values_updates5(
     loss = create_loss(tmin, Tmax, u, derivative_keys)
     end_params = train(train_data, params, loss)
 
+    # W and B expected to move via the diff of initial_condition
+    # a not expected to move since this parameter has no role in
+    # initial_condition
     assert not jnp.allclose(
         params.nn_params.layers[0].weight, end_params.nn_params.layers[0].weight
     )
-    assert not jnp.allclose(params.eq_params["a"], end_params.eq_params["a"])
+    assert jnp.allclose(params.eq_params["a"], end_params.eq_params["a"])
 
 
 def test_derivative_keys_via_Str_values_updates1(

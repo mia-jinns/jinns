@@ -186,7 +186,6 @@ def _set_derivatives(params, derivative_keys):
     has a copy of the params with appropriate derivatives set
     """
 
-    @partial(jax.jit, static_argnames=["differentiate_wrt"])
     def _set_derivatives_(params_, differentiate_wrt):
         """
         The next lines put a stop_gradient around the fields that do not
@@ -197,18 +196,9 @@ def _set_derivatives(params, derivative_keys):
         `Params(nn_params=True | False, eq_params={"alpha":True | False,
         "beta":True | False})`.
         """
-        # return eqx.tree_at(
-        #    lambda p: tuple(pi for pi, di in zip(p, differentiate_wrt) if di),
-        #    params_,
-        #    replace_fn=jax.lax.stop_gradient,
-        #    is_leaf=lambda x: isinstance(x, eqx.Module)
-        #    and not isinstance(x, Params),  # do not travers nn_params, more
-        #    # granularity could be imagined here, in the future
-        # )
+        print(differentiate_wrt)
         return jax.tree.map(
-            lambda p, d: jax.lax.cond(
-                d, lambda p: p, jax.lax.stop_gradient, p
-            ),  # p if d else jax.lax.stop_gradient(p),
+            lambda p, d: jax.lax.cond(d, lambda p: p, jax.lax.stop_gradient, p),
             params_,
             differentiate_wrt,
             is_leaf=lambda x: isinstance(x, eqx.Module)
