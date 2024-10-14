@@ -37,8 +37,8 @@ def create_datagenerator():
     n = 320
     batch_size = 32
     method = "uniform"
-    tmin = 0
-    tmax = 1
+    tmin = 0.3
+    tmax = 2
 
     Tmax = 1
     _, subkey = random.split(key)
@@ -61,7 +61,7 @@ def initialize_parameters(create_pinn_ode):
 
 
 def create_loss(tmin, Tmax, u, derivative_keys):
-    u0 = 1.0
+    u0 = 1.848
 
     class LinearFODE(ODE):
 
@@ -159,7 +159,6 @@ def test_derivative_keys_via_Params_values_updates3(
     # train
     loss = create_loss(tmin, Tmax, u, derivative_keys)
     end_params = train(train_data, params, loss)
-
     assert jnp.allclose(
         params.nn_params.layers[0].weight, end_params.nn_params.layers[0].weight
     )
@@ -205,11 +204,11 @@ def test_derivative_keys_via_Params_values_updates5(
     end_params = train(train_data, params, loss)
 
     # W and B expected to move via the diff of initial_condition
-    # a not expected to move since this parameter has no role in
-    # initial_condition
     assert not jnp.allclose(
         params.nn_params.layers[0].weight, end_params.nn_params.layers[0].weight
     )
+    # a not expected to move since this parameter has no role in
+    # initial_condition
     assert jnp.allclose(params.eq_params["a"], end_params.eq_params["a"])
 
 
@@ -270,9 +269,8 @@ def test_derivative_keys_via_Str_values_updates3(
     loss = create_loss(tmin, Tmax, u, derivative_keys)
     end_params = train(train_data, params, loss)
 
-    # even though we will have observation="nn_params" because of default
-    # above, nn_params are not exepected to move since there is no observation
-    # loss :)
+    # Default value set observation="nn_params" above. However, nn_params are
+    # not exepected to move since there is no observation loss.
     assert jnp.allclose(
         params.nn_params.layers[0].weight, end_params.nn_params.layers[0].weight
     )
