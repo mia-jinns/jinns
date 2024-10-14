@@ -1,0 +1,60 @@
+{
+    "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
+    "type": "SoftwareSourceCode",
+    "applicationCategory": "Statistics, machine learning, physics",
+    "author": [
+        {
+            "id": "https://orcid.org/0000-0001-5544-3800",
+            "type": "Person",
+            "affiliation": {
+                "type": "Organization",
+                "name": "MIA Paris-Saclay (INRAE)"
+            },
+            "email": "hugo.gangloff@inrae.fr",
+            "familyName": "Gangloff",
+            "givenName": "Hugo"
+        },
+        {
+            "id": "https://orcid.org/0000-0002-0331-1571",
+            "type": "Person",
+            "affiliation": {
+                "type": "Organization",
+                "name": "MIA Paris-Saclay (INRAE)"
+            },
+            "email": "nicolas.jouvin@inrae.fr",
+            "familyName": "Jouvin",
+            "givenName": "Nicolas"
+        }
+    ],
+    "codeRepository": "https://gitlab.com/mia_jinns/jinns",
+    "dateCreated": "2023-07-21",
+    "dateModified": "2024-10-08",
+    "datePublished": "2023-07-21",
+    "description": "A Python package for Physics-Informed Neural Networks (PINN) in JAX",
+    "funder": {
+        "type": "Organization",
+        "name": "INRAE"
+    },
+    "keywords": [
+        "physics-informed",
+        "neural network",
+        "machine learning"
+    ],
+    "license": "https://spdx.org/licenses/Apache-2.0",
+    "name": "Jinns",
+    "operatingSystem": [
+        "Linux",
+        "Windows",
+        "MacOS"
+    ],
+    "programmingLanguage": "Python3",
+    "relatedLink": "https://mia_jinns.gitlab.io/jinns/",
+    "softwareRequirements": "Python 3.11+",
+    "version": "v1.0.0",
+    "contIntegration": "https://gitlab.com/mia_jinns/jinns/-/pipelines",
+    "codemeta:continuousIntegration": {
+        "id": "https://gitlab.com/mia_jinns/jinns/-/pipelines"
+    },
+    "developmentStatus": "active",
+    "issueTracker": "https://gitlab.com/mia_jinns/jinns/-/issues"
+}
