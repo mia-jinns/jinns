@@ -159,7 +159,10 @@ def test_derivative_keys_via_Params_values_updates3(
     # train
     loss = create_loss(tmin, Tmax, u, derivative_keys)
     end_params = train(train_data, params, loss)
-    assert jnp.allclose(
+
+    # nn_params are updated because default value for initial_condition is
+    # "nn_params"
+    assert not jnp.allclose(
         params.nn_params.layers[0].weight, end_params.nn_params.layers[0].weight
     )
     assert not jnp.allclose(params.eq_params["a"], end_params.eq_params["a"])
@@ -180,7 +183,9 @@ def test_derivative_keys_via_Params_values_updates4(
     loss = create_loss(tmin, Tmax, u, derivative_keys)
     end_params = train(train_data, params, loss)
 
-    assert jnp.allclose(
+    # nn_params are updated because default value for initial_condition is
+    # "nn_params"
+    assert not jnp.allclose(
         params.nn_params.layers[0].weight, end_params.nn_params.layers[0].weight
     )
     assert jnp.allclose(params.eq_params["a"], end_params.eq_params["a"])
