@@ -2,6 +2,7 @@
 Formalize the data structure for the derivative keys
 """
 
+from functools import partial
 from dataclasses import fields, InitVar
 from typing import Literal
 import jax
@@ -60,7 +61,8 @@ class DerivativeKeysODE(eqx.Module):
     Note that the main Params object of the problem is mandatory passed if
     initialization via `from_str()`. It is required in the other initialization
     if some terms are unspecified (None). This is because, jinns cannot infer the
-    content of `Params.eq_params`.
+    content of `Params.eq_params`. **Unspecified terms will be initialized with
+    the rule `"nn_params"`**.
 
     Parameters
     ----------
@@ -84,32 +86,34 @@ class DerivativeKeysODE(eqx.Module):
 
     # Not that the Params structure below only contain boolean, hence we can
     # and should treat it as static for JIT compilation
-    dyn_loss: Params | None = eqx.field(kw_only=True, default=None, static=True)
-    observations: Params | None = eqx.field(kw_only=True, default=None, static=True)
-    initial_condition: Params | None = eqx.field(
-        kw_only=True, default=None, static=True
-    )
+    dyn_loss: Params | None = eqx.field(kw_only=True, default=None)
+    observations: Params | None = eqx.field(kw_only=True, default=None)
+    initial_condition: Params | None = eqx.field(kw_only=True, default=None)
 
     params: InitVar[Params] = eqx.field(default=None)
 
     def __post_init__(self, params):
-        if (
-            self.dyn_loss is None
-            or self.observations is None
-            or self.initial_condition is None
-        ) and params is None:
-            raise ValueError(
-                "if one of the field is None, then params should "
-                "be speficied and cannot be None"
-            )
-
         if self.dyn_loss is None:
-            self.dyn_loss = _get_Params("nn_params", params)
+            try:
+                self.dyn_loss = _get_Params("nn_params", params)
+            except AttributeError:
+                raise ValueError(
+                    "self.dyn_loss is None, hence params should be " "passed"
+                )
         if self.observations is None:
-            self.observations = _get_Params("nn_params", params)
+            try:
+                self.observations = _get_Params("nn_params", params)
+            except AttributeError:
+                raise ValueError(
+                    "self.observations is None, hence params should be " "passed"
+                )
         if self.initial_condition is None:
-            self.initial_condition = _get_Params("nn_params", params)
-        print(self.dyn_loss, self.initial_condition)
+            try:
+                self.initial_condition = _get_Params("nn_params", params)
+            except AttributeError:
+                raise ValueError(
+                    "self.initial_condition is None, hence params should be " "passed"
+                )
 
     @classmethod
     def from_str(
@@ -135,13 +139,16 @@ class DerivativeKeysODE(eqx.Module):
             The actual Params object of the problem.
         dyn_loss
             Tell wrt which parameters among `"nn_params"`, `"eq_params"` or
-            `"both"` we will differentiate the dynamic loss.
+            `"both"` we will differentiate the dynamic loss. Default is
+            `"nn_params"`
         observations
             Tell wrt which parameters among `"nn_params"`, `"eq_params"` or
-            `"both"` we will differentiate the observations.
+            `"both"` we will differentiate the observations. Default is
+            `"nn_params"`
         initial_condition
             Tell wrt which parameters among `"nn_params"`, `"eq_params"` or
-            `"both"` we will differentiate the initial condition.
+            `"both"` we will differentiate the initial condition. Default is
+            `"nn_params"`
         """
         return DerivativeKeysODE(
             dyn_loss=_get_Params(dyn_loss, params),
@@ -179,6 +186,7 @@ def _set_derivatives(params, derivative_keys):
     has a copy of the params with appropriate derivatives set
     """
 
+    @partial(jax.jit, static_argnames=["differentiate_wrt"])
     def _set_derivatives_(params_, differentiate_wrt):
         """
         The next lines put a stop_gradient around the fields that do not
@@ -189,22 +197,24 @@ def _set_derivatives(params, derivative_keys):
         `Params(nn_params=True | False, eq_params={"alpha":True | False,
         "beta":True | False})`.
         """
-        return eqx.tree_at(
-            lambda p: tuple(pi for pi, di in zip(p, differentiate_wrt) if di),
-            params_,
-            replace_fn=jax.lax.stop_gradient,
-            is_leaf=lambda x: isinstance(x, eqx.Module)
-            and not isinstance(x, Params),  # do not travers nn_params, more
-            # granularity could be imagined here, in the future
-        )
-        # return jax.tree.map(
-        #    lambda p, d: p if d else jax.lax.stop_gradient(p),
+        # return eqx.tree_at(
+        #    lambda p: tuple(pi for pi, di in zip(p, differentiate_wrt) if di),
         #    params_,
-        #    differentiate_wrt,
+        #    replace_fn=jax.lax.stop_gradient,
         #    is_leaf=lambda x: isinstance(x, eqx.Module)
         #    and not isinstance(x, Params),  # do not travers nn_params, more
         #    # granularity could be imagined here, in the future
         # )
+        return jax.tree.map(
+            lambda p, d: jax.lax.cond(
+                d, lambda p: p, jax.lax.stop_gradient, p
+            ),  # p if d else jax.lax.stop_gradient(p),
+            params_,
+            differentiate_wrt,
+            is_leaf=lambda x: isinstance(x, eqx.Module)
+            and not isinstance(x, Params),  # do not travers nn_params, more
+            # granularity could be imagined here, in the future
+        )
 
     def _set_derivatives_dict(params_, differentiate_wrt):
         return {
