@@ -145,7 +145,7 @@ class _LossPDEAbstract(eqx.Module):
                 self.derivative_keys = (
                     DerivativeKeysPDENonStatio(params=params)
                     if isinstance(self, LossPDENonStatio)
-                    else DerivativeKeysPDEStatio()
+                    else DerivativeKeysPDEStatio(params=params)
                 )
             except ValueError as exc:
                 raise ValueError(
