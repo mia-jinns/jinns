@@ -73,45 +73,54 @@ def _get_masked_parameters(
 
 class DerivativeKeysODE(eqx.Module):
     """
-    A class that specifies wrt which parameter(s) each term of the loss is
-    differentiated. In the most general case, for each loss term we specifiy a
-    Params object with True if the loss is diff wrt that term and False
-    otherwise. Another way and more convenient way to initialize is by passing
-    strings. See the `DerivativeKeysODE.from_str()` class method.
+    A class that specifies with repect to which parameter(s) each term of the
+    loss is differentiated. For example, you can specify that the
+    [`DynamicLoss`][jinns.loss.DynamicLoss] should be differentiated both with
+    respect to the neural network parameters *and* the equation parameters, or only some of them.
 
-    In both case of initialization, the user can skip the specification for a
-    term, leading to a default differentiate of the latter wrt `"nn_params"`.
+    To do so, user can either use strings or a `Params` object
+    with PyTree structure matching the parameters of the problem at
+    hand, and booleans indicating if gradient is to be taken or not. Internally,
+    a `jax.lax.stop_gradient()` is appropriately set to each `True` node when
+    computing each loss term.
 
-    **Note:** **No granularity inside `Params.nn_params` is currently
-    supported.**
-    This means a typical Params specification is of the form:
-    `Params(nn_params=True | False, eq_params={"alpha":True | False,
-    "beta":True | False})`.
+    !!! note
 
-    Note that the main Params or ParamsDict object of the problem is mandatory if
-    initialization via `from_str()`. It is required in the other initialization
-    if some terms are unspecified (None). This is because, jinns cannot infer the
-    content of `Params.eq_params`. **Unspecified terms will be initialized with
-    the rule `"nn_params"`**.
+         1. For unspecified loss term, the default is to differentiate with
+        respect to `"nn_params"` only.
+         2. No granularity inside `Params.nn_params` is currently supported.
+         3. Note that the main Params or ParamsDict object of the problem is mandatory if initialization via `from_str()`.
+
+    A typical specification is of the form:
+    ```python
+    Params(
+        nn_params=True | False,
+        eq_params={
+            "alpha":True | False,
+            "beta":True | False,
+            ...
+        }
+    )
+    ```
 
     Parameters
     ----------
     dyn_loss : Params | ParamsDict | None, default=None
-        Tell wrt which parameters among Params we will differentiate the
-        dynamic loss. To do so, the fields of Params contain True (if
-        differentiation) or False (if no differentiation). See note above.
+        Tell wrt which node of `Params` we will differentiate the
+        dynamic loss. To do so, the fields of `Params` contain True (if
+        differentiation) or False (if no differentiation).
     observations : Params | ParamsDict | None, default=None
         Tell wrt which parameters among Params we will differentiate the
         observation loss. To do so, the fields of Params contain True (if
-        differentiation) or False (if no differentiation). See note above.
+        differentiation) or False (if no differentiation).
     initial_condition : Params | ParamsDict | None, default=None
         Tell wrt which parameters among Params we will differentiate the
         initial condition loss. To do so, the fields of Params contain True (if
-        differentiation) or False (if no differentiation). See note above.
+        differentiation) or False (if no differentiation).
     params : InitVar[Params | ParamsDict], default=None
         The main Params object of the problem. It is required
-        if some terms are unspecified (None). This is because, jinns cannot infer the
-        content of `Params.eq_params`.
+        if some terms are unspecified (None). This is because, jinns cannot
+        infer the content of `Params.eq_params`.
     """
 
     dyn_loss: Params | ParamsDict | None = eqx.field(kw_only=True, default=None)
@@ -161,12 +170,13 @@ class DerivativeKeysODE(eqx.Module):
     ):
         """
         Construct the DerivativeKeysODE from strings. For each term of the
-        loss, specify whether to differentiate wrt the NN parameters, the equation
-        parameters or both. The Params object, which contains the actual array of
-        parameters must be passed to help construct the fields.
+        loss, specify whether to differentiate wrt the neural network
+        parameters, the equation parameters or both. The `Params` object, which
+        contains the actual array of parameters must be passed to
+        construct the fields with the appropriate PyTree structure.
 
-        Note that to have more granularity over the derivations, we can mix
-        strings with Params object with boolean values at each of the fields.
+        !!! note
+            You can mix strings and `Params` if you need granularity.
 
         Parameters
         ----------
@@ -206,46 +216,27 @@ class DerivativeKeysODE(eqx.Module):
 
 class DerivativeKeysPDEStatio(eqx.Module):
     """
-    A class that specifies wrt which parameter(s) each term of the loss is
-    differentiated. In the most general case, for each loss term we specifiy a
-    Params object with True if the loss is diff wrt that term and False
-    otherwise. Another way and more convenient way to initialize is by passing
-    strings. See the `DerivativeKeysPDEStatio.from_str()` class method.
-
-    In both case of initialization, the user can skip the specification for a
-    term, leading to a default differentiate of the latter wrt `"nn_params"`.
-
-    **Note:** **No granularity inside `Params.nn_params` is currently
-    supported.**
-    This means a typical Params specification is of the form:
-    `Params(nn_params=True | False, eq_params={"alpha":True | False,
-    "beta":True | False})`.
-
-    Note that the main Params or ParamsDict object of the problem is mandatory if
-    initialization via `from_str()`. It is required in the other initialization
-    if some terms are unspecified (None). This is because, jinns cannot infer the
-    content of `Params.eq_params`. **Unspecified terms will be initialized with
-    the rule `"nn_params"`**.
+    See [jinns.parameters.DerivativeKeysODE][].
 
     Parameters
     ----------
-    dyn_loss : Params | ParamsDict | None, default=None
+     dyn_loss : Params | ParamsDict | None, default=None
         Tell wrt which parameters among Params we will differentiate the
         dynamic loss. To do so, the fields of Params contain True (if
-        differentiation) or False (if no differentiation). See note above.
-    observations : Params | ParamsDict | None, default=None
+        differentiation) or False (if no differentiation).
+     observations : Params | ParamsDict | None, default=None
         Tell wrt which parameters among Params we will differentiate the
         observation loss. To do so, the fields of Params contain True (if
-        differentiation) or False (if no differentiation). See note above.
-    boundary_loss : Params | ParamsDict | None, default=None
+        differentiation) or False (if no differentiation).
+     boundary_loss : Params | ParamsDict | None, default=None
         Tell wrt which parameters among Params we will differentiate the
         boundary loss. To do so, the fields of Params contain True (if
-        differentiation) or False (if no differentiation). See note above.
-    norm_loss : Params | ParamsDict | None, default=None
+        differentiation) or False (if no differentiation).
+     norm_loss : Params | ParamsDict | None, default=None
         Tell wrt which parameters among Params we will differentiate the
         normalization loss. To do so, the fields of Params contain True (if
-        differentiation) or False (if no differentiation). See note above.
-    params : InitVar[Params | ParamsDict], default=None
+        differentiation) or False (if no differentiation).
+     params : InitVar[Params | ParamsDict], default=None
         The main Params object of the problem. It is required
         if some terms are unspecified (None). This is because, jinns cannot infer the
         content of `Params.eq_params`.
@@ -304,13 +295,7 @@ class DerivativeKeysPDEStatio(eqx.Module):
         ) = "nn_params",
     ):
         """
-        Construct the DerivativeKeysPDEStatio from strings. For each term of the
-        loss, specify whether to differentiate wrt the NN parameters, the equation
-        parameters or both. The Params object, which contains the actual array of
-        parameters must be passed to help construct the fields.
-
-        Note that to have more granularity over the derivations, we can mix
-        strings with Params object with boolean values at each of the fields.
+        See [jinns.parameters.DerivativeKeysODE.from_str][].
 
         Parameters
         ----------
@@ -359,49 +344,30 @@ class DerivativeKeysPDEStatio(eqx.Module):
 
 class DerivativeKeysPDENonStatio(DerivativeKeysPDEStatio):
     """
-    A class that specifies wrt which parameter(s) each term of the loss is
-    differentiated. In the most general case, for each loss term we specifiy a
-    Params object with True if the loss is diff wrt that term and False
-    otherwise. Another way and more convenient way to initialize is by passing
-    strings. See the `DerivativeKeysPDENonStatio.from_str()` class method.
-
-    In both case of initialization, the user can skip the specification for a
-    term, leading to a default differentiate of the latter wrt `"nn_params"`.
-
-    **Note:** **No granularity inside `Params.nn_params` is currently
-    supported.**
-    This means a typical Params specification is of the form:
-    `Params(nn_params=True | False, eq_params={"alpha":True | False,
-    "beta":True | False})`.
-
-    Note that the main Params or ParamsDict object of the problem is mandatory if
-    initialization via `from_str()`. It is required in the other initialization
-    if some terms are unspecified (None). This is because, jinns cannot infer the
-    content of `Params.eq_params`. **Unspecified terms will be initialized with
-    the rule `"nn_params"`**.
+    See [jinns.parameters.DerivativeKeysODE][].
 
     Parameters
     ----------
     dyn_loss : Params | ParamsDict | None, default=None
         Tell wrt which parameters among Params we will differentiate the
         dynamic loss. To do so, the fields of Params contain True (if
-        differentiation) or False (if no differentiation). See note above.
+        differentiation) or False (if no differentiation).
     observations : Params | ParamsDict | None, default=None
         Tell wrt which parameters among Params we will differentiate the
         observation loss. To do so, the fields of Params contain True (if
-        differentiation) or False (if no differentiation). See note above.
+        differentiation) or False (if no differentiation).
     boundary_loss : Params | ParamsDict | None, default=None
         Tell wrt which parameters among Params we will differentiate the
         boundary loss. To do so, the fields of Params contain True (if
-        differentiation) or False (if no differentiation). See note above.
+        differentiation) or False (if no differentiation).
     norm_loss : Params | ParamsDict | None, default=None
         Tell wrt which parameters among Params we will differentiate the
         normalization loss. To do so, the fields of Params contain True (if
-        differentiation) or False (if no differentiation). See note above.
+        differentiation) or False (if no differentiation).
     initial_condition : Params | ParamsDict | None, default=None
         Tell wrt which parameters among Params we will differentiate the
         initial_condition loss. To do so, the fields of Params contain True (if
-        differentiation) or False (if no differentiation). See note above.
+        differentiation) or False (if no differentiation).
     params : InitVar[Params | ParamsDict], default=None
         The main Params object of the problem. It is required
         if some terms are unspecified (None). This is because, jinns cannot infer the
@@ -443,13 +409,7 @@ class DerivativeKeysPDENonStatio(DerivativeKeysPDEStatio):
         ) = "nn_params",
     ):
         """
-        Construct the DerivativeKeysPDEStatio from strings. For each term of the
-        loss, specify whether to differentiate wrt the NN parameters, the equation
-        parameters or both. The Params object, which contains the actual array of
-        parameters must be passed to help construct the fields.
-
-        Note that to have more granularity over the derivations, we can mix
-        strings with Params object with boolean values at each of the fields.
+        See [jinns.parameters.DerivativeKeysODE.from_str][].
 
         Parameters
         ----------

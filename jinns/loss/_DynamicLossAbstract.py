@@ -73,9 +73,11 @@ def _decorator_heteregeneous_params(evaluate, eq_type):
 class DynamicLoss(eqx.Module):
     r"""
     Abstract base class for dynamic losses. Implements the physical term:
+
     $$
         \mathcal{N}[u](t, x) = 0
     $$
+
     for **one** point $t$, $x$ or $(t, x)$, depending on the context.
 
     Parameters
