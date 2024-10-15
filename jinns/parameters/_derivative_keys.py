@@ -149,9 +149,15 @@ class DerivativeKeysODE(eqx.Module):
     def from_str(
         cls,
         params: Params | ParamsDict,
-        dyn_loss: Literal["nn_params", "eq_params", "both"] = "nn_params",
-        observations: Literal["nn_params", "eq_params", "both"] = "nn_params",
-        initial_condition: Literal["nn_params", "eq_params", "both"] = "nn_params",
+        dyn_loss: (
+            Literal["nn_params", "eq_params", "both"] | Params | ParamsDict
+        ) = "nn_params",
+        observations: (
+            Literal["nn_params", "eq_params", "both"] | Params | ParamsDict
+        ) = "nn_params",
+        initial_condition: (
+            Literal["nn_params", "eq_params", "both"] | Params | ParamsDict
+        ) = "nn_params",
     ):
         """
         Construct the DerivativeKeysODE from strings. For each term of the
@@ -159,9 +165,8 @@ class DerivativeKeysODE(eqx.Module):
         parameters or both. The Params object, which contains the actual array of
         parameters must be passed to help construct the fields.
 
-        Note that to have more granularity over the derivations, the natural
-        `__init__` method should be used. The latter accepts Params object with
-        boolean values at each of the fields.
+        Note that to have more granularity over the derivations, we can mix
+        strings with Params object with boolean values at each of the fields.
 
         Parameters
         ----------
@@ -170,20 +175,32 @@ class DerivativeKeysODE(eqx.Module):
         dyn_loss
             Tell wrt which parameters among `"nn_params"`, `"eq_params"` or
             `"both"` we will differentiate the dynamic loss. Default is
-            `"nn_params"`
+            `"nn_params"`. Specifying a Params or ParamsDict is also possible.
         observations
             Tell wrt which parameters among `"nn_params"`, `"eq_params"` or
             `"both"` we will differentiate the observations. Default is
-            `"nn_params"`
+            `"nn_params"`. Specifying a Params or ParamsDict is also possible.
         initial_condition
             Tell wrt which parameters among `"nn_params"`, `"eq_params"` or
             `"both"` we will differentiate the initial condition. Default is
-            `"nn_params"`
+            `"nn_params"`. Specifying a Params or ParamsDict is also possible.
         """
         return DerivativeKeysODE(
-            dyn_loss=_get_masked_parameters(dyn_loss, params),
-            observations=_get_masked_parameters(observations, params),
-            initial_condition=_get_masked_parameters(initial_condition, params),
+            dyn_loss=(
+                _get_masked_parameters(dyn_loss, params)
+                if isinstance(dyn_loss, str)
+                else dyn_loss
+            ),
+            observations=(
+                _get_masked_parameters(observations, params)
+                if isinstance(observations, str)
+                else observations
+            ),
+            initial_condition=(
+                _get_masked_parameters(initial_condition, params)
+                if isinstance(initial_condition, str)
+                else initial_condition
+            ),
         )
 
 
@@ -273,10 +290,18 @@ class DerivativeKeysPDEStatio(eqx.Module):
     def from_str(
         cls,
         params: Params | ParamsDict,
-        dyn_loss: Literal["nn_params", "eq_params", "both"] = "nn_params",
-        observations: Literal["nn_params", "eq_params", "both"] = "nn_params",
-        boundary_loss: Literal["nn_params", "eq_params", "both"] = "nn_params",
-        norm_loss: Literal["nn_params", "eq_params", "both"] = "nn_params",
+        dyn_loss: (
+            Literal["nn_params", "eq_params", "both"] | Params | ParamsDict
+        ) = "nn_params",
+        observations: (
+            Literal["nn_params", "eq_params", "both"] | Params | ParamsDict
+        ) = "nn_params",
+        boundary_loss: (
+            Literal["nn_params", "eq_params", "both"] | Params | ParamsDict
+        ) = "nn_params",
+        norm_loss: (
+            Literal["nn_params", "eq_params", "both"] | Params | ParamsDict
+        ) = "nn_params",
     ):
         """
         Construct the DerivativeKeysPDEStatio from strings. For each term of the
@@ -284,9 +309,8 @@ class DerivativeKeysPDEStatio(eqx.Module):
         parameters or both. The Params object, which contains the actual array of
         parameters must be passed to help construct the fields.
 
-        Note that to have more granularity over the derivations, the natural
-        `__init__` method should be used. The latter accepts Params object with
-        boolean values at each of the fields.
+        Note that to have more granularity over the derivations, we can mix
+        strings with Params object with boolean values at each of the fields.
 
         Parameters
         ----------
@@ -295,25 +319,41 @@ class DerivativeKeysPDEStatio(eqx.Module):
         dyn_loss
             Tell wrt which parameters among `"nn_params"`, `"eq_params"` or
             `"both"` we will differentiate the dynamic loss. Default is
-            `"nn_params"`
+            `"nn_params"`. Specifying a Params or ParamsDict is also possible.
         observations
             Tell wrt which parameters among `"nn_params"`, `"eq_params"` or
             `"both"` we will differentiate the observations. Default is
-            `"nn_params"`
+            `"nn_params"`. Specifying a Params or ParamsDict is also possible.
         boundary_loss
             Tell wrt which parameters among `"nn_params"`, `"eq_params"` or
             `"both"` we will differentiate the boundary loss. Default is
-            `"nn_params"`
+            `"nn_params"`. Specifying a Params or ParamsDict is also possible.
         norm_loss
             Tell wrt which parameters among `"nn_params"`, `"eq_params"` or
             `"both"` we will differentiate the normalization loss. Default is
-            `"nn_params"`
+            `"nn_params"`. Specifying a Params or ParamsDict is also possible.
         """
         return DerivativeKeysPDEStatio(
-            dyn_loss=_get_masked_parameters(dyn_loss, params),
-            observations=_get_masked_parameters(observations, params),
-            boundary_loss=_get_masked_parameters(boundary_loss, params),
-            norm_loss=_get_masked_parameters(norm_loss, params),
+            dyn_loss=(
+                _get_masked_parameters(dyn_loss, params)
+                if isinstance(dyn_loss, str)
+                else dyn_loss
+            ),
+            observations=(
+                _get_masked_parameters(observations, params)
+                if isinstance(observations, str)
+                else observations
+            ),
+            boundary_loss=(
+                _get_masked_parameters(boundary_loss, params)
+                if isinstance(boundary_loss, str)
+                else boundary_loss
+            ),
+            norm_loss=(
+                _get_masked_parameters(norm_loss, params)
+                if isinstance(norm_loss, str)
+                else norm_loss
+            ),
         )
 
 
@@ -386,11 +426,21 @@ class DerivativeKeysPDENonStatio(DerivativeKeysPDEStatio):
     def from_str(
         cls,
         params: Params | ParamsDict,
-        dyn_loss: Literal["nn_params", "eq_params", "both"] = "nn_params",
-        observations: Literal["nn_params", "eq_params", "both"] = "nn_params",
-        boundary_loss: Literal["nn_params", "eq_params", "both"] = "nn_params",
-        norm_loss: Literal["nn_params", "eq_params", "both"] = "nn_params",
-        initial_condition: Literal["nn_params", "eq_params", "both"] = "nn_params",
+        dyn_loss: (
+            Literal["nn_params", "eq_params", "both"] | Params | ParamsDict
+        ) = "nn_params",
+        observations: (
+            Literal["nn_params", "eq_params", "both"] | Params | ParamsDict
+        ) = "nn_params",
+        boundary_loss: (
+            Literal["nn_params", "eq_params", "both"] | Params | ParamsDict
+        ) = "nn_params",
+        norm_loss: (
+            Literal["nn_params", "eq_params", "both"] | Params | ParamsDict
+        ) = "nn_params",
+        initial_condition: (
+            Literal["nn_params", "eq_params", "both"] | Params | ParamsDict
+        ) = "nn_params",
     ):
         """
         Construct the DerivativeKeysPDEStatio from strings. For each term of the
@@ -398,9 +448,8 @@ class DerivativeKeysPDENonStatio(DerivativeKeysPDEStatio):
         parameters or both. The Params object, which contains the actual array of
         parameters must be passed to help construct the fields.
 
-        Note that to have more granularity over the derivations, the natural
-        `__init__` method should be used. The latter accepts Params object with
-        boolean values at each of the fields.
+        Note that to have more granularity over the derivations, we can mix
+        strings with Params object with boolean values at each of the fields.
 
         Parameters
         ----------
@@ -409,30 +458,50 @@ class DerivativeKeysPDENonStatio(DerivativeKeysPDEStatio):
         dyn_loss
             Tell wrt which parameters among `"nn_params"`, `"eq_params"` or
             `"both"` we will differentiate the dynamic loss. Default is
-            `"nn_params"`
+            `"nn_params"`. Specifying a Params or ParamsDict is also possible.
         observations
             Tell wrt which parameters among `"nn_params"`, `"eq_params"` or
             `"both"` we will differentiate the observations. Default is
-            `"nn_params"`
+            `"nn_params"`. Specifying a Params or ParamsDict is also possible.
         boundary_loss
             Tell wrt which parameters among `"nn_params"`, `"eq_params"` or
             `"both"` we will differentiate the boundary loss. Default is
-            `"nn_params"`
+            `"nn_params"`. Specifying a Params or ParamsDict is also possible.
         norm_loss
             Tell wrt which parameters among `"nn_params"`, `"eq_params"` or
             `"both"` we will differentiate the normalization loss. Default is
-            `"nn_params"`
+            `"nn_params"`. Specifying a Params or ParamsDict is also possible.
         initial_condition
             Tell wrt which parameters among `"nn_params"`, `"eq_params"` or
             `"both"` we will differentiate the initial_condition loss. Default is
-            `"nn_params"`
+            `"nn_params"`. Specifying a Params or ParamsDict is also possible.
         """
-        return DerivativeKeysPDEStatio(
-            dyn_loss=_get_masked_parameters(dyn_loss, params),
-            observations=_get_masked_parameters(observations, params),
-            boundary_loss=_get_masked_parameters(boundary_loss, params),
-            norm_loss=_get_masked_parameters(norm_loss, params),
-            initial_condition=_get_masked_parameters(initial_condition, params),
+        return DerivativeKeysPDENonStatio(
+            dyn_loss=(
+                _get_masked_parameters(dyn_loss, params)
+                if isinstance(dyn_loss, str)
+                else dyn_loss
+            ),
+            observations=(
+                _get_masked_parameters(observations, params)
+                if isinstance(observations, str)
+                else observations
+            ),
+            boundary_loss=(
+                _get_masked_parameters(boundary_loss, params)
+                if isinstance(boundary_loss, str)
+                else boundary_loss
+            ),
+            norm_loss=(
+                _get_masked_parameters(norm_loss, params)
+                if isinstance(norm_loss, str)
+                else norm_loss
+            ),
+            initial_condition=(
+                _get_masked_parameters(initial_condition, params)
+                if isinstance(initial_condition, str)
+                else initial_condition
+            ),
         )
 
 
