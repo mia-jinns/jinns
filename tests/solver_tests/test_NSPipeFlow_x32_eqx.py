@@ -111,6 +111,7 @@ def train_NSPipeFlow_init():
             u_dict={"u": u, "p": p},
             loss_weights=loss_weights,
             dynamic_loss_dict={"mass_conservation": mc_loss, "navier_stokes": ns_loss},
+            params_dict=init_params,
         )
 
     return init_params, loss, train_data

@@ -87,6 +87,7 @@ def train_GLV_init():
             "1": (float(tmin), N_0[1]),
             "2": (float(tmin), N_0[2]),
         },
+        params_dict=init_params,
     )
 
     return init_params, loss, train_data

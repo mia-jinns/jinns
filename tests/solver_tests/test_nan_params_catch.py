@@ -72,6 +72,7 @@ def train_init():
         loss_weights=loss_weights,
         dynamic_loss=fo_loss,
         initial_condition=(float(tmin), jnp.log(u0)),
+        params=init_params,
     )
 
     return init_params, loss, train_data

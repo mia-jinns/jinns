@@ -153,6 +153,7 @@ def train_OU_init():
             initial_condition_fun=u0,
             norm_int_length=int_length,
             norm_samples=mc_samples,
+            params=init_params,
         )
 
     return init_params, loss, train_data

@@ -136,6 +136,7 @@ def train_NSPipeFlow_init():
             u_dict={"u": u_hyper, "p": p_hyper},
             loss_weights=loss_weights,
             dynamic_loss_dict={"mass_conservation": mc_loss, "navier_stokes": ns_loss},
+            params_dict=init_params_hyper,
         )
 
     return init_params_hyper, loss_hyper, train_data, param_train_data
