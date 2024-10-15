@@ -56,6 +56,9 @@ class _LossODEAbstract(eqx.Module):
         slice of u output(s) that is observed. This is useful for
         multidimensional PINN, with partially observed outputs.
         Default is None (whole output is observed).
+    params : InitVar[Params], default=None
+        The main Params object of the problem needed to instanciate the
+        DerivativeKeysODE if the latter is not specified.
     """
 
     # NOTE static=True only for leaf attributes that are not valid JAX types
@@ -66,13 +69,21 @@ class _LossODEAbstract(eqx.Module):
     initial_condition: tuple | None = eqx.field(kw_only=True, default=None)
     obs_slice: slice | None = eqx.field(kw_only=True, default=None, static=True)
 
-    def __post_init__(self):
+    params: InitVar[Params] = eqx.field(default=None, kw_only=True)
+
+    def __post_init__(self, params=None):
         if self.loss_weights is None:
             self.loss_weights = LossWeightsODE()
 
         if self.derivative_keys is None:
-            # be default we only take gradient wrt nn_params
-            self.derivative_keys = DerivativeKeysODE()
+            try:
+                # be default we only take gradient wrt nn_params
+                self.derivative_keys = DerivativeKeysODE(params=params)
+            except ValueError as exc:
+                raise ValueError(
+                    "Problem at self.derivative_keys initialization "
+                    f"received {self.derivative_keys=} and {params=}"
+                ) from exc
         if self.initial_condition is None:
             warnings.warn(
                 "Initial condition wasn't provided. Be sure to cover for that"
@@ -131,6 +142,9 @@ class LossODE(_LossODEAbstract):
         slice of u output(s) that is observed. This is useful for
         multidimensional PINN, with partially observed outputs.
         Default is None (whole output is observed).
+    params : InitVar[Params], default=None
+        The main Params object of the problem needed to instanciate the
+        DerivativeKeysODE if the latter is not specified.
     u : eqx.Module
         the PINN
     dynamic_loss : DynamicLoss
@@ -152,8 +166,10 @@ class LossODE(_LossODEAbstract):
 
     vmap_in_axes: tuple[Int] = eqx.field(init=False, static=True)
 
-    def __post_init__(self):
-        super().__post_init__()  # because __init__ or __post_init__ of Base
+    def __post_init__(self, params=None):
+        super().__post_init__(
+            params=params
+        )  # because __init__ or __post_init__ of Base
         # class is not automatically called
 
         self.vmap_in_axes = (0,)
@@ -300,6 +316,9 @@ class SystemLossODE(eqx.Module):
         PINNs. Default is None. But if a value is given, all the entries of
         `u_dict` must be represented here with default value `jnp.s_[...]`
         if no particular slice is to be given.
+    params_dict : InitVar[ParamsDict], default=None
+        The main Params object of the problem needed to instanciate the
+        DerivativeKeysODE if the latter is not specified.
 
     Raises
     ------
@@ -332,14 +351,16 @@ class SystemLossODE(eqx.Module):
     loss_weights: InitVar[LossWeightsODEDict | None] = eqx.field(
         kw_only=True, default=None
     )
+    params_dict: InitVar[ParamsDict] = eqx.field(kw_only=True, default=None)
+
     u_constraints_dict: Dict[str, LossODE] = eqx.field(init=False)
-    derivative_keys_dyn_loss_dict: Dict[str, DerivativeKeysODE] = eqx.field(init=False)
+    derivative_keys_dyn_loss: DerivativeKeysODE = eqx.field(init=False)
 
     u_dict_with_none: Dict[str, None] = eqx.field(init=False)
     # internally the loss weights are handled with a dictionary
     _loss_weights: Dict[str, dict] = eqx.field(init=False)
 
-    def __post_init__(self, loss_weights):
+    def __post_init__(self, loss_weights=None, params_dict=None):
         # a dictionary that will be useful at different places
         self.u_dict_with_none = {k: None for k in self.u_dict.keys()}
         if self.initial_condition_dict is None:
@@ -369,14 +390,14 @@ class SystemLossODE(eqx.Module):
             # iterating on dynamic_loss_dict. So each time we will require dome
             # derivative_keys_dict
 
-        # but then if the user did not provide anything, we must at least have
-        # a default value for the dynamic_loss_dict keys entries in
-        # self.derivative_keys_dict since the computation of dynamic losses is
-        # made without create a lossODE object that would provide the
-        # default values
-        for k in self.dynamic_loss_dict.keys():
+        # derivative keys for the u_constraints. Note that we create missing
+        # DerivativeKeysODE around a Params object and not ParamsDict
+        # this works because u_dict.keys == params_dict.nn_params.keys()
+        for k in self.u_dict.keys():
             if self.derivative_keys_dict[k] is None:
-                self.derivative_keys_dict[k] = DerivativeKeysODE()
+                self.derivative_keys_dict[k] = DerivativeKeysODE(
+                    params=params_dict.extract_params(k)
+                )
 
         self._loss_weights = self.set_loss_weights(loss_weights)
 
@@ -397,12 +418,11 @@ class SystemLossODE(eqx.Module):
                 obs_slice=self.obs_slice_dict[i],
             )
 
-        # for convenience in the tree_map of evaluate
-        self.derivative_keys_dyn_loss_dict = {
-            k: self.derivative_keys_dict[k]
-            for k in self.dynamic_loss_dict.keys()  # & self.derivative_keys_dict.keys()
-            # comment because intersection is neceserily fulfilled right?
-        }
+        # derivative keys for the dynamic loss. Note that we create a
+        # DerivativeKeysODE around a ParamsDict object because a whole
+        # params_dict is feed to DynamicLoss.evaluate functions (extract_params
+        # happen inside it)
+        self.derivative_keys_dyn_loss = DerivativeKeysODE(params=params_dict)
 
     def set_loss_weights(self, loss_weights_init):
         """
@@ -497,13 +517,13 @@ class SystemLossODE(eqx.Module):
             batch.param_batch_dict, params_dict
         )
 
-        def dyn_loss_for_one_key(dyn_loss, derivative_key, loss_weight):
+        def dyn_loss_for_one_key(dyn_loss, loss_weight):
             """This function is used in tree_map"""
             return dynamic_loss_apply(
                 dyn_loss.evaluate,
                 self.u_dict,
                 (temporal_batch,),
-                _set_derivatives(params_dict, derivative_key.dyn_loss),
+                _set_derivatives(params_dict, self.derivative_keys_dyn_loss.dyn_loss),
                 vmap_in_axes_t + vmap_in_axes_params,
                 loss_weight,
                 u_type=PINN,
@@ -512,7 +532,6 @@ class SystemLossODE(eqx.Module):
         dyn_loss_mse_dict = jax.tree_util.tree_map(
             dyn_loss_for_one_key,
             self.dynamic_loss_dict,
-            self.derivative_keys_dyn_loss_dict,
             self._loss_weights["dyn_loss"],
             is_leaf=lambda x: isinstance(x, ODE),  # before when dynamic losses
             # where plain (unregister pytree) node classes, we could not traverse

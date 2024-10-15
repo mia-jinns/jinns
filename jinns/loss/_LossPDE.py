@@ -103,6 +103,9 @@ class _LossPDEAbstract(eqx.Module):
     obs_slice : slice, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
+    params : InitVar[Params], default=None
+        The main Params object of the problem needed to instanciate the
+        DerivativeKeysODE if the latter is not specified.
     """
 
     # NOTE static=True only for leaf attributes that are not valid JAX types
@@ -129,18 +132,26 @@ class _LossPDEAbstract(eqx.Module):
     norm_int_length: float | None = eqx.field(kw_only=True, default=None)
     obs_slice: slice | None = eqx.field(kw_only=True, default=None, static=True)
 
-    def __post_init__(self):
+    params: InitVar[Params] = eqx.field(kw_only=True, default=None)
+
+    def __post_init__(self, params=None):
         """
         Note that neither __init__ or __post_init__ are called when udating a
         Module with eqx.tree_at
         """
         if self.derivative_keys is None:
             # be default we only take gradient wrt nn_params
-            self.derivative_keys = (
-                DerivativeKeysPDENonStatio()
-                if isinstance(self, LossPDENonStatio)
-                else DerivativeKeysPDEStatio()
-            )
+            try:
+                self.derivative_keys = (
+                    DerivativeKeysPDENonStatio(params=params)
+                    if isinstance(self, LossPDENonStatio)
+                    else DerivativeKeysPDEStatio()
+                )
+            except ValueError as exc:
+                raise ValueError(
+                    "Problem at self.derivative_keys initialization "
+                    f"received {self.derivative_keys=} and {params=}"
+                ) from exc
 
         if self.loss_weights is None:
             self.loss_weights = (
@@ -324,6 +335,9 @@ class LossPDEStatio(_LossPDEAbstract):
     obs_slice : slice, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
+    params : InitVar[Params], default=None
+        The main Params object of the problem needed to instanciate the
+        DerivativeKeysODE if the latter is not specified.
 
 
     Raises
@@ -342,12 +356,14 @@ class LossPDEStatio(_LossPDEAbstract):
 
     vmap_in_axes: tuple[Int] = eqx.field(init=False, static=True)
 
-    def __post_init__(self):
+    def __post_init__(self, params=None):
         """
         Note that neither __init__ or __post_init__ are called when udating a
         Module with eqx.tree_at!
         """
-        super().__post_init__()  # because __init__ or __post_init__ of Base
+        super().__post_init__(
+            params=params
+        )  # because __init__ or __post_init__ of Base
         # class is not automatically called
 
         self.vmap_in_axes = (0,)  # for x only here
@@ -547,6 +563,9 @@ class LossPDENonStatio(LossPDEStatio):
     initial_condition_fun : Callable, default=None
         A function representing the temporal initial condition. If None
         (default) then no initial condition is applied
+    params : InitVar[Params], default=None
+        The main Params object of the problem needed to instanciate the
+        DerivativeKeysODE if the latter is not specified.
 
     """
 
@@ -556,12 +575,14 @@ class LossPDENonStatio(LossPDEStatio):
         kw_only=True, default=None, static=True
     )
 
-    def __post_init__(self):
+    def __post_init__(self, params=None):
         """
         Note that neither __init__ or __post_init__ are called when udating a
         Module with eqx.tree_at!
         """
-        super().__post_init__()  # because __init__ or __post_init__ of Base
+        super().__post_init__(
+            params=params
+        )  # because __init__ or __post_init__ of Base
         # class is not automatically called
 
         self.vmap_in_axes = (0, 0)  # for t and x
@@ -616,7 +637,6 @@ class LossPDENonStatio(LossPDEStatio):
             of parameters (eg. for metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
         """
-
         omega_batch = batch.times_x_inside_batch[:, 1:]
 
         # Retrieve the optional eq_params_batch
@@ -725,6 +745,9 @@ class SystemLossPDE(eqx.Module):
         PINNs. Default is None. But if a value is given, all the entries of
         `u_dict` must be represented here with default value `jnp.s_[...]`
         if no particular slice is to be given
+    params : InitVar[ParamsDict], default=None
+        The main Params object of the problem needed to instanciate the
+        DerivativeKeysODE if the latter is not specified.
 
     """
 
@@ -763,22 +786,20 @@ class SystemLossPDE(eqx.Module):
     loss_weights: InitVar[LossWeightsPDEDict | None] = eqx.field(
         kw_only=True, default=None
     )
+    params_dict: InitVar[ParamsDict] = eqx.field(kw_only=True, default=None)
 
     # following have init=False and are set in the __post_init__
     u_constraints_dict: Dict[str, LossPDEStatio | LossPDENonStatio] = eqx.field(
         init=False
     )
-    derivative_keys_u_dict: Dict[
-        str, DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio
-    ] = eqx.field(init=False)
-    derivative_keys_dyn_loss_dict: Dict[
-        str, DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio
-    ] = eqx.field(init=False)
+    derivative_keys_dyn_loss: DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio = (
+        eqx.field(init=False)
+    )
     u_dict_with_none: Dict[str, None] = eqx.field(init=False)
     # internally the loss weights are handled with a dictionary
     _loss_weights: Dict[str, dict] = eqx.field(init=False)
 
-    def __post_init__(self, loss_weights):
+    def __post_init__(self, loss_weights=None, params_dict=None):
         # a dictionary that will be useful at different places
         self.u_dict_with_none = {k: None for k in self.u_dict.keys()}
         # First, for all the optional dict,
@@ -818,24 +839,19 @@ class SystemLossPDE(eqx.Module):
             # iterating on dynamic_loss_dict. So each time we will require dome
             # derivative_keys_dict
 
-        # but then if the user did not provide anything, we must at least have
-        # a default value for the dynamic_loss_dict keys entries in
-        # self.derivative_keys_dict since the computation of dynamic losses is
-        # made without create a loss object that would provide the
-        # default values
-        for k in self.dynamic_loss_dict.keys():
+        # derivative keys for the u_constraints. Note that we create missing
+        # DerivativeKeysODE around a Params object and not ParamsDict
+        # this works because u_dict.keys == params_dict.nn_params.keys()
+        for k in self.u_dict.keys():
             if self.derivative_keys_dict[k] is None:
-                try:
-                    if self.u_dict[k].eq_type == "statio_PDE":
-                        self.derivative_keys_dict[k] = DerivativeKeysPDEStatio()
-                    else:
-                        self.derivative_keys_dict[k] = DerivativeKeysPDENonStatio()
-                except KeyError:  # We are in a key that is not in u_dict but in
-                    # dynamic_loss_dict
-                    if isinstance(self.dynamic_loss_dict[k], PDEStatio):
-                        self.derivative_keys_dict[k] = DerivativeKeysPDEStatio()
-                    else:
-                        self.derivative_keys_dict[k] = DerivativeKeysPDENonStatio()
+                if self.u_dict[k].eq_type == "statio_PDE":
+                    self.derivative_keys_dict[k] = DerivativeKeysPDEStatio(
+                        params=params_dict.extract_params(k)
+                    )
+                else:
+                    self.derivative_keys_dict[k] = DerivativeKeysPDENonStatio(
+                        params=params_dict.extract_params(k)
+                    )
 
         # Second we make sure that all the dicts (except dynamic_loss_dict) have the same keys
         if (
@@ -904,16 +920,11 @@ class SystemLossPDE(eqx.Module):
                     f"got {self.u_dict[i].eq_type[i]}"
                 )
 
-        # for convenience in the tree_map of evaluate,
-        # we separate the two derivative keys dict
-        self.derivative_keys_dyn_loss_dict = {
-            k: self.derivative_keys_dict[k]
-            for k in self.dynamic_loss_dict.keys() & self.derivative_keys_dict.keys()
-        }
-        self.derivative_keys_u_dict = {
-            k: self.derivative_keys_dict[k]
-            for k in self.u_dict.keys() & self.derivative_keys_dict.keys()
-        }
+        # derivative keys for the dynamic loss. Note that we create a
+        # DerivativeKeysODE around a ParamsDict object because a whole
+        # params_dict is feed to DynamicLoss.evaluate functions (extract_params
+        # happen inside it)
+        self.derivative_keys_dyn_loss = DerivativeKeysPDENonStatio(params=params_dict)
 
         # also make sure we only have PINNs or SPINNs
         if not (
@@ -1034,13 +1045,13 @@ class SystemLossPDE(eqx.Module):
             batch.param_batch_dict, params_dict
         )
 
-        def dyn_loss_for_one_key(dyn_loss, derivative_key, loss_weight):
+        def dyn_loss_for_one_key(dyn_loss, loss_weight):
             """The function used in tree_map"""
             return dynamic_loss_apply(
                 dyn_loss.evaluate,
                 self.u_dict,
                 batches,
-                _set_derivatives(params_dict, derivative_key.dyn_loss),
+                _set_derivatives(params_dict, self.derivative_keys_dyn_loss.dyn_loss),
                 vmap_in_axes_x_or_x_t + vmap_in_axes_params,
                 loss_weight,
                 u_type=type(list(self.u_dict.values())[0]),
@@ -1049,7 +1060,6 @@ class SystemLossPDE(eqx.Module):
         dyn_loss_mse_dict = jax.tree_util.tree_map(
             dyn_loss_for_one_key,
             self.dynamic_loss_dict,
-            self.derivative_keys_dyn_loss_dict,
             self._loss_weights["dyn_loss"],
             is_leaf=lambda x: isinstance(
                 x, (PDEStatio, PDENonStatio)
