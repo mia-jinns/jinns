@@ -91,6 +91,7 @@ nav:
       - Implementing your own problem: 'Notebooks/Tutorials/implementing_your_own_PDE_problem.ipynb'
       - Saving / loading your model: 'Notebooks/Tutorials/load_save_model.ipynb'
       - Using validation module: 'Notebooks/Tutorials/introducing_validation_loss.ipynb'
+      - A simple inverse problem: 'Notebooks/Tutorials/1D_non_stationary_Burger_JointEstimation_Vanilla.ipynb'
     - Examples:
       - Forward problems:
         - ODE:

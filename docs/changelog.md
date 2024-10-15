@@ -1,5 +1,12 @@
 # Changelog
 
+* v1.1.0
+
+    - New `DerivativeKeys*` classes for more granularity. We can now differentiation through one particular equation parameter. This introduces breaking changes:
+        1. DerivativeKeys* are now initialized by default with Params or ParamsDict structure of bool to describe the derivative masks. The previous behaviour based on strings "nn_params", "eq_params", "both" is still available but the instanciation is done through the constructor  DerivativeKeys*.from_str(). This constructor also requires the main Params or ParamsDict object of the problem.
+        2. DerivativeKeys* now must be passed the main Params or ParamsDict object of the problem at initialization if some keys are not specified in their PyTree form (almost always the case).
+        3. The Loss*  instanciated now must be passed the main Params or ParamsDict object of the problem if the DerivativeKeys* attribute is not specified (almost always the case). This is due to the previous point.
+    - New tutorial notebook using this feature for a introduction to inverse problems with jinns. See the documentation, tutorial section.
 
 * v1.0.0
 
