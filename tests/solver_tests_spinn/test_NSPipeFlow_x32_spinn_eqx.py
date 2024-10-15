@@ -126,6 +126,7 @@ def train_NSPipeFlow_init():
             "u": u_omega_boundary_condition,
             "p": p_omega_boundary_condition,
         },
+        params_dict=init_params,
     )
 
     return init_params, loss, train_data

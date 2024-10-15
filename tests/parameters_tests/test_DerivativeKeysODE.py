@@ -60,7 +60,7 @@ def initialize_parameters(create_pinn_ode):
     return init_params
 
 
-def create_loss(tmin, Tmax, u, derivative_keys):
+def create_loss(tmin, Tmax, u, derivative_keys, init_params):
     u0 = 1.848
 
     class LinearFODE(ODE):
@@ -80,6 +80,7 @@ def create_loss(tmin, Tmax, u, derivative_keys):
         dynamic_loss=fo_loss,
         initial_condition=(float(tmin), jnp.log(u0)),
         derivative_keys=derivative_keys,
+        params=init_params,
     )
     return loss
 
@@ -97,7 +98,8 @@ def train(train_data, params, loss):
     return end_params
 
 
-def test_derivative_keys_via_Params_ValueError():
+def test_derivative_keys_via_Params_ValueError(initialize_parameters):
+    init_params = initialize_parameters
     with pytest.raises(ValueError):
         # This should fail as `initial_condition=None` and params is not given
         _ = DerivativeKeysODE(dyn_loss=Params(nn_params=True, eq_params={"a": True}))
@@ -115,7 +117,7 @@ def test_derivative_keys_via_Params_values_updates1(
     )
 
     # train
-    loss = create_loss(tmin, Tmax, u, derivative_keys)
+    loss = create_loss(tmin, Tmax, u, derivative_keys, params)
     end_params = train(train_data, params, loss)
 
     assert not jnp.allclose(
@@ -136,7 +138,7 @@ def test_derivative_keys_via_Params_values_updates2(
     )
 
     # train
-    loss = create_loss(tmin, Tmax, u, derivative_keys)
+    loss = create_loss(tmin, Tmax, u, derivative_keys, params)
     end_params = train(train_data, params, loss)
 
     assert not jnp.allclose(
@@ -157,7 +159,7 @@ def test_derivative_keys_via_Params_values_updates3(
     )
 
     # train
-    loss = create_loss(tmin, Tmax, u, derivative_keys)
+    loss = create_loss(tmin, Tmax, u, derivative_keys, params)
     end_params = train(train_data, params, loss)
 
     # nn_params are updated because default value for initial_condition is
@@ -180,7 +182,7 @@ def test_derivative_keys_via_Params_values_updates4(
     )
 
     # train
-    loss = create_loss(tmin, Tmax, u, derivative_keys)
+    loss = create_loss(tmin, Tmax, u, derivative_keys, params)
     end_params = train(train_data, params, loss)
 
     # nn_params are updated because default value for initial_condition is
@@ -205,7 +207,7 @@ def test_derivative_keys_via_Params_values_updates5(
     )
 
     # train
-    loss = create_loss(tmin, Tmax, u, derivative_keys)
+    loss = create_loss(tmin, Tmax, u, derivative_keys, params)
     end_params = train(train_data, params, loss)
 
     # W and B expected to move via the diff of initial_condition
@@ -227,7 +229,7 @@ def test_derivative_keys_via_Str_values_updates1(
     derivative_keys = DerivativeKeysODE.from_str(dyn_loss="nn_params", params=params)
 
     # train
-    loss = create_loss(tmin, Tmax, u, derivative_keys)
+    loss = create_loss(tmin, Tmax, u, derivative_keys, params)
     end_params = train(train_data, params, loss)
 
     assert not jnp.allclose(
@@ -246,7 +248,7 @@ def test_derivative_keys_via_Str_values_updates2(
     derivative_keys = DerivativeKeysODE.from_str(dyn_loss="eq_params", params=params)
 
     # train
-    loss = create_loss(tmin, Tmax, u, derivative_keys)
+    loss = create_loss(tmin, Tmax, u, derivative_keys, params)
     end_params = train(train_data, params, loss)
 
     # both are expected to update since by default above we will have
@@ -271,7 +273,7 @@ def test_derivative_keys_via_Str_values_updates3(
     )
 
     # train
-    loss = create_loss(tmin, Tmax, u, derivative_keys)
+    loss = create_loss(tmin, Tmax, u, derivative_keys, params)
     end_params = train(train_data, params, loss)
 
     # Default value set observation="nn_params" above. However, nn_params are

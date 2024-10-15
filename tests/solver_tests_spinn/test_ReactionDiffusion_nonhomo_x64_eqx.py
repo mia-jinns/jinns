@@ -173,6 +173,7 @@ def train_ReacDiff_init():
         omega_boundary_fun=lambda t, dx: 0,
         omega_boundary_condition="neumann",
         initial_condition_fun=u0,
+        params=init_params,
     )
 
     return init_params, loss, train_data
