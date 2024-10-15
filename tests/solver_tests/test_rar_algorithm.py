@@ -93,6 +93,7 @@ with pytest.warns(UserWarning):
         initial_condition_fun=u0,
         norm_int_length=int_length,
         norm_samples=mc_samples,
+        params=init_params,
     )
 
 

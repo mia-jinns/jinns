@@ -297,12 +297,12 @@ def constraints_system_loss_apply(
     if isinstance(params_dict.nn_params, dict):
 
         def apply_u_constraint(
-            u_constraint, nn_params, loss_weights_for_u, obs_batch_u
+            u_constraint, nn_params, eq_params, loss_weights_for_u, obs_batch_u
         ):
             res_dict_for_u = u_constraint.evaluate(
                 Params(
                     nn_params=nn_params,
-                    eq_params=params_dict.eq_params,
+                    eq_params=eq_params,
                 ),
                 append_obs_batch(batch, obs_batch_u),
             )[1]
@@ -319,6 +319,11 @@ def constraints_system_loss_apply(
             apply_u_constraint,
             u_constraints_dict,
             params_dict.nn_params,
+            (
+                params_dict.eq_params
+                if params_dict.eq_params.keys() == params_dict.nn_params.keys()
+                else {k: params_dict.eq_params for k in params_dict.nn_params.keys()}
+            ),  # this manipulation is needed since we authorize eq_params not to have the same structure as nn_params in ParamsDict
             loss_weights_T,
             batch.obs_batch_dict,
             is_leaf=lambda x: (
