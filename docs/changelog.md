@@ -1,5 +1,9 @@
 # Changelog
 
+* v1.1.1
+
+    - This MR prints the tracked parameter values (if any) at the same rate as we print the loss. An example with one value tracked and printed is given in the Tutorial on simple inverse problem.
+
 * v1.1.0
 
     - New `DerivativeKeys*` classes for more granularity. We can now differentiation through one particular equation parameter. This introduces breaking changes:
