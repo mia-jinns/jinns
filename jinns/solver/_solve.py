@@ -102,7 +102,8 @@ def solve(
         An optax optimizer.
     print_loss_every
         Default 1000. The rate at which we print the loss value in the
-        gradient step loop.
+        gradient step loop. The tracked parameter values (if any)
+        will also be printed at the same rate.
     opt_state
         Provide an optional initial state to the optimizer.
     tracked_params
@@ -288,9 +289,37 @@ def solve(
             optimization.last_non_nan_params,
         )
 
+        # Trigger RAR
+        loss, params, data = trigger_rar(
+            i, loss, params, data, _rar_step_true, _rar_step_false
+        )
+
+        # save loss value and selected parameters
+        stored_params, stored_loss_terms, train_loss_values = _store_loss_and_params(
+            i,
+            params,
+            stored_objects.stored_params,
+            loss_container.stored_loss_terms,
+            loss_container.train_loss_values,
+            train_loss_value,
+            loss_terms,
+            tracked_params,
+        )
+
         # Print train loss value during optimization
         if verbose:
-            _print_fn(i, train_loss_value, print_loss_every, prefix="[train] ")
+            _print_loss(
+                i,
+                train_loss_value,
+                print_loss_every,
+                prefix="[train] ",
+            )
+            _print_params(
+                i,
+                print_loss_every,
+                stored_params,
+                prefix="[train] ",
+            )
 
         if validation is not None:
             # there is a jax.lax.cond because we do not necesarily call the
@@ -316,7 +345,7 @@ def solve(
             )
             # Print validation loss value during optimization
             if verbose:
-                _print_fn(
+                _print_loss(
                     i, validation_criterion, print_loss_every, prefix="[validation] "
                 )
             validation_crit_values = validation_crit_values.at[i].set(
@@ -333,23 +362,6 @@ def solve(
         else:
             early_stopping = False
             best_val_params = params
-
-        # Trigger RAR
-        loss, params, data = trigger_rar(
-            i, loss, params, data, _rar_step_true, _rar_step_false
-        )
-
-        # save loss value and selected parameters
-        stored_params, stored_loss_terms, train_loss_values = _store_loss_and_params(
-            i,
-            params,
-            stored_objects.stored_params,
-            loss_container.stored_loss_terms,
-            loss_container.train_loss_values,
-            train_loss_value,
-            loss_terms,
-            tracked_params,
-        )
 
         # increment iteration number
         i += 1
@@ -455,8 +467,13 @@ def _gradient_step(
 
 
 @partial(jit, static_argnames=["prefix"])
-def _print_fn(i: Int, loss_val: Float, print_loss_every: Int, prefix: str = ""):
-    # note that if the following is not jitted in the main lor loop, it is
+def _print_loss(
+    i: Int,
+    loss_val: Float,
+    print_loss_every: Int,
+    prefix: str = "",
+) -> None:
+    # note that if the following is not jitted in the main for loop, it is
     # super slow
     _ = jax.lax.cond(
         i % print_loss_every == 0,
@@ -466,6 +483,42 @@ def _print_fn(i: Int, loss_val: Float, print_loss_every: Int, prefix: str = ""):
             loss_val=loss_val,
         ),
         lambda _: None,
+        (None,),
+    )
+
+
+@partial(jit, static_argnames=["prefix"])
+def _print_params(
+    i: Int,
+    print_loss_every: Int,
+    stored_params: AnyParams,
+    prefix: str = "",
+) -> None:
+    nb_stored_params = len(jax.tree_util.tree_leaves_with_path(stored_params))
+    _ = jax.lax.cond(
+        jnp.array(i % print_loss_every == 0),
+        lambda _: jax.tree.map(
+            lambda name_value: jax.debug.print(
+                prefix
+                + "Iteration {i}: "
+                + f"tracked parameter: {name_value[0][-1].key}"
+                + " = {y}",
+                i=i,
+                y=name_value[1][i],  # note dynamic values cannot be in
+                # f-string
+            ),
+            (
+                jax.tree_util.tree_leaves_with_path(stored_params)
+                if nb_stored_params > 1
+                else [jax.tree_util.tree_leaves_with_path(stored_params)]
+            ),
+            is_leaf=lambda x: (x is None) or (isinstance(x, tuple)),
+        ),
+        lambda _: (
+            [None for i in range(nb_stored_params)]
+            if nb_stored_params > 1
+            else [[None]]
+        ),  # unusual instruction for the two lambda functions to have same signature
         (None,),
     )
 
@@ -480,9 +533,7 @@ def _store_loss_and_params(
     train_loss_val: float,
     loss_terms: Dict[str, float],
     tracked_params: AnyParams,
-) -> tuple[
-    Params | ParamsDict, Dict[str, Float[Array, "n_iter"]], Float[Array, "n_iter"]
-]:
+) -> tuple[AnyParams, Dict[str, Float[Array, "n_iter"]], Float[Array, "n_iter"]]:
     stored_params = jax.tree_util.tree_map(
         lambda stored_value, param, tracked_param: (
             None
