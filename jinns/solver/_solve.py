@@ -498,13 +498,13 @@ def _print_params(
     _ = jax.lax.cond(
         jnp.array(i % print_loss_every == 0),
         lambda _: jax.tree.map(
-            lambda name_value: jax.debug.print(
+            lambda path_value: jax.debug.print(
                 prefix
                 + "Iteration {i}: "
-                + f"tracked parameter: {name_value[0][-1].key}"
+                + f"tracked parameter: params{jax.tree_util.keystr(path_value[0])}"
                 + " = {y}",
                 i=i,
-                y=name_value[1][i],  # note dynamic values cannot be in
+                y=path_value[1][i],  # note dynamic values cannot be in
                 # f-string
             ),
             (
