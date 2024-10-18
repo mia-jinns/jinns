@@ -133,6 +133,7 @@ def train_Fisher_init():
         omega_boundary_fun=omega_boundary_fun,
         omega_boundary_condition=boundary_condition,
         initial_condition_fun=u0,
+        params=init_params,
     )
 
     return init_params, loss, train_data

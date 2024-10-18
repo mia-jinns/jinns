@@ -1,5 +1,11 @@
 # Your model : the differential operator, a.k.a the dynamic loss
 
+## Abstract Class
+
+::: jinns.loss.DynamicLoss
+    options:
+        members: False
+        heading_level: 3
 
 ## ODE
 
