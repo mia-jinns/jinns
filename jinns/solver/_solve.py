@@ -515,9 +515,13 @@ def _print_params(
             is_leaf=lambda x: (x is None) or (isinstance(x, tuple)),
         ),
         lambda _: (
-            [None for i in range(nb_stored_params)]
-            if nb_stored_params > 1
-            else [[None]]
+            [[]]
+            if nb_stored_params == 0
+            else (
+                [None for i in range(nb_stored_params)]
+                if nb_stored_params > 1
+                else [[None]]
+            )
         ),  # unusual instruction for the two lambda functions to have same signature
         (None,),
     )
