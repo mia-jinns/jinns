@@ -387,7 +387,7 @@ def solve(
         carry = compiled_train_fun(carry)
         jax.block_until_ready(carry)
         end = time.time()
-        print("Execution took", end - start)
+        print("Training took", end - start)
 
     (
         i,
