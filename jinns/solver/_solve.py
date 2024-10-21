@@ -7,6 +7,7 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
+import time
 from typing import TYPE_CHECKING, NamedTuple, Dict, Union
 from functools import partial
 import optax
@@ -373,7 +374,20 @@ def solve(
         while break_fun(carry):
             carry = _one_iteration(carry)
     else:
-        carry = jax.lax.while_loop(break_fun, _one_iteration, carry)
+
+        def train_fun(carry):
+            return jax.lax.while_loop(break_fun, _one_iteration, carry)
+
+        start = time.time()
+        compiled_train_fun = jax.jit(train_fun).lower(carry).compile()
+        end = time.time()
+        print("Compilation took", end - start)
+
+        start = time.time()
+        carry = compiled_train_fun(carry)
+        jax.block_until_ready(carry)
+        end = time.time()
+        print("Execution took", end - start)
 
     (
         i,
