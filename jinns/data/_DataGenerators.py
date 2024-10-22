@@ -61,14 +61,14 @@ def _reset_batch_idx_and_permute(
     key, domain, curr_idx, _, p = operands
     # resetting counter
     curr_idx = 0
-    # reshuffling
-    key, subkey = jax.random.split(key)
-    # domain = random.permutation(subkey, domain, axis=0, independent=False)
-    # we want that permutation = choice when p=None
-    # otherwise p is used to avoid collocation points not in nt_start
-    domain = jax.random.choice(
-        subkey, domain, shape=(domain.shape[0],), replace=False, p=p
-    )
+    # # reshuffling
+    # key, subkey = jax.random.split(key)
+    # # domain = random.permutation(subkey, domain, axis=0, independent=False)
+    # # we want that permutation = choice when p=None
+    # # otherwise p is used to avoid collocation points not in nt_start
+    # domain = jax.random.choice(
+    #     subkey, domain, shape=(domain.shape[0],), replace=False, p=p
+    # )
 
     # return updated
     return (key, domain, curr_idx)
@@ -191,7 +191,7 @@ class DataGeneratorODE(eqx.Module):
     """
 
     key: Key
-    nt: Int
+    nt: Int = eqx.field(static=True)
     tmin: Float
     tmax: Float
     temporal_batch_size: Int = eqx.field(static=True)  # static cause used as a
@@ -288,6 +288,10 @@ class DataGeneratorODE(eqx.Module):
         else:
             nt_eff = self.nt
 
+        if self.nt == self.temporal_batch_size:
+            # do not lose time reshuffling or anything
+            return self, self.times
+
         new_attributes = _reset_or_increment(bend, nt_eff, self._get_time_operands())
         new = eqx.tree_at(
             lambda m: (m.key, m.times, m.curr_time_idx), self, new_attributes
@@ -295,7 +299,7 @@ class DataGeneratorODE(eqx.Module):
 
         # commands below are equivalent to
         # return self.times[i:(i+t_batch_size)]
-        # start indices can be dynamic be the slice shape is fixed
+        # start indices can be dynamic but the slice shape is fixed
         return new, jax.lax.dynamic_slice(
             new.times,
             start_indices=(new.curr_time_idx,),
@@ -371,8 +375,8 @@ class CubicMeshPDEStatio(eqx.Module):
 
     # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
     key: Key = eqx.field(kw_only=True)
-    n: Int = eqx.field(kw_only=True)
-    nb: Int | None = eqx.field(kw_only=True)
+    n: Int = eqx.field(kw_only=True, static=True)
+    nb: Int | None = eqx.field(kw_only=True, static=True)
     omega_batch_size: Int = eqx.field(
         kw_only=True, static=True
     )  # static cause used as a
@@ -624,6 +628,10 @@ class CubicMeshPDEStatio(eqx.Module):
         bstart = self.curr_omega_idx
         bend = bstart + self.omega_batch_size
 
+        if self.n == self.omega_batch_size:
+            # in this case, do not waste time reshuffling or anything
+            return self, self.omega
+
         new_attributes = _reset_or_increment(bend, n_eff, self._get_omega_operands())
         new = eqx.tree_at(
             lambda m: (m.key, m.omega, m.curr_omega_idx), self, new_attributes
@@ -678,6 +686,9 @@ class CubicMeshPDEStatio(eqx.Module):
             return self, self.omega_border[None, None]  # shape is (1, 1, 2)
         bstart = self.curr_omega_border_idx
         bend = bstart + self.omega_border_batch_size
+
+        if self.nb == self.omega_border_batch_size:
+            return self, self.omega_border
 
         new_attributes = _reset_or_increment(
             bend, self.nb, self._get_omega_border_operands()
@@ -783,17 +794,21 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         return their concatenation.
     """
 
-    temporal_batch_size: Int = eqx.field(kw_only=True)
+    temporal_batch_size: Int = eqx.field(kw_only=True, static=True)
     tmin: Float = eqx.field(kw_only=True)
     tmax: Float = eqx.field(kw_only=True)
-    nt: Int = eqx.field(kw_only=True)
+    nt: Int = eqx.field(kw_only=True, static=True)
     temporal_batch_size: Int = eqx.field(kw_only=True, static=True)
     cartesian_product: Bool = eqx.field(kw_only=True, default=True, static=True)
     nt_start: int = eqx.field(kw_only=True, default=None, static=True)
 
     p_times: Array = eqx.field(init=False)
-    curr_time_idx: Int = eqx.field(init=False)
-    times: Array = eqx.field(init=False)
+    curr_times_x_omega_idx: Int = eqx.field(init=False)
+    curr_times_x_omega_border_idx: Int = eqx.field(init=False)
+    temporal_x_omega_batch_size: Int = eqx.field(init=False, static=True)
+    temporal_x_omega_border_batch_size: Int = eqx.field(init=False, static=True)
+    times_x_omega: Array = eqx.field(init=False)
+    times_x_omega_border: Array = eqx.field(init=False)
 
     def __post_init__(self):
         """
@@ -817,14 +832,18 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             ):
                 raise ValueError(
                     "If dim > 1 and stacking is requested between the time and "
-                    "inside batches of collocation points, self.temporal_batch_size "
+                    "border batches of collocation points, self.temporal_batch_size "
                     "must then be equal to self.omega_border_batch_size"
                 )
-            # Note if self.dim == 1:
-            #    print(
-            #        "Cartesian product is not requested but will be "
-            #        "executed anyway since dim=1"
-            #    )
+            self.temporal_x_omega_batch_size = self.temporal_batch_size
+            self.temporal_x_omega_border_batch_size = self.temporal_batch_size
+        else:
+            self.temporal_x_omega_batch_size = (
+                self.temporal_batch_size * self.omega_batch_size
+            )
+            self.temporal_x_omega_border_batch_size = (
+                self.temporal_batch_size * self.omega_border_batch_size
+            )
 
         # Set-up for timewise RAR (some quantity are already set-up by super())
         (
@@ -834,11 +853,40 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             _,
         ) = _check_and_set_rar_parameters(self.rar_parameters, self.nt, self.nt_start)
 
-        self.curr_time_idx = jnp.iinfo(jnp.int32).max - self.temporal_batch_size - 1
+        self.curr_times_x_omega_idx = (
+            jnp.iinfo(jnp.int32).max - self.temporal_x_omega_batch_size - 1
+        )
+        self.curr_times_x_omega_border_idx = (
+            jnp.iinfo(jnp.int32).max - self.temporal_x_omega_border_batch_size - 1
+        )
         self.key, _ = jax.random.split(self.key, 2)  # to make it equivalent to
         # the call to _reset_batch_idx_and_permute in legacy DG
-        self.key, self.times = self.generate_time_data(self.key)
+        self.key, times = self.generate_time_data(self.key)
         # see explaination in DataGeneratorODE for the key
+
+        # General concatenation or cartesian_product of times and omega or
+        # times and omega_border is done below at the end of __post_init__
+        # It was previously done it the get_batch function inducing loss of
+        # performance
+        if self.cartesian_product:
+            self.times_x_omega = make_cartesian_product(times[:, None], self.omega)
+        else:
+            self.times_x_omega = jnp.concatenate([times[:, None], self.omega], axis=1)
+
+        if self.omega_border_batch_size is not None:
+            t_ = times.reshape(self.nt, 1, 1)
+            t_ = jnp.repeat(t_, self.omega_border.shape[-1], axis=2)
+            if self.cartesian_product or self.dim == 1:
+                dx = self.omega_border[None, None]
+                self.times_x_omega_border = make_cartesian_product(t_, dx)
+            else:
+                self.times_x_omega_border = jnp.concatenate(
+                    [t_, self.omega_border], axis=1
+                )
+
+        # the following attributes will not be used anymore
+        self.omega = None
+        self.omega_border = None
 
     def sample_in_time_domain(
         self, key: Key, sample_size: Int = None
@@ -850,15 +898,15 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             maxval=self.tmax,
         )
 
-    def _get_time_operands(
+    def _get_times_x_omega_operands(
         self,
     ) -> tuple[Key, Float[Array, "nt"], Int, Int, Float[Array, "nt"]]:
         return (
             self.key,
-            self.times,
-            self.curr_time_idx,
-            self.temporal_batch_size,
-            self.p_times,
+            self.times_x_omega,
+            self.curr_times_x_omega_idx,
+            self.temporal_x_omega_batch_size,
+            None,  # self.p_times * self.p_omega if self.cartesian_product else... ?#self.p_times,
         )
 
     def generate_time_data(self, key: Key) -> tuple[Key, Float[Array, "nt"]]:
@@ -877,15 +925,9 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             return key, self.sample_in_time_domain(subkey)
         raise ValueError("Method " + self.method + " is not implemented.")
 
-    def temporal_batch(
-        self,
-    ) -> tuple["CubicMeshPDENonStatio", Float[Array, "temporal_batch_size"]]:
-        """
-        Return a batch of time points. If all the batches have been seen, we
-        reshuffle them, otherwise we just return the next unseen batch.
-        """
-        bstart = self.curr_time_idx
-        bend = bstart + self.temporal_batch_size
+    def times_x_inside_batch(self):
+        bstart = self.curr_times_x_omega_idx
+        bend = bstart + self.temporal_x_omega_batch_size
 
         # Compute the effective number of used collocation points
         if self.rar_parameters is not None:
@@ -896,15 +938,68 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         else:
             nt_eff = self.nt
 
-        new_attributes = _reset_or_increment(bend, nt_eff, self._get_time_operands())
+        if self.nt == self.temporal_batch_size:
+            return self, self.times_x_omega
+
+        new_attributes = _reset_or_increment(
+            bend, nt_eff, self._get_times_x_omega_operands()
+        )
+        print(new_attributes, self.key, self.times_x_omega, self.curr_times_x_omega_idx)
         new = eqx.tree_at(
-            lambda m: (m.key, m.times, m.curr_time_idx), self, new_attributes
+            lambda m: (m.key, m.times_x_omega, m.curr_times_x_omega_idx),
+            self,
+            new_attributes,
+        )
+        return new, jax.lax.dynamic_slice(
+            new.times_x_omega,
+            start_indices=(new.curr_times_x_omega_idx, 0),
+            slice_sizes=(new.temporal_x_omega_batch_size, new.dim + 1),
+        )
+
+    def _get_times_x_omega_border_operands(
+        self,
+    ) -> tuple[Key, Float[Array, "nt"], Int, Int, Float[Array, "nt"]]:
+        return (
+            self.key,
+            self.times_x_omega_border,
+            self.curr_times_x_omega_border_idx,
+            self.temporal_x_omega_border_batch_size,
+            None,  # self.p_times * self.p_omega if self.cartesian_product else... ?#self.p_times,
+        )
+
+    def times_x_border_batch(self):
+        bstart = self.curr_times_x_omega_border_idx
+        bend = bstart + self.temporal_x_omega_border_batch_size
+
+        # Compute the effective number of used collocation points
+        if self.rar_parameters is not None:
+            nt_eff = (
+                self.nt_start
+                + self.rar_iter_nb * self.rar_parameters["selected_sample_size_times"]
+            )
+        else:
+            nt_eff = self.nt
+
+        if self.nt == self.temporal_batch_size:
+            return self, self.times_x_omega_border
+
+        new_attributes = _reset_or_increment(
+            bend, nt_eff, self._get_times_x_omega_border_operands()
+        )
+        new = eqx.tree_at(
+            lambda m: (m.key, m.times_x_omega_border, m.curr_times_x_omega_border_idx),
+            self,
+            new_attributes,
         )
 
         return new, jax.lax.dynamic_slice(
-            new.times,
-            start_indices=(new.curr_time_idx,),
-            slice_sizes=(new.temporal_batch_size,),
+            new.times_x_omega_border,
+            start_indices=(new.curr_times_x_omega_border_idx, 0, 0),
+            slice_sizes=(
+                new.temporal_x_omega_border_batch_size,
+                new.dim + 1,
+                2 * new.dim,
+            ),
         )
 
     def get_batch(self) -> tuple["CubicMeshPDENonStatio", PDENonStatioBatch]:
@@ -912,25 +1007,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         Generic method to return a batch. Here we call `self.inside_batch()`,
         `self.border_batch()` and `self.temporal_batch()`
         """
-        new, x = self.inside_batch()
-        new, dx = new.border_batch()
-        new, t = new.temporal_batch()
-        t = t.reshape(new.temporal_batch_size, 1)
-
-        if new.cartesian_product:
-            t_x = make_cartesian_product(t, x)
-        else:
-            t_x = jnp.concatenate([t, x], axis=1)
-
-        if dx is not None:
-            t_ = t.reshape(new.temporal_batch_size, 1, 1)
-            t_ = jnp.repeat(t_, dx.shape[-1], axis=2)
-            if new.cartesian_product or new.dim == 1:
-                t_dx = make_cartesian_product(t_, dx)
-            else:
-                t_dx = jnp.concatenate([t_, dx], axis=1)
-        else:
-            t_dx = None
+        new, t_x = self.times_x_inside_batch()
+        new, t_dx = new.times_x_border_batch()
 
         return new, PDENonStatioBatch(
             times_x_inside_batch=t_x, times_x_border_batch=t_dx

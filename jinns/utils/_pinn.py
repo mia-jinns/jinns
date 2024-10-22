@@ -149,8 +149,9 @@ class PINN(eqx.Module):
             (x, params) = args
             return self.eval_nn(x, params)
         if self.eq_type == "nonstatio_PDE":
-            (t, x, params) = args
-            t_x = jnp.concatenate([t, x], axis=-1)
+            # (t, x, params) = args
+            # t_x = jnp.concatenate([t, x], axis=-1)
+            (t_x, params) = args
             return self.eval_nn(t_x, params)
         raise ValueError("Wrong value for self.eq_type")
 

@@ -21,53 +21,22 @@ else:
     from equinox import AbstractClassVar
 
 
-def _decorator_heteregeneous_params(evaluate, eq_type):
+def _decorator_heteregeneous_params(evaluate):
 
-    def wrapper_ode(*args):
-        self, t, u, params = args
+    def wrapper(*args):
+        self, inputs, u, params = args
         _params = eqx.tree_at(
             lambda p: p.eq_params,
             params,
             self._eval_heterogeneous_parameters(
-                t, None, u, params, self.eq_params_heterogeneity
+                inputs, u, params, self.eq_params_heterogeneity
             ),
         )
         new_args = args[:-1] + (_params,)
         res = evaluate(*new_args)
         return res
 
-    def wrapper_pde_statio(*args):
-        self, x, u, params = args
-        _params = eqx.tree_at(
-            lambda p: p.eq_params,
-            params,
-            self._eval_heterogeneous_parameters(
-                None, x, u, params, self.eq_params_heterogeneity
-            ),
-        )
-        new_args = args[:-1] + (_params,)
-        res = evaluate(*new_args)
-        return res
-
-    def wrapper_pde_non_statio(*args):
-        self, t, x, u, params = args
-        _params = eqx.tree_at(
-            lambda p: p.eq_params,
-            params,
-            self._eval_heterogeneous_parameters(
-                t, x, u, params, self.eq_params_heterogeneity
-            ),
-        )
-        new_args = args[:-1] + (_params,)
-        res = evaluate(*new_args)
-        return res
-
-    if eq_type == "ODE":
-        return wrapper_ode
-    elif eq_type == "Statio PDE":
-        return wrapper_pde_statio
-    elif eq_type == "Non-statio PDE":
-        return wrapper_pde_non_statio
+    return wrapper
 
 
 class DynamicLoss(eqx.Module):
@@ -110,8 +79,7 @@ class DynamicLoss(eqx.Module):
 
     def _eval_heterogeneous_parameters(
         self,
-        t: Float[Array, "1"],
-        x: Float[Array, "dim"],
+        inputs: Float[Array, "1"] | Float[Array, "dim"] | Float[Array, "1 + dim"],
         u: eqx.Module,
         params: Params | ParamsDict,
         eq_params_heterogeneity: Dict[str, Callable | None] = None,
@@ -124,14 +92,7 @@ class DynamicLoss(eqx.Module):
                 if eq_params_heterogeneity[k] is None:
                     eq_params_[k] = p
                 else:
-                    # heterogeneity encoded through a function whose
-                    # signature will vary according to _eq_type
-                    if self._eq_type == "ODE":
-                        eq_params_[k] = eq_params_heterogeneity[k](t, u, params)
-                    elif self._eq_type == "Statio PDE":
-                        eq_params_[k] = eq_params_heterogeneity[k](x, u, params)
-                    elif self._eq_type == "Non-statio PDE":
-                        eq_params_[k] = eq_params_heterogeneity[k](t, x, u, params)
+                    eq_params_[k] = eq_params_heterogeneity[k](inputs, u, params)
             except KeyError:
                 # we authorize missing eq_params_heterogeneity key
                 # if its heterogeneity is None anyway
@@ -140,22 +101,12 @@ class DynamicLoss(eqx.Module):
 
     def _evaluate(
         self,
-        t: Float[Array, "1"],
-        x: Float[Array, "dim"],
+        inputs: Float[Array, "1"] | Float[Array, "dim"] | Float[Array, "1 + dim"],
         u: eqx.Module,
         params: Params | ParamsDict,
     ) -> float:
         # Here we handle the various possible signature
-        if self._eq_type == "ODE":
-            ans = self.equation(t, u, params)
-        elif self._eq_type == "Statio PDE":
-            ans = self.equation(x, u, params)
-        elif self._eq_type == "Non-statio PDE":
-            ans = self.equation(t, x, u, params)
-        else:
-            raise NotImplementedError("the equation type is not handled.")
-
-        return ans
+        return self.equation(inputs, u, params)
 
     @abc.abstractmethod
     def equation(self, *args, **kwargs):
@@ -191,7 +142,7 @@ class ODE(DynamicLoss):
 
     _eq_type: ClassVar[str] = "ODE"
 
-    @partial(_decorator_heteregeneous_params, eq_type="ODE")
+    @partial(_decorator_heteregeneous_params)
     def evaluate(
         self,
         t: Float[Array, "1"],
@@ -199,7 +150,7 @@ class ODE(DynamicLoss):
         params: Params | ParamsDict,
     ) -> float:
         """Here we call DynamicLoss._evaluate with x=None"""
-        return self._evaluate(t, None, u, params)
+        return self._evaluate(t, u, params)
 
     @abc.abstractmethod
     def equation(
@@ -260,12 +211,12 @@ class PDEStatio(DynamicLoss):
 
     _eq_type: ClassVar[str] = "Statio PDE"
 
-    @partial(_decorator_heteregeneous_params, eq_type="Statio PDE")
+    @partial(_decorator_heteregeneous_params)
     def evaluate(
         self, x: Float[Array, "dimension"], u: eqx.Module, params: Params | ParamsDict
     ) -> float:
         """Here we call the DynamicLoss._evaluate with t=None"""
-        return self._evaluate(None, x, u, params)
+        return self._evaluate(x, u, params)
 
     @abc.abstractmethod
     def equation(
@@ -325,23 +276,21 @@ class PDENonStatio(DynamicLoss):
 
     _eq_type: ClassVar[str] = "Non-statio PDE"
 
-    @partial(_decorator_heteregeneous_params, eq_type="Non-statio PDE")
+    @partial(_decorator_heteregeneous_params)
     def evaluate(
         self,
-        t: Float[Array, "1"],
-        x: Float[Array, "dim"],
+        t_x: Float[Array, "1 + dim"],
         u: eqx.Module,
         params: Params | ParamsDict,
     ) -> float:
         """Here we call the DynamicLoss._evaluate with full arguments"""
-        ans = self._evaluate(t, x, u, params)
+        ans = self._evaluate(t_x, u, params)
         return ans
 
     @abc.abstractmethod
     def equation(
         self,
-        t: Float[Array, "1"],
-        x: Float[Array, "dim"],
+        t_x: Float[Array, "1 + dim"],
         u: eqx.Module,
         params: Params | ParamsDict,
     ) -> float:

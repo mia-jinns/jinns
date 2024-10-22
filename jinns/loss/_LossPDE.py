@@ -103,6 +103,16 @@ class _LossPDEAbstract(eqx.Module):
     obs_slice : slice, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
+    num_initial : slice, default=None
+        slice object to specify a specific number of points of the domain on
+        which to compute the initial condition. This is introduced for the
+        specific purpose of comparison with DeepXDE, since our DataGenerators
+        are quite different from theirs.
+    num_boundary : slice, default=None
+        slice object to specify a specific number of points of the border domain on
+        which to compute the boudnary condition. This is introduced for the
+        specific purpose of comparison with DeepXDE, since our DataGenerators
+        are quite different from theirs.
     params : InitVar[Params], default=None
         The main Params object of the problem needed to instanciate the
         DerivativeKeysODE if the latter is not specified.
@@ -131,6 +141,8 @@ class _LossPDEAbstract(eqx.Module):
     )
     norm_int_length: float | None = eqx.field(kw_only=True, default=None)
     obs_slice: slice | None = eqx.field(kw_only=True, default=None, static=True)
+    num_initial: int | None = eqx.field(kw_only=True, default=None, static=True)
+    num_boundary: int | None = eqx.field(kw_only=True, default=None, static=True)
 
     params: InitVar[Params] = eqx.field(kw_only=True, default=None)
 
@@ -256,6 +268,11 @@ class _LossPDEAbstract(eqx.Module):
         if self.norm_samples is not None and self.norm_int_length is None:
             raise ValueError("self.norm_samples and norm_int_length must be provided")
 
+        if self.num_initial is None:
+            self.num_initial = jnp.s_[...]
+        if self.num_boundary is None:
+            self.num_boundary = jnp.s_[...]
+
     @abc.abstractmethod
     def evaluate(
         self: eqx.Module,
@@ -335,6 +352,16 @@ class LossPDEStatio(_LossPDEAbstract):
     obs_slice : slice, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
+    num_initial : slice, default=None
+        slice object to specify a specific number of points of the domain on
+        which to compute the initial condition. This is introduced for the
+        specific purpose of comparison with DeepXDE, since our DataGenerators
+        are quite different from theirs.
+    num_boundary : slice, default=None
+        slice object to specify a specific number of points of the border domain on
+        which to compute the boudnary condition. This is introduced for the
+        specific purpose of comparison with DeepXDE, since our DataGenerators
+        are quite different from theirs.
     params : InitVar[Params], default=None
         The main Params object of the problem needed to instanciate the
         DerivativeKeysODE if the latter is not specified.
@@ -449,6 +476,7 @@ class LossPDEStatio(_LossPDEAbstract):
                 self.omega_boundary_condition,
                 self.omega_boundary_dim,
                 self.loss_weights.boundary_loss,
+                self.num_boundary,
             )
         else:
             mse_boundary_loss = jnp.array(0.0)
@@ -563,6 +591,16 @@ class LossPDENonStatio(LossPDEStatio):
     initial_condition_fun : Callable, default=None
         A function representing the temporal initial condition. If None
         (default) then no initial condition is applied
+    num_initial : slice, default=None
+        slice object to specify a specific number of points of the domain on
+        which to compute the initial condition. This is introduced for the
+        specific purpose of comparison with DeepXDE, since our DataGenerators
+        are quite different from theirs.
+    num_boundary : slice, default=None
+        slice object to specify a specific number of points of the border domain on
+        which to compute the boudnary condition. This is introduced for the
+        specific purpose of comparison with DeepXDE, since our DataGenerators
+        are quite different from theirs.
     params : InitVar[Params], default=None
         The main Params object of the problem needed to instanciate the
         DerivativeKeysODE if the latter is not specified.
@@ -585,7 +623,7 @@ class LossPDENonStatio(LossPDEStatio):
         )  # because __init__ or __post_init__ of Base
         # class is not automatically called
 
-        self.vmap_in_axes = (0, 0)  # for t and x
+        self.vmap_in_axes = (0,)  # for t_x
 
         if self.initial_condition_fun is None:
             warnings.warn(
@@ -595,10 +633,8 @@ class LossPDENonStatio(LossPDEStatio):
 
     def _get_dynamic_loss_batch(
         self, batch: PDENonStatioBatch
-    ) -> tuple[Float[Array, "batch_size 1"], Float[Array, "batch_size dimension"]]:
-        times_batch = batch.times_x_inside_batch[:, 0:1]
-        omega_batch = batch.times_x_inside_batch[:, 1:]
-        return (times_batch, omega_batch)
+    ) -> tuple[Float[Array, "batch_size 1 + dimension"]]:
+        return (batch.times_x_inside_batch,)
 
     def _get_normalization_loss_batch(
         self, batch: PDENonStatioBatch
@@ -637,7 +673,7 @@ class LossPDENonStatio(LossPDEStatio):
             of parameters (eg. for metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
         """
-        omega_batch = batch.times_x_inside_batch[:, 1:]
+        omega_batch = batch.times_x_inside_batch[self.num_initial, 1:]
 
         # Retrieve the optional eq_params_batch
         # and update eq_params with the latter

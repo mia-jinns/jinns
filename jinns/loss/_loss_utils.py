@@ -20,6 +20,7 @@ from jinns.utils._utils import _check_user_func_return, _get_grid
 from jinns.data._DataGenerators import (
     append_obs_batch,
 )
+from jinns.parameters._params import _get_vmap_in_axes_params
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
 from jinns.utils._hyperpinn import HYPERPINN
@@ -139,7 +140,19 @@ def boundary_condition_apply(
     omega_boundary_condition: str,
     omega_boundary_dim: int,
     loss_weight: float | Float[Array, "boundary_cond_dim"],
+    num_boundary: slice = None,
 ) -> float:
+
+    vmap_in_axes = (0,) + _get_vmap_in_axes_params(batch.param_batch_dict, params)
+
+    if num_boundary is None:
+        num_boundary = jnp.s_[...]
+
+    if isinstance(batch, PDENonStatioBatch):
+        batch_array = batch.times_x_border_batch[num_boundary]
+    elif isinstance(batch, PDEStatioBatch):
+        batch_array = batch.border_batch[num_boundary]
+
     if isinstance(omega_boundary_fun, dict):
         # We must create the facet tree dictionary as we do not have the
         # enumerate from the for loop to pass the id integer
@@ -166,7 +179,10 @@ def boundary_condition_apply(
                 None
                 if c is None
                 else jnp.mean(
-                    loss_weight * _compute_boundary_loss(c, f, batch, u, params, fa, d)
+                    loss_weight
+                    * _compute_boundary_loss(
+                        c, f, batch_array, u, params, fa, d, vmap_in_axes
+                    )
                 )
             ),
             omega_boundary_condition,
@@ -190,11 +206,12 @@ def boundary_condition_apply(
                 * _compute_boundary_loss(
                     omega_boundary_condition,
                     omega_boundary_fun,
-                    batch,
+                    batch_array,
                     u,
                     params,
                     fa,
                     omega_boundary_dim,
+                    vmap_in_axes,
                 )
             ),
             facet_tuple,
@@ -247,12 +264,13 @@ def initial_condition_apply(
     loss_weight: float | Float[Array, "initial_condition_dimension"],
 ) -> float:
     if isinstance(u, (PINN, HYPERPINN)):
+        t0_omega_batch = jnp.concatenate([jnp.zeros((n, 1)), omega_batch], axis=1)
         v_u_t0 = vmap(
-            lambda x, params: initial_condition_fun(x) - u(jnp.zeros((1,)), x, params),
+            lambda t0_x, params: initial_condition_fun(t0_x[1:]) - u(t0_x, params),
             vmap_axes,
             0,
         )
-        res = v_u_t0(omega_batch, params)  # NOTE take the tiled
+        res = v_u_t0(t0_omega_batch, params)  # NOTE take the tiled
         # omega_batch (ie omega_batch_) to have the same batch
         # dimension as params to be able to vmap.
         # Recall that by convention:

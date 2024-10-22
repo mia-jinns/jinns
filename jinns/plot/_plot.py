@@ -285,10 +285,13 @@ def plot1d_slice(
     plt.figure(figsize=figsize)
     for t in time_slices:
         if not spinn:
+            t0_xdata = jnp.concatenate(
+                [t * jnp.ones((xdata.shape[0], 1)), xdata[:, None]], axis=1
+            )
             # fix t with partial : shape is (1,)
-            v_u_tfixed = vmap(partial(fun, t=t * jnp.ones((1,))), 0, 0)
+            v_u_tfixed = vmap(fun)
             # add an axis to xdata for the concatenate function in the neural net
-            values = v_u_tfixed(x=xdata[:, None])
+            values = v_u_tfixed(t0_xdata)
         elif spinn:
             values = jnp.squeeze(
                 fun(t * jnp.ones((xdata.shape[0], 1)), xdata[..., None])[0]
@@ -344,7 +347,7 @@ def plot1d_image(
     mesh = jnp.meshgrid(times, xdata)  # cartesian product
     if not spinn:
         # the trick is to use _plot2Dstatio
-        v_fun = vmap(lambda tx: fun(t=tx[0, None], x=tx[1, None]), 0, 0)
+        v_fun = vmap(fun)  # lambda tx: fun(t=tx[0, None], x=tx[1, None]), 0, 0)
         t_grid, x_grid = mesh
         values_grid = v_fun(jnp.vstack([t_grid.flatten(), x_grid.flatten()]).T).reshape(
             t_grid.shape
