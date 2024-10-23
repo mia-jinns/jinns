@@ -62,15 +62,11 @@ class _SPINN(eqx.Module):
             self.separated_mlp.append(self.layers)
 
     def __call__(
-        self, t: Float[Array, "1"], x: Float[Array, "omega_dim"]
+        self, inputs: Float[Array, "dim"] | Float[Array, "dim+1"]
     ) -> Float[Array, "d embed_dim*output_dim"]:
-        if t is not None:
-            dimensions = jnp.concatenate([t, x.flatten()], axis=0)
-        else:
-            dimensions = jnp.concatenate([x.flatten()], axis=0)
         outputs = []
         for d in range(self.d):
-            t_ = dimensions[d][None]
+            t_ = inputs[d][None]
             for layer in self.separated_mlp[d]:
                 t_ = layer(t_)
             outputs += [t_]
@@ -115,25 +111,14 @@ class SPINN(eqx.Module):
         """
         Calls `eval_nn` with rearranged arguments
         """
-        if self.eq_type == "statio_PDE":
-            (x, params) = args
-            try:
-                spinn = eqx.combine(params.nn_params, self.static)
-            except (KeyError, AttributeError, TypeError) as e:
-                spinn = eqx.combine(params, self.static)
-            v_model = jax.vmap(spinn, (0))
-            res = v_model(t=None, x=x)
-            return self.eval_nn(res)
-        if self.eq_type == "nonstatio_PDE":
-            (t, x, params) = args
-            try:
-                spinn = eqx.combine(params.nn_params, self.static)
-            except (KeyError, AttributeError, TypeError) as e:
-                spinn = eqx.combine(params, self.static)
-            v_model = jax.vmap(spinn, ((0, 0)))
-            res = v_model(t, x)
-            return self.eval_nn(res)
-        raise RuntimeError("Wrong parameter value for eq_type")
+        (t_x, params) = args
+        try:
+            spinn = eqx.combine(params.nn_params, self.static)
+        except (KeyError, AttributeError, TypeError) as e:
+            spinn = eqx.combine(params, self.static)
+        v_model = jax.vmap(spinn)
+        res = v_model(t_x)
+        return self.eval_nn(res)
 
     def eval_nn(
         self, res: Float[Array, "d embed_dim*output_dim"]

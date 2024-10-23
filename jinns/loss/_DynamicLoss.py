@@ -207,9 +207,7 @@ class BurgerEquation(PDENonStatio):
 
     def equation(
         self,
-        t_x: Float[Array, "1 + dim"],
-        # t: Float[Array, "1"],
-        # x: Float[Array, "dim"],
+        t_x: Float[Array, "1+dim"],
         u: eqx.Module,
         params: Params,
     ) -> Float[Array, "1"]:
@@ -217,18 +215,16 @@ class BurgerEquation(PDENonStatio):
         Evaluate the dynamic loss at :math:`(t,x)`.
 
         Parameters
-        ---------
-        t
-            A time point
-        x
-            A point in $\Omega$
+        ----------
+        t_x
+            A jnp array containing the concatenation of a time point
+            and a point in $\Omega$
         u
             The PINN
         params
             The dictionary of parameters of the model.
         """
         if isinstance(u, PINN):
-            # Note that the last dim of u is nec. 1
             u_ = lambda t_x: jnp.squeeze(u(t_x, params)[u.slice_solution])
             du_dtx = grad(u_)
             d2u_dx_dtx = grad(lambda t_x: du_dtx(t_x)[1])
@@ -242,24 +238,30 @@ class BurgerEquation(PDENonStatio):
         if isinstance(u, SPINN):
             # d=2 JVP calls are expected since we have time and x
             # then with a batch of size B, we then have Bd JVP calls
-            u_tx, du_dtx = jax.jvp(
+            v0 = jnp.repeat(jnp.array([[1.0, 0.0]]), t_x.shape[0], axis=0)
+            v1 = jnp.repeat(jnp.array([[0.0, 1.0]]), t_x.shape[0], axis=0)
+            u_tx, du_dt = jax.jvp(
                 lambda t_x: u(t_x, params),
                 (t_x,),
-                (jnp.ones_like(t_x),),
+                (v0,),
             )
-            du_dtx_fun = lambda t_x: jax.jvp(
+            _, du_dx = jax.jvp(
                 lambda t_x: u(t_x, params),
                 (t_x,),
-                (jnp.ones_like(t_x),),
+                (v1,),
             )
-            _, d2u_dx2 = jax.jvp(
-                lambda t_x: du_dtx_fun(t_x)[1], (t_x,), (jnp.ones_like(t_x),)
-            )
+            # both calls above could be condensed into the one jacfwd below
+            # u_ = lambda t_x: u(t_x, params)
+            # J = jax.jacfwd(u_)(t_x)
+
+            du_dx_fun = lambda t_x: jax.jvp(
+                lambda t_x: u(t_x, params),
+                (t_x,),
+                (v1,),
+            )[1]
+            _, d2u_dx2 = jax.jvp(lambda t_x: du_dx_fun(t_x), (t_x,), (v1,))
             # Note that ones_like(x) works because x is Bx1 !
-            print(du_dtx.shape, d2u_dx2.shape)
-            return du_dtx[0] + self.Tmax * (
-                u_tx * du_dtx[1] - params.eq_params["nu"] * d2u_dx2
-            )
+            return du_dt + self.Tmax * (u_tx * du_dx - params.eq_params["nu"] * d2u_dx2)
         raise ValueError("u is not among the recognized types (PINN or SPINN)")
 
 

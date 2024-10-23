@@ -284,18 +284,16 @@ def plot1d_slice(
         time_slices = jnp.array([0])
     plt.figure(figsize=figsize)
     for t in time_slices:
+        t0_xdata = jnp.concatenate(
+            [t * jnp.ones((xdata.shape[0], 1)), xdata[:, None]], axis=1
+        )
         if not spinn:
-            t0_xdata = jnp.concatenate(
-                [t * jnp.ones((xdata.shape[0], 1)), xdata[:, None]], axis=1
-            )
             # fix t with partial : shape is (1,)
             v_u_tfixed = vmap(fun)
             # add an axis to xdata for the concatenate function in the neural net
             values = v_u_tfixed(t0_xdata)
         elif spinn:
-            values = jnp.squeeze(
-                fun(t * jnp.ones((xdata.shape[0], 1)), xdata[..., None])[0]
-            )
+            values = jnp.squeeze(fun(t0_xdata)[0])
         plt.plot(xdata, values, label=f"$t_i={t * Tmax:.2f}$")
     plt.xlabel("x")
     plt.ylabel(r"$u(t_i, x)$")
@@ -353,7 +351,9 @@ def plot1d_image(
             t_grid.shape
         )
     elif spinn:
-        values_grid = jnp.squeeze(fun((times[..., None]), xdata[..., None]).T)
+        values_grid = jnp.squeeze(
+            fun(jnp.concatenate([times[..., None], xdata[..., None]], axis=-1))
+        ).T
     fig, ax = plt.subplots(1, 1, figsize=figsize)
     if vmin_vmax is not None:
         im = ax.pcolormesh(

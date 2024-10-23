@@ -869,9 +869,9 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         # It was previously done it the get_batch function inducing loss of
         # performance
         if self.cartesian_product:
-            self.times_x_omega = make_cartesian_product(times[:, None], self.omega)
+            self.times_x_omega = make_cartesian_product(times, self.omega)
         else:
-            self.times_x_omega = jnp.concatenate([times[:, None], self.omega], axis=1)
+            self.times_x_omega = jnp.concatenate([times, self.omega], axis=1)
 
         if self.omega_border_batch_size is not None:
             t_ = times.reshape(self.nt, 1, 1)

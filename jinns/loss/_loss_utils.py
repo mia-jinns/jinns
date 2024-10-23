@@ -263,8 +263,8 @@ def initial_condition_apply(
     n: int,
     loss_weight: float | Float[Array, "initial_condition_dimension"],
 ) -> float:
+    t0_omega_batch = jnp.concatenate([jnp.zeros((n, 1)), omega_batch], axis=1)
     if isinstance(u, (PINN, HYPERPINN)):
-        t0_omega_batch = jnp.concatenate([jnp.zeros((n, 1)), omega_batch], axis=1)
         v_u_t0 = vmap(
             lambda t0_x, params: initial_condition_fun(t0_x[1:]) - u(t0_x, params),
             vmap_axes,
@@ -277,13 +277,14 @@ def initial_condition_apply(
         # param_batch_dict = times_batch_size * omega_batch_size
         mse_initial_condition = jnp.mean(jnp.sum(loss_weight * res**2, axis=-1))
     elif isinstance(u, SPINN):
-        values = lambda x: u(
-            jnp.repeat(jnp.zeros((1, 1)), n, axis=0),
-            x,
+        values = lambda t_x: u(
+            # jnp.repeat(jnp.zeros((1, 1)), n, axis=0),
+            # x,
+            t_x,
             params,
         )[0]
         omega_batch_grid = _get_grid(omega_batch)
-        v_ini = values(omega_batch)
+        v_ini = values(t0_omega_batch)
         ini = _check_user_func_return(
             initial_condition_fun(omega_batch_grid), v_ini.shape
         )
