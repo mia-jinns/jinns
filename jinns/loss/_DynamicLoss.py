@@ -46,8 +46,7 @@ class FisherKPP(PDENonStatio):
 
     def equation(
         self,
-        t: Float[Array, "1"],
-        x: Float[Array, "dim"],
+        t_x: Float[Array, "1+dim"],
         u: eqx.Module,
         params: Params,
     ) -> Float[Array, "1"]:
@@ -70,28 +69,29 @@ class FisherKPP(PDENonStatio):
         """
         if isinstance(u, PINN):
             # Note that the last dim of u is nec. 1
-            u_ = lambda t, x: u(t, x, params)[0]
+            u_ = lambda t_x: u(t_x, params)[0]
 
-            du_dt = grad(u_, 0)(t, x)
+            du_dt = grad(u_)(t_x)[0]
 
-            lap = _laplacian_rev(t, x, u, params)[..., None]
+            lap = _laplacian_rev(t_x, u, params, dim_x=1)[..., None]
 
             return du_dt + self.Tmax * (
                 -params.eq_params["D"] * lap
-                - u(t, x, params)
-                * (params.eq_params["r"] - params.eq_params["g"] * u(t, x, params))
+                - u(t_x, params)
+                * (params.eq_params["r"] - params.eq_params["g"] * u(t_x, params))
             )
         if isinstance(u, SPINN):
+            v0 = jnp.repeat(jnp.array([[1.0, 0.0]]), t_x.shape[0], axis=0)
             u_tx, du_dt = jax.jvp(
-                lambda t: u(t, x, params),
-                (t,),
-                (jnp.ones_like(t),),
+                lambda t: u(t_x, params),
+                (t_x,),
+                (v0,),
             )
-            lap = _laplacian_fwd(t, x, u, params)[..., None]
+            lap = _laplacian_fwd(t_x, u, params, dim_x=1)
+
             return du_dt + self.Tmax * (
                 -params.eq_params["D"] * lap
-                - u_tx
-                * (params.eq_params["r"][..., None] - params.eq_params["g"] * u_tx)
+                - u_tx * (params.eq_params["r"] - params.eq_params["g"] * u_tx)
             )
         raise ValueError("u is not among the recognized types (PINN or SPINN)")
 
@@ -259,7 +259,7 @@ class BurgerEquation(PDENonStatio):
                 (t_x,),
                 (v1,),
             )[1]
-            _, d2u_dx2 = jax.jvp(lambda t_x: du_dx_fun(t_x), (t_x,), (v1,))
+            _, d2u_dx2 = jax.jvp(du_dx_fun, (t_x,), (v1,))
             # Note that ones_like(x) works because x is Bx1 !
             return du_dt + self.Tmax * (u_tx * du_dx - params.eq_params["nu"] * d2u_dx2)
         raise ValueError("u is not among the recognized types (PINN or SPINN)")

@@ -67,28 +67,46 @@ def _div_fwd(
 
 
 def _laplacian_rev(
-    t: Float[Array, "1"], x: Float[Array, "dimension"], u: eqx.Module, params: Params
+    inputs: Float[Array, "1"] | Float[Array, "1+dim"],
+    u: eqx.Module,
+    params: Params,
+    dim_x: int,
 ) -> float:
     r"""
     Compute the Laplacian of a scalar field $u$ (from $\mathbb{R}^d$
     to $\mathbb{R}$) for $\mathbf{x}$ of arbitrary dimension, i.e.,
     $\Delta u(\mathbf{x})=\nabla\cdot\nabla u(\mathbf{x})$.
     The computation is done using backward AD.
+
+    !!! note
+
+        See the code of this function for technical details about possible
+        implementations and the current chosen implementations
     """
 
-    # Note that the last dim of u is nec. 1
-    if t is None:
-        u_ = lambda x: u(x, params)[0]
+    # NOTE we afford a concatenate here to avoid computing Hessian elements for
+    # nothing. In case of simple derivatives we prefer the vectorial
+    # computation and then discarding elements but for higher order derivatives
+    # it might not be worth it. See other options below for computating the
+    # Laplacian
+    if dim_x != inputs.shape[0]:
+        u_ = lambda x: jnp.squeeze(
+            u(jnp.concatenate([inputs[:-dim_x], x], axis=0), params)
+        )
     else:
-        u_ = lambda t, x: u(t, x, params)[0]
+        u_ = lambda inputs: jnp.squeeze(u(inputs, params))
 
-    if t is None:
-        return jnp.trace(jax.hessian(u_)(x))
-    return jnp.trace(jax.hessian(u_, argnums=1)(t, x))
+    return jnp.sum(jnp.diag(jax.hessian(u_)(inputs[-dim_x:])))  # [-dim_x:])
 
-    # For a small d, we found out that trace of the Hessian is faster, but the
-    # trick below for taking directly the diagonal elements might prove useful
-    # in higher dimensions?
+    # NOTE that it is unclear whether it is better to vectorially compute the
+    # Hessian (despite a useless time dimension) as below
+    # u_ = lambda inputs: jnp.squeeze(u(inputs, params))
+    # return jnp.sum(jnp.diag(jax.hessian(u_)(inputs))[-dim_x:])
+
+    # For a small d, we found out that trace of the Hessian is faster, see
+    # https://stackoverflow.com/questions/77517357/jax-grad-derivate-with-respect-an-specific-variable-in-a-matrix
+    # but could the trick below for taking directly the diagonal elements
+    # prove useful in higher dimensions?
 
     # def scan_fun(_, i):
     #    if t is None:
@@ -112,10 +130,10 @@ def _laplacian_rev(
 
 
 def _laplacian_fwd(
-    t: Float[Array, "batch_size 1"],
-    x: Float[Array, "batch_size dimension"],
+    inputs: Float[Array, "batch_size 1+dim"] | Float[Array, "batch_size dim"],
     u: eqx.Module,
     params: Params,
+    dim_x: int,
 ) -> Float[Array, "batch_size batch_size"]:
     r"""
     Compute the Laplacian of a **batched** scalar field $u$
@@ -133,26 +151,23 @@ def _laplacian_fwd(
 
     def scan_fun(_, i):
         tangent_vec = jnp.repeat(
-            jax.nn.one_hot(i, x.shape[-1])[None], x.shape[0], axis=0
+            jax.nn.one_hot(i + 1 if dim_x != inputs.shape[-1] else i, inputs.shape[-1])[
+                None
+            ],
+            inputs.shape[0],
+            axis=0,
         )
 
-        if t is None:
-            du_dxi_fun = lambda x: jax.jvp(
-                lambda x: u(x, params)[..., 0], (x,), (tangent_vec,)
-            )[
-                1
-            ]  # Note the indexing [..., 0]
-            __, d2u_dxi2 = jax.jvp(du_dxi_fun, (x,), (tangent_vec,))
-        else:
-            du_dxi_fun = lambda x: jax.jvp(
-                lambda x: u(t, x, params)[..., 0], (x,), (tangent_vec,)
-            )[
-                1
-            ]  # Note the indexing [..., 0]
-            __, d2u_dxi2 = jax.jvp(du_dxi_fun, (x,), (tangent_vec,))
+        du_dxi_fun = lambda inputs: jax.jvp(
+            lambda inputs: u(inputs, params),
+            (inputs,),
+            (tangent_vec,),
+            # lambda inputs: u(inputs, params)[..., 0], (x,), (tangent_vec,)
+        )[1]
+        __, d2u_dxi2 = jax.jvp(du_dxi_fun, (inputs,), (tangent_vec,))
         return _, d2u_dxi2
 
-    _, trace_hessian = jax.lax.scan(scan_fun, {}, jnp.arange(x.shape[1]))
+    _, trace_hessian = jax.lax.scan(scan_fun, {}, jnp.arange(dim_x))
     return jnp.sum(trace_hessian, axis=0)
 
 

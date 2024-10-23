@@ -278,8 +278,6 @@ def initial_condition_apply(
         mse_initial_condition = jnp.mean(jnp.sum(loss_weight * res**2, axis=-1))
     elif isinstance(u, SPINN):
         values = lambda t_x: u(
-            # jnp.repeat(jnp.zeros((1, 1)), n, axis=0),
-            # x,
             t_x,
             params,
         )[0]

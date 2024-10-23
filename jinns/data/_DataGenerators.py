@@ -61,14 +61,14 @@ def _reset_batch_idx_and_permute(
     key, domain, curr_idx, _, p = operands
     # resetting counter
     curr_idx = 0
-    # # reshuffling
-    # key, subkey = jax.random.split(key)
-    # # domain = random.permutation(subkey, domain, axis=0, independent=False)
-    # # we want that permutation = choice when p=None
-    # # otherwise p is used to avoid collocation points not in nt_start
-    # domain = jax.random.choice(
-    #     subkey, domain, shape=(domain.shape[0],), replace=False, p=p
-    # )
+    # reshuffling
+    key, subkey = jax.random.split(key)
+    # domain = random.permutation(subkey, domain, axis=0, independent=False)
+    # we want that permutation = choice when p=None
+    # otherwise p is used to avoid collocation points not in nt_start
+    domain = jax.random.choice(
+        subkey, domain, shape=(domain.shape[0],), replace=False, p=p
+    )
 
     # return updated
     return (key, domain, curr_idx)
@@ -841,9 +841,12 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.temporal_x_omega_batch_size = (
                 self.temporal_batch_size * self.omega_batch_size
             )
-            self.temporal_x_omega_border_batch_size = (
-                self.temporal_batch_size * self.omega_border_batch_size
-            )
+            if self.dim > 1 and self.omega_border_batch_size is not None:
+                self.temporal_x_omega_border_batch_size = (
+                    self.temporal_batch_size * self.omega_border_batch_size
+                )
+            else:
+                self.temporal_x_omega_border_batch_size = self.temporal_batch_size
 
         # Set-up for timewise RAR (some quantity are already set-up by super())
         (
@@ -859,8 +862,6 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         self.curr_times_x_omega_border_idx = (
             jnp.iinfo(jnp.int32).max - self.temporal_x_omega_border_batch_size - 1
         )
-        self.key, _ = jax.random.split(self.key, 2)  # to make it equivalent to
-        # the call to _reset_batch_idx_and_permute in legacy DG
         self.key, times = self.generate_time_data(self.key)
         # see explaination in DataGeneratorODE for the key
 
@@ -932,19 +933,21 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         bend = bstart + self.temporal_x_omega_batch_size
 
         # Compute the effective number of used collocation points
-        if self.rar_parameters is not None:
-            nt_eff = (
-                self.nt_start
-                + self.rar_iter_nb * self.rar_parameters["selected_sample_size_times"]
-            )
-        else:
-            nt_eff = self.nt
+        # if self.rar_parameters is not None:
+        #    nt_eff = (
+        #        self.nt_start
+        #        + self.rar_iter_nb * self.rar_parameters["selected_sample_size_times"]
+        #    )
+        # else:
+        #    nt_eff = self.nt
 
-        if self.nt == self.temporal_batch_size:
+        n_eff = self.times_x_omega.shape[0]
+
+        if n_eff == self.temporal_batch_size:
             return self, self.times_x_omega
 
         new_attributes = _reset_or_increment(
-            bend, nt_eff, self._get_times_x_omega_operands()
+            bend, n_eff, self._get_times_x_omega_operands()
         )
         new = eqx.tree_at(
             lambda m: (m.key, m.times_x_omega, m.curr_times_x_omega_idx),
@@ -982,19 +985,21 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         bend = bstart + self.temporal_x_omega_border_batch_size
 
         # Compute the effective number of used collocation points
-        if self.rar_parameters is not None:
-            nt_eff = (
-                self.nt_start
-                + self.rar_iter_nb * self.rar_parameters["selected_sample_size_times"]
-            )
-        else:
-            nt_eff = self.nt
+        # if self.rar_parameters is not None:
+        #    nt_eff = (
+        #        self.nt_start
+        #        + self.rar_iter_nb * self.rar_parameters["selected_sample_size_times"]
+        #    )
+        # else:
+        #    nt_eff = self.nt
 
-        if self.nt == self.temporal_batch_size:
+        n_eff = self.times_x_omega_border.shape[0]
+
+        if n_eff == self.temporal_batch_size:
             return self, self.times_x_omega_border
 
         new_attributes = _reset_or_increment(
-            bend, nt_eff, self._get_times_x_omega_border_operands()
+            bend, n_eff, self._get_times_x_omega_border_operands()
         )
         new = eqx.tree_at(
             lambda m: (m.key, m.times_x_omega_border, m.curr_times_x_omega_border_idx),

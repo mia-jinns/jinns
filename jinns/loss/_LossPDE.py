@@ -633,7 +633,7 @@ class LossPDENonStatio(LossPDEStatio):
 
     def _get_dynamic_loss_batch(
         self, batch: PDENonStatioBatch
-    ) -> tuple[Float[Array, "batch_size 1 + dimension"]]:
+    ) -> tuple[Float[Array, "batch_size 1+dimension"]]:
         return (batch.times_x_inside_batch,)
 
     def _get_normalization_loss_batch(
