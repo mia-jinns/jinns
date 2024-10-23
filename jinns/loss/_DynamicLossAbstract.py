@@ -79,7 +79,7 @@ class DynamicLoss(eqx.Module):
 
     def _eval_heterogeneous_parameters(
         self,
-        inputs: Float[Array, "1"] | Float[Array, "dim"] | Float[Array, "1 + dim"],
+        inputs: Float[Array, "1"] | Float[Array, "dim"] | Float[Array, "1+dim"],
         u: eqx.Module,
         params: Params | ParamsDict,
         eq_params_heterogeneity: Dict[str, Callable | None] = None,
@@ -101,12 +101,17 @@ class DynamicLoss(eqx.Module):
 
     def _evaluate(
         self,
-        inputs: Float[Array, "1"] | Float[Array, "dim"] | Float[Array, "1 + dim"],
+        inputs: Float[Array, "1"] | Float[Array, "dim"] | Float[Array, "1+dim"],
         u: eqx.Module,
         params: Params | ParamsDict,
     ) -> float:
-        # Here we handle the various possible signature
-        return self.equation(inputs, u, params)
+        evaluation = self.equation(inputs, u, params)
+        if len(evaluation.shape) == 0:
+            raise ValueError(
+                "The output of dynamic loss must be vectorial, "
+                "i.e. of shape (n,) with n >= 1"
+            )
+        return evaluation
 
     @abc.abstractmethod
     def equation(self, *args, **kwargs):

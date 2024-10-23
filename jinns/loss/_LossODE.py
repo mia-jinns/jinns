@@ -227,7 +227,7 @@ class LossODE(_LossODEAbstract):
             else:
                 v_u = vmap(self.u, (None,) + vmap_in_axes_params)
             t0, u0 = self.initial_condition  # pylint: disable=unpacking-non-sequence
-            t0 = jnp.array(t0)
+            t0 = jnp.array([t0])
             u0 = jnp.array(u0)
             mse_initial_condition = jnp.mean(
                 self.loss_weights.initial_condition

@@ -202,11 +202,11 @@ class DataGeneratorODE(eqx.Module):
 
     # all the init=False fields are set in __post_init__, even after a _replace
     # or eqx.tree_at __post_init__ is called
-    p_times: Float[Array, "nt"] = eqx.field(init=False)
+    p_times: Float[Array, "nt 1"] = eqx.field(init=False)
     rar_iter_from_last_sampling: Int = eqx.field(init=False)
     rar_iter_nb: Int = eqx.field(init=False)
     curr_time_idx: Int = eqx.field(init=False)
-    times: Float[Array, "nt"] = eqx.field(init=False)
+    times: Float[Array, "nt 1"] = eqx.field(init=False)
 
     def __post_init__(self):
         (
@@ -234,10 +234,10 @@ class DataGeneratorODE(eqx.Module):
 
     def sample_in_time_domain(
         self, key: Key, sample_size: Int = None
-    ) -> Float[Array, "nt"]:
+    ) -> Float[Array, "nt 1"]:
         return jax.random.uniform(
             key,
-            (self.nt if sample_size is None else sample_size,),
+            (self.nt if sample_size is None else sample_size, 1),
             minval=self.tmin,
             maxval=self.tmax,
         )
@@ -253,14 +253,14 @@ class DataGeneratorODE(eqx.Module):
         key, subkey = jax.random.split(self.key)
         if self.method == "grid":
             partial_times = (self.tmax - self.tmin) / self.nt
-            return key, jnp.arange(self.tmin, self.tmax, partial_times)
+            return key, jnp.arange(self.tmin, self.tmax, partial_times)[:, None]
         if self.method == "uniform":
             return key, self.sample_in_time_domain(subkey)
         raise ValueError("Method " + self.method + " is not implemented.")
 
     def _get_time_operands(
         self,
-    ) -> tuple[Key, Float[Array, "nt"], Int, Int, Float[Array, "nt"]]:
+    ) -> tuple[Key, Float[Array, "nt 1"], Int, Int, Float[Array, "nt 1"]]:
         return (
             self.key,
             self.times,
@@ -302,8 +302,8 @@ class DataGeneratorODE(eqx.Module):
         # start indices can be dynamic but the slice shape is fixed
         return new, jax.lax.dynamic_slice(
             new.times,
-            start_indices=(new.curr_time_idx,),
-            slice_sizes=(new.temporal_batch_size,),
+            start_indices=(new.curr_time_idx, 0),
+            slice_sizes=(new.temporal_batch_size, 1),
         )
 
     def get_batch(self) -> tuple["DataGeneratorODE", ODEBatch]:
@@ -890,17 +890,17 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
     def sample_in_time_domain(
         self, key: Key, sample_size: Int = None
-    ) -> Float[Array, "nt"]:
+    ) -> Float[Array, "nt 1"]:
         return jax.random.uniform(
             key,
-            (self.nt if sample_size is None else sample_size,),
+            (self.nt if sample_size is None else sample_size, 1),
             minval=self.tmin,
             maxval=self.tmax,
         )
 
     def _get_times_x_omega_operands(
         self,
-    ) -> tuple[Key, Float[Array, "nt"], Int, Int, Float[Array, "nt"]]:
+    ) -> tuple[Key, Float[Array, "nt"] | Float[Array, "nt*n"], Int, Int, None]:
         return (
             self.key,
             self.times_x_omega,
@@ -909,7 +909,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             None,  # self.p_times * self.p_omega if self.cartesian_product else... ?#self.p_times,
         )
 
-    def generate_time_data(self, key: Key) -> tuple[Key, Float[Array, "nt"]]:
+    def generate_time_data(self, key: Key) -> tuple[Key, Float[Array, "nt 1"]]:
         """
         Construct a complete set of `self.nt` time points according to the
         specified `self.method`
@@ -920,12 +920,14 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         key, subkey = jax.random.split(key, 2)
         if self.method == "grid":
             partial_times = (self.tmax - self.tmin) / self.nt
-            return key, jnp.arange(self.tmin, self.tmax, partial_times)
+            return key, jnp.arange(self.tmin, self.tmax, partial_times)[:, None]
         if self.method == "uniform":
             return key, self.sample_in_time_domain(subkey)
         raise ValueError("Method " + self.method + " is not implemented.")
 
-    def times_x_inside_batch(self):
+    def times_x_inside_batch(
+        self,
+    ) -> tuple["CubicMeshPDEStatio", Float[Array, "temporal_x_omega_batch_size dim"]]:
         bstart = self.curr_times_x_omega_idx
         bend = bstart + self.temporal_x_omega_batch_size
 
@@ -944,7 +946,6 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         new_attributes = _reset_or_increment(
             bend, nt_eff, self._get_times_x_omega_operands()
         )
-        print(new_attributes, self.key, self.times_x_omega, self.curr_times_x_omega_idx)
         new = eqx.tree_at(
             lambda m: (m.key, m.times_x_omega, m.curr_times_x_omega_idx),
             self,
@@ -958,7 +959,9 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
     def _get_times_x_omega_border_operands(
         self,
-    ) -> tuple[Key, Float[Array, "nt"], Int, Int, Float[Array, "nt"]]:
+    ) -> tuple[
+        Key, Float[Array, "nt 1 2"] | Float[Array, "nt*(nb//4) 2 4"], Int, Int, None
+    ]:
         return (
             self.key,
             self.times_x_omega_border,
@@ -967,7 +970,14 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             None,  # self.p_times * self.p_omega if self.cartesian_product else... ?#self.p_times,
         )
 
-    def times_x_border_batch(self):
+    def times_x_border_batch(
+        self,
+    ) -> tuple[
+        "CubicMeshPDENonStatio",
+        Float[Array, "temporal_x_omega_border_batch_size 1 2"]
+        | Float[Array, "temporal_x_omega_border_batch_size 2 4"]
+        | None,
+    ]:
         bstart = self.curr_times_x_omega_border_idx
         bend = bstart + self.temporal_x_omega_border_batch_size
 

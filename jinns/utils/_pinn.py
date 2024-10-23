@@ -10,7 +10,7 @@ import equinox as eqx
 
 from jaxtyping import Array, Key, PyTree, Float
 
-from jinns.parameters._params import Params
+from jinns.parameters._params import Params, ParamsDict
 
 
 class _MLP(eqx.Module):
@@ -134,31 +134,28 @@ class PINN(eqx.Module):
         """
         return self.params
 
-    def __call__(self, *args) -> Float[Array, "output_dim"]:
+    def __call__(
+        self,
+        *args: tuple[
+            Float[Array, "1"] | Float[Array, "dim"] | Float[Array, "1+dim"],
+            Params | ParamsDict | PyTree,
+        ],
+    ) -> Float[Array, "output_dim"]:
         """
         Calls `eval_nn` with rearranged arguments
         """
-        if self.eq_type == "ODE":
-            (t, params) = args
-            if len(t.shape) == 0:
-                t = t[..., None]  #  Add mandatory dimension which can be lacking
-                # (eg. for the ODE batches) but this dimension can already
-                # exists (eg. for user provided observation times)
-            return self.eval_nn(t, params)
-        if self.eq_type == "statio_PDE":
-            (x, params) = args
-            return self.eval_nn(x, params)
-        if self.eq_type == "nonstatio_PDE":
-            # (t, x, params) = args
-            # t_x = jnp.concatenate([t, x], axis=-1)
-            (t_x, params) = args
-            return self.eval_nn(t_x, params)
-        raise ValueError("Wrong value for self.eq_type")
+        inputs, params = args
+        if len(inputs.shape) == 0:
+            # This can happen often when the user directly provides some
+            # collocation points (eg for plotting, whithout using
+            # DataGenerators)
+            inputs = inputs[None]
+        return self.eval_nn(inputs, params)
 
     def eval_nn(
         self,
-        inputs: Float[Array, "input_dim"],
-        params: Params | PyTree,
+        inputs: Float[Array, "1"] | Float[Array, "dim"] | Float[Array, "1+dim"],
+        params: Params | ParamsDict | PyTree,
     ) -> Float[Array, "output_dim"]:
         """
         Evaluate the PINN on some inputs with some params.
