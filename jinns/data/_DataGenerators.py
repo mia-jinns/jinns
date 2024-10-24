@@ -376,13 +376,16 @@ class CubicMeshPDEStatio(eqx.Module):
     # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
     key: Key = eqx.field(kw_only=True)
     n: Int = eqx.field(kw_only=True, static=True)
-    nb: Int | None = eqx.field(kw_only=True, static=True)
+    nb: Int | None = eqx.field(kw_only=True, static=True, default=None)
     omega_batch_size: Int = eqx.field(
-        kw_only=True, static=True
+        kw_only=True,
+        static=True,
+        default=None,  # can be None as
+        # CubicMeshPDENonStatio inherits
     )  # static cause used as a
     # shape in jax.lax.dynamic_slice
     omega_border_batch_size: Int | None = eqx.field(
-        kw_only=True, static=True
+        kw_only=True, static=True, default=None
     )  # static cause used as a
     # shape in jax.lax.dynamic_slice
     dim: Int = eqx.field(kw_only=True, static=True)  # static cause used as a
@@ -496,7 +499,6 @@ class CubicMeshPDEStatio(eqx.Module):
             # currently hard-coded the 4 edges for d==2
             # TODO : find a general & efficient way to sample from the border
             # (facets) of the hypercube in general dim.
-
             facet_n = self.nb // (2 * self.dim)
             xmin = jnp.hstack(
                 [
@@ -726,28 +728,28 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
     key : Key
         Jax random key to sample new time points and to shuffle batches
     n : Int
-        The number of total $\Omega$ points that will be divided in
+        The number of total $I\times \Omega$ points that will be divided in
         batches. Batches are made so that each data point is seen only
         once during 1 epoch.
     nb : Int | None
         The total number of points in $\partial\Omega$.
         Can be `None` not to lose performance generating the border
         batch if they are not used
-    nt : Int
-        The number of total time points that will be divided in
+    ni : Int
+        The number of total $\Omega$ points at $t=0$ that will be divided in
         batches. Batches are made so that each data point is seen only
         once during 1 epoch.
-    omega_batch_size : Int
+    domain_batch_size : Int
         The size of the batch of randomly selected points among
         the `n` points.
-    omega_border_batch_size : Int | None
+    border_batch_size : Int | None
         The size of the batch of points randomly selected
         among the `nb` points.
         Can be `None` not to lose performance generating the border
         batch if they are not used
-    temporal_batch_size : Int
+    initial_batch_size : Int
         The size of the batch of randomly selected points among
-        the `nt` points.
+        the `ni` points.
     dim : Int
         An integer. dimension of $\Omega$ domain
     min_pts : tuple[tuple[Float, Float], ...]
@@ -784,31 +786,23 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         n_start = n and this is hidden from the user.
         In RAR, n_start
         then corresponds to the initial number of omega points we train the PINN.
-    nt_start : Int, default=None
-        Defaults to None. A RAR hyper-parameter. Same as ``n_start`` but
-        for times collocation point. See also ``DataGeneratorODE``
-        documentation.
-    cartesian_product : Bool, default=True
-        Defaults to True. Whether we return the cartesian product of the
-        temporal batch with the inside and border batches. If False we just
-        return their concatenation.
     """
 
-    temporal_batch_size: Int = eqx.field(kw_only=True, static=True)
+    domain_batch_size: Int = eqx.field(kw_only=True, static=True)
+    initial_batch_size: Int = eqx.field(kw_only=True, static=True)
+    border_batch_size: Int | None = eqx.field(kw_only=True, static=True, default=None)
     tmin: Float = eqx.field(kw_only=True)
     tmax: Float = eqx.field(kw_only=True)
-    nt: Int = eqx.field(kw_only=True, static=True)
-    temporal_batch_size: Int = eqx.field(kw_only=True, static=True)
-    cartesian_product: Bool = eqx.field(kw_only=True, default=True, static=True)
-    nt_start: int = eqx.field(kw_only=True, default=None, static=True)
+    ni: Int = eqx.field(kw_only=True, static=True)
 
-    p_times: Array = eqx.field(init=False)
-    curr_times_x_omega_idx: Int = eqx.field(init=False)
-    curr_times_x_omega_border_idx: Int = eqx.field(init=False)
-    temporal_x_omega_batch_size: Int = eqx.field(init=False, static=True)
-    temporal_x_omega_border_batch_size: Int = eqx.field(init=False, static=True)
-    times_x_omega: Array = eqx.field(init=False)
-    times_x_omega_border: Array = eqx.field(init=False)
+    curr_domain_idx: Int = eqx.field(init=False)
+    curr_initial_idx: Int = eqx.field(init=False)
+    curr_border_idx: Int = eqx.field(init=False)
+    domain: Float[Array, "n 1+dim"] = eqx.field(init=False)
+    border: Float[Array, "nb 1+1 2"] | Float[Array, "(nb//4) 2+1 4"] | None = eqx.field(
+        init=False
+    )
+    initial: Float[Array, "ni dim"] = eqx.field(init=False)
 
     def __post_init__(self):
         """
@@ -818,215 +812,181 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         super().__post_init__()  # because __init__ or __post_init__ of Base
         # class is not automatically called
 
-        if not self.cartesian_product:
-            if self.temporal_batch_size != self.omega_batch_size:
-                raise ValueError(
-                    "If stacking is requested between the time and "
-                    "inside batches of collocation points, self.temporal_batch_size "
-                    "must then be equal to self.omega_batch_size"
-                )
-            if (
-                self.dim > 1
-                and self.omega_border_batch_size is not None
-                and self.temporal_batch_size != self.omega_border_batch_size
-            ):
-                raise ValueError(
-                    "If dim > 1 and stacking is requested between the time and "
-                    "border batches of collocation points, self.temporal_batch_size "
-                    "must then be equal to self.omega_border_batch_size"
-                )
-            self.temporal_x_omega_batch_size = self.temporal_batch_size
-            self.temporal_x_omega_border_batch_size = self.temporal_batch_size
-        else:
-            self.temporal_x_omega_batch_size = (
-                self.temporal_batch_size * self.omega_batch_size
+        self.curr_domain_idx = jnp.iinfo(jnp.int32).max - self.domain_batch_size - 1
+        self.curr_border_idx = jnp.iinfo(jnp.int32).max - self.border_batch_size - 1
+        self.curr_initial_idx = jnp.iinfo(jnp.int32).max - self.initial_batch_size - 1
+
+        self.key, domain_times = self.generate_time_data(self.n, self.key)
+        self.domain = jnp.concatenate([domain_times, self.omega], axis=1)
+        self.key, boundary_times = self.generate_time_data(
+            self.nb // (2 * self.dim), self.key
+        )
+        boundary_times = boundary_times.reshape(-1, 1, 1)
+        boundary_times = jnp.repeat(boundary_times, self.omega_border.shape[-1], axis=2)
+        if self.dim == 1:
+            self.border = make_cartesian_product(
+                boundary_times, self.omega_border[None, None]
             )
-            if self.dim > 1 and self.omega_border_batch_size is not None:
-                self.temporal_x_omega_border_batch_size = (
-                    self.temporal_batch_size * self.omega_border_batch_size
-                )
-            else:
-                self.temporal_x_omega_border_batch_size = self.temporal_batch_size
-
-        # Set-up for timewise RAR (some quantity are already set-up by super())
-        (
-            self.nt_start,
-            self.p_times,
-            _,
-            _,
-        ) = _check_and_set_rar_parameters(self.rar_parameters, self.nt, self.nt_start)
-
-        self.curr_times_x_omega_idx = (
-            jnp.iinfo(jnp.int32).max - self.temporal_x_omega_batch_size - 1
-        )
-        self.curr_times_x_omega_border_idx = (
-            jnp.iinfo(jnp.int32).max - self.temporal_x_omega_border_batch_size - 1
-        )
-        self.key, times = self.generate_time_data(self.key)
-        # see explaination in DataGeneratorODE for the key
-
-        # General concatenation or cartesian_product of times and omega or
-        # times and omega_border is done below at the end of __post_init__
-        # It was previously done it the get_batch function inducing loss of
-        # performance
-        if self.cartesian_product:
-            self.times_x_omega = make_cartesian_product(times, self.omega)
         else:
-            self.times_x_omega = jnp.concatenate([times, self.omega], axis=1)
-
-        if self.omega_border_batch_size is not None:
-            t_ = times.reshape(self.nt, 1, 1)
-            t_ = jnp.repeat(t_, self.omega_border.shape[-1], axis=2)
-            if self.cartesian_product or self.dim == 1:
-                dx = self.omega_border[None, None]
-                self.times_x_omega_border = make_cartesian_product(t_, dx)
-            else:
-                self.times_x_omega_border = jnp.concatenate(
-                    [t_, self.omega_border], axis=1
-                )
+            self.border = jnp.concatenate([boundary_times, self.omega_border], axis=1)
 
         # the following attributes will not be used anymore
         self.omega = None
         self.omega_border = None
 
-    def sample_in_time_domain(
-        self, key: Key, sample_size: Int = None
-    ) -> Float[Array, "nt 1"]:
+    def generate_time_data(self, nt: Int, key: Key) -> tuple[Key, Float[Array, "nt 1"]]:
+        """
+        Construct a complete set of `nt` time points according to the
+        specified `self.method`
+        """
+        key, subkey = jax.random.split(key, 2)
+        if self.method == "grid":
+            partial_times = (self.tmax - self.tmin) / nt
+            return key, jnp.arange(self.tmin, self.tmax, partial_times)[:, None]
+        if self.method == "uniform":
+            return key, self.sample_in_time_domain(nt, subkey)
+        raise ValueError("Method " + self.method + " is not implemented.")
+
+    def sample_in_time_domain(self, nt: Int, key: Key) -> Float[Array, "nt 1"]:
         return jax.random.uniform(
             key,
-            (self.nt if sample_size is None else sample_size, 1),
+            nt,
             minval=self.tmin,
             maxval=self.tmax,
         )
 
-    def _get_times_x_omega_operands(
+    def _get_domain_operands(
         self,
-    ) -> tuple[Key, Float[Array, "nt"] | Float[Array, "nt*n"], Int, Int, None]:
+    ) -> tuple[Key, Float[Array, "n 1+dim"], Int, Int, None]:
         return (
             self.key,
-            self.times_x_omega,
-            self.curr_times_x_omega_idx,
-            self.temporal_x_omega_batch_size,
-            None,  # self.p_times * self.p_omega if self.cartesian_product else... ?#self.p_times,
+            self.domain,
+            self.curr_domain_idx,
+            self.domain_batch_size,
+            self.p,
         )
 
-    def generate_time_data(self, key: Key) -> tuple[Key, Float[Array, "nt 1"]]:
-        """
-        Construct a complete set of `self.nt` time points according to the
-        specified `self.method`
-
-        Note that self.times has always size self.nt and not self.nt_start, even
-        in RAR scheme, we must allocate all the collocation points
-        """
-        key, subkey = jax.random.split(key, 2)
-        if self.method == "grid":
-            partial_times = (self.tmax - self.tmin) / self.nt
-            return key, jnp.arange(self.tmin, self.tmax, partial_times)[:, None]
-        if self.method == "uniform":
-            return key, self.sample_in_time_domain(subkey)
-        raise ValueError("Method " + self.method + " is not implemented.")
-
-    def times_x_inside_batch(
+    def domain_batch(
         self,
-    ) -> tuple["CubicMeshPDEStatio", Float[Array, "temporal_x_omega_batch_size dim"]]:
-        bstart = self.curr_times_x_omega_idx
-        bend = bstart + self.temporal_x_omega_batch_size
+    ) -> tuple["CubicMeshPDEStatio", Float[Array, "domain_batch_size 1+dim"]]:
+        bstart = self.curr_domain_idx
+        bend = bstart + self.domain_batch_size
 
         # Compute the effective number of used collocation points
-        # if self.rar_parameters is not None:
-        #    nt_eff = (
-        #        self.nt_start
-        #        + self.rar_iter_nb * self.rar_parameters["selected_sample_size_times"]
-        #    )
-        # else:
-        #    nt_eff = self.nt
+        if self.rar_parameters is not None:
+            n_eff = (
+                self.n_start
+                + self.rar_iter_nb * self.rar_parameters["selected_sample_size_times"]
+            )
+        else:
+            n_eff = self.n
 
-        n_eff = self.times_x_omega.shape[0]
+        if n_eff == self.domain_batch_size:
+            return self, self.domain
 
-        if n_eff == self.temporal_batch_size:
-            return self, self.times_x_omega
-
-        new_attributes = _reset_or_increment(
-            bend, n_eff, self._get_times_x_omega_operands()
-        )
+        new_attributes = _reset_or_increment(bend, n_eff, self._get_domain_operands())
         new = eqx.tree_at(
-            lambda m: (m.key, m.times_x_omega, m.curr_times_x_omega_idx),
+            lambda m: (m.key, m.domain, m.curr_times_x_omega_idx),
             self,
             new_attributes,
         )
         return new, jax.lax.dynamic_slice(
-            new.times_x_omega,
-            start_indices=(new.curr_times_x_omega_idx, 0),
-            slice_sizes=(new.temporal_x_omega_batch_size, new.dim + 1),
+            new.domain,
+            start_indices=(new.curr_domain_idx, 0),
+            slice_sizes=(new.domain_batch_size, new.dim + 1),
         )
 
-    def _get_times_x_omega_border_operands(
+    def _get_border_operands(
         self,
     ) -> tuple[
-        Key, Float[Array, "nt 1 2"] | Float[Array, "nt*(nb//4) 2 4"], Int, Int, None
+        Key, Float[Array, "nb 1+1 2"] | Float[Array, "(nb//4) 2+1 4"], Int, Int, None
     ]:
         return (
             self.key,
-            self.times_x_omega_border,
-            self.curr_times_x_omega_border_idx,
-            self.temporal_x_omega_border_batch_size,
-            None,  # self.p_times * self.p_omega if self.cartesian_product else... ?#self.p_times,
+            self.border,
+            self.curr_border_idx,
+            self.border_batch_size,
+            None,
         )
 
-    def times_x_border_batch(
+    def border_batch(
         self,
     ) -> tuple[
         "CubicMeshPDENonStatio",
-        Float[Array, "temporal_x_omega_border_batch_size 1 2"]
-        | Float[Array, "temporal_x_omega_border_batch_size 2 4"]
+        Float[Array, "border_batch_size 1+1 2"]
+        | Float[Array, "border_batch_size 2+1 4"]
         | None,
     ]:
-        bstart = self.curr_times_x_omega_border_idx
-        bend = bstart + self.temporal_x_omega_border_batch_size
+        bstart = self.curr_border_idx
+        bend = bstart + self.border_batch_size
 
-        # Compute the effective number of used collocation points
-        # if self.rar_parameters is not None:
-        #    nt_eff = (
-        #        self.nt_start
-        #        + self.rar_iter_nb * self.rar_parameters["selected_sample_size_times"]
-        #    )
-        # else:
-        #    nt_eff = self.nt
+        n_eff = self.border.shape[0]
 
-        n_eff = self.times_x_omega_border.shape[0]
+        if n_eff == self.border_batch_size:
+            return self, self.border
 
-        if n_eff == self.temporal_batch_size:
-            return self, self.times_x_omega_border
-
-        new_attributes = _reset_or_increment(
-            bend, n_eff, self._get_times_x_omega_border_operands()
-        )
+        new_attributes = _reset_or_increment(bend, n_eff, self._get_border_operands())
         new = eqx.tree_at(
-            lambda m: (m.key, m.times_x_omega_border, m.curr_times_x_omega_border_idx),
+            lambda m: (m.key, m.border, m.curr_border_idx),
             self,
             new_attributes,
         )
 
         return new, jax.lax.dynamic_slice(
-            new.times_x_omega_border,
-            start_indices=(new.curr_times_x_omega_border_idx, 0, 0),
+            new.border,
+            start_indices=(new.curr_border_idx, 0, 0),
             slice_sizes=(
-                new.temporal_x_omega_border_batch_size,
+                new.border_batch_size,
                 new.dim + 1,
                 2 * new.dim,
             ),
         )
 
+    def _get_initial_operands(
+        self,
+    ) -> tuple[Key, Float[Array, "ni dim"], Int, Int, None]:
+        return (
+            self.key,
+            self.initial,
+            self.curr_initial_idx,
+            self.initial_batch_size,
+            self.p,
+        )
+
+    def initial_batch(
+        self,
+    ) -> tuple["CubicMeshPDEStatio", Float[Array, "initial_batch_size dim"]]:
+        bstart = self.curr_initial_idx
+        bend = bstart + self.initial_batch_size
+
+        n_eff = self.ni
+
+        if n_eff == self.initial_batch_size:
+            return self, self.initial
+
+        new_attributes = _reset_or_increment(bend, n_eff, self._get_initial_operands())
+        new = eqx.tree_at(
+            lambda m: (m.key, m.initial, m.curr_initial_idx),
+            self,
+            new_attributes,
+        )
+        return new, jax.lax.dynamic_slice(
+            new.initial,
+            start_indices=(new.curr_initial_idx, 0),
+            slice_sizes=(new.initial_batch_size, new.dim),
+        )
+
     def get_batch(self) -> tuple["CubicMeshPDENonStatio", PDENonStatioBatch]:
         """
-        Generic method to return a batch. Here we call `self.inside_batch()`,
-        `self.border_batch()` and `self.temporal_batch()`
+        Generic method to return a batch. Here we call `self.domain_batch()`,
+        `self.border_batch()` and `self.initial_batch()`
         """
-        new, t_x = self.times_x_inside_batch()
-        new, t_dx = new.times_x_border_batch()
+        new, domain = self.domain_batch()
+        new, border = new.border_batch()
+        new, initial = new.initial_batch()
 
         return new, PDENonStatioBatch(
-            times_x_inside_batch=t_x, times_x_border_batch=t_dx
+            domain_batch=domain, border_batch=border, initial_batch=initial
         )
 
 
