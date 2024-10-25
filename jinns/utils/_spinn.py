@@ -103,6 +103,7 @@ class SPINN(eqx.Module):
     def __post_init__(self, spinn_mlp):
         self.params, self.static = eqx.partition(spinn_mlp, eqx.is_inexact_array)
 
+    @property
     def init_params(self) -> PyTree:
         """
         Returns an initial set of parameters
@@ -153,7 +154,7 @@ def create_SPINN(
     eqx_list: tuple[tuple[Callable, int, int] | Callable, ...],
     eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"],
     m: int = 1,
-) -> SPINN:
+) -> tuple[SPINN, PyTree]:
     """
     Utility function to create a SPINN neural network with the equinox
     library.
@@ -211,6 +212,8 @@ def create_SPINN(
     -------
     spinn
         An instanciated SPINN
+    spinn.init_params
+        The initial set of parameters of the model
 
     Raises
     ------
@@ -248,4 +251,4 @@ def create_SPINN(
     spinn_mlp = _SPINN(key=key, d=d, eqx_list=eqx_list)
     spinn = SPINN(spinn_mlp=spinn_mlp, d=d, r=r, eq_type=eq_type, m=m)
 
-    return spinn
+    return spinn, spinn.init_params

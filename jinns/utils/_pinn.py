@@ -128,6 +128,7 @@ class PINN(eqx.Module):
     def __post_init__(self, mlp):
         self.params, self.static = eqx.partition(mlp, eqx.is_inexact_array)
 
+    @property
     def init_params(self) -> PyTree:
         """
         Returns an initial set of parameters
@@ -179,7 +180,7 @@ def create_PINN(
     ] = None,
     shared_pinn_outputs: tuple[slice] = None,
     slice_solution: slice = None,
-) -> PINN | list[PINN]:
+) -> tuple[PINN | list[PINN], PyTree | list[PyTree]]:
     r"""
     Utility function to create a standard PINN neural network with the equinox
     library.
@@ -252,6 +253,9 @@ def create_PINN(
         A PINN instance or, when `shared_pinn_ouput` is not None,
         a list of PINN instances with the same structure is returned,
         only differing by there final slicing of the network output.
+    pinn.init_params
+        An initial set of parameters for the PINN or a list of the latter
+        when `shared_pinn_ouput` is not None.
 
     Raises
     ------
@@ -308,7 +312,7 @@ def create_PINN(
                 output_slice=output_slice,
             )
             pinns.append(pinn)
-        return pinns
+        return pinns, [p.init_params for p in pinns]
     pinn = PINN(
         mlp=mlp,
         slice_solution=slice_solution,
@@ -317,4 +321,4 @@ def create_PINN(
         output_transform=output_transform,
         output_slice=None,
     )
-    return pinn
+    return pinn, pinn.init_params
