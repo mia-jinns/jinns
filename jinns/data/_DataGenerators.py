@@ -163,9 +163,10 @@ class DataGeneratorODE(eqx.Module):
         The minimum value of the time domain to consider
     tmax : float
         The maximum value of the time domain to consider
-    temporal_batch_size : int
+    temporal_batch_size : int | None
         The size of the batch of randomly selected points among
-        the `nt` points.
+        the `nt` points. If None, `temporal_batch_size` is set to `nt`, ie., no minibatches
+        are used.
     method : str, default="uniform"
         Either `grid` or `uniform`, default is `uniform`.
         The method that generates the `nt` time points. `grid` means
@@ -194,7 +195,9 @@ class DataGeneratorODE(eqx.Module):
     nt: Int = eqx.field(static=True)
     tmin: Float
     tmax: Float
-    temporal_batch_size: Int = eqx.field(static=True)  # static cause used as a
+    temporal_batch_size: Int | None = eqx.field(
+        static=True, default=None
+    )  # static cause used as a
     # shape in jax.lax.dynamic_slice
     method: str = eqx.field(static=True, default_factory=lambda: "uniform")
     rar_parameters: Dict[str, Int] = None
@@ -215,6 +218,9 @@ class DataGeneratorODE(eqx.Module):
             self.rar_iter_from_last_sampling,
             self.rar_iter_nb,
         ) = _check_and_set_rar_parameters(self.rar_parameters, self.nt, self.nt_start)
+
+        if self.temporal_batch_size is None:
+            self.temporal_batch_size = self.nt
 
         self.curr_time_idx = jnp.iinfo(jnp.int32).max - self.temporal_batch_size - 1
         # to be sure there is a
@@ -328,17 +334,18 @@ class CubicMeshPDEStatio(eqx.Module):
         batches. Batches are made so that each data point is seen only
         once during 1 epoch.
     nb : Int | None
-        The total number of points in $\partial\Omega$.
-        Can be `None` not to lose performance generating the border
-        batch if they are not used
-    omega_batch_size : Int
+        The total number of points in $\partial\Omega$. Can be None if no
+        boundary condition is specified.
+    omega_batch_size : Int | None
         The size of the batch of randomly selected points among
-        the `n` points.
+        the `n` points. If None, `omega_batch_size` is set to `n`, ie., no minibatches
+        are used.
     omega_border_batch_size : Int | None
         The size of the batch of points randomly selected
-        among the `nb` points.
-        Can be `None` not to lose performance generating the border
-        batch if they are not used
+        among the `nb` points. If None, `omega_border_batch_size` is set to
+        `nb//4` in dimension 2, ie., no minibatches are used. In dimension 1,
+        minibatches are never used since the boundary is composed of two
+        singletons.
     dim : Int
         Dimension of $\Omega$ domain
     min_pts : tuple[tuple[Float, Float], ...]
@@ -377,11 +384,11 @@ class CubicMeshPDEStatio(eqx.Module):
     key: Key = eqx.field(kw_only=True)
     n: Int = eqx.field(kw_only=True, static=True)
     nb: Int | None = eqx.field(kw_only=True, static=True, default=None)
-    omega_batch_size: Int = eqx.field(
+    omega_batch_size: Int | None = eqx.field(
         kw_only=True,
         static=True,
         default=None,  # can be None as
-        # CubicMeshPDENonStatio inherits
+        # CubicMeshPDENonStatio inherits but also if omega_batch_size=n
     )  # static cause used as a
     # shape in jax.lax.dynamic_slice
     omega_border_batch_size: Int | None = eqx.field(
@@ -426,8 +433,7 @@ class CubicMeshPDEStatio(eqx.Module):
 
         # Special handling for the border batch
         if self.omega_border_batch_size is None:
-            self.nb = None
-            self.omega_border_batch_size = None
+            self.omega_border_batch_size = self.nb
         elif self.dim == 1:
             # 1-D case : the arguments `nb` and `omega_border_batch_size` are
             # ignored but kept for backward stability. The attributes are
@@ -450,16 +456,20 @@ class CubicMeshPDEStatio(eqx.Module):
                 )
             self.nb = int((2 * self.dim) * (self.nb // (2 * self.dim)))
 
-        self.curr_omega_idx = jnp.iinfo(jnp.int32).max - self.omega_batch_size - 1
-        # see explaination in DataGeneratorODE
+        if self.omega_batch_size is None:
+            self.omega_batch_size = self.n
+            self.curr_omega_idx = 0
+        else:
+            self.curr_omega_idx = jnp.iinfo(jnp.int32).max - self.omega_batch_size - 1
+            # see explaination in DataGeneratorODE
+
         if self.omega_border_batch_size is None:
-            self.curr_omega_border_idx = None
+            self.curr_omega_border_idx = 0
         else:
             self.curr_omega_border_idx = (
                 jnp.iinfo(jnp.int32).max - self.omega_border_batch_size - 1
             )
-        # key, subkey = jax.random.split(self.key)
-        # self.key = key
+
         self.key, self.omega, self.omega_border = self.generate_data(self.key)
         # see explaination in DataGeneratorODE for the key
 
@@ -732,26 +742,27 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         batches. Batches are made so that each data point is seen only
         once during 1 epoch.
     nb : Int | None
-        The total number of points in $\partial\Omega$.
-        Can be `None` not to lose performance generating the border
-        batch if they are not used
+        The total number of points in $\partial\Omega$. Can be None if no
+        boundary condition is specified.
     ni : Int
         The number of total $\Omega$ points at $t=0$ that will be divided in
         batches. Batches are made so that each data point is seen only
         once during 1 epoch.
-    domain_batch_size : Int
+    domain_batch_size : Int | None
         The size of the batch of randomly selected points among
-        the `n` points.
+        the `n` points. If None, `domain_batch_size` is set to `n`, ie., no
+        mini-batches are used.
     border_batch_size : Int | None
         The size of the batch of points randomly selected
-        among the `nb` points.
-        Can be `None` not to lose performance generating the border
-        batch if they are not used
-    initial_batch_size : Int
+        among the `nb` points. If None, `domain_batch_size` is set to `nb//2`
+        in dimension 1 or `nb//4` in dimension 2, ie., no
+        mini-batches are used.
+    initial_batch_size : Int | None
         The size of the batch of randomly selected points among
-        the `ni` points.
+        the `ni` points. If None, `initial_batch_size` is set to `ni`, ie., no
+        mini-batches are used.
     dim : Int
-        An integer. dimension of $\Omega$ domain
+        An integer. Dimension of $\Omega$ domain.
     min_pts : tuple[tuple[Float, Float], ...]
         A tuple of minimum values of the domain along each dimension. For a sampling
         in `n` dimension, this represents $(x_{1, min}, x_{2,min}, ...,
@@ -788,19 +799,19 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         then corresponds to the initial number of omega points we train the PINN.
     """
 
-    domain_batch_size: Int = eqx.field(kw_only=True, static=True)
-    initial_batch_size: Int = eqx.field(kw_only=True, static=True)
-    border_batch_size: Int | None = eqx.field(kw_only=True, static=True, default=None)
     tmin: Float = eqx.field(kw_only=True)
     tmax: Float = eqx.field(kw_only=True)
     ni: Int = eqx.field(kw_only=True, static=True)
+    domain_batch_size: Int | None = eqx.field(kw_only=True, static=True, default=None)
+    initial_batch_size: Int | None = eqx.field(kw_only=True, static=True, default=None)
+    border_batch_size: Int | None = eqx.field(kw_only=True, static=True, default=None)
 
     curr_domain_idx: Int = eqx.field(init=False)
     curr_initial_idx: Int = eqx.field(init=False)
     curr_border_idx: Int = eqx.field(init=False)
     domain: Float[Array, "n 1+dim"] = eqx.field(init=False)
-    border: Float[Array, "nb 1+1 2"] | Float[Array, "(nb//4) 2+1 4"] | None = eqx.field(
-        init=False
+    border: Float[Array, "(nb//2) 1+1 2"] | Float[Array, "(nb//4) 2+1 4"] | None = (
+        eqx.field(init=False)
     )
     initial: Float[Array, "ni dim"] = eqx.field(init=False)
 
@@ -812,23 +823,53 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         super().__post_init__()  # because __init__ or __post_init__ of Base
         # class is not automatically called
 
-        self.curr_domain_idx = jnp.iinfo(jnp.int32).max - self.domain_batch_size - 1
-        self.curr_border_idx = jnp.iinfo(jnp.int32).max - self.border_batch_size - 1
-        self.curr_initial_idx = jnp.iinfo(jnp.int32).max - self.initial_batch_size - 1
+        if self.domain_batch_size is None:
+            self.domain_batch_size = self.n
+            self.curr_domain_idx = 0
+        else:
+            self.curr_domain_idx = jnp.iinfo(jnp.int32).max - self.domain_batch_size - 1
+        if self.initial_batch_size is None:
+            self.initial_batch_size = self.ni
+            self.curr_initial_idx = 0
+        else:
+            self.curr_initial_idx = (
+                jnp.iinfo(jnp.int32).max - self.initial_batch_size - 1
+            )
+        if self.border_batch_size is None:
+            self.border_batch_size = (self.nb // 2) if self.dim == 1 else (self.nb // 4)
+            self.curr_border_idx = 0
+        else:
+            self.curr_border_idx = jnp.iinfo(jnp.int32).max - self.border_batch_size - 1
 
         self.key, domain_times = self.generate_time_data(self.n, self.key)
         self.domain = jnp.concatenate([domain_times, self.omega], axis=1)
-        self.key, boundary_times = self.generate_time_data(
-            self.nb // (2 * self.dim), self.key
-        )
-        boundary_times = boundary_times.reshape(-1, 1, 1)
-        boundary_times = jnp.repeat(boundary_times, self.omega_border.shape[-1], axis=2)
-        if self.dim == 1:
-            self.border = make_cartesian_product(
-                boundary_times, self.omega_border[None, None]
+        if self.nb is not None:
+            self.key, boundary_times = self.generate_time_data(
+                self.nb // (2 * self.dim), self.key
+            )
+            boundary_times = boundary_times.reshape(-1, 1, 1)
+            boundary_times = jnp.repeat(
+                boundary_times, self.omega_border.shape[-1], axis=2
+            )
+            if self.dim == 1:
+                self.border = make_cartesian_product(
+                    boundary_times, self.omega_border[None, None]
+                )
+            else:
+                self.border = jnp.concatenate(
+                    [boundary_times, self.omega_border], axis=1
+                )
+        else:
+            self.border = None
+
+        if self.ni is not None:
+            keys = jax.random.split(self.key, self.dim + 1)
+            self.key = keys[0]
+            self.initial = self.sample_in_omega_domain(
+                keys[1:].squeeze(), sample_size=self.ni
             )
         else:
-            self.border = jnp.concatenate([boundary_times, self.omega_border], axis=1)
+            self.initial = None
 
         # the following attributes will not be used anymore
         self.omega = None
@@ -850,7 +891,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
     def sample_in_time_domain(self, nt: Int, key: Key) -> Float[Array, "nt 1"]:
         return jax.random.uniform(
             key,
-            nt,
+            (nt, 1),
             minval=self.tmin,
             maxval=self.tmax,
         )
