@@ -209,7 +209,7 @@ class LossODE(_LossODEAbstract):
             mse_dyn_loss = dynamic_loss_apply(
                 self.dynamic_loss.evaluate,
                 self.u,
-                (temporal_batch,),
+                temporal_batch,
                 _set_derivatives(params, self.derivative_keys.dyn_loss),
                 self.vmap_in_axes + vmap_in_axes_params,
                 self.loss_weights.dyn_loss,
@@ -522,7 +522,7 @@ class SystemLossODE(eqx.Module):
             return dynamic_loss_apply(
                 dyn_loss.evaluate,
                 self.u_dict,
-                (temporal_batch,),
+                temporal_batch,
                 _set_derivatives(params_dict, self.derivative_keys_dyn_loss.dyn_loss),
                 vmap_in_axes_t + vmap_in_axes_params,
                 loss_weight,

@@ -370,8 +370,8 @@ class LossPDEStatio(_LossPDEAbstract):
 
     def _get_dynamic_loss_batch(
         self, batch: PDEStatioBatch
-    ) -> tuple[Float[Array, "batch_size dimension"]]:
-        return (batch.inside_batch,)
+    ) -> Float[Array, "batch_size dimension"]:
+        return batch.inside_batch
 
     def _get_normalization_loss_batch(
         self, _
@@ -595,8 +595,8 @@ class LossPDENonStatio(LossPDEStatio):
 
     def _get_dynamic_loss_batch(
         self, batch: PDENonStatioBatch
-    ) -> tuple[Float[Array, "batch_size 1+dimension"]]:
-        return (batch.domain_batch,)
+    ) -> Float[Array, "batch_size 1+dimension"]:
+        return batch.domain_batch
 
     def _get_normalization_loss_batch(
         self, batch: PDENonStatioBatch
@@ -1014,9 +1014,9 @@ class SystemLossPDE(eqx.Module):
             raise ValueError("u_dict and params_dict[nn_params] should have same keys ")
 
         if isinstance(batch, PDEStatioBatch):
-            batches = (batch.inside_batch,)
+            batch = batch.inside_batch
         elif isinstance(batch, PDENonStatioBatch):
-            batches = (batch.domain_batch,)
+            batch = batch.domain_batch
         else:
             raise ValueError("Wrong type of batch")
 
@@ -1042,7 +1042,7 @@ class SystemLossPDE(eqx.Module):
             return dynamic_loss_apply(
                 dyn_loss.evaluate,
                 self.u_dict,
-                batches,
+                batch,
                 _set_derivatives(params_dict, self.derivative_keys_dyn_loss.dyn_loss),
                 vmap_in_axes + vmap_in_axes_params,
                 loss_weight,

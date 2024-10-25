@@ -34,7 +34,11 @@ if TYPE_CHECKING:
 def dynamic_loss_apply(
     dyn_loss: DynamicLoss,
     u: eqx.Module,
-    batches: ODEBatch | PDEStatioBatch | PDENonStatioBatch,
+    batch: (
+        Float[Array, "batch_size 1"]
+        | Float[Array, "batch_size dim"]
+        | Float[Array, "batch_size 1+dim"]
+    ),
     params: Params | ParamsDict,
     vmap_axes: tuple[int | None, ...],
     loss_weight: float | Float[Array, "dyn_loss_dimension"],
@@ -46,16 +50,16 @@ def dynamic_loss_apply(
     """
     if u_type == PINN or u_type == HYPERPINN or isinstance(u, (PINN, HYPERPINN)):
         v_dyn_loss = vmap(
-            lambda *args: dyn_loss(
-                *args[:-1], u, args[-1]  # we must place the params at the end
+            lambda batch, params: dyn_loss(
+                batch, u, params  # we must place the params at the end
             ),
             vmap_axes,
             0,
         )
-        residuals = v_dyn_loss(*batches, params)
+        residuals = v_dyn_loss(batch, params)
         mse_dyn_loss = jnp.mean(jnp.sum(loss_weight * residuals**2, axis=-1))
     elif u_type == SPINN or isinstance(u, SPINN):
-        residuals = dyn_loss(*batches, u, params)
+        residuals = dyn_loss(batch, u, params)
         mse_dyn_loss = jnp.mean(jnp.sum(loss_weight * residuals**2, axis=-1))
     else:
         raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
