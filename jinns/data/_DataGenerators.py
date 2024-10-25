@@ -823,6 +823,29 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         super().__post_init__()  # because __init__ or __post_init__ of Base
         # class is not automatically called
 
+        if self.method == "grid":
+            # we must redo the sampling with the square root number of samples
+            # and then take the cartesian product
+            self.n = int(jnp.round(jnp.sqrt(self.n)) ** 2)
+            self.key, half_domain_times = self.generate_time_data(
+                int(jnp.round(jnp.sqrt(self.n))), self.key
+            )
+
+            keys = jax.random.split(self.key, self.dim + 1)
+            self.key = keys[0]
+            half_domain_omega = self.sample_in_omega_domain(
+                keys[1:].squeeze(), sample_size=int(jnp.round(jnp.sqrt(self.n)))
+            )
+            self.domain = make_cartesian_product(half_domain_times, half_domain_omega)
+        elif self.method == "uniform":
+            self.key, domain_times = self.generate_time_data(self.n, self.key)
+            self.domain = jnp.concatenate([domain_times, self.omega], axis=1)
+        else:
+            raise ValueError(
+                f"Bad value for method. Got {self.method}, expected"
+                ' "grid" or "uniform"'
+            )
+
         if self.domain_batch_size is None:
             self.domain_batch_size = self.n
             self.curr_domain_idx = 0
@@ -841,8 +864,6 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         else:
             self.curr_border_idx = jnp.iinfo(jnp.int32).max - self.border_batch_size - 1
 
-        self.key, domain_times = self.generate_time_data(self.n, self.key)
-        self.domain = jnp.concatenate([domain_times, self.omega], axis=1)
         if self.nb is not None:
             self.key, boundary_times = self.generate_time_data(
                 self.nb // (2 * self.dim), self.key
