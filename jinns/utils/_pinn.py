@@ -136,30 +136,18 @@ class PINN(eqx.Module):
 
     def __call__(
         self,
-        *args: tuple[
-            Float[Array, "1"] | Float[Array, "dim"] | Float[Array, "1+dim"],
-            Params | ParamsDict | PyTree,
-        ],
-    ) -> Float[Array, "output_dim"]:
-        """
-        Calls `eval_nn` with rearranged arguments
-        """
-        inputs, params = args
-        if len(inputs.shape) == 0:
-            # This can happen often when the user directly provides some
-            # collocation points (eg for plotting, whithout using
-            # DataGenerators)
-            inputs = inputs[None]
-        return self.eval_nn(inputs, params)
-
-    def eval_nn(
-        self,
         inputs: Float[Array, "1"] | Float[Array, "dim"] | Float[Array, "1+dim"],
         params: Params | ParamsDict | PyTree,
     ) -> Float[Array, "output_dim"]:
         """
         Evaluate the PINN on some inputs with some params.
         """
+        if len(inputs.shape) == 0:
+            # This can happen often when the user directly provides some
+            # collocation points (eg for plotting, whithout using
+            # DataGenerators)
+            inputs = inputs[None]
+
         try:
             model = eqx.combine(params.nn_params, self.static)
         except (KeyError, AttributeError, TypeError) as e:  # give more flexibility

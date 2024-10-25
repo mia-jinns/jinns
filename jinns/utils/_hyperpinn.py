@@ -16,7 +16,7 @@ import equinox as eqx
 import numpy as onp
 
 from jinns.utils._pinn import PINN, _MLP
-from jinns.parameters._params import Params
+from jinns.parameters._params import Params, ParamsDict
 
 
 def _get_param_nb(
@@ -138,14 +138,20 @@ class HYPERPINN(PINN):
             is_leaf=lambda x: isinstance(x, jnp.ndarray),
         )
 
-    def eval_nn(
+    def __call__(
         self,
         inputs: Float[Array, "input_dim"],
-        params: Params | PyTree,
+        params: Params | ParamsDict | PyTree,
     ) -> Float[Array, "output_dim"]:
         """
-        Evaluate the HYPERPINN on some inputs with some params.
+        Evaluate the HyperPINN on some inputs with some params.
         """
+        if len(inputs.shape) == 0:
+            # This can happen often when the user directly provides some
+            # collocation points (eg for plotting, whithout using
+            # DataGenerators)
+            inputs = inputs[None]
+
         try:
             hyper = eqx.combine(params.nn_params, self.static_hyper)
         except (KeyError, AttributeError, TypeError) as e:  # give more flexibility

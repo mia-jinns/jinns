@@ -10,6 +10,8 @@ import jax.numpy as jnp
 import equinox as eqx
 from jaxtyping import Key, Array, Float, PyTree
 
+from jinns.parameters._params import Params, ParamsDict
+
 
 class _SPINN(eqx.Module):
     """
@@ -107,25 +109,21 @@ class SPINN(eqx.Module):
         """
         return self.params
 
-    def __call__(self, *args) -> Float[Array, "output_dim"]:
+    def __call__(
+        self,
+        t_x: Float[Array, "batch_size 1+dim"],
+        params: Params | ParamsDict | PyTree,
+    ) -> Float[Array, "output_dim"]:
         """
-        Calls `eval_nn` with rearranged arguments
+        Evaluate the SPINN on some inputs with some params.
         """
-        (t_x, params) = args
         try:
             spinn = eqx.combine(params.nn_params, self.static)
         except (KeyError, AttributeError, TypeError) as e:
             spinn = eqx.combine(params, self.static)
         v_model = jax.vmap(spinn)
         res = v_model(t_x)
-        return self.eval_nn(res)
 
-    def eval_nn(
-        self, res: Float[Array, "d embed_dim*output_dim"]
-    ) -> Float[Array, "output_dim"]:
-        """
-        Evaluate the SPINN on some inputs with some params.
-        """
         a = ", ".join([f"{chr(97 + d)}z" for d in range(res.shape[1])])
         b = "".join([f"{chr(97 + d)}" for d in range(res.shape[1])])
         res = jnp.stack(
