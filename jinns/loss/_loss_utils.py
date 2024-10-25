@@ -140,36 +140,19 @@ def boundary_condition_apply(
     omega_boundary_condition: str,
     omega_boundary_dim: int,
     loss_weight: float | Float[Array, "boundary_cond_dim"],
-    num_boundary: slice = None,
 ) -> float:
 
     vmap_in_axes = (0,) + _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
-    if num_boundary is None:
-        num_boundary = jnp.s_[...]
-
-    if isinstance(batch, PDENonStatioBatch):
-        batch_array = batch.times_x_border_batch[num_boundary]
-    elif isinstance(batch, PDEStatioBatch):
-        batch_array = batch.border_batch[num_boundary]
+    batch_array = batch.border_batch
 
     if isinstance(omega_boundary_fun, dict):
         # We must create the facet tree dictionary as we do not have the
         # enumerate from the for loop to pass the id integer
-        if (
-            isinstance(batch, PDEStatioBatch) and batch.border_batch.shape[-1] == 2
-        ) or (
-            isinstance(batch, PDENonStatioBatch)
-            and batch.times_x_border_batch.shape[-1] == 2
-        ):
+        if batch.border_batch.shape[-1] == 2:
             # 1D
             facet_tree = {"xmin": 0, "xmax": 1}
-        elif (
-            isinstance(batch, PDEStatioBatch) and batch.border_batch.shape[-1] == 4
-        ) or (
-            isinstance(batch, PDENonStatioBatch)
-            and batch.times_x_border_batch.shape[-1] == 4
-        ):
+        elif batch.border_batch.shape[-1] == 4:
             # 2D
             facet_tree = {"xmin": 0, "xmax": 1, "ymin": 2, "ymax": 3}
         else:
@@ -196,10 +179,7 @@ def boundary_condition_apply(
         # Note that to keep the behaviour given in the comment above we neede
         # to specify is_leaf according to the note in the release of 0.4.29
     else:
-        if isinstance(batch, PDEStatioBatch):
-            facet_tuple = tuple(f for f in range(batch.border_batch.shape[-1]))
-        else:
-            facet_tuple = tuple(f for f in range(batch.times_x_border_batch.shape[-1]))
+        facet_tuple = tuple(f for f in range(batch.border_batch.shape[-1]))
         b_losses_by_facet = jax.tree_util.tree_map(
             lambda fa: jnp.mean(
                 loss_weight
@@ -260,9 +240,9 @@ def initial_condition_apply(
     params: Params | ParamsDict,
     vmap_axes: tuple[int | None, ...],
     initial_condition_fun: Callable,
-    n: int,
     loss_weight: float | Float[Array, "initial_condition_dimension"],
 ) -> float:
+    n = omega_batch.shape[0]
     t0_omega_batch = jnp.concatenate([jnp.zeros((n, 1)), omega_batch], axis=1)
     if isinstance(u, (PINN, HYPERPINN)):
         v_u_t0 = vmap(

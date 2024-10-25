@@ -596,13 +596,13 @@ class LossPDENonStatio(LossPDEStatio):
     def _get_dynamic_loss_batch(
         self, batch: PDENonStatioBatch
     ) -> tuple[Float[Array, "batch_size 1+dimension"]]:
-        return (batch.times_x_inside_batch,)
+        return (batch.domain_batch,)
 
     def _get_normalization_loss_batch(
         self, batch: PDENonStatioBatch
     ) -> tuple[Float[Array, "batch_size 1"], Float[Array, "nb_norm_samples dimension"]]:
         return (
-            batch.times_x_inside_batch[:, 0:1],
+            batch.domain_batch[:, 0:1],
             self.norm_samples,
         )
 
@@ -1014,18 +1014,13 @@ class SystemLossPDE(eqx.Module):
             raise ValueError("u_dict and params_dict[nn_params] should have same keys ")
 
         if isinstance(batch, PDEStatioBatch):
-            omega_batch, _ = batch.inside_batch, batch.border_batch
-            vmap_in_axes_x_or_x_t = (0,)
-
-            batches = (omega_batch,)
+            batches = (batch.inside_batch,)
         elif isinstance(batch, PDENonStatioBatch):
-            times_batch = batch.times_x_inside_batch[:, 0:1]
-            omega_batch = batch.times_x_inside_batch[:, 1:]
-
-            batches = (omega_batch, times_batch)
-            vmap_in_axes_x_or_x_t = (0, 0)
+            batches = (batch.domain_batch,)
         else:
             raise ValueError("Wrong type of batch")
+
+        vmap_in_axes = (0,)
 
         # Retrieve the optional eq_params_batch
         # and update eq_params with the latter
@@ -1049,7 +1044,7 @@ class SystemLossPDE(eqx.Module):
                 self.u_dict,
                 batches,
                 _set_derivatives(params_dict, self.derivative_keys_dyn_loss.dyn_loss),
-                vmap_in_axes_x_or_x_t + vmap_in_axes_params,
+                vmap_in_axes + vmap_in_axes_params,
                 loss_weight,
                 u_type=type(list(self.u_dict.values())[0]),
             )

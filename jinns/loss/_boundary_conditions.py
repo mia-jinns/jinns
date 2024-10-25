@@ -212,8 +212,6 @@ def boundary_neumann(
     vmap_in_axes
         A tuple object which specifies the in_axes of the vmapping
     """
-    # times_batch = batch.times_x_border_batch[:, 0:1, facet]
-    # omega_border_batch = batch.times_x_border_batch[:, 1:, facet]
     batch_array = batch_array[..., facet]
 
     # We resort to the shape of the border_batch to determine the dimension as
@@ -230,15 +228,27 @@ def boundary_neumann(
     if isinstance(u, PINN):
 
         u_ = lambda inputs, params: jnp.squeeze(u(inputs, params)[dim_to_apply])
-        v_neumann = vmap(
-            lambda inputs, params: jnp.dot(
-                grad(u_, 1)(inputs, params),
-                n[..., facet],
+
+        if u.eq_type == "statio_PDE":
+            v_neumann = vmap(
+                lambda inputs, params: jnp.dot(
+                    grad(u_, 0)(inputs, params),
+                    n[..., facet],
+                )
+                - f(inputs),
+                vmap_in_axes,
+                0,
             )
-            - f(inputs),
-            vmap_in_axes,
-            0,
-        )
+        elif u.eq_type == "nonstatio_PDE":
+            v_neumann = vmap(
+                lambda inputs, params: jnp.dot(
+                    grad(u_, 0)(inputs, params)[1:],  # get rid of time dim
+                    n[..., facet],
+                )
+                - f(inputs),
+                vmap_in_axes,
+                0,
+            )
         mse_u_boundary = jnp.sum(
             (
                 v_neumann(
