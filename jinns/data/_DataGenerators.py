@@ -407,8 +407,7 @@ class CubicMeshPDEStatio(eqx.Module):
 
     # all the init=False fields are set in __post_init__, even after a _replace
     # or eqx.tree_at __post_init__ is called
-    p_omega: Float[Array, "n"] = eqx.field(init=False)
-    p_border: None = eqx.field(init=False)
+    p: Float[Array, "n"] = eqx.field(init=False)
     rar_iter_from_last_sampling: Int = eqx.field(init=False)
     rar_iter_nb: Int = eqx.field(init=False)
     curr_omega_idx: Int = eqx.field(init=False)
@@ -424,12 +423,10 @@ class CubicMeshPDEStatio(eqx.Module):
 
         (
             self.n_start,
-            self.p_omega,
+            self.p,
             self.rar_iter_from_last_sampling,
             self.rar_iter_nb,
         ) = _check_and_set_rar_parameters(self.rar_parameters, self.n, self.n_start)
-
-        self.p_border = None  # no RAR sampling for border for now
 
         # Special handling for the border batch
         if self.omega_border_batch_size is None:
@@ -617,7 +614,7 @@ class CubicMeshPDEStatio(eqx.Module):
             self.omega,
             self.curr_omega_idx,
             self.omega_batch_size,
-            self.p_omega,
+            self.p,
         )
 
     def inside_batch(
@@ -665,7 +662,7 @@ class CubicMeshPDEStatio(eqx.Module):
             self.omega_border,
             self.curr_omega_border_idx,
             self.omega_border_batch_size,
-            self.p_border,
+            None,
         )
 
     def border_batch(
@@ -948,7 +945,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
         new_attributes = _reset_or_increment(bend, n_eff, self._get_domain_operands())
         new = eqx.tree_at(
-            lambda m: (m.key, m.domain, m.curr_times_x_omega_idx),
+            lambda m: (m.key, m.domain, m.curr_domain_idx),
             self,
             new_attributes,
         )
