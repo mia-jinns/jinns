@@ -848,19 +848,6 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.curr_domain_idx = 0
         else:
             self.curr_domain_idx = jnp.iinfo(jnp.int32).max - self.domain_batch_size - 1
-        if self.initial_batch_size is None:
-            self.initial_batch_size = self.ni
-            self.curr_initial_idx = 0
-        else:
-            self.curr_initial_idx = (
-                jnp.iinfo(jnp.int32).max - self.initial_batch_size - 1
-            )
-        if self.border_batch_size is None:
-            self.border_batch_size = (self.nb // 2) if self.dim == 1 else (self.nb // 4)
-            self.curr_border_idx = 0
-        else:
-            self.curr_border_idx = jnp.iinfo(jnp.int32).max - self.border_batch_size - 1
-
         if self.nb is not None:
             self.key, boundary_times = self.generate_time_data(
                 self.nb // (2 * self.dim), self.key
@@ -877,8 +864,20 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
                 self.border = jnp.concatenate(
                     [boundary_times, self.omega_border], axis=1
                 )
+            if self.border_batch_size is None:
+                self.border_batch_size = (
+                    (self.nb // 2) if self.dim == 1 else (self.nb // 4)
+                )
+                self.curr_border_idx = 0
+            else:
+                self.curr_border_idx = (
+                    jnp.iinfo(jnp.int32).max - self.border_batch_size - 1
+                )
+
         else:
             self.border = None
+            self.curr_border_idx = None
+            self.border_batch_size = None
 
         if self.ni is not None:
             keys = jax.random.split(self.key, self.dim + 1)
@@ -886,8 +885,18 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.initial = self.sample_in_omega_domain(
                 keys[1:].squeeze(), sample_size=self.ni
             )
+
+            if self.initial_batch_size is None:
+                self.initial_batch_size = self.ni
+                self.curr_initial_idx = 0
+            else:
+                self.curr_initial_idx = (
+                    jnp.iinfo(jnp.int32).max - self.initial_batch_size - 1
+                )
         else:
             self.initial = None
+            self.initial_batch_size = None
+            self.curr_initial_idx = None
 
         # the following attributes will not be used anymore
         self.omega = None
@@ -1041,8 +1050,14 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         `self.border_batch()` and `self.initial_batch()`
         """
         new, domain = self.domain_batch()
-        new, border = new.border_batch()
-        new, initial = new.initial_batch()
+        if self.border is not None:
+            new, border = new.border_batch()
+        else:
+            border = None
+        if self.initial is not None:
+            new, initial = new.initial_batch()
+        else:
+            initial = None
 
         return new, PDENonStatioBatch(
             domain_batch=domain, border_batch=border, initial_batch=initial

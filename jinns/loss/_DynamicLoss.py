@@ -303,8 +303,7 @@ class FPENonStatioLoss2D(PDENonStatio):
 
     def equation(
         self,
-        t: Float[Array, "1"],
-        x: Float[Array, "dim"],
+        t_x: Float[Array, "1+dim"],
         u: eqx.Module,
         params: Params,
     ) -> Float[Array, "1"]:
@@ -313,10 +312,8 @@ class FPENonStatioLoss2D(PDENonStatio):
 
         Parameters
         ---------
-        t
-            A time point
-        x
-            A point in $\Omega$
+        x_t
+            A collocation point in  $I\times\Omega$
         u
             The PINN
         params
@@ -327,59 +324,62 @@ class FPENonStatioLoss2D(PDENonStatio):
         """
         if isinstance(u, PINN):
             # Note that the last dim of u is nec. 1
-            u_ = lambda t, x: u(t, x, params)[0]
+            u_ = lambda t_x: u(t_x, params)[0]
 
-            order_1 = (
-                grad(
-                    lambda t, x: self.drift(t, x, params.eq_params)[0] * u_(t, x),
-                    1,
-                )(
-                    t, x
-                )[0:1]
-                + grad(
-                    lambda t, x: self.drift(t, x, params.eq_params)[1] * u_(t, x),
-                    1,
-                )(t, x)[1:2]
+            order_1_fun = lambda t_x: self.drift(t_x[1:], params.eq_params) * u_(t_x)
+            grad_order_1 = jnp.trace(jax.jacrev(order_1_fun)(t_x)[..., 1:])[None]
+
+            order_2_fun = lambda t_x: self.diffusion(t_x[1:], params.eq_params) * u_(
+                t_x
             )
-
-            order_2 = (
-                grad(
-                    lambda t, x: grad(
-                        lambda t, x: u_(t, x)
-                        * self.diffusion(t, x, params.eq_params)[0, 0],
-                        1,
-                    )(t, x)[0],
-                    1,
-                )(t, x)[0:1]
-                + grad(
-                    lambda t, x: grad(
-                        lambda t, x: u_(t, x)
-                        * self.diffusion(t, x, params.eq_params)[1, 0],
-                        1,
-                    )(t, x)[1],
-                    1,
-                )(t, x)[0:1]
-                + grad(
-                    lambda t, x: grad(
-                        lambda t, x: u_(t, x)
-                        * self.diffusion(t, x, params.eq_params)[0, 1],
-                        1,
-                    )(t, x)[0],
-                    1,
-                )(t, x)[1:2]
-                + grad(
-                    lambda t, x: grad(
-                        lambda t, x: u_(t, x)
-                        * self.diffusion(t, x, params.eq_params)[1, 1],
-                        1,
-                    )(t, x)[1],
-                    1,
-                )(t, x)[1:2]
+            grad_order_2_fun = lambda t_x: jax.jacrev(order_2_fun)(t_x)[..., 1:]
+            grad_grad_order_2 = (
+                jnp.trace(
+                    jax.jacrev(lambda t_x: grad_order_2_fun(t_x)[0, :, 0])(t_x)[..., 1:]
+                )[None]
+                + jnp.trace(
+                    jax.jacrev(lambda t_x: grad_order_2_fun(t_x)[1, :, 1])(t_x)[..., 1:]
+                )[None]
             )
+            # less condensed form of the loss below
+            # order_2 = (
+            #    grad(
+            #        lambda t, x: grad(
+            #            lambda t, x: u_(t, x)
+            #            * self.diffusion(t, x, params.eq_params)[0, 0],
+            #            1,
+            #        )(t, x)[0],
+            #        1,
+            #    )(t, x)[0:1]
+            #    + grad(
+            #        lambda t, x: grad(
+            #            lambda t, x: u_(t, x)
+            #            * self.diffusion(t, x, params.eq_params)[1, 0],
+            #            1,
+            #        )(t, x)[1],
+            #        1,
+            #    )(t, x)[0:1]
+            #    + grad(
+            #        lambda t, x: grad(
+            #            lambda t, x: u_(t, x)
+            #            * self.diffusion(t, x, params.eq_params)[0, 1],
+            #            1,
+            #        )(t, x)[0],
+            #        1,
+            #    )(t, x)[1:2]
+            #    + grad(
+            #        lambda t, x: grad(
+            #            lambda t, x: u_(t, x)
+            #            * self.diffusion(t, x, params.eq_params)[1, 1],
+            #            1,
+            #        )(t, x)[1],
+            #        1,
+            #    )(t, x)[1:2]
+            # )
 
-            du_dt = grad(u_, 0)(t, x)
+            du_dt = grad(u_)(t_x)[0:1]
 
-            return -du_dt + self.Tmax * (-order_1 + order_2)
+            return -du_dt + self.Tmax * (-grad_order_1 + grad_grad_order_2)
 
         if isinstance(u, SPINN):
             x_grid = _get_grid(x)
@@ -480,14 +480,12 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
         heterogeneity for no parameters.
     """
 
-    def drift(self, t, x, eq_params):
+    def drift(self, x, eq_params):
         r"""
         Return the drift term
 
         Parameters
         ----------
-        t
-            A time point
         x
             A point in $\Omega$
         eq_params
@@ -495,15 +493,13 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
         """
         return eq_params["alpha"] * (eq_params["mu"] - x)
 
-    def sigma_mat(self, t, x, eq_params):
+    def sigma_mat(self, x, eq_params):
         r"""
         Return the square root of the diffusion tensor in the sense of the outer
         product used to create the diffusion tensor
 
         Parameters
         ----------
-        t
-            A time point
         x
             A point in $\Omega$
         eq_params
@@ -512,15 +508,13 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
 
         return jnp.diag(eq_params["sigma"])
 
-    def diffusion(self, t, x, eq_params, i=None, j=None):
+    def diffusion(self, x, eq_params, i=None, j=None):
         r"""
         Return the computation of the diffusion tensor term in 2D (or
         higher)
 
         Parameters
         ----------
-        t
-            A time point
         x
             A point in $\Omega$
         eq_params
@@ -529,14 +523,14 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
         if i is None or j is None:
             return 0.5 * (
                 jnp.matmul(
-                    self.sigma_mat(t, x, eq_params),
-                    jnp.transpose(self.sigma_mat(t, x, eq_params)),
+                    self.sigma_mat(x, eq_params),
+                    jnp.transpose(self.sigma_mat(x, eq_params)),
                 )
             )
         return 0.5 * (
             jnp.matmul(
-                self.sigma_mat(t, x, eq_params),
-                jnp.transpose(self.sigma_mat(t, x, eq_params)),
+                self.sigma_mat(x, eq_params),
+                jnp.transpose(self.sigma_mat(x, eq_params)),
             )[i, j]
         )
 

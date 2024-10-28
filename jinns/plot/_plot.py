@@ -142,8 +142,27 @@ def plot2d(
         )
 
         for idx, (t, ax) in enumerate(zip(times, grid)):
+            t_x = jnp.concatenate(
+                [
+                    t * jnp.ones((xy_data[0].shape[0], 1)),
+                    jnp.concatenate(
+                        [xy_data[0][..., None], xy_data[1][..., None]], axis=-1
+                    ),
+                ],
+                axis=-1,
+            )
             if not spinn:
-                v_fun_at_t = vmap(lambda x: fun(t=jnp.array([t]), x=x), 0, 0)
+                x_grid, y_grid = mesh
+                v_fun_at_t = vmap(fun)(
+                    jnp.concatenate(
+                        [
+                            t
+                            * jnp.ones((xy_data[0].shape[0] * xy_data[1].shape[0], 1)),
+                            jnp.vstack([x_grid.flatten(), y_grid.flatten()]).T,
+                        ],
+                        axis=-1,
+                    )
+                )
                 t_slice, _ = _plot_2D_statio(
                     v_fun_at_t,
                     mesh,
@@ -153,14 +172,7 @@ def plot2d(
                     vmin_vmax=vmin_vmax,
                 )
             elif spinn:
-                values_grid = jnp.squeeze(
-                    fun(
-                        t * jnp.ones((xy_data[0].shape[0], 1)),
-                        jnp.stack(
-                            [xy_data[0][..., None], xy_data[1][..., None]], axis=1
-                        ),
-                    )[0]
-                )
+                values_grid = jnp.squeeze(fun(t_x)[0])
                 t_slice, _ = _plot_2D_statio(
                     values_grid,
                     mesh,
@@ -179,6 +191,7 @@ def plot2d(
                     vmax=vmin_vmax[1],
                 )
             else:
+                print(mesh[0].shape, mesh[1].shape, t_slice.shape)
                 im = ax.pcolormesh(mesh[0], mesh[1], t_slice, cmap=cmap)
             ax.set_title(f"t = {times[idx] * Tmax:.2f}")
             ax.cax.colorbar(im, format="%0.2f")
@@ -223,12 +236,11 @@ def _plot_2D_statio(
     """
 
     x_grid, y_grid = mesh
-    if not spinn:
+    if callable(v_fun):
         values = v_fun(jnp.vstack([x_grid.flatten(), y_grid.flatten()]).T)
         values_grid = values.reshape(x_grid.shape)
-    elif spinn:
-        # in this case v_fun is directly the values :)
-        values_grid = v_fun.T
+    else:
+        values_grid = v_fun.reshape(x_grid.shape)
 
     if plot:
         fig = plt.figure(figsize=figsize)

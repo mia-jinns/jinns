@@ -22,9 +22,7 @@ from jinns.loss._loss_utils import (
     initial_condition_apply,
     constraints_system_loss_apply,
 )
-from jinns.data._DataGenerators import (
-    append_obs_batch,
-)
+from jinns.data._DataGenerators import append_obs_batch, make_cartesian_product
 from jinns.parameters._params import (
     _get_vmap_in_axes_params,
     _update_eq_params_dict,
@@ -376,7 +374,7 @@ class LossPDEStatio(_LossPDEAbstract):
     def _get_normalization_loss_batch(
         self, _
     ) -> Float[Array, "nb_norm_samples dimension"]:
-        return (self.norm_samples,)
+        return self.norm_samples
 
     def _get_observations_loss_batch(
         self, batch: PDEStatioBatch
@@ -432,7 +430,7 @@ class LossPDEStatio(_LossPDEAbstract):
                 self.u,
                 self._get_normalization_loss_batch(batch),
                 _set_derivatives(params, self.derivative_keys.norm_loss),
-                self.vmap_in_axes + vmap_in_axes_params,
+                vmap_in_axes_params,
                 self.norm_int_length,
                 self.loss_weights.norm_loss,
             )
@@ -575,6 +573,9 @@ class LossPDENonStatio(LossPDEStatio):
         kw_only=True, default=None, static=True
     )
 
+    _max_norm_samples_omega: Int = eqx.field(init=False, static=True)
+    _max_norm_time_slices: Int = eqx.field(init=False, static=True)
+
     def __post_init__(self, params=None):
         """
         Note that neither __init__ or __post_init__ are called when udating a
@@ -593,6 +594,11 @@ class LossPDENonStatio(LossPDEStatio):
                 "case (e.g by. hardcoding it into the PINN output)."
             )
 
+        # witht the variables below we avoid memory overflow since a cartesian
+        # product is taken
+        self._max_norm_time_slices = 100
+        self._max_norm_samples_omega = 1000
+
     def _get_dynamic_loss_batch(
         self, batch: PDENonStatioBatch
     ) -> Float[Array, "batch_size 1+dimension"]:
@@ -600,11 +606,12 @@ class LossPDENonStatio(LossPDEStatio):
 
     def _get_normalization_loss_batch(
         self, batch: PDENonStatioBatch
-    ) -> tuple[Float[Array, "batch_size 1"], Float[Array, "nb_norm_samples dimension"]]:
-        return (
-            batch.domain_batch[:, 0:1],
-            self.norm_samples,
-        )
+    ) -> Float[Array, "nb_norm_time_slices nb_norm_samples dimension"]:
+        # NOTE this cartesian product is costly
+        return make_cartesian_product(
+            batch.domain_batch[: self._max_norm_time_slices, 0:1],
+            self.norm_samples[: self._max_norm_samples_omega],
+        ).reshape(self._max_norm_time_slices, self._max_norm_samples_omega, -1)
 
     def _get_observations_loss_batch(
         self, batch: PDENonStatioBatch

@@ -31,6 +31,12 @@ if TYPE_CHECKING:
 
 
 def _check_batch_size(other_data, main_data, attr_name):
+    if main_data.cartesian_product:
+        non_statio_batch_size = (
+            main_data.omega_batch_size * main_data.temporal_batch_size
+        )
+    else:
+        non_statio_batch_size = main_data.temporal_batch_size
     if (
         (
             isinstance(main_data, DataGeneratorODE)
@@ -43,8 +49,7 @@ def _check_batch_size(other_data, main_data, attr_name):
         )
         or (
             isinstance(main_data, CubicMeshPDENonStatio)
-            and getattr(other_data, attr_name)
-            != main_data.omega_batch_size * main_data.temporal_batch_size
+            and getattr(other_data, attr_name) != non_statio_batch_size
         )
     ):
         raise ValueError(

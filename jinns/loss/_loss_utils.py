@@ -69,9 +69,12 @@ def dynamic_loss_apply(
 
 def normalization_loss_apply(
     u: eqx.Module,
-    batches: ODEBatch | PDEStatioBatch | PDENonStatioBatch,
+    batches: (
+        Float[Array, "nb_norm_samples dim"]
+        | Float[Array, "nb_norm_time_slices nb_norm_samples dim"]
+    ),
     params: Params | ParamsDict,
-    vmap_axes: tuple[int | None, ...],
+    vmap_axes_params: tuple[int | None, ...],
     int_length: int,
     loss_weight: float,
 ) -> float:
@@ -79,25 +82,33 @@ def normalization_loss_apply(
     if isinstance(u, (PINN, HYPERPINN)):
         if len(batches) == 1:
             v_u = vmap(
-                lambda *args: u(*args)[u.slice_solution],
-                vmap_axes,
+                lambda b: u(b)[u.slice_solution],
+                (0,) + vmap_axes_params,
                 0,
             )
-            mse_norm_loss = loss_weight * jnp.mean(
-                jnp.abs(jnp.mean(v_u(*batches, params), axis=-1) * int_length - 1) ** 2
+            res = v_u(batches, params)
+            mse_norm_loss = loss_weight * (
+                jnp.abs(jnp.mean(res.squeeze()) * int_length - 1) ** 2
             )
         else:
             v_u = vmap(
                 vmap(
-                    lambda t, x, params_: u(t, x, params_),
-                    in_axes=(None, 0) + vmap_axes[2:],
+                    lambda t_x, params_: u(t_x, params_),
+                    in_axes=(0,) + vmap_axes_params,
                 ),
-                in_axes=(0, None) + vmap_axes[2:],
+                in_axes=(0,) + vmap_axes_params,
             )
-            res = v_u(*batches, params)
-            # the outer mean() below is for the times stamps
+            # v_u = vmap(
+            #    vmap(
+            #        lambda t, x, params_: u(jnp.concatenate([t, x]), params_),
+            #        in_axes=(None, 0) + vmap_axes_params,
+            #    ),
+            #    in_axes=(0, None) + vmap_axes_params,
+            # )
+            res = v_u(batches, params)
+            # Over all the times t, we perform a integration
             mse_norm_loss = loss_weight * jnp.mean(
-                jnp.abs(jnp.mean(res, axis=(-2, -1)) * int_length - 1) ** 2
+                jnp.abs(jnp.mean(res.squeeze(), axis=-1) * int_length - 1) ** 2
             )
     elif isinstance(u, SPINN):
         if len(batches) == 1:
