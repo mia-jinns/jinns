@@ -22,7 +22,7 @@ from jinns.loss._loss_utils import (
     initial_condition_apply,
     constraints_system_loss_apply,
 )
-from jinns.data._DataGenerators import append_obs_batch, make_cartesian_product
+from jinns.data._DataGenerators import append_obs_batch
 from jinns.parameters._params import (
     _get_vmap_in_axes_params,
     _update_eq_params_dict,
@@ -374,7 +374,7 @@ class LossPDEStatio(_LossPDEAbstract):
     def _get_normalization_loss_batch(
         self, _
     ) -> Float[Array, "nb_norm_samples dimension"]:
-        return self.norm_samples
+        return (self.norm_samples,)
 
     def _get_observations_loss_batch(
         self, batch: PDEStatioBatch
@@ -607,11 +607,10 @@ class LossPDENonStatio(LossPDEStatio):
     def _get_normalization_loss_batch(
         self, batch: PDENonStatioBatch
     ) -> Float[Array, "nb_norm_time_slices nb_norm_samples dimension"]:
-        # NOTE this cartesian product is costly
-        return make_cartesian_product(
+        return (
             batch.domain_batch[: self._max_norm_time_slices, 0:1],
             self.norm_samples[: self._max_norm_samples_omega],
-        ).reshape(self._max_norm_time_slices, self._max_norm_samples_omega, -1)
+        )
 
     def _get_observations_loss_batch(
         self, batch: PDENonStatioBatch

@@ -191,7 +191,6 @@ def plot2d(
                     vmax=vmin_vmax[1],
                 )
             else:
-                print(mesh[0].shape, mesh[1].shape, t_slice.shape)
                 im = ax.pcolormesh(mesh[0], mesh[1], t_slice, cmap=cmap)
             ax.set_title(f"t = {times[idx] * Tmax:.2f}")
             ax.cax.colorbar(im, format="%0.2f")

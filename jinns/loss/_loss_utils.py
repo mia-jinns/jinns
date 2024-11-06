@@ -17,9 +17,7 @@ from jinns.loss._boundary_conditions import (
     _compute_boundary_loss,
 )
 from jinns.utils._utils import _check_user_func_return, _get_grid
-from jinns.data._DataGenerators import (
-    append_obs_batch,
-)
+from jinns.data._DataGenerators import append_obs_batch, make_cartesian_product
 from jinns.parameters._params import _get_vmap_in_axes_params
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
@@ -70,15 +68,20 @@ def dynamic_loss_apply(
 def normalization_loss_apply(
     u: eqx.Module,
     batches: (
-        Float[Array, "nb_norm_samples dim"]
-        | Float[Array, "nb_norm_time_slices nb_norm_samples dim"]
+        tuple[Float[Array, "nb_norm_samples dim"]]
+        | tuple[
+            Float[Array, "nb_norm_time_slices 1"], Float[Array, "nb_norm_samples dim"]
+        ]
     ),
     params: Params | ParamsDict,
     vmap_axes_params: tuple[int | None, ...],
     int_length: int,
     loss_weight: float,
 ) -> float:
-    # TODO merge stationary and non stationary cases
+    """
+    Note the squeezing on each result. We expect unidimensional *PINN since
+    they represent probability distributions
+    """
     if isinstance(u, (PINN, HYPERPINN)):
         if len(batches) == 1:
             v_u = vmap(
@@ -86,11 +89,16 @@ def normalization_loss_apply(
                 (0,) + vmap_axes_params,
                 0,
             )
-            res = v_u(batches, params)
+            res = v_u(*batches, params)
             mse_norm_loss = loss_weight * (
                 jnp.abs(jnp.mean(res.squeeze()) * int_length - 1) ** 2
             )
         else:
+            # NOTE this cartesian product is costly
+            batches = make_cartesian_product(
+                batches[0],
+                batches[1],
+            ).reshape(batches[0].shape[0], batches[1].shape[0], -1)
             v_u = vmap(
                 vmap(
                     lambda t_x, params_: u(t_x, params_),
@@ -98,13 +106,6 @@ def normalization_loss_apply(
                 ),
                 in_axes=(0,) + vmap_axes_params,
             )
-            # v_u = vmap(
-            #    vmap(
-            #        lambda t, x, params_: u(jnp.concatenate([t, x]), params_),
-            #        in_axes=(None, 0) + vmap_axes_params,
-            #    ),
-            #    in_axes=(0, None) + vmap_axes_params,
-            # )
             res = v_u(batches, params)
             # Over all the times t, we perform a integration
             mse_norm_loss = loss_weight * jnp.mean(
@@ -117,8 +118,7 @@ def normalization_loss_apply(
                 loss_weight
                 * jnp.abs(
                     jnp.mean(
-                        jnp.mean(res, axis=-1),
-                        axis=tuple(range(res.ndim - 1)),
+                        res.squeeze(),
                     )
                     * int_length
                     - 1
@@ -128,12 +128,17 @@ def normalization_loss_apply(
         else:
             assert batches[1].shape[0] % batches[0].shape[0] == 0
             rep_t = batches[1].shape[0] // batches[0].shape[0]
-            res = u(jnp.repeat(batches[0], rep_t, axis=0), batches[1], params)
+            res = u(
+                jnp.concatenate(
+                    [jnp.repeat(batches[0], rep_t, axis=0), batches[1]], axis=-1
+                ),
+                params,
+            )
             # the outer mean() below is for the times stamps
             mse_norm_loss = loss_weight * jnp.mean(
                 jnp.abs(
                     jnp.mean(
-                        jnp.mean(res, axis=-1),
+                        res.squeeze(),
                         axis=(d + 1 for d in range(res.ndim - 2)),
                     )
                     * int_length

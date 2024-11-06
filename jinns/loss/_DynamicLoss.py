@@ -341,100 +341,61 @@ class FPENonStatioLoss2D(PDENonStatio):
                     jax.jacrev(lambda t_x: grad_order_2_fun(t_x)[1, :, 1])(t_x)[..., 1:]
                 )[None]
             )
-            # less condensed form of the loss below
-            # order_2 = (
-            #    grad(
-            #        lambda t, x: grad(
-            #            lambda t, x: u_(t, x)
-            #            * self.diffusion(t, x, params.eq_params)[0, 0],
-            #            1,
-            #        )(t, x)[0],
-            #        1,
-            #    )(t, x)[0:1]
-            #    + grad(
-            #        lambda t, x: grad(
-            #            lambda t, x: u_(t, x)
-            #            * self.diffusion(t, x, params.eq_params)[1, 0],
-            #            1,
-            #        )(t, x)[1],
-            #        1,
-            #    )(t, x)[0:1]
-            #    + grad(
-            #        lambda t, x: grad(
-            #            lambda t, x: u_(t, x)
-            #            * self.diffusion(t, x, params.eq_params)[0, 1],
-            #            1,
-            #        )(t, x)[0],
-            #        1,
-            #    )(t, x)[1:2]
-            #    + grad(
-            #        lambda t, x: grad(
-            #            lambda t, x: u_(t, x)
-            #            * self.diffusion(t, x, params.eq_params)[1, 1],
-            #            1,
-            #        )(t, x)[1],
-            #        1,
-            #    )(t, x)[1:2]
-            # )
 
             du_dt = grad(u_)(t_x)[0:1]
 
             return -du_dt + self.Tmax * (-grad_order_1 + grad_grad_order_2)
 
         if isinstance(u, SPINN):
-            x_grid = _get_grid(x)
+            v0 = jnp.repeat(jnp.array([[1.0, 0.0, 0.0]]), t_x.shape[0], axis=0)
             _, du_dt = jax.jvp(
-                lambda t: u(t, x, params),
-                (t,),
-                (jnp.ones_like(t),),
+                lambda t_x: u(t_x, params),
+                (t_x,),
+                (v0,),
             )
 
             # in forward AD we do not have the results for all the input
             # dimension at once (as it is the case with grad), we then write
             # two jvp calls
-            tangent_vec_0 = jnp.repeat(jnp.array([1.0, 0.0])[None], x.shape[0], axis=0)
-            tangent_vec_1 = jnp.repeat(jnp.array([0.0, 1.0])[None], x.shape[0], axis=0)
+            v1 = jnp.repeat(jnp.array([[0.0, 1.0, 0.0]]), t_x.shape[0], axis=0)
+            v2 = jnp.repeat(jnp.array([[0.0, 0.0, 1.0]]), t_x.shape[0], axis=0)
             _, dau_dx1 = jax.jvp(
-                lambda x: self.drift(t, _get_grid(x), params.eq_params)[None, ..., 0:1]
-                * u(t, x, params)[..., 0:1],
-                (x,),
-                (tangent_vec_0,),
+                lambda t_x: self.drift(_get_grid(t_x[:, 1:]), params.eq_params)[
+                    None, ..., 0:1
+                ]
+                * u(t_x, params),
+                (t_x,),
+                (v1,),
             )
             _, dau_dx2 = jax.jvp(
-                lambda x: self.drift(t, _get_grid(x), params.eq_params)[None, ..., 1:2]
-                * u(t, x, params)[..., 0:1],
-                (x,),
-                (tangent_vec_1,),
+                lambda t_x: self.drift(_get_grid(t_x[:, 1:]), params.eq_params)[
+                    None, ..., 1:2
+                ]
+                * u(t_x, params),
+                (t_x,),
+                (v2,),
             )
 
-            dsu_dx1_fun = lambda x, i, j: jax.jvp(
-                lambda x: self.diffusion(t, _get_grid(x), params.eq_params, i, j)[
-                    None, None, None, None
-                ]
-                * u(t, x, params)[..., 0:1],
-                (x,),
-                (tangent_vec_0,),
+            dsu_dx1_fun = lambda t_x, i, j: jax.jvp(
+                lambda t_x: self.diffusion(
+                    _get_grid(t_x[:, 1:]), params.eq_params, i, j
+                )[None, None, None, None]
+                * u(t_x, params),
+                (t_x,),
+                (v1,),
             )[1]
-            dsu_dx2_fun = lambda x, i, j: jax.jvp(
-                lambda x: self.diffusion(t, _get_grid(x), params.eq_params, i, j)[
-                    None, None, None, None
-                ]
-                * u(t, x, params)[..., 0:1],
-                (x,),
-                (tangent_vec_1,),
+            dsu_dx2_fun = lambda t_x, i, j: jax.jvp(
+                lambda t_x: self.diffusion(
+                    _get_grid(t_x[:, 1:]), params.eq_params, i, j
+                )[None, None, None, None]
+                * u(t_x, params),
+                (t_x,),
+                (v2,),
             )[1]
-            _, d2su_dx12 = jax.jvp(
-                lambda x: dsu_dx1_fun(x, 0, 0), (x,), (tangent_vec_0,)
-            )
-            _, d2su_dx1dx2 = jax.jvp(
-                lambda x: dsu_dx1_fun(x, 0, 1), (x,), (tangent_vec_1,)
-            )
-            _, d2su_dx22 = jax.jvp(
-                lambda x: dsu_dx2_fun(x, 1, 1), (x,), (tangent_vec_1,)
-            )
-            _, d2su_dx2dx1 = jax.jvp(
-                lambda x: dsu_dx2_fun(x, 1, 0), (x,), (tangent_vec_0,)
-            )
+            _, d2su_dx12 = jax.jvp(lambda t_x: dsu_dx1_fun(t_x, 0, 0), (t_x,), (v1,))
+            _, d2su_dx1dx2 = jax.jvp(lambda t_x: dsu_dx1_fun(t_x, 0, 1), (t_x,), (v2,))
+            _, d2su_dx22 = jax.jvp(lambda t_x: dsu_dx2_fun(t_x, 1, 1), (t_x,), (v2,))
+            _, d2su_dx2dx1 = jax.jvp(lambda t_x: dsu_dx2_fun(t_x, 1, 0), (t_x,), (v1,))
 
             return -du_dt + self.Tmax * (
                 -(dau_dx1 + dau_dx2)

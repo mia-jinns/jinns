@@ -63,12 +63,17 @@ def _reset_batch_idx_and_permute(
     curr_idx = 0
     # reshuffling
     key, subkey = jax.random.split(key)
-    # domain = random.permutation(subkey, domain, axis=0, independent=False)
-    # we want that permutation = choice when p=None
-    # otherwise p is used to avoid collocation points not in nt_start
-    domain = jax.random.choice(
-        subkey, domain, shape=(domain.shape[0],), replace=False, p=p
-    )
+    if p is None:
+        domain = jax.random.permutation(subkey, domain, axis=0, independent=False)
+    else:
+        # otherwise p is used to avoid collocation points not in n_start
+        # NOTE that replace=True to avoid undefined behaviour but then, the
+        # domain.shape[0] does not really grow as in the original RAR. instead,
+        # it always comprises the same number of points, but the points are
+        # updated
+        domain = jax.random.choice(
+            subkey, domain, shape=(domain.shape[0],), replace=True, p=p
+        )
 
     # return updated
     return (key, domain, curr_idx)
@@ -121,13 +126,13 @@ def _check_and_set_rar_parameters(
 ) -> tuple[Int, Float[Array, "n"], Int, Int]:
     if rar_parameters is not None and n_start is None:
         raise ValueError(
-            "nt_start must be provided in the context of RAR sampling scheme"
+            "n_start must be provided in the context of RAR sampling scheme"
         )
 
     if rar_parameters is not None:
         # Default p is None. However, in the RAR sampling scheme we use 0
         # probability to specify non-used collocation points (i.e. points
-        # above nt_start). Thus, p is a vector of probability of shape (nt, 1).
+        # above n_start). Thus, p is a vector of probability of shape (nt, 1).
         p = jnp.zeros((n,))
         p = p.at[:n_start].set(1 / n_start)
         # set internal counter for the number of gradient steps since the
@@ -179,15 +184,15 @@ class DataGeneratorODE(eqx.Module):
         period). `update_rate`: the number of gradient steps taken between
         each appending of collocation points in the RAR algo.
         `sample_size`: the size of the sample from which we will select new
-        collocation points. `selected_sample_size_times`: the number of selected
+        collocation points. `selected_sample_size`: the number of selected
         points from the sample to be added to the current collocation
         points
-    nt_start : Int, default=None
+    n_start : Int, default=None
         Defaults to None. The effective size of nt used at start time.
         This value must be
         provided when rar_parameters is not None. Otherwise we set internally
-        nt_start = nt and this is hidden from the user.
-        In RAR, nt_start
+        n_start = nt and this is hidden from the user.
+        In RAR, n_start
         then corresponds to the initial number of points we train the PINN.
     """
 
@@ -201,11 +206,10 @@ class DataGeneratorODE(eqx.Module):
     # shape in jax.lax.dynamic_slice
     method: str = eqx.field(static=True, default_factory=lambda: "uniform")
     rar_parameters: Dict[str, Int] = None
-    nt_start: Int = eqx.field(static=True, default=None)
+    n_start: Int = eqx.field(static=True, default=None)
 
-    # all the init=False fields are set in __post_init__, even after a _replace
-    # or eqx.tree_at __post_init__ is called
-    p_times: Float[Array, "nt 1"] = eqx.field(init=False)
+    # all the init=False fields are set in __post_init__
+    p: Float[Array, "nt 1"] = eqx.field(init=False)
     rar_iter_from_last_sampling: Int = eqx.field(init=False)
     rar_iter_nb: Int = eqx.field(init=False)
     curr_time_idx: Int = eqx.field(init=False)
@@ -213,14 +217,11 @@ class DataGeneratorODE(eqx.Module):
 
     def __post_init__(self):
         (
-            self.nt_start,
-            self.p_times,
+            self.n_start,
+            self.p,
             self.rar_iter_from_last_sampling,
             self.rar_iter_nb,
-        ) = _check_and_set_rar_parameters(self.rar_parameters, self.nt, self.nt_start)
-
-        if self.temporal_batch_size is None:
-            self.temporal_batch_size = self.nt
+        ) = _check_and_set_rar_parameters(self.rar_parameters, self.nt, self.n_start)
 
         self.curr_time_idx = jnp.iinfo(jnp.int32).max - self.temporal_batch_size - 1
         # to be sure there is a
@@ -253,7 +254,7 @@ class DataGeneratorODE(eqx.Module):
         Construct a complete set of `self.nt` time points according to the
         specified `self.method`
 
-        Note that self.times has always size self.nt and not self.nt_start, even
+        Note that self.times has always size self.nt and not self.n_start, even
         in RAR scheme, we must allocate all the collocation points
         """
         key, subkey = jax.random.split(self.key)
@@ -272,7 +273,7 @@ class DataGeneratorODE(eqx.Module):
             self.times,
             self.curr_time_idx,
             self.temporal_batch_size,
-            self.p_times,
+            self.p,
         )
 
     def temporal_batch(
@@ -282,21 +283,21 @@ class DataGeneratorODE(eqx.Module):
         Return a batch of time points. If all the batches have been seen, we
         reshuffle them, otherwise we just return the next unseen batch.
         """
+        if self.temporal_batch_size is None:
+            # do not lose time reshuffling or anything
+            return self, self.times
+
         bstart = self.curr_time_idx
         bend = bstart + self.temporal_batch_size
 
         # Compute the effective number of used collocation points
         if self.rar_parameters is not None:
             nt_eff = (
-                self.nt_start
-                + self.rar_iter_nb * self.rar_parameters["selected_sample_size_times"]
+                self.n_start
+                + self.rar_iter_nb * self.rar_parameters["selected_sample_size"]
             )
         else:
             nt_eff = self.nt
-
-        if self.nt == self.temporal_batch_size:
-            # do not lose time reshuffling or anything
-            return self, self.times
 
         new_attributes = _reset_or_increment(bend, nt_eff, self._get_time_operands())
         new = eqx.tree_at(
@@ -367,8 +368,8 @@ class CubicMeshPDEStatio(eqx.Module):
         which we start the RAR sampling scheme (we first have a burn in
         period). `update_every`: the number of gradient steps taken between
         each appending of collocation points in the RAR algo.
-        `sample_size_omega`: the size of the sample from which we will select new
-        collocation points. `selected_sample_size_omega`: the number of selected
+        `sample_size`: the size of the sample from which we will select new
+        collocation points. `selected_sample_size`: the number of selected
         points from the sample to be added to the current collocation
         points
     n_start : Int, default=None
@@ -405,8 +406,7 @@ class CubicMeshPDEStatio(eqx.Module):
     rar_parameters: Dict[str, Int] = eqx.field(kw_only=True, default=None)
     n_start: Int = eqx.field(kw_only=True, default=None, static=True)
 
-    # all the init=False fields are set in __post_init__, even after a _replace
-    # or eqx.tree_at __post_init__ is called
+    # all the init=False fields are set in __post_init__
     p: Float[Array, "n"] = eqx.field(init=False)
     rar_iter_from_last_sampling: Int = eqx.field(init=False)
     rar_iter_nb: Int = eqx.field(init=False)
@@ -428,33 +428,30 @@ class CubicMeshPDEStatio(eqx.Module):
             self.rar_iter_nb,
         ) = _check_and_set_rar_parameters(self.rar_parameters, self.n, self.n_start)
 
-        # Special handling for the border batch
-        if self.omega_border_batch_size is None:
-            self.omega_border_batch_size = self.nb
-        elif self.dim == 1:
-            # 1-D case : the arguments `nb` and `omega_border_batch_size` are
-            # ignored but kept for backward stability. The attributes are
-            # always set to 2.
-            self.nb = 2
-            self.omega_border_batch_size = 2
-            # We are in 1-D case => omega_border_batch_size is
-            # ignored since borders of Omega are singletons.
-            #  self.border_batch() will return [xmin, xmax]
-        else:
-            if self.nb % (2 * self.dim) != 0 or self.nb < 2 * self.dim:
-                raise ValueError(
-                    "number of border point must be"
-                    " a multiple of 2xd (the # of faces of a d-dimensional cube)"
-                )
-            if self.nb // (2 * self.dim) < self.omega_border_batch_size:
-                raise ValueError(
-                    "number of points per facets (nb//2*self.dim)"
-                    " cannot be lower than border batch size"
-                )
-            self.nb = int((2 * self.dim) * (self.nb // (2 * self.dim)))
+        if self.nb is not None:
+            if self.dim == 1:
+                # 1-D case : the arguments `nb` and `omega_border_batch_size` are
+                # ignored but kept for backward stability. The attributes are
+                # always set to 2.
+                self.nb = 2
+                self.omega_border_batch_size = None
+                # We are in 1-D case => omega_border_batch_size is
+                # ignored since borders of Omega are singletons.
+                #  self.border_batch() will return [xmin, xmax]
+            else:
+                if self.nb % (2 * self.dim) != 0 or self.nb < 2 * self.dim:
+                    raise ValueError(
+                        "number of border point must be"
+                        " a multiple of 2xd (the # of faces of a d-dimensional cube)"
+                    )
+                if self.nb // (2 * self.dim) < self.omega_border_batch_size:
+                    raise ValueError(
+                        "number of points per facets (nb//2*self.dim)"
+                        " cannot be lower than border batch size"
+                    )
+                self.nb = int((2 * self.dim) * (self.nb // (2 * self.dim)))
 
         if self.omega_batch_size is None:
-            self.omega_batch_size = self.n
             self.curr_omega_idx = 0
         else:
             self.curr_omega_idx = jnp.iinfo(jnp.int32).max - self.omega_batch_size - 1
@@ -496,7 +493,7 @@ class CubicMeshPDEStatio(eqx.Module):
     def sample_in_omega_border_domain(
         self, keys: Key
     ) -> Float[Array, "1 2"] | Float[Array, "(nb//4) 2 4"] | None:
-        if self.omega_border_batch_size is None:
+        if self.nb is None:
             return None
         if self.dim == 1:
             xmin = self.min_pts[0]
@@ -625,21 +622,21 @@ class CubicMeshPDEStatio(eqx.Module):
         If all the batches have been seen, we reshuffle them,
         otherwise we just return the next unseen batch.
         """
+        if self.omega_batch_size is None:
+            # in this case, do not waste time reshuffling or anything
+            return self, self.omega
+
         # Compute the effective number of used collocation points
         if self.rar_parameters is not None:
             n_eff = (
                 self.n_start
-                + self.rar_iter_nb * self.rar_parameters["selected_sample_size_omega"]
+                + self.rar_iter_nb * self.rar_parameters["selected_sample_size"]
             )
         else:
             n_eff = self.n
 
         bstart = self.curr_omega_idx
         bend = bstart + self.omega_batch_size
-
-        if self.n == self.omega_batch_size:
-            # in this case, do not waste time reshuffling or anything
-            return self, self.omega
 
         new_attributes = _reset_or_increment(bend, n_eff, self._get_omega_operands())
         new = eqx.tree_at(
@@ -688,6 +685,9 @@ class CubicMeshPDEStatio(eqx.Module):
 
         """
         if self.omega_border_batch_size is None:
+            return self, self.omega_border
+
+        if self.omega_border_batch_size is None:
             return self, None
         if self.dim == 1:
             # 1-D case, no randomness : we always return the whole omega border,
@@ -695,9 +695,6 @@ class CubicMeshPDEStatio(eqx.Module):
             return self, self.omega_border[None, None]  # shape is (1, 1, 2)
         bstart = self.curr_omega_border_idx
         bend = bstart + self.omega_border_batch_size
-
-        if self.nb == self.omega_border_batch_size:
-            return self, self.omega_border
 
         new_attributes = _reset_or_increment(
             bend, self.nb, self._get_omega_border_operands()
@@ -783,8 +780,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         which we start the RAR sampling scheme (we first have a burn in
         period). `update_every`: the number of gradient steps taken between
         each appending of collocation points in the RAR algo.
-        `sample_size_omega`: the size of the sample from which we will select new
-        collocation points. `selected_sample_size_omega`: the number of selected
+        `sample_size`: the size of the sample from which we will select new
+        collocation points. `selected_sample_size`: the number of selected
         points from the sample to be added to the current collocation
         points.
     n_start : Int, default=None
@@ -821,11 +818,11 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         # class is not automatically called
 
         if self.method == "grid":
-            # we must redo the sampling with the square root number of samples
+            # NOTE we must redo the sampling with the square root number of samples
             # and then take the cartesian product
             self.n = int(jnp.round(jnp.sqrt(self.n)) ** 2)
             self.key, half_domain_times = self.generate_time_data(
-                int(jnp.round(jnp.sqrt(self.n))), self.key
+                self.key, int(jnp.round(jnp.sqrt(self.n)))
             )
 
             keys = jax.random.split(self.key, self.dim + 1)
@@ -835,7 +832,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             )
             self.domain = make_cartesian_product(half_domain_times, half_domain_omega)
         elif self.method == "uniform":
-            self.key, domain_times = self.generate_time_data(self.n, self.key)
+            self.key, domain_times = self.generate_time_data(self.key, self.n)
             self.domain = jnp.concatenate([domain_times, self.omega], axis=1)
         else:
             raise ValueError(
@@ -844,13 +841,12 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             )
 
         if self.domain_batch_size is None:
-            self.domain_batch_size = self.n
             self.curr_domain_idx = 0
         else:
             self.curr_domain_idx = jnp.iinfo(jnp.int32).max - self.domain_batch_size - 1
         if self.nb is not None:
             self.key, boundary_times = self.generate_time_data(
-                self.nb // (2 * self.dim), self.key
+                self.key, self.nb // (2 * self.dim)
             )
             boundary_times = boundary_times.reshape(-1, 1, 1)
             boundary_times = jnp.repeat(
@@ -865,9 +861,6 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
                     [boundary_times, self.omega_border], axis=1
                 )
             if self.border_batch_size is None:
-                self.border_batch_size = (
-                    (self.nb // 2) if self.dim == 1 else (self.nb // 4)
-                )
                 self.curr_border_idx = 0
             else:
                 self.curr_border_idx = (
@@ -887,7 +880,6 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             )
 
             if self.initial_batch_size is None:
-                self.initial_batch_size = self.ni
                 self.curr_initial_idx = 0
             else:
                 self.curr_initial_idx = (
@@ -902,7 +894,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         self.omega = None
         self.omega_border = None
 
-    def generate_time_data(self, nt: Int, key: Key) -> tuple[Key, Float[Array, "nt 1"]]:
+    def generate_time_data(self, key: Key, nt: Int) -> tuple[Key, Float[Array, "nt 1"]]:
         """
         Construct a complete set of `nt` time points according to the
         specified `self.method`
@@ -912,10 +904,10 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             partial_times = (self.tmax - self.tmin) / nt
             return key, jnp.arange(self.tmin, self.tmax, partial_times)[:, None]
         if self.method == "uniform":
-            return key, self.sample_in_time_domain(nt, subkey)
+            return key, self.sample_in_time_domain(subkey, nt)
         raise ValueError("Method " + self.method + " is not implemented.")
 
-    def sample_in_time_domain(self, nt: Int, key: Key) -> Float[Array, "nt 1"]:
+    def sample_in_time_domain(self, key: Key, nt: Int) -> Float[Array, "nt 1"]:
         return jax.random.uniform(
             key,
             (nt, 1),
@@ -937,6 +929,10 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
     def domain_batch(
         self,
     ) -> tuple["CubicMeshPDEStatio", Float[Array, "domain_batch_size 1+dim"]]:
+
+        if self.domain_batch_size is None:
+            return self, self.domain
+
         bstart = self.curr_domain_idx
         bend = bstart + self.domain_batch_size
 
@@ -944,13 +940,10 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         if self.rar_parameters is not None:
             n_eff = (
                 self.n_start
-                + self.rar_iter_nb * self.rar_parameters["selected_sample_size_times"]
+                + self.rar_iter_nb * self.rar_parameters["selected_sample_size"]
             )
         else:
             n_eff = self.n
-
-        if n_eff == self.domain_batch_size:
-            return self, self.domain
 
         new_attributes = _reset_or_increment(bend, n_eff, self._get_domain_operands())
         new = eqx.tree_at(
@@ -985,13 +978,13 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         | Float[Array, "border_batch_size 2+1 4"]
         | None,
     ]:
+        if self.border_batch_size is None:
+            return self, self.border
+
         bstart = self.curr_border_idx
         bend = bstart + self.border_batch_size
 
         n_eff = self.border.shape[0]
-
-        if n_eff == self.border_batch_size:
-            return self, self.border
 
         new_attributes = _reset_or_increment(bend, n_eff, self._get_border_operands())
         new = eqx.tree_at(
@@ -1024,13 +1017,13 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
     def initial_batch(
         self,
     ) -> tuple["CubicMeshPDEStatio", Float[Array, "initial_batch_size dim"]]:
+        if self.initial_batch_size is None:
+            return self, self.initial
+
         bstart = self.curr_initial_idx
         bend = bstart + self.initial_batch_size
 
         n_eff = self.ni
-
-        if n_eff == self.initial_batch_size:
-            return self, self.initial
 
         new_attributes = _reset_or_increment(bend, n_eff, self._get_initial_operands())
         new = eqx.tree_at(
