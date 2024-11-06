@@ -430,10 +430,6 @@ class CubicMeshPDEStatio(eqx.Module):
 
         if self.nb is not None:
             if self.dim == 1:
-                # 1-D case : the arguments `nb` and `omega_border_batch_size` are
-                # ignored but kept for backward stability. The attributes are
-                # always set to 2.
-                self.nb = 2
                 self.omega_border_batch_size = None
                 # We are in 1-D case => omega_border_batch_size is
                 # ignored since borders of Omega are singletons.
@@ -684,15 +680,17 @@ class CubicMeshPDEStatio(eqx.Module):
 
 
         """
-        if self.omega_border_batch_size is None:
-            return self, self.omega_border
-
-        if self.omega_border_batch_size is None:
+        if self.nb is None:
             return self, None
+
         if self.dim == 1:
             # 1-D case, no randomness : we always return the whole omega border,
             # i.e. (1, 1, 2) shape jnp.array([[[xmin], [xmax]]]).
             return self, self.omega_border[None, None]  # shape is (1, 1, 2)
+
+        if self.omega_border_batch_size is None:
+            return self, self.omega_border
+
         bstart = self.curr_omega_border_idx
         bend = bstart + self.omega_border_batch_size
 
@@ -978,6 +976,9 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         | Float[Array, "border_batch_size 2+1 4"]
         | None,
     ]:
+        if self.nb is None:
+            return self, None
+
         if self.border_batch_size is None:
             return self, self.border
 
