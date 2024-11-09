@@ -42,7 +42,14 @@ class FisherKPP(PDENonStatio):
     $$
     \frac{\partial}{\partial t} u(t,x)=D\Delta u(t,x) + u(t,x)(r(x) - \gamma(x)u(t,x))
     $$
+
+    Parameters
+    ----------
+    dim_x : int, default=1
+        The dimension of x, the space domain. Default is 1.
     """
+
+    dim_x: int = eqx.field(default=1, static=True)
 
     def equation(
         self,
@@ -73,7 +80,7 @@ class FisherKPP(PDENonStatio):
 
             du_dt = grad(u_)(t_x)[0]
 
-            lap = _laplacian_rev(t_x, u, params, dim_x=1)[..., None]
+            lap = _laplacian_rev(t_x, u, params, self.dim_x)[..., None]
 
             return du_dt + self.Tmax * (
                 -params.eq_params["D"] * lap
@@ -81,13 +88,15 @@ class FisherKPP(PDENonStatio):
                 * (params.eq_params["r"] - params.eq_params["g"] * u(t_x, params))
             )
         if isinstance(u, SPINN):
-            v0 = jnp.repeat(jnp.array([[1.0, 0.0]]), t_x.shape[0], axis=0)
+            s = jnp.zeros((1, self.dim_x + 1))
+            s = s.at[0].set(1.0)
+            v0 = jnp.repeat(s, t_x.shape[0], axis=0)
             u_tx, du_dt = jax.jvp(
                 lambda t: u(t_x, params),
                 (t_x,),
                 (v0,),
             )
-            lap = _laplacian_fwd(t_x, u, params, dim_x=1)
+            lap = _laplacian_fwd(t_x, u, params, dim_x=self.dim_x)
 
             return du_dt + self.Tmax * (
                 -params.eq_params["D"] * lap

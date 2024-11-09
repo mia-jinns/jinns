@@ -168,7 +168,7 @@ class DataGeneratorODE(eqx.Module):
         The minimum value of the time domain to consider
     tmax : float
         The maximum value of the time domain to consider
-    temporal_batch_size : int | None
+    temporal_batch_size : int | None, default=None
         The size of the batch of randomly selected points among
         the `nt` points. If None, `temporal_batch_size` is set to `nt`, ie., no minibatches
         are used.
@@ -283,7 +283,7 @@ class DataGeneratorODE(eqx.Module):
         Return a batch of time points. If all the batches have been seen, we
         reshuffle them, otherwise we just return the next unseen batch.
         """
-        if self.temporal_batch_size is None:
+        if self.temporal_batch_size is None or self.temporal_batch_size == self.nt:
             # do not lose time reshuffling or anything
             return self, self.times
 
@@ -337,11 +337,11 @@ class CubicMeshPDEStatio(eqx.Module):
     nb : Int | None
         The total number of points in $\partial\Omega$. Can be None if no
         boundary condition is specified.
-    omega_batch_size : Int | None
+    omega_batch_size : Int | None, default=None
         The size of the batch of randomly selected points among
         the `n` points. If None, `omega_batch_size` is set to `n`, ie., no minibatches
         are used.
-    omega_border_batch_size : Int | None
+    omega_border_batch_size : Int | None, default=None
         The size of the batch of points randomly selected
         among the `nb` points. If None, `omega_border_batch_size` is set to
         `nb//4` in dimension 2, ie., no minibatches are used. In dimension 1,
@@ -440,7 +440,10 @@ class CubicMeshPDEStatio(eqx.Module):
                         "number of border point must be"
                         " a multiple of 2xd (the # of faces of a d-dimensional cube)"
                     )
-                if self.nb // (2 * self.dim) < self.omega_border_batch_size:
+                if (
+                    self.omega_border_batch_size is not None
+                    and self.nb // (2 * self.dim) < self.omega_border_batch_size
+                ):
                     raise ValueError(
                         "number of points per facets (nb//2*self.dim)"
                         " cannot be lower than border batch size"
@@ -591,7 +594,7 @@ class CubicMeshPDEStatio(eqx.Module):
             raise ValueError("Method " + self.method + " is not implemented.")
 
         # Generate border of omega
-        if self.dim == 2 and self.omega_border_batch_size is not None:
+        if self.dim == 2:
             key, *subkeys = jax.random.split(key, 5)
         else:
             subkeys = None
@@ -618,7 +621,7 @@ class CubicMeshPDEStatio(eqx.Module):
         If all the batches have been seen, we reshuffle them,
         otherwise we just return the next unseen batch.
         """
-        if self.omega_batch_size is None:
+        if self.omega_batch_size is None or self.omega_batch_size == self.n:
             # in this case, do not waste time reshuffling or anything
             return self, self.omega
 
@@ -688,7 +691,10 @@ class CubicMeshPDEStatio(eqx.Module):
             # i.e. (1, 1, 2) shape jnp.array([[[xmin], [xmax]]]).
             return self, self.omega_border[None, None]  # shape is (1, 1, 2)
 
-        if self.omega_border_batch_size is None:
+        if (
+            self.omega_border_batch_size is None
+            or self.omega_border_batch_size == self.nb // 2**self.dim
+        ):
             return self, self.omega_border
 
         bstart = self.curr_omega_border_idx
@@ -740,16 +746,16 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         The number of total $\Omega$ points at $t=0$ that will be divided in
         batches. Batches are made so that each data point is seen only
         once during 1 epoch.
-    domain_batch_size : Int | None
+    domain_batch_size : Int | None, default=None
         The size of the batch of randomly selected points among
         the `n` points. If None, `domain_batch_size` is set to `n`, ie., no
         mini-batches are used.
-    border_batch_size : Int | None
+    border_batch_size : Int | None, default=None
         The size of the batch of points randomly selected
         among the `nb` points. If None, `domain_batch_size` is set to `nb//2`
         in dimension 1 or `nb//4` in dimension 2, ie., no
         mini-batches are used.
-    initial_batch_size : Int | None
+    initial_batch_size : Int | None, default=None
         The size of the batch of randomly selected points among
         the `ni` points. If None, `initial_batch_size` is set to `ni`, ie., no
         mini-batches are used.
@@ -877,7 +883,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
                 keys[1:].squeeze(), sample_size=self.ni
             )
 
-            if self.initial_batch_size is None:
+            if self.initial_batch_size is None or self.initial_batch_size == self.ni:
                 self.curr_initial_idx = 0
             else:
                 self.curr_initial_idx = (
@@ -928,7 +934,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         self,
     ) -> tuple["CubicMeshPDEStatio", Float[Array, "domain_batch_size 1+dim"]]:
 
-        if self.domain_batch_size is None:
+        if self.domain_batch_size is None or self.domain_batch_size == self.n:
             return self, self.domain
 
         bstart = self.curr_domain_idx
@@ -979,7 +985,10 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         if self.nb is None:
             return self, None
 
-        if self.border_batch_size is None:
+        if (
+            self.border_batch_size is None
+            or self.border_batch_size == self.nb // 2**self.dim
+        ):
             return self, self.border
 
         bstart = self.curr_border_idx
@@ -1252,19 +1261,11 @@ class DataGeneratorParameter(eqx.Module):
         The number of total points that will be divided in
         batches. Batches are made so that each data point is seen only
         once during 1 epoch.
-    param_batch_size : Int
+    param_batch_size : Int | None, default=None
         The size of the batch of randomly selected points among
         the `n` points. `param_batch_size` will be the same for all
-        additional batch of parameter.
-        NOTE: no check is done BUT users should be careful that
-        `param_batch_size` must be equal to `temporal_batch_size` or
-        `omega_batch_size` or the product of both. In the first case, the
-        present DataGeneratorParameter instance complements an ODEBatch, a
-        PDEStatioBatch or a PDENonStatioBatch (with self.cartesian_product
-        = False). In the second case, `param_batch_size` =
-        `temporal_batch_size * omega_batch_size` if the present
-        DataGeneratorParameter complements a PDENonStatioBatch
-        with self.cartesian_product = True
+        additional batch of parameter. If None, `param_batch_size`
+        is set to `n`, ie., no mini-batches are used.
     param_ranges : Dict[str, tuple[Float, Float] | None, default={}
         A dict. A dict of tuples (min, max), which
         reprensents the range of real numbers where to sample batches (of
@@ -1292,7 +1293,7 @@ class DataGeneratorParameter(eqx.Module):
 
     keys: Key | Dict[str, Key]
     n: Int
-    param_batch_size: Int = eqx.field(static=True)
+    param_batch_size: Int | None = eqx.field(static=True, default=None)
     param_ranges: Dict[str, tuple[Float, Float]] = eqx.field(
         static=True, default_factory=lambda: {}
     )
@@ -1318,11 +1319,14 @@ class DataGeneratorParameter(eqx.Module):
             all_keys = set().union(self.param_ranges, self.user_data)
             self.keys = dict(zip(all_keys, jax.random.split(self.keys, len(all_keys))))
 
-        self.curr_param_idx = {}
-        for k in self.keys.keys():
-            self.curr_param_idx[k] = (
-                jnp.iinfo(jnp.int32).max - self.param_batch_size - 1
-            )
+        if self.param_batch_size is None:
+            self.curr_param_idx = None
+        else:
+            self.curr_param_idx = {}
+            for k in self.keys.keys():
+                self.curr_param_idx[k] = (
+                    jnp.iinfo(jnp.int32).max - self.param_batch_size - 1
+                )
 
         # The call to self.generate_data() creates
         # the dict self.param_n_samples and then we will only use this one
@@ -1388,6 +1392,9 @@ class DataGeneratorParameter(eqx.Module):
         If all the batches have been seen, we reshuffle them,
         otherwise we just return the next unseen batch.
         """
+
+        if self.param_batch_size is None:
+            return self, self.param_n_samples
 
         def _reset_or_increment_wrapper(param_k, idx_k, key_k):
             return _reset_or_increment(

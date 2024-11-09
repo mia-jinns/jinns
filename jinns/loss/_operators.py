@@ -96,7 +96,7 @@ def _laplacian_rev(
     else:
         u_ = lambda inputs: jnp.squeeze(u(inputs, params))
 
-    return jnp.sum(jnp.diag(jax.hessian(u_)(inputs[-dim_x:])))  # [-dim_x:])
+    return jnp.sum(jnp.diag(jax.hessian(u_)(inputs[-dim_x:])))
 
     # NOTE that it is unclear whether it is better to vectorially compute the
     # Hessian (despite a useless time dimension) as below

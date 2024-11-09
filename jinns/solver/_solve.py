@@ -16,7 +16,7 @@ from jax import jit
 import jax.numpy as jnp
 from jaxtyping import Int, Bool, Float, Array
 from jinns.solver._rar import init_rar, trigger_rar
-from jinns.utils._utils import _check_nan_in_pytree
+from jinns.utils._utils import _check_nan_in_pytree, _check_batch_size
 from jinns.utils._containers import *
 from jinns.data._DataGenerators import (
     DataGeneratorODE,
@@ -28,36 +28,6 @@ from jinns.data._DataGenerators import (
 
 if TYPE_CHECKING:
     from jinns.utils._types import *
-
-
-def _check_batch_size(other_data, main_data, attr_name):
-    if main_data.cartesian_product:
-        non_statio_batch_size = (
-            main_data.omega_batch_size * main_data.temporal_batch_size
-        )
-    else:
-        non_statio_batch_size = main_data.temporal_batch_size
-    if (
-        (
-            isinstance(main_data, DataGeneratorODE)
-            and getattr(other_data, attr_name) != main_data.temporal_batch_size
-        )
-        or (
-            isinstance(main_data, CubicMeshPDEStatio)
-            and not isinstance(main_data, CubicMeshPDENonStatio)
-            and getattr(other_data, attr_name) != main_data.omega_batch_size
-        )
-        or (
-            isinstance(main_data, CubicMeshPDENonStatio)
-            and getattr(other_data, attr_name) != non_statio_batch_size
-        )
-    ):
-        raise ValueError(
-            "Optional other_data.param_batch_size must be"
-            " equal to main_data.temporal_batch_size or main_data.omega_batch_size or"
-            " the product of both dependeing on the type of the main"
-            " datagenerator"
-        )
 
 
 def solve(
@@ -173,9 +143,17 @@ def solve(
         The best parameters according to the validation criterion
     """
     if param_data is not None:
-        _check_batch_size(param_data, data, "param_batch_size")
+        if param_data.param_batch_size is not None:
+            # We need to check that batch sizes will all be compliant for
+            # correct vectorization
+            _check_batch_size(param_data, data, "param_batch_size")
+        else:
+            # If DataGeneratorParameter does not have a batch size we will
+            # vectorization using `n`, and the same checks must be done
+            _check_batch_size(param_data, data, "n")
 
     if obs_data is not None:
+        # Here an `obs_batch_size` is mandatory for observations
         _check_batch_size(obs_data, data, "obs_batch_size")
 
     if opt_state is None:
