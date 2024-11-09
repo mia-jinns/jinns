@@ -103,7 +103,7 @@ nav:
             - Hard-constraint: 'Notebooks/PDE/2D_Navier_Stokes_PipeFlow_SoftConstraints.ipynb'
           - 1D Burger equation: 'Notebooks/PDE/1D_non_stationary_Burger.ipynb'
           - 1D Fisher-KPP: 'Notebooks/PDE/1D_non_stationary_Fisher_KPP_Bounded_Domain.ipynb'
-          - 1D Fisher-KPP with covariates: 'Notebooks/PDE/Reaction_Diffusion_2D_heterogenous_model.ipynb'
+          - 2D Fisher-KPP  with covariates: 'Notebooks/PDE/Reaction_Diffusion_2D_heterogenous_model.ipynb'
           - 2D learning Ornstein Uhlenbeck pdf (RAR sampling): 'Notebooks/PDE/2D_non_stationary_OU.ipynb'
       - Inverse problems:
         - ODE:
