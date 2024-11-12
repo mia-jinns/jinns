@@ -164,8 +164,6 @@ def boundary_condition_apply(
 
     vmap_in_axes = (0,) + _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
-    batch_array = batch.border_batch
-
     if isinstance(omega_boundary_fun, dict):
         # We must create the facet tree dictionary as we do not have the
         # enumerate from the for loop to pass the id integer
@@ -184,7 +182,7 @@ def boundary_condition_apply(
                 else jnp.mean(
                     loss_weight
                     * _compute_boundary_loss(
-                        c, f, batch_array, u, params, fa, d, vmap_in_axes
+                        c, f, batch, u, params, fa, d, vmap_in_axes
                     )
                 )
             ),
@@ -206,7 +204,7 @@ def boundary_condition_apply(
                 * _compute_boundary_loss(
                     omega_boundary_condition,
                     omega_boundary_fun,
-                    batch_array,
+                    batch,
                     u,
                     params,
                     fa,

@@ -28,7 +28,7 @@ def _compute_boundary_loss(
     f: Callable[
         [Float[Array, "dim"] | Float[Array, "dim + 1"]], Float[Array, "dim_solution"]
     ],
-    batch_array: Float[Array, "batch_size dim|dim+1 2|4"],
+    batch: PDEStatioBatch | PDENonStatioBatch,
     u: eqx.Module,
     params: AnyParams,
     facet: int,
@@ -66,7 +66,7 @@ def _compute_boundary_loss(
         the function to be matched in the boundary condition. It should have
         one argument only (for `t`, `x` or `t_x`) (other are ignored).
     batch
-        the batch as a jnp array
+        the batch
     u
         a PINN
     params
@@ -86,16 +86,12 @@ def _compute_boundary_loss(
         the MSE computed on `batch`
     """
     if boundary_condition_type.lower() in "dirichlet":
-        mse = boundary_dirichlet(
-            f, batch_array, u, params, facet, dim_to_apply, vmap_in_axes
-        )
+        mse = boundary_dirichlet(f, batch, u, params, facet, dim_to_apply, vmap_in_axes)
     elif any(
         boundary_condition_type.lower() in s
         for s in ["von neumann", "vn", "vonneumann"]
     ):
-        mse = boundary_neumann(
-            f, batch_array, u, params, facet, dim_to_apply, vmap_in_axes
-        )
+        mse = boundary_neumann(f, batch, u, params, facet, dim_to_apply, vmap_in_axes)
     else:
         raise ValueError("Wrong type of initial condition")
     return mse
@@ -105,7 +101,7 @@ def boundary_dirichlet(
     f: Callable[
         [Float[Array, "dim"] | Float[Array, "dim + 1"]], Float[Array, "dim_solution"]
     ],
-    batch_array: Float[Array, "batch_size dim|dim+1 2|4"],
+    batch: PDEStatioBatch | PDENonStatioBatch,
     u: eqx.Module,
     params: Params | ParamsDict,
     facet: int,
@@ -125,8 +121,8 @@ def boundary_dirichlet(
     ----------
     f
         the constraint function
-    batch_array
-        The batch as a jnp array
+    batch
+        The batch
     u
         The PINN or SPINN
     params
@@ -142,6 +138,7 @@ def boundary_dirichlet(
     vmap_in_axes
         A tuple object which specifies the in_axes of the vmapping
     """
+    batch_array = batch.border_batch
     batch_array = batch_array[..., facet]
 
     if isinstance(u, PINN):
@@ -174,7 +171,7 @@ def boundary_neumann(
     f: Callable[
         [Float[Array, "dim"] | Float[Array, "dim + 1"]], Float[Array, "dim_solution"]
     ],
-    batch_array: Float[Array, "batch_size dim|dim+1 2|4"],
+    batch: PDEStatioBatch | PDENonStatioBatch,
     u: eqx.Module,
     params: Params | ParamsDict,
     facet: int,
@@ -195,8 +192,8 @@ def boundary_neumann(
     ----------
     f:
         the constraint function
-    batch_array
-        The batch as a jnp array
+    batch
+        The batch
     u
         The PINN
     params
@@ -212,6 +209,7 @@ def boundary_neumann(
     vmap_in_axes
         A tuple object which specifies the in_axes of the vmapping
     """
+    batch_array = batch.border_batch
     batch_array = batch_array[..., facet]
 
     # We resort to the shape of the border_batch to determine the dimension as
@@ -265,34 +263,64 @@ def boundary_neumann(
         # dimensions at once. But it would be very inefficient in SPINN because
         # of the high dim output of u. So we do 2 explicit forward AD, handling all the
         # high dim output at once
-        if batch_array.shape[0] == 1:  # i.e. case 1D
-            _, du_dx = jax.jvp(
-                lambda inputs: u(inputs, params)[..., dim_to_apply],
-                (batch_array,),
-                (jnp.ones_like(batch_array),),
-            )
-            values = du_dx[..., 1] * n[facet]
-        elif batch_array.shape[-1] == 2:
-            tangent_vec_0 = jnp.repeat(
-                jnp.array([1.0, 0.0])[None], batch_array.shape[0], axis=0
-            )
-            tangent_vec_1 = jnp.repeat(
-                jnp.array([0.0, 1.0])[None], batch_array.shape[0], axis=0
-            )
-            _, du_dx1 = jax.jvp(
-                lambda inputs: u(inputs, params)[..., dim_to_apply],
-                (batch_array,),
-                (tangent_vec_0,),
-            )
-            _, du_dx2 = jax.jvp(
-                lambda inputs: u(inputs, params)[..., dim_to_apply],
-                (batch_array,),
-                (tangent_vec_1,),
-            )
-            values = (
-                du_dx1[..., 1] * n[0, facet] + du_dx2[..., 1] * n[1, facet]
-            )  # dot product
-            # explicitly written
+        if (batch_array.shape[0] == 1 and isinstance(batch, PDEStatioBatch)) or (
+            batch_array.shape[-1] == 2 and isinstance(batch, PDENonStatioBatch)
+        ):
+            if u.eq_type == "statio_PDE":
+                _, du_dx = jax.jvp(
+                    lambda inputs: u(inputs, params)[..., dim_to_apply],
+                    (batch_array,),
+                    (jnp.ones_like(batch_array),),
+                )
+                values = du_dx * n[facet]
+            if u.eq_type == "nonstatio_PDE":
+                _, du_dx = jax.jvp(
+                    lambda inputs: u(inputs, params)[..., dim_to_apply],
+                    (batch_array,),
+                    (jnp.ones_like(batch_array),),
+                )
+                values = du_dx[..., 1] * n[facet]
+        elif (batch_array.shape[-1] == 2 and isinstance(batch, PDEStatioBatch)) or (
+            batch_array.shape[-1] == 3 and isinstance(batch, PDENonStatioBatch)
+        ):
+            if u.eq_type == "statio_PDE":
+                tangent_vec_0 = jnp.repeat(
+                    jnp.array([1.0, 0.0])[None], batch_array.shape[0], axis=0
+                )
+                tangent_vec_1 = jnp.repeat(
+                    jnp.array([0.0, 1.0])[None], batch_array.shape[0], axis=0
+                )
+                _, du_dx1 = jax.jvp(
+                    lambda inputs: u(inputs, params)[..., dim_to_apply],
+                    (batch_array,),
+                    (tangent_vec_0,),
+                )
+                _, du_dx2 = jax.jvp(
+                    lambda inputs: u(inputs, params)[..., dim_to_apply],
+                    (batch_array,),
+                    (tangent_vec_1,),
+                )
+                values = du_dx1 * n[0, facet] + du_dx2 * n[1, facet]  # dot product
+            if u.eq_type == "nonstatio_PDE":
+                tangent_vec_0 = jnp.repeat(
+                    jnp.array([0.0, 1.0, 0.0])[None], batch_array.shape[0], axis=0
+                )
+                tangent_vec_1 = jnp.repeat(
+                    jnp.array([0.0, 0.0, 1.0])[None], batch_array.shape[0], axis=0
+                )
+                _, du_dx1 = jax.jvp(
+                    lambda inputs: u(inputs, params)[..., dim_to_apply],
+                    (batch_array,),
+                    (tangent_vec_0,),
+                )
+                _, du_dx2 = jax.jvp(
+                    lambda inputs: u(inputs, params)[..., dim_to_apply],
+                    (batch_array,),
+                    (tangent_vec_1,),
+                )
+                values = (
+                    du_dx1.squeeze() * n[0, facet] + du_dx2.squeeze() * n[1, facet]
+                )  # dot product
         else:
             raise ValueError("Not implemented, we'll do that with a loop")
 

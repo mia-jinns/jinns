@@ -92,7 +92,7 @@ class FisherKPP(PDENonStatio):
             s = s.at[0].set(1.0)
             v0 = jnp.repeat(s, t_x.shape[0], axis=0)
             u_tx, du_dt = jax.jvp(
-                lambda t: u(t_x, params),
+                lambda t_x: u(t_x, params),
                 (t_x,),
                 (v0,),
             )

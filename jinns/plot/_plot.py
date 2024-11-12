@@ -172,7 +172,7 @@ def plot2d(
                     vmin_vmax=vmin_vmax,
                 )
             elif spinn:
-                values_grid = jnp.squeeze(fun(t_x)[0])
+                values_grid = jnp.squeeze(fun(t_x)[0]).T
                 t_slice, _ = _plot_2D_statio(
                     values_grid,
                     mesh,

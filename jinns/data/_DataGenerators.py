@@ -196,17 +196,16 @@ class DataGeneratorODE(eqx.Module):
         then corresponds to the initial number of points we train the PINN.
     """
 
-    key: Key
-    nt: Int = eqx.field(static=True)
-    tmin: Float
-    tmax: Float
-    temporal_batch_size: Int | None = eqx.field(
-        static=True, default=None
-    )  # static cause used as a
-    # shape in jax.lax.dynamic_slice
-    method: str = eqx.field(static=True, default_factory=lambda: "uniform")
-    rar_parameters: Dict[str, Int] = None
-    n_start: Int = eqx.field(static=True, default=None)
+    key: Key = eqx.field(kw_only=True)
+    nt: Int = eqx.field(kw_only=True, static=True)
+    tmin: Float = eqx.field(kw_only=True)
+    tmax: Float = eqx.field(kw_only=True)
+    temporal_batch_size: Int | None = eqx.field(static=True, default=None, kw_only=True)
+    method: str = eqx.field(
+        static=True, kw_only=True, default_factory=lambda: "uniform"
+    )
+    rar_parameters: Dict[str, Int] = eqx.field(default=None, kw_only=True)
+    n_start: Int = eqx.field(static=True, default=None, kw_only=True)
 
     # all the init=False fields are set in __post_init__
     p: Float[Array, "nt 1"] = eqx.field(init=False)
@@ -223,7 +222,10 @@ class DataGeneratorODE(eqx.Module):
             self.rar_iter_nb,
         ) = _check_and_set_rar_parameters(self.rar_parameters, self.nt, self.n_start)
 
-        self.curr_time_idx = jnp.iinfo(jnp.int32).max - self.temporal_batch_size - 1
+        if self.temporal_batch_size is not None:
+            self.curr_time_idx = jnp.iinfo(jnp.int32).max - self.temporal_batch_size - 1
+        else:
+            self.curr_time_idx = 0
         # to be sure there is a
         # shuffling at first get_batch() we do not call
         # _reset_batch_idx_and_permute in __init__ or __post_init__ because it
