@@ -21,22 +21,16 @@ def create_u_statio():
     return jinns.utils.create_PINN(subkey, eqx_list, "statio_PDE", 2)
 
 
-def test_laplacian_bwd_statio(create_u_statio):
+def test_laplacian_rev_statio(create_u_statio):
     u_statio, params = create_u_statio
     x = jnp.array([0.4, 1.5])
     assert jnp.allclose(
-        jinns.loss._operators._laplacian_rev(
-            x, u_statio, params, method="trace_hessian_x"
-        ),
-        jinns.loss._operators._laplacian_rev(
-            x, u_statio, params, method="trace_hessian_t_x"
-        ),
+        jinns.loss.laplacian_rev(x, u_statio, params, method="trace_hessian_x"),
+        jinns.loss.laplacian_rev(x, u_statio, params, method="trace_hessian_t_x"),
     )
     assert jnp.allclose(
-        jinns.loss._operators._laplacian_rev(
-            x, u_statio, params, method="trace_hessian_x"
-        ),
-        jinns.loss._operators._laplacian_rev(x, u_statio, params, method="loop"),
+        jinns.loss.laplacian_rev(x, u_statio, params, method="trace_hessian_x"),
+        jinns.loss.laplacian_rev(x, u_statio, params, method="loop"),
     )
 
 
@@ -56,20 +50,14 @@ def create_u_nonstatio():
     return jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 2)
 
 
-def test_laplacian_bwd_nonstatio(create_u_nonstatio):
+def test_laplacian_rev_nonstatio(create_u_nonstatio):
     u_nonstatio, params = create_u_nonstatio
     t_x = jnp.array([0.5, 0.4, 1.5])
     assert jnp.allclose(
-        jinns.loss._operators._laplacian_rev(
-            t_x, u_nonstatio, params, method="trace_hessian_x"
-        ),
-        jinns.loss._operators._laplacian_rev(
-            t_x, u_nonstatio, params, method="trace_hessian_t_x"
-        ),
+        jinns.loss.laplacian_rev(t_x, u_nonstatio, params, method="trace_hessian_x"),
+        jinns.loss.laplacian_rev(t_x, u_nonstatio, params, method="trace_hessian_t_x"),
     )
     assert jnp.allclose(
-        jinns.loss._operators._laplacian_rev(
-            t_x, u_nonstatio, params, method="trace_hessian_x"
-        ),
-        jinns.loss._operators._laplacian_rev(t_x, u_nonstatio, params, method="loop"),
+        jinns.loss.laplacian_rev(t_x, u_nonstatio, params, method="trace_hessian_x"),
+        jinns.loss.laplacian_rev(t_x, u_nonstatio, params, method="loop"),
     )

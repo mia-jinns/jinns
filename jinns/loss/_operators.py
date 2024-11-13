@@ -2,6 +2,8 @@
 Implements diverse operators for dynamic losses
 """
 
+from typing import Literal
+
 import jax
 import jax.numpy as jnp
 from jax import grad
@@ -73,11 +75,11 @@ def _div_fwd(
     return jnp.sum(accu, axis=0)
 
 
-def _laplacian_rev(
+def laplacian_rev(
     inputs: Float[Array, "dim"] | Float[Array, "1+dim"],
     u: eqx.Module,
     params: Params,
-    method: str = "trace_hessian_x",
+    method: Literal["trace_hessian_x", "trace_hessian_t_x", "loop"] = "trace_hessian_x",
 ) -> float:
     r"""
     Compute the Laplacian of a scalar field $u$ from $\mathbb{R}^d$
@@ -88,6 +90,24 @@ def _laplacian_rev(
     In the second case $inputs=\mathbf{t,x}$, but we still compute
     $\Delta_\mathbf{x} u(\mathbf{x}).
     The computation is done using backward AD.
+
+    Parameters
+    ----------
+    inputs
+        `x` or `t_x`
+    u
+        the PINN
+    params
+        the PINN parameters
+    method
+        how to compute the Laplacian. `"trace_hessian_x"` means that we take
+        the trace of the Hessian matrix computed with `x` only (`t` is excluded
+        from the beginning, we compute less derivatives at the price of a
+        concatenation). `"trace_hessian_t_x"` means that the computation
+        of the Hessian integrates `t` which is excluded at the end (we avoid a
+        concatenate but we compute more derivatives). `"loop"` means that we
+        directly compute the second order derivatives with a loop (we avoid
+        non-diagonal derivatives at the cost of a loop).
 
     !!! note
 
@@ -106,24 +126,22 @@ def _laplacian_rev(
                 u(jnp.concatenate([inputs[:1], x], axis=0), params)
             )
             return jnp.sum(jnp.diag(jax.hessian(u_)(inputs[1:])))
-        elif u.eq_type == "statio_PDE":
+        if u.eq_type == "statio_PDE":
             u_ = lambda inputs: jnp.squeeze(u(inputs, params))
             return jnp.sum(jnp.diag(jax.hessian(u_)(inputs)))
-        else:
-            raise ValueError("Unexpected u.eq_type!")
-    elif method == "trace_hessian_t_x":
+        raise ValueError("Unexpected u.eq_type!")
+    if method == "trace_hessian_t_x":
         # NOTE that it is unclear whether it is better to vectorially compute the
         # Hessian (despite a useless time dimension) as below
         if u.eq_type == "nonstatio_PDE":
             u_ = lambda inputs: jnp.squeeze(u(inputs, params))
             return jnp.sum(jnp.diag(jax.hessian(u_)(inputs))[1:])
-        elif u.eq_type == "statio_PDE":
+        if u.eq_type == "statio_PDE":
             u_ = lambda inputs: jnp.squeeze(u(inputs, params))
             return jnp.sum(jnp.diag(jax.hessian(u_)(inputs)))
-        else:
-            raise ValueError("Unexpected u.eq_type!")
+        raise ValueError("Unexpected u.eq_type!")
 
-    elif method == "loop":
+    if method == "loop":
         # For a small d, we found out that trace of the Hessian is faster, see
         # https://stackoverflow.com/questions/77517357/jax-grad-derivate-with-respect-an-specific-variable-in-a-matrix
         # but could the trick below for taking directly the diagonal elements
@@ -151,51 +169,129 @@ def _laplacian_rev(
             _, trace_hessian = jax.lax.scan(
                 scan_fun, {}, jnp.arange(inputs.shape[0] - 1)
             )
-        else:
+        elif u.eq_type == "statio_PDE":
             _, trace_hessian = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[0]))
+        else:
+            raise ValueError("Unexpected u.eq_type!")
         return jnp.sum(trace_hessian)
+    raise ValueError("Unexpected method argument!")
 
 
-def _laplacian_fwd(
+def laplacian_fwd(
     inputs: Float[Array, "batch_size 1+dim"] | Float[Array, "batch_size dim"],
     u: eqx.Module,
     params: Params,
-    dim_x: int,
+    method: Literal["trace_hessian_t_x", "loop"] = "loop",
 ) -> Float[Array, "batch_size batch_size"]:
     r"""
     Compute the Laplacian of a **batched** scalar field $u$
-    (from $\mathbb{R}^{b\times d}$ to $\mathbb{R}^{b\times b}$)
-    for $\mathbf{x}$ of arbitrary dimension $d$ with batch
+    from $\mathbb{R}^{b\times d}$ to $\mathbb{R}^{b\times b}$ or
+    from $\mathbb{R}^{b\times (1 + d)}$ to $\mathbb{R}^{b\times b}$ or, i.e., this
+    function can be used for stationary or non-stationary PINNs.
+    for $\mathbf{x}$ of arbitrary dimension $d$ or $1+d$ with batch
     dimension $b$.
     Because of the embedding that happens in SPINNs the
     computation is most efficient with forward AD. This is the idea behind
     Separable PINNs.
 
+    Parameters
+    ----------
+    inputs
+        `x` or `t_x`
+    u
+        the PINN
+    params
+        the PINN parameters
+    method
+        how to compute the Laplacian. `"trace_hessian_t_x"` means that the computation
+        of the Hessian integrates `t` which is excluded at the end (**see
+        Warning below**). `"loop"` means that we
+        directly compute the second order derivatives with a loop (we avoid
+        non-diagonal derivatives at the cost of a loop).
+
     !!! warning "Warning"
 
         This function is to be used in the context of SPINNs only.
+
+
+    !!! warning "Warning"
+
+        Because of the batch dimension, the current implementation of
+        `method="trace_hessian_t_x"` should not be used except for debugging
+        purposes. Indeed, computing the Hessian is very costly.
     """
 
-    def scan_fun(_, i):
-        tangent_vec = jnp.repeat(
-            jax.nn.one_hot(i + 1 if dim_x != inputs.shape[-1] else i, inputs.shape[-1])[
-                None
-            ],
-            inputs.shape[0],
-            axis=0,
-        )
+    if method == "loop":
 
-        du_dxi_fun = lambda inputs: jax.jvp(
-            lambda inputs: u(inputs, params),
-            (inputs,),
-            (tangent_vec,),
-            # lambda inputs: u(inputs, params)[..., 0], (x,), (tangent_vec,)
-        )[1]
-        __, d2u_dxi2 = jax.jvp(du_dxi_fun, (inputs,), (tangent_vec,))
-        return _, d2u_dxi2
+        def scan_fun(_, i):
+            if u.eq_type == "nonstatio_PDE":
+                tangent_vec = jnp.repeat(
+                    jax.nn.one_hot(i + 1, inputs.shape[-1])[None],
+                    inputs.shape[0],
+                    axis=0,
+                )
+            else:
+                tangent_vec = jnp.repeat(
+                    jax.nn.one_hot(i, inputs.shape[-1])[None],
+                    inputs.shape[0],
+                    axis=0,
+                )
 
-    _, trace_hessian = jax.lax.scan(scan_fun, {}, jnp.arange(dim_x))
-    return jnp.sum(trace_hessian, axis=0)
+            du_dxi_fun = lambda inputs: jax.jvp(
+                lambda inputs: u(inputs, params),
+                (inputs,),
+                (tangent_vec,),
+            )[1]
+            __, d2u_dxi2 = jax.jvp(du_dxi_fun, (inputs,), (tangent_vec,))
+            return _, d2u_dxi2
+
+        if u.eq_type == "nonstatio_PDE":
+            _, trace_hessian = jax.lax.scan(
+                scan_fun, {}, jnp.arange(inputs.shape[-1] - 1)
+            )
+        elif u.eq_type == "statio_PDE":
+            _, trace_hessian = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[-1]))
+        else:
+            raise ValueError("Unexpected u.eq_type!")
+        return jnp.sum(trace_hessian, axis=0)
+    if method == "trace_hessian_t_x":
+        if u.eq_type == "nonstatio_PDE":
+            # compute the Hessian including the batch dimension, get rid of the
+            # (..,1,..) axis that is here because of the scalar output
+            # if inputs.shape==(10,3) (1 for time, 2 for x_dim)
+            # then r.shape=(10,10,10,1,10,3,10,3)
+            # there are way too much derivatives!
+            r = jax.hessian(u)(inputs, params).squeeze()
+            # compute the traces by avoid the time derivatives
+            # after that r.shape=(10,10,10,10)
+            r = jnp.trace(r[..., :, 1:, :, 1:], axis1=-3, axis2=-1)
+            # but then we are in a cartesian product, for each coordinate on
+            # the first two dimensions we only want the trace at the same
+            # coordinate on the last two dimensions
+            # this is done easily with einsum but we need to automate the
+            # formula according to the input dim
+            res_dims = "".join([f"{chr(97 + d)}" for d in range(inputs.shape[-1])])
+            lap = jnp.einsum(res_dims + "ii->" + res_dims, r)
+            return lap[..., None]
+        if u.eq_type == "statio_PDE":
+            # compute the Hessian including the batch dimension, get rid of the
+            # (..,1,..) axis that is here because of the scalar output
+            # if inputs.shape==(10,2), r.shape=(10,10,1,10,2,10,2)
+            # there are way too much derivatives!
+            r = jax.hessian(u)(inputs, params).squeeze()
+            # compute the traces, after that r.shape=(10,10,10,10)
+            r = jnp.trace(r, axis1=-3, axis2=-1)
+            # but then we are in a cartesian product, for each coordinate on
+            # the first two dimensions we only want the trace at the same
+            # coordinate on the last two dimensions
+            # this is done easily with einsum but we need to automate the
+            # formula according to the input dim
+            res_dims = "".join([f"{chr(97 + d)}" for d in range(inputs.shape[-1])])
+            lap = jnp.einsum(res_dims + "ii->" + res_dims, r)
+            return lap[..., None]
+        raise ValueError("Unexpected u.eq_type!")
+    else:
+        raise ValueError("Unexpected method argument!")
 
 
 def _vectorial_laplacian(
