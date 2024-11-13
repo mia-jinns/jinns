@@ -23,5 +23,6 @@ from ._operators import (
     divergence_rev,
     laplacian_fwd,
     laplacian_rev,
-    _vectorial_laplacian,
+    vectorial_laplacian_fwd,
+    vectorial_laplacian_rev,
 )

@@ -78,6 +78,15 @@ def divergence_fwd(
     !!! warning "Warning"
 
         This function is to be used in the context of SPINNs only.
+
+    Parameters
+    ----------
+    inputs
+        `x` or `t_x`
+    u
+        the PINN
+    params
+        the PINN parameters
     """
 
     def scan_fun(_, i):
@@ -115,6 +124,7 @@ def laplacian_rev(
     u: eqx.Module,
     params: Params,
     method: Literal["trace_hessian_x", "trace_hessian_t_x", "loop"] = "trace_hessian_x",
+    eq_type: Literal["nonstatio_PDE", "statio_PDE"] = None,
 ) -> float:
     r"""
     Compute the Laplacian of a scalar field $u$ from $\mathbb{R}^d$
@@ -123,7 +133,7 @@ def laplacian_rev(
     case $\mathrm{inputs}=\mathbf{x}$ is of arbitrary dimension, i.e.,
     $\Delta_\mathbf{x} u(\mathbf{x})=\nabla_\mathbf{x}\cdot\nabla_\mathbf{x} u(\mathbf{x})$.
     In the second case $inputs=\mathbf{t,x}$, but we still compute
-    $\Delta_\mathbf{x} u(\mathrm{inputs}).
+    $\Delta_\mathbf{x} u(\mathrm{inputs})$.
     The computation is done using backward AD.
 
     Parameters
@@ -143,12 +153,18 @@ def laplacian_rev(
         concatenate but we compute more derivatives). `"loop"` means that we
         directly compute the second order derivatives with a loop (we avoid
         non-diagonal derivatives at the cost of a loop).
-
-    !!! note
-
-        See the code of this function for technical details about possible
-        implementations (see `method` argument).
+    eq_type
+        whether we consider a stationary or non stationary PINN. Most often we
+        can know that by inspecting the `u` argument (PINN object). But if `u` is
+        a function, we must set this attribute.
     """
+
+    try:
+        eq_type = u.eq_type
+    except AttributeError:
+        pass  # use the value passed as argument
+    if eq_type is None:
+        raise ValueError("eq_type could not be set!")
 
     if method == "trace_hessian_x":
         # NOTE we afford a concatenate here to avoid computing Hessian elements for
@@ -156,25 +172,25 @@ def laplacian_rev(
         # computation and then discarding elements but for higher order derivatives
         # it might not be worth it. See other options below for computating the
         # Laplacian
-        if u.eq_type == "nonstatio_PDE":
+        if eq_type == "nonstatio_PDE":
             u_ = lambda x: jnp.squeeze(
                 u(jnp.concatenate([inputs[:1], x], axis=0), params)
             )
             return jnp.sum(jnp.diag(jax.hessian(u_)(inputs[1:])))
-        if u.eq_type == "statio_PDE":
+        if eq_type == "statio_PDE":
             u_ = lambda inputs: jnp.squeeze(u(inputs, params))
             return jnp.sum(jnp.diag(jax.hessian(u_)(inputs)))
-        raise ValueError("Unexpected u.eq_type!")
+        raise ValueError("Unexpected eq_type!")
     if method == "trace_hessian_t_x":
         # NOTE that it is unclear whether it is better to vectorially compute the
         # Hessian (despite a useless time dimension) as below
-        if u.eq_type == "nonstatio_PDE":
+        if eq_type == "nonstatio_PDE":
             u_ = lambda inputs: jnp.squeeze(u(inputs, params))
             return jnp.sum(jnp.diag(jax.hessian(u_)(inputs))[1:])
-        if u.eq_type == "statio_PDE":
+        if eq_type == "statio_PDE":
             u_ = lambda inputs: jnp.squeeze(u(inputs, params))
             return jnp.sum(jnp.diag(jax.hessian(u_)(inputs)))
-        raise ValueError("Unexpected u.eq_type!")
+        raise ValueError("Unexpected eq_type!")
 
     if method == "loop":
         # For a small d, we found out that trace of the Hessian is faster, see
@@ -185,7 +201,7 @@ def laplacian_rev(
         u_ = lambda inputs: u(inputs, params).squeeze()
 
         def scan_fun(_, i):
-            if u.eq_type == "nonstatio_PDE":
+            if eq_type == "nonstatio_PDE":
                 d2u_dxi2 = grad(
                     lambda inputs: grad(u_)(inputs)[1 + i],
                 )(
@@ -200,14 +216,14 @@ def laplacian_rev(
                 )[i]
             return _, d2u_dxi2
 
-        if u.eq_type == "nonstatio_PDE":
+        if eq_type == "nonstatio_PDE":
             _, trace_hessian = jax.lax.scan(
                 scan_fun, {}, jnp.arange(inputs.shape[0] - 1)
             )
-        elif u.eq_type == "statio_PDE":
+        elif eq_type == "statio_PDE":
             _, trace_hessian = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[0]))
         else:
-            raise ValueError("Unexpected u.eq_type!")
+            raise ValueError("Unexpected eq_type!")
         return jnp.sum(trace_hessian)
     raise ValueError("Unexpected method argument!")
 
@@ -217,6 +233,7 @@ def laplacian_fwd(
     u: eqx.Module,
     params: Params,
     method: Literal["trace_hessian_t_x", "loop"] = "loop",
+    eq_type: Literal["nonstatio_PDE", "statio_PDE"] = None,
 ) -> Float[Array, "batch_size * (1+dim) 1"] | Float[Array, "batch_size * (dim) 1"]:
     r"""
     Compute the Laplacian of a **batched** scalar field $u$
@@ -228,6 +245,16 @@ def laplacian_fwd(
     Because of the embedding that happens in SPINNs the
     computation is most efficient with forward AD. This is the idea behind
     Separable PINNs.
+
+    !!! warning "Warning"
+
+        This function is to be used in the context of SPINNs only.
+
+    !!! warning "Warning"
+
+        Because of the batch dimension, the current implementation of
+        `method="trace_hessian_t_x"` should not be used except for debugging
+        purposes. Indeed, computing the Hessian is very costly.
 
     Parameters
     ----------
@@ -243,23 +270,23 @@ def laplacian_fwd(
         Warning below**). `"loop"` means that we
         directly compute the second order derivatives with a loop (we avoid
         non-diagonal derivatives at the cost of a loop).
-
-    !!! warning "Warning"
-
-        This function is to be used in the context of SPINNs only.
-
-
-    !!! warning "Warning"
-
-        Because of the batch dimension, the current implementation of
-        `method="trace_hessian_t_x"` should not be used except for debugging
-        purposes. Indeed, computing the Hessian is very costly.
+    eq_type
+        whether we consider a stationary or non stationary PINN. Most often we
+        can know that by inspecting the `u` argument (PINN object). But if `u` is
+        a function, we must set this attribute.
     """
+
+    try:
+        eq_type = u.eq_type
+    except AttributeError:
+        pass  # use the value passed as argument
+    if eq_type is None:
+        raise ValueError("eq_type could not be set!")
 
     if method == "loop":
 
         def scan_fun(_, i):
-            if u.eq_type == "nonstatio_PDE":
+            if eq_type == "nonstatio_PDE":
                 tangent_vec = jnp.repeat(
                     jax.nn.one_hot(i + 1, inputs.shape[-1])[None],
                     inputs.shape[0],
@@ -280,17 +307,17 @@ def laplacian_fwd(
             __, d2u_dxi2 = jax.jvp(du_dxi_fun, (inputs,), (tangent_vec,))
             return _, d2u_dxi2
 
-        if u.eq_type == "nonstatio_PDE":
+        if eq_type == "nonstatio_PDE":
             _, trace_hessian = jax.lax.scan(
                 scan_fun, {}, jnp.arange(inputs.shape[-1] - 1)
             )
-        elif u.eq_type == "statio_PDE":
+        elif eq_type == "statio_PDE":
             _, trace_hessian = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[-1]))
         else:
-            raise ValueError("Unexpected u.eq_type!")
+            raise ValueError("Unexpected eq_type!")
         return jnp.sum(trace_hessian, axis=0)
     if method == "trace_hessian_t_x":
-        if u.eq_type == "nonstatio_PDE":
+        if eq_type == "nonstatio_PDE":
             # compute the Hessian including the batch dimension, get rid of the
             # (..,1,..) axis that is here because of the scalar output
             # if inputs.shape==(10,3) (1 for time, 2 for x_dim)
@@ -308,7 +335,7 @@ def laplacian_fwd(
             res_dims = "".join([f"{chr(97 + d)}" for d in range(inputs.shape[-1])])
             lap = jnp.einsum(res_dims + "ii->" + res_dims, r)
             return lap[..., None]
-        if u.eq_type == "statio_PDE":
+        if eq_type == "statio_PDE":
             # compute the Hessian including the batch dimension, get rid of the
             # (..,1,..) axis that is here because of the scalar output
             # if inputs.shape==(10,2), r.shape=(10,10,1,10,2,10,2)
@@ -324,64 +351,103 @@ def laplacian_fwd(
             res_dims = "".join([f"{chr(97 + d)}" for d in range(inputs.shape[-1])])
             lap = jnp.einsum(res_dims + "ii->" + res_dims, r)
             return lap[..., None]
-        raise ValueError("Unexpected u.eq_type!")
+        raise ValueError("Unexpected eq_type!")
     else:
         raise ValueError("Unexpected method argument!")
 
 
-def _vectorial_laplacian(
-    t: Float[Array, "1"] | Float[Array, "batch_size 1"],
-    x: Float[Array, "dimension_in"] | Float[Array, "batch_size dimension"],
+def vectorial_laplacian_rev(
+    inputs: Float[Array, "dim"] | Float[Array, "1+dim"],
     u: eqx.Module,
     params: Params,
-    u_vec_ndim: int = None,
-) -> (
-    Float[Array, "dimension_out"] | Float[Array, "batch_size batch_size dimension_out"]
-):
+    dim_out: int = None,
+) -> Float[Array, "dim_out"]:
     r"""
-    Compute the vectorial Laplacian of a vector field $\mathbf{u}$ (from
-    $\mathbb{R}^d$
-    to $\mathbb{R}^n$) for $\mathbf{x}$ of arbitrary dimension, i.e.,
-    $\Delta \mathbf{u}(\mathbf{x})=\nabla\cdot\nabla
+    Compute the vectorial Laplacian of a vector field $\mathbf{u}$ from
+    $\mathbb{R}^d$ to $\mathbb{R}^n$ or from $\mathbb{R}^{1+d}$ to
+    $\mathbb{R}^n$, i.e., this
+    function can be used for stationary or non-stationary PINNs. In the first
+    case $\mathrm{inputs}=\mathbf{x}$ is of arbitrary dimension, i.e.,
+    $\Delta_\mathbf{x} \mathbf{u}(\mathbf{x})=\nabla\cdot\nabla
     \mathbf{u}(\mathbf{x})$.
+    In the second case $inputs=\mathbf{t,x}$, and we perform
+    $\Delta_\mathbf{x} \mathbf{u}(\mathrm{inputs})=\nabla\cdot\nabla
+    \mathbf{u}(\mathrm{inputs})$.
 
-    **Note:** We need to provide `u_vec_ndim` the dimension of the vector
-    $\mathbf{u}(\mathbf{x})$ if it is different than that of
-    $\mathbf{x}$.
-
-    **Note:** `u` can be a SPINN, in this case, it corresponds to a vector
-    field from (from $\mathbb{R}^{b\times d}$ to
-    $\mathbb{R}^{b\times b\times n}$) and forward mode AD is used.
-    Technically, the return is of dimension $n\times b \times b$.
+    Parameters
+    ----------
+    inputs
+        `x` or `t_x`
+    u
+        the PINN
+    params
+        the PINN parameters
+    dim_out
+        Dimension of the vector $\mathbf{u}(\mathrm{inputs})$. This needs to be
+        provided if it is different than that of $\mathrm{inputs}$.
     """
-    if u_vec_ndim is None:
-        u_vec_ndim = x.shape[0]
+    if dim_out is None:
+        dim_out = inputs.shape[0]
+
+    def scan_fun(_, j):
+        # The loop over the components of u(x). We compute one Laplacian for
+        # each of these components
+        # Note the jnp.expand_dims call
+        uj = lambda inputs, params: jnp.expand_dims(u(inputs, params)[j], axis=-1)
+        lap_on_j = laplacian_rev(inputs, uj, params, eq_type=u.eq_type)
+
+        return _, lap_on_j
+
+    _, vec_lap = jax.lax.scan(scan_fun, {}, jnp.arange(dim_out))
+    return vec_lap
+
+
+def vectorial_laplacian_fwd(
+    inputs: Float[Array, "batch_size dim"] | Float[Array, "batch_size 1+dim"],
+    u: eqx.Module,
+    params: Params,
+    dim_out: int = None,
+) -> Float[Array, "batch_size * (1+dim) n"] | Float[Array, "batch_size * (dim) n"]:
+    r"""
+    Compute the vectorial Laplacian of a vector field $\mathbf{u}$ when
+    `u` is a SPINN, in this case, it corresponds to a vector
+    field from from $\mathbb{R}^{b\times d}$ to
+    $\mathbb{R}^{b\times b\times n}$ or from from $\mathbb{R}^{b\times 1+d}$ to
+    $\mathbb{R}^{b\times b\times n}$, i.e., this
+    function can be used for stationary or non-stationary PINNs.
+
+    Forward mode AD is used.
+
+    !!! warning "Warning"
+
+        This function is to be used in the context of SPINNs only.
+
+    Parameters
+    ----------
+    inputs
+        `x` or `t_x`
+    u
+        the PINN
+    params
+        the PINN parameters
+    dim_out
+        the value of the output dimension ($n$ in the formula above). Must be
+        set if different from $d$.
+    """
+    if dim_out is None:
+        dim_out = inputs.shape[0]
 
     def scan_fun(_, j):
         # The loop over the components of u(x). We compute one Laplacian for
         # each of these components
         # Note the expand_dims
-        if isinstance(u, PINN):
-            if t is None:
-                uj = lambda x, params: jnp.expand_dims(u(x, params)[j], axis=-1)
-            else:
-                uj = lambda t, x, params: jnp.expand_dims(u(t, x, params)[j], axis=-1)
-            lap_on_j = _laplacian_rev(t, x, uj, params)
-        elif isinstance(u, SPINN):
-            if t is None:
-                uj = lambda x, params: jnp.expand_dims(u(x, params)[..., j], axis=-1)
-            else:
-                uj = lambda t, x, params: jnp.expand_dims(
-                    u(t, x, params)[..., j], axis=-1
-                )
-            lap_on_j = _laplacian_fwd(t, x, uj, params)
-        else:
-            raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
+        uj = lambda inputs, params: jnp.expand_dims(u(inputs, params)[..., j], axis=-1)
+        lap_on_j = laplacian_fwd(inputs, uj, params, eq_type=u.eq_type)
 
         return _, lap_on_j
 
-    _, vec_lap = jax.lax.scan(scan_fun, {}, jnp.arange(u_vec_ndim))
-    return vec_lap
+    _, vec_lap = jax.lax.scan(scan_fun, {}, jnp.arange(dim_out))
+    return jnp.moveaxis(vec_lap.squeeze(), 0, -1)
 
 
 def _u_dot_nabla_times_u_rev(

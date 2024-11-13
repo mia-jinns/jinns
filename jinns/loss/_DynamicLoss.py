@@ -23,7 +23,8 @@ from jinns.loss._operators import (
     laplacian_fwd,
     divergence_rev,
     divergence_fwd,
-    _vectorial_laplacian,
+    vectorial_laplacian_rev,
+    vectorial_laplacian_fwd,
     _u_dot_nabla_times_u_rev,
     _u_dot_nabla_times_u_fwd,
 )
