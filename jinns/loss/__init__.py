@@ -19,9 +19,9 @@ from ._loss_weights import (
 )
 
 from ._operators import (
-    _div_fwd,
-    _div_rev,
-    _laplacian_fwd,
-    _laplacian_rev,
+    divergence_fwd,
+    divergence_rev,
+    laplacian_fwd,
+    laplacian_rev,
     _vectorial_laplacian,
 )
