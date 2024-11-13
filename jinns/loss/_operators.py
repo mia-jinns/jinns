@@ -14,42 +14,63 @@ from jinns.utils._spinn import SPINN
 from jinns.parameters._params import Params
 
 
-def _div_rev(
+def divergence_rev(
     inputs: Float[Array, "dim"] | Float[Array, "1+dim"],
     u: eqx.Module,
     params: Params,
-    dim_x: int,
 ) -> float:
     r"""
     Compute the divergence of a vector field $\mathbf{u}$, i.e.,
-    $\nabla \cdot \mathbf{u}(\mathbf{x})$ with $\mathbf{u}$ a vector
-    field from $\mathbb{R}^d$ to $\mathbb{R}^d$.
+    $\nabla_\mathbf{x} \cdot \mathbf{u}(\mathrm{inputs})$ with $\mathbf{u}$ a vector
+    field from $\mathbb{R}^d$ to $\mathbb{R}^d$ or $\mathbb{R}^{1+d}$
+    to $\mathbb{R}^{1+d}$. Thus, this
+    function can be used for stationary or non-stationary PINNs. In the first
+    case $\mathrm{inputs}=\mathbf{x}$, in the second case
+    case $\mathrm{inputs}=\mathbf{t,x}$.
     The computation is done using backward AD
+
+    Parameters
+    ----------
+    inputs
+        `x` or `t_x`
+    u
+        the PINN
+    params
+        the PINN parameters
     """
 
     def scan_fun(_, i):
-        if inputs.shape[0] != dim_x:
-            pass
-            # TODO
-            # du_dxi = grad(lambda t, x, params: u(t, x, params)[i], 1)(t, x, params)[i]
-        else:
-            du_dxi = grad(lambda inputs, params: u(inputs, params)[i], 0)(
+        if u.eq_type == "nonstatio_PDE":
+            du_dxi = grad(lambda inputs, params: u(inputs, params)[1 + i])(
                 inputs, params
-            )[i]
+            )[1 + i]
+        else:
+            du_dxi = grad(lambda inputs, params: u(inputs, params)[i])(inputs, params)[
+                i
+            ]
         return _, du_dxi
 
-    _, accu = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[0]))
-    return jnp.sum(accu, keepdims=True)
+    if u.eq_type == "nonstatio_PDE":
+        _, accu = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[0] - 1))
+    elif u.eq_type == "statio_PDE":
+        _, accu = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[0]))
+    else:
+        raise ValueError("Unexpected u.eq_type!")
+    return jnp.sum(accu)
 
 
-def _div_fwd(
-    inputs: Float[Array, "dim"] | Float[Array, "1+dim"], u: eqx.Module, params: Params
-) -> float:
+def divergence_fwd(
+    inputs: Float[Array, "batch_size dim"] | Float[Array, "batch_size 1+dim"],
+    u: eqx.Module,
+    params: Params,
+) -> Float[Array, "batch_size * (1+dim) 1"] | Float[Array, "batch_size * (dim) 1"]:
     r"""
     Compute the divergence of a **batched** vector field $\mathbf{u}$, i.e.,
-    $\nabla \cdot \mathbf{u}(\mathbf{x})$ with $\mathbf{u}$ a vector
+    $\nabla_\mathbf{x} \cdot \mathbf{u}(\mathbf{x})$ with $\mathbf{u}$ a vector
     field from $\mathbb{R}^{b \times d}$ to $\mathbb{R}^{b \times b
-    \times d}$. The result is then in $\mathbb{R}^{b\times b}$.
+    \times d}$ or from $\mathbb{R}^{b \times d+1}$ to $\mathbb{R}^{b \times b
+    \times d+1}$. Thus, this
+    function can be used for stationary or non-stationary PINNs.
     Because of the embedding that happens in SPINNs the
     computation is most efficient with forward AD. This is the idea behind
     Separable PINNs.
@@ -60,18 +81,32 @@ def _div_fwd(
     """
 
     def scan_fun(_, i):
-        tangent_vec = jnp.repeat(
-            jax.nn.one_hot(i, x.shape[-1])[None], x.shape[0], axis=0
-        )
-        if t is None:
-            __, du_dxi = jax.jvp(lambda x: u(x, params)[..., i], (x,), (tangent_vec,))
-        else:
+        if u.eq_type == "nonstatio_PDE":
+            tangent_vec = jnp.repeat(
+                jax.nn.one_hot(i + 1, inputs.shape[-1])[None],
+                inputs.shape[0],
+                axis=0,
+            )
             __, du_dxi = jax.jvp(
-                lambda x: u(t, x, params)[..., i], (x,), (tangent_vec,)
+                lambda inputs: u(inputs, params)[..., 1 + i], (inputs,), (tangent_vec,)
+            )
+        else:
+            tangent_vec = jnp.repeat(
+                jax.nn.one_hot(i, inputs.shape[-1])[None],
+                inputs.shape[0],
+                axis=0,
+            )
+            __, du_dxi = jax.jvp(
+                lambda inputs: u(inputs, params)[..., i], (inputs,), (tangent_vec,)
             )
         return _, du_dxi
 
-    _, accu = jax.lax.scan(scan_fun, {}, jnp.arange(x.shape[1]))
+    if u.eq_type == "nonstatio_PDE":
+        _, accu = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[1] - 1))
+    elif u.eq_type == "statio_PDE":
+        _, accu = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[1]))
+    else:
+        raise ValueError("Unexpected u.eq_type!")
     return jnp.sum(accu, axis=0)
 
 
@@ -85,10 +120,10 @@ def laplacian_rev(
     Compute the Laplacian of a scalar field $u$ from $\mathbb{R}^d$
     to $\mathbb{R}$ or from $\mathbb{R}^{1+d}$ to $\mathbb{R}$, i.e., this
     function can be used for stationary or non-stationary PINNs. In the first
-    case $inputs=\mathbf{x}$ is of arbitrary dimension, i.e.,
+    case $\mathrm{inputs}=\mathbf{x}$ is of arbitrary dimension, i.e.,
     $\Delta_\mathbf{x} u(\mathbf{x})=\nabla_\mathbf{x}\cdot\nabla_\mathbf{x} u(\mathbf{x})$.
     In the second case $inputs=\mathbf{t,x}$, but we still compute
-    $\Delta_\mathbf{x} u(\mathbf{x}).
+    $\Delta_\mathbf{x} u(\mathrm{inputs}).
     The computation is done using backward AD.
 
     Parameters
@@ -182,12 +217,12 @@ def laplacian_fwd(
     u: eqx.Module,
     params: Params,
     method: Literal["trace_hessian_t_x", "loop"] = "loop",
-) -> Float[Array, "batch_size batch_size"]:
+) -> Float[Array, "batch_size * (1+dim) 1"] | Float[Array, "batch_size * (dim) 1"]:
     r"""
     Compute the Laplacian of a **batched** scalar field $u$
     from $\mathbb{R}^{b\times d}$ to $\mathbb{R}^{b\times b}$ or
     from $\mathbb{R}^{b\times (1 + d)}$ to $\mathbb{R}^{b\times b}$ or, i.e., this
-    function can be used for stationary or non-stationary PINNs.
+    function can be used for stationary or non-stationary PINNs
     for $\mathbf{x}$ of arbitrary dimension $d$ or $1+d$ with batch
     dimension $b$.
     Because of the embedding that happens in SPINNs the
