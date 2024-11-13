@@ -13,7 +13,10 @@ from jinns.parameters._params import Params
 
 
 def _div_rev(
-    t: Float[Array, "1"], x: Float[Array, "dimension"], u: eqx.Module, params: Params
+    inputs: Float[Array, "dim"] | Float[Array, "1+dim"],
+    u: eqx.Module,
+    params: Params,
+    dim_x: int,
 ) -> float:
     r"""
     Compute the divergence of a vector field $\mathbf{u}$, i.e.,
@@ -23,18 +26,22 @@ def _div_rev(
     """
 
     def scan_fun(_, i):
-        if t is None:
-            du_dxi = grad(lambda x, params: u(x, params)[i], 0)(x, params)[i]
+        if inputs.shape[0] != dim_x:
+            pass
+            # TODO
+            # du_dxi = grad(lambda t, x, params: u(t, x, params)[i], 1)(t, x, params)[i]
         else:
-            du_dxi = grad(lambda t, x, params: u(t, x, params)[i], 1)(t, x, params)[i]
+            du_dxi = grad(lambda inputs, params: u(inputs, params)[i], 0)(
+                inputs, params
+            )[i]
         return _, du_dxi
 
-    _, accu = jax.lax.scan(scan_fun, {}, jnp.arange(x.shape[0]))
-    return jnp.sum(accu)
+    _, accu = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[0]))
+    return jnp.sum(accu, keepdims=True)
 
 
 def _div_fwd(
-    t: Float[Array, "1"], x: Float[Array, "dimension"], u: eqx.Module, params: Params
+    inputs: Float[Array, "dim"] | Float[Array, "1+dim"], u: eqx.Module, params: Params
 ) -> float:
     r"""
     Compute the divergence of a **batched** vector field $\mathbf{u}$, i.e.,
@@ -67,66 +74,86 @@ def _div_fwd(
 
 
 def _laplacian_rev(
-    inputs: Float[Array, "1"] | Float[Array, "1+dim"],
+    inputs: Float[Array, "dim"] | Float[Array, "1+dim"],
     u: eqx.Module,
     params: Params,
-    dim_x: int,
+    method: str = "trace_hessian_x",
 ) -> float:
     r"""
-    Compute the Laplacian of a scalar field $u$ (from $\mathbb{R}^d$
-    to $\mathbb{R}$) for $\mathbf{x}$ of arbitrary dimension, i.e.,
-    $\Delta u(\mathbf{x})=\nabla\cdot\nabla u(\mathbf{x})$.
+    Compute the Laplacian of a scalar field $u$ from $\mathbb{R}^d$
+    to $\mathbb{R}$ or from $\mathbb{R}^{1+d}$ to $\mathbb{R}$, i.e., this
+    function can be used for stationary or non-stationary PINNs. In the first
+    case $inputs=\mathbf{x}$ is of arbitrary dimension, i.e.,
+    $\Delta_\mathbf{x} u(\mathbf{x})=\nabla_\mathbf{x}\cdot\nabla_\mathbf{x} u(\mathbf{x})$.
+    In the second case $inputs=\mathbf{t,x}$, but we still compute
+    $\Delta_\mathbf{x} u(\mathbf{x}).
     The computation is done using backward AD.
 
     !!! note
 
         See the code of this function for technical details about possible
-        implementations and the current chosen implementations
+        implementations (see `method` argument).
     """
 
-    # NOTE we afford a concatenate here to avoid computing Hessian elements for
-    # nothing. In case of simple derivatives we prefer the vectorial
-    # computation and then discarding elements but for higher order derivatives
-    # it might not be worth it. See other options below for computating the
-    # Laplacian
-    if dim_x != inputs.shape[0]:
-        u_ = lambda x: jnp.squeeze(
-            u(jnp.concatenate([inputs[:-dim_x], x], axis=0), params)
-        )
-    else:
-        u_ = lambda inputs: jnp.squeeze(u(inputs, params))
+    if method == "trace_hessian_x":
+        # NOTE we afford a concatenate here to avoid computing Hessian elements for
+        # nothing. In case of simple derivatives we prefer the vectorial
+        # computation and then discarding elements but for higher order derivatives
+        # it might not be worth it. See other options below for computating the
+        # Laplacian
+        if u.eq_type == "nonstatio_PDE":
+            u_ = lambda x: jnp.squeeze(
+                u(jnp.concatenate([inputs[:1], x], axis=0), params)
+            )
+            return jnp.sum(jnp.diag(jax.hessian(u_)(inputs[1:])))
+        elif u.eq_type == "statio_PDE":
+            u_ = lambda inputs: jnp.squeeze(u(inputs, params))
+            return jnp.sum(jnp.diag(jax.hessian(u_)(inputs)))
+        else:
+            raise ValueError("Unexpected u.eq_type!")
+    elif method == "trace_hessian_t_x":
+        # NOTE that it is unclear whether it is better to vectorially compute the
+        # Hessian (despite a useless time dimension) as below
+        if u.eq_type == "nonstatio_PDE":
+            u_ = lambda inputs: jnp.squeeze(u(inputs, params))
+            return jnp.sum(jnp.diag(jax.hessian(u_)(inputs))[1:])
+        elif u.eq_type == "statio_PDE":
+            u_ = lambda inputs: jnp.squeeze(u(inputs, params))
+            return jnp.sum(jnp.diag(jax.hessian(u_)(inputs)))
+        else:
+            raise ValueError("Unexpected u.eq_type!")
 
-    return jnp.sum(jnp.diag(jax.hessian(u_)(inputs[-dim_x:])))
+    elif method == "loop":
+        # For a small d, we found out that trace of the Hessian is faster, see
+        # https://stackoverflow.com/questions/77517357/jax-grad-derivate-with-respect-an-specific-variable-in-a-matrix
+        # but could the trick below for taking directly the diagonal elements
+        # prove useful in higher dimensions?
 
-    # NOTE that it is unclear whether it is better to vectorially compute the
-    # Hessian (despite a useless time dimension) as below
-    # u_ = lambda inputs: jnp.squeeze(u(inputs, params))
-    # return jnp.sum(jnp.diag(jax.hessian(u_)(inputs))[-dim_x:])
+        u_ = lambda inputs: u(inputs, params).squeeze()
 
-    # For a small d, we found out that trace of the Hessian is faster, see
-    # https://stackoverflow.com/questions/77517357/jax-grad-derivate-with-respect-an-specific-variable-in-a-matrix
-    # but could the trick below for taking directly the diagonal elements
-    # prove useful in higher dimensions?
+        def scan_fun(_, i):
+            if u.eq_type == "nonstatio_PDE":
+                d2u_dxi2 = grad(
+                    lambda inputs: grad(u_)(inputs)[1 + i],
+                )(
+                    inputs
+                )[1 + i]
+            else:
+                d2u_dxi2 = grad(
+                    lambda inputs: grad(u_, 0)(inputs)[i],
+                    0,
+                )(
+                    inputs
+                )[i]
+            return _, d2u_dxi2
 
-    # def scan_fun(_, i):
-    #    if t is None:
-    #        d2u_dxi2 = grad(
-    #            lambda x: grad(u_, 0)(x)[i],
-    #            0,
-    #        )(
-    #            x
-    #        )[i]
-    #    else:
-    #        d2u_dxi2 = grad(
-    #            lambda t, x: grad(u_, 1)(t, x)[i],
-    #            1,
-    #        )(
-    #            t, x
-    #        )[i]
-    #    return _, d2u_dxi2
-
-    # _, trace_hessian = jax.lax.scan(scan_fun, {}, jnp.arange(x.shape[0]))
-    # return jnp.sum(trace_hessian)
+        if u.eq_type == "nonstatio_PDE":
+            _, trace_hessian = jax.lax.scan(
+                scan_fun, {}, jnp.arange(inputs.shape[0] - 1)
+            )
+        else:
+            _, trace_hessian = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[0]))
+        return jnp.sum(trace_hessian)
 
 
 def _laplacian_fwd(
