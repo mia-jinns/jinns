@@ -19,10 +19,10 @@ from jinns.utils._spinn import SPINN
 from jinns.utils._utils import _get_grid
 from jinns.loss._DynamicLossAbstract import ODE, PDEStatio, PDENonStatio
 from jinns.loss._operators import (
-    _laplacian_rev,
-    _laplacian_fwd,
-    _div_rev,
-    _div_fwd,
+    laplacian_rev,
+    laplacian_fwd,
+    divergence_rev,
+    divergence_fwd,
     _vectorial_laplacian,
     _u_dot_nabla_times_u_rev,
     _u_dot_nabla_times_u_fwd,
