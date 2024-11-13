@@ -1019,13 +1019,6 @@ class SystemLossPDE(eqx.Module):
         if self.u_dict.keys() != params_dict.nn_params.keys():
             raise ValueError("u_dict and params_dict[nn_params] should have same keys ")
 
-        if isinstance(batch, PDEStatioBatch):
-            batch = batch.inside_batch
-        elif isinstance(batch, PDENonStatioBatch):
-            batch = batch.domain_batch
-        else:
-            raise ValueError("Wrong type of batch")
-
         vmap_in_axes = (0,)
 
         # Retrieve the optional eq_params_batch
@@ -1034,7 +1027,6 @@ class SystemLossPDE(eqx.Module):
         if batch.param_batch_dict is not None:
             eq_params_batch_dict = batch.param_batch_dict
 
-            # TODO
             # feed the eq_params with the batch
             for k in eq_params_batch_dict.keys():
                 params_dict.eq_params[k] = eq_params_batch_dict[k]
@@ -1048,7 +1040,11 @@ class SystemLossPDE(eqx.Module):
             return dynamic_loss_apply(
                 dyn_loss.evaluate,
                 self.u_dict,
-                batch,
+                (
+                    batch.inside_batch
+                    if isinstance(batch, PDEStatioBatch)
+                    else batch.domain_batch
+                ),
                 _set_derivatives(params_dict, self.derivative_keys_dyn_loss.dyn_loss),
                 vmap_in_axes + vmap_in_axes_params,
                 loss_weight,

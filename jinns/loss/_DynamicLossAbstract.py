@@ -109,7 +109,7 @@ class DynamicLoss(eqx.Module):
         if len(evaluation.shape) == 0:
             raise ValueError(
                 "The output of dynamic loss must be vectorial, "
-                "i.e. of shape (n,) with n >= 1"
+                "i.e. of shape (d,) with d >= 1"
             )
         return evaluation
 

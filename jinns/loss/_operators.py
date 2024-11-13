@@ -18,6 +18,7 @@ def divergence_rev(
     inputs: Float[Array, "dim"] | Float[Array, "1+dim"],
     u: eqx.Module,
     params: Params,
+    eq_type: Literal["nonstatio_PDE", "statio_PDE"] = None,
 ) -> float:
     r"""
     Compute the divergence of a vector field $\mathbf{u}$, i.e.,
@@ -37,10 +38,21 @@ def divergence_rev(
         the PINN
     params
         the PINN parameters
+    eq_type
+        whether we consider a stationary or non stationary PINN. Most often we
+        can know that by inspecting the `u` argument (PINN object). But if `u` is
+        a function, we must set this attribute.
     """
 
+    try:
+        eq_type = u.eq_type
+    except AttributeError:
+        pass  # use the value passed as argument
+    if eq_type is None:
+        raise ValueError("eq_type could not be set!")
+
     def scan_fun(_, i):
-        if u.eq_type == "nonstatio_PDE":
+        if eq_type == "nonstatio_PDE":
             du_dxi = grad(lambda inputs, params: u(inputs, params)[1 + i])(
                 inputs, params
             )[1 + i]
@@ -50,9 +62,9 @@ def divergence_rev(
             ]
         return _, du_dxi
 
-    if u.eq_type == "nonstatio_PDE":
+    if eq_type == "nonstatio_PDE":
         _, accu = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[0] - 1))
-    elif u.eq_type == "statio_PDE":
+    elif eq_type == "statio_PDE":
         _, accu = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[0]))
     else:
         raise ValueError("Unexpected u.eq_type!")
@@ -63,6 +75,7 @@ def divergence_fwd(
     inputs: Float[Array, "batch_size dim"] | Float[Array, "batch_size 1+dim"],
     u: eqx.Module,
     params: Params,
+    eq_type: Literal["nonstatio_PDE", "statio_PDE"] = None,
 ) -> Float[Array, "batch_size * (1+dim) 1"] | Float[Array, "batch_size * (dim) 1"]:
     r"""
     Compute the divergence of a **batched** vector field $\mathbf{u}$, i.e.,
@@ -87,10 +100,21 @@ def divergence_fwd(
         the PINN
     params
         the PINN parameters
+    eq_type
+        whether we consider a stationary or non stationary PINN. Most often we
+        can know that by inspecting the `u` argument (PINN object). But if `u` is
+        a function, we must set this attribute.
     """
 
+    try:
+        eq_type = u.eq_type
+    except AttributeError:
+        pass  # use the value passed as argument
+    if eq_type is None:
+        raise ValueError("eq_type could not be set!")
+
     def scan_fun(_, i):
-        if u.eq_type == "nonstatio_PDE":
+        if eq_type == "nonstatio_PDE":
             tangent_vec = jnp.repeat(
                 jax.nn.one_hot(i + 1, inputs.shape[-1])[None],
                 inputs.shape[0],
@@ -110,9 +134,9 @@ def divergence_fwd(
             )
         return _, du_dxi
 
-    if u.eq_type == "nonstatio_PDE":
+    if eq_type == "nonstatio_PDE":
         _, accu = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[1] - 1))
-    elif u.eq_type == "statio_PDE":
+    elif eq_type == "statio_PDE":
         _, accu = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[1]))
     else:
         raise ValueError("Unexpected u.eq_type!")
