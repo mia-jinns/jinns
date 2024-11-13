@@ -37,4 +37,9 @@ if [ $status -ne 0 ]; then
 fi
 cd ../parameters_tests
 pytest -s
+if [ $status -ne 0 ]; then
+   exit $status
+fi
+cd ../operator_tests
+pytest -s
 exit $?
