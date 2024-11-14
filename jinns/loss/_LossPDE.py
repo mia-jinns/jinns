@@ -615,10 +615,7 @@ class LossPDENonStatio(LossPDEStatio):
     def _get_observations_loss_batch(
         self, batch: PDENonStatioBatch
     ) -> tuple[Float[Array, "batch_size 1"], Float[Array, "batch_size dimension"]]:
-        return (
-            batch.obs_batch_dict["pinn_in"][:, 0:1],
-            batch.obs_batch_dict["pinn_in"][:, 1:],
-        )
+        return (batch.obs_batch_dict["pinn_in"],)
 
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
