@@ -475,7 +475,7 @@ def vectorial_laplacian_fwd(
 
 
 def _u_dot_nabla_times_u_rev(
-    t: Float[Array, "1"], x: Float[Array, "2"], u: eqx.Module, params: Params
+    x: Float[Array, "2"], u: eqx.Module, params: Params
 ) -> Float[Array, "2"]:
     r"""
     Implement $((\mathbf{u}\cdot\nabla)\mathbf{u})(\mathbf{x})$ for
@@ -486,43 +486,25 @@ def _u_dot_nabla_times_u_rev(
     We do not use loops but code explicitly the expression to avoid
     computing twice some terms
     """
-    if x.shape[0] == 2:
-        if t is None:
-            ux = lambda x: u(x, params)[0]
-            uy = lambda x: u(x, params)[1]
+    assert x.shape[0] == 2
+    ux = lambda x: u(x, params)[0]
+    uy = lambda x: u(x, params)[1]
 
-            dux_dx = lambda x: grad(ux, 0)(x)[0]
-            dux_dy = lambda x: grad(ux, 0)(x)[1]
+    dux_dx = lambda x: grad(ux, 0)(x)[0]
+    dux_dy = lambda x: grad(ux, 0)(x)[1]
 
-            duy_dx = lambda x: grad(uy, 0)(x)[0]
-            duy_dy = lambda x: grad(uy, 0)(x)[1]
+    duy_dx = lambda x: grad(uy, 0)(x)[0]
+    duy_dy = lambda x: grad(uy, 0)(x)[1]
 
-            return jnp.array(
-                [
-                    ux(x) * dux_dx(x) + uy(x) * dux_dy(x),
-                    ux(x) * duy_dx(x) + uy(x) * duy_dy(x),
-                ]
-            )
-        ux = lambda t, x: u(t, x, params)[0]
-        uy = lambda t, x: u(t, x, params)[1]
-
-        dux_dx = lambda t, x: grad(ux, 1)(t, x)[0]
-        dux_dy = lambda t, x: grad(ux, 1)(t, x)[1]
-
-        duy_dx = lambda t, x: grad(uy, 1)(t, x)[0]
-        duy_dy = lambda t, x: grad(uy, 1)(t, x)[1]
-
-        return jnp.array(
-            [
-                ux(t, x) * dux_dx(t, x) + uy(t, x) * dux_dy(t, x),
-                ux(t, x) * duy_dx(t, x) + uy(t, x) * duy_dy(t, x),
-            ]
-        )
-    raise NotImplementedError("x.ndim must be 2")
+    return jnp.array(
+        [
+            ux(x) * dux_dx(x) + uy(x) * dux_dy(x),
+            ux(x) * duy_dx(x) + uy(x) * duy_dy(x),
+        ]
+    )
 
 
 def _u_dot_nabla_times_u_fwd(
-    t: Float[Array, "batch_size 1"],
     x: Float[Array, "batch_size 2"],
     u: eqx.Module,
     params: Params,
@@ -540,29 +522,22 @@ def _u_dot_nabla_times_u_fwd(
     computation is most efficient with forward AD. This is the idea behind Separable PINNs.
     This function is to be used in the context of SPINNs only.
     """
-    if x.shape[-1] == 2:
-        tangent_vec_0 = jnp.repeat(jnp.array([1.0, 0.0])[None], x.shape[0], axis=0)
-        tangent_vec_1 = jnp.repeat(jnp.array([0.0, 1.0])[None], x.shape[0], axis=0)
-        if t is None:
-            u_at_x, du_dx = jax.jvp(
-                lambda x: u(x, params), (x,), (tangent_vec_0,)
-            )  # thanks to forward AD this gets dux_dx and duy_dx in a vector
-            # ie the derivatives of both components of u wrt x
-            # this also gets the vector of u evaluated at x
-            u_at_x, du_dy = jax.jvp(
-                lambda x: u(x, params), (x,), (tangent_vec_1,)
-            )  # thanks to forward AD this gets dux_dy and duy_dy in a vector
-            # ie the derivatives of both components of u wrt y
-
-        else:
-            u_at_x, du_dx = jax.jvp(lambda x: u(t, x, params), (x,), (tangent_vec_0,))
-            u_at_x, du_dy = jax.jvp(lambda x: u(t, x, params), (x,), (tangent_vec_1,))
-
-        return jnp.stack(
-            [
-                u_at_x[..., 0] * du_dx[..., 0] + u_at_x[..., 1] * du_dy[..., 0],
-                u_at_x[..., 0] * du_dx[..., 1] + u_at_x[..., 1] * du_dy[..., 1],
-            ],
-            axis=-1,
-        )
-    raise NotImplementedError("x.ndim must be 2")
+    assert x.shape[-1] == 2
+    tangent_vec_0 = jnp.repeat(jnp.array([1.0, 0.0])[None], x.shape[0], axis=0)
+    tangent_vec_1 = jnp.repeat(jnp.array([0.0, 1.0])[None], x.shape[0], axis=0)
+    u_at_x, du_dx = jax.jvp(
+        lambda x: u(x, params), (x,), (tangent_vec_0,)
+    )  # thanks to forward AD this gets dux_dx and duy_dx in a vector
+    # ie the derivatives of both components of u wrt x
+    # this also gets the vector of u evaluated at x
+    u_at_x, du_dy = jax.jvp(
+        lambda x: u(x, params), (x,), (tangent_vec_1,)
+    )  # thanks to forward AD this gets dux_dy and duy_dy in a vector
+    # ie the derivatives of both components of u wrt y
+    return jnp.stack(
+        [
+            u_at_x[..., 0] * du_dx[..., 0] + u_at_x[..., 1] * du_dy[..., 0],
+            u_at_x[..., 0] * du_dx[..., 1] + u_at_x[..., 1] * du_dy[..., 1],
+        ],
+        axis=-1,
+    )

@@ -208,6 +208,8 @@ def solve(
     )
     optimization_extra = OptimizationExtraContainer(
         curr_seq=curr_seq,
+        best_iter_id=0,
+        best_val_criterion=jnp.nan,
         best_val_params=init_params,
     )
     loss_container = LossContainer(
@@ -307,16 +309,26 @@ def solve(
                 validation_criterion
             )
 
-            # update best_val_params w.r.t val_loss if needed
-            best_val_params = jax.lax.cond(
+            # update best_val_params and best_val_criterion w.r.t val_loss if needed
+            (best_val_params, best_val_criterion, best_iter_id) = jax.lax.cond(
                 update_best_params,
-                lambda _: params,  # update with current value
-                lambda operands: operands[0].best_val_params,  # unchanged
+                lambda operands: (
+                    params,
+                    validation_criterion,
+                    i,
+                ),  # update with current value
+                lambda operands: (
+                    operands[0].best_val_params,
+                    operands[0].best_val_criterion,
+                    operands[0].best_iter_id,
+                ),  # unchanged
                 (optimization_extra,),
             )
         else:
             early_stopping = False
+            best_iter_id = 0
             best_val_params = params
+            best_val_criterion = jnp.nan
 
         # Trigger RAR
         loss, params, data = trigger_rar(
@@ -342,7 +354,13 @@ def solve(
             i,
             loss,
             OptimizationContainer(params, last_non_nan_params, opt_state),
-            OptimizationExtraContainer(curr_seq, best_val_params, early_stopping),
+            OptimizationExtraContainer(
+                curr_seq,
+                best_iter_id,
+                best_val_criterion,
+                best_val_params,
+                early_stopping,
+            ),
             DataGeneratorContainer(data, param_data, obs_data),
             validation,
             LossContainer(stored_loss_terms, train_loss_values),
@@ -364,13 +382,13 @@ def solve(
         start = time.time()
         compiled_train_fun = jax.jit(train_fun).lower(carry).compile()
         end = time.time()
-        print("Compilation took", end - start)
+        print("\nCompilation took\n", end - start, "\n")
 
         start = time.time()
         carry = compiled_train_fun(carry)
         jax.block_until_ready(carry)
         end = time.time()
-        print("Training took", end - start)
+        print("\nTraining took\n", end - start, "\n")
 
     (
         i,
@@ -386,15 +404,30 @@ def solve(
 
     if verbose:
         jax.debug.print(
-            "Final iteration {i}: train loss value = {train_loss_val}",
+            "\nFinal iteration {i}: train loss value = {train_loss_val}",
             i=i,
             train_loss_val=loss_container.train_loss_values[i - 1],
         )
+
+    # get ready to return the parameters at last iteration...
+    # (by default arbitrary choice, this could be None)
+    validation_parameters = optimization.last_non_nan_params
     if validation is not None:
         jax.debug.print(
             "validation loss value = {validation_loss_val}",
             validation_loss_val=validation_crit_values[i - 1],
         )
+        if optimization_extra.early_stopping:
+            jax.debug.print(
+                "\n Returning a set of best parameters from early stopping"
+                " as last argument!\n"
+                " Best parameters from iteration {best_iter_id}"
+                " with validation loss criterion = {best_val_criterion}",
+                best_iter_id=optimization_extra.best_iter_id,
+                best_val_criterion=optimization_extra.best_val_criterion,
+            )
+            # ...but if early stopping, return the parameters at the best_iter_id
+            validation_parameters = optimization_extra.best_val_params
 
     return (
         optimization.last_non_nan_params,
@@ -405,7 +438,7 @@ def solve(
         optimization.opt_state,
         stored_objects.stored_params,
         validation_crit_values if validation is not None else None,
-        optimization_extra.best_val_params if validation is not None else None,
+        validation_parameters,
     )
 
 
@@ -528,7 +561,7 @@ def _get_break_fun(n_iter: Int, verbose: Bool) -> Callable[[main_carry], Bool]:
             string is not a valid JAX type that can be fed into the operands
             """
             if verbose:
-                jax.debug.print(f"Stopping main optimization loop, cause: {msg}")
+                jax.debug.print(f"\nStopping main optimization loop, cause: {msg}")
             return False
 
         def continue_while_loop(_):

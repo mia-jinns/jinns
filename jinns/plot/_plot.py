@@ -89,9 +89,7 @@ def plot2d(
                 vmin_vmax=vmin_vmax,
             )
         elif spinn:
-            values_grid = jnp.squeeze(
-                fun(jnp.stack([xy_data[0][..., None], xy_data[1][..., None]], axis=1))
-            )
+            values_grid = jnp.squeeze(fun(jnp.stack([xy_data[0], xy_data[1]], axis=1)))
             ret = _plot_2D_statio(
                 values_grid,
                 mesh,
