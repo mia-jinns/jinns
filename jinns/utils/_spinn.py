@@ -68,7 +68,7 @@ class _SPINN(eqx.Module):
     ) -> Float[Array, "d embed_dim*output_dim"]:
         outputs = []
         for d in range(self.d):
-            t_ = inputs[d][None]
+            t_ = inputs[d : d + 1]
             for layer in self.separated_mlp[d]:
                 t_ = layer(t_)
             outputs += [t_]
