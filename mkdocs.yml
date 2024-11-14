@@ -99,8 +99,8 @@ nav:
           - Generalized Lotka-Volterra: 'Notebooks/ODE/1D_Generalized_Lotka_Volterra.ipynb'
         - PDE:
           - Navier-Stokes in pipe flow:
-            - Soft-constraint: 'Notebooks/PDE/2D_Navier_Stokes_PipeFlow.ipynb'
-            - Hard-constraint: 'Notebooks/PDE/2D_Navier_Stokes_PipeFlow_SoftConstraints.ipynb'
+            - Hard-constraints: 'Notebooks/PDE/2D_Navier_Stokes_PipeFlow.ipynb'
+            - Soft-constraints: 'Notebooks/PDE/2D_Navier_Stokes_PipeFlow_SoftConstraints.ipynb'
           - 1D Burger equation: 'Notebooks/PDE/1D_non_stationary_Burger.ipynb'
           - 1D Fisher-KPP: 'Notebooks/PDE/1D_non_stationary_Fisher_KPP_Bounded_Domain.ipynb'
           - 2D Fisher-KPP  with covariates: 'Notebooks/PDE/Reaction_Diffusion_2D_heterogenous_model.ipynb'
