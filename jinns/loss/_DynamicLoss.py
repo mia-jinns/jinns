@@ -81,7 +81,7 @@ class FisherKPP(PDENonStatio):
 
             du_dt = grad(u_)(t_x)[0]
 
-            lap = _laplacian_rev(t_x, u, params, self.dim_x)[..., None]
+            lap = laplacian_rev(t_x, u, params, eq_type=u.eq_type)[..., None]
 
             return du_dt + self.Tmax * (
                 -params.eq_params["D"] * lap
@@ -97,7 +97,7 @@ class FisherKPP(PDENonStatio):
                 (t_x,),
                 (v0,),
             )
-            lap = _laplacian_fwd(t_x, u, params, dim_x=self.dim_x)
+            lap = laplacian_fwd(t_x, u, params, eq_type=u.eq_type)
 
             return du_dt + self.Tmax * (
                 -params.eq_params["D"] * lap
