@@ -28,16 +28,11 @@ def train_Fisher_init():
         (jnp.exp,),
     )
     key, subkey = random.split(key)
-    u = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
+    u, init_nn_params = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
 
-    init_nn_params = u.init_params()
-
-    n = 1000
-    nb = 2
-    nt = 1000
-    omega_batch_size = 32
-    temporal_batch_size = 20
-    omega_border_batch_size = 2
+    n = 2500
+    nb = 500
+    ni = 500
     dim = 1
     xmin = -1
     xmax = 1
@@ -47,53 +42,18 @@ def train_Fisher_init():
 
     Tmax = 5
     key, subkey = random.split(key)
+    key, subkey = random.split(key)
     train_data = jinns.data.CubicMeshPDENonStatio(
         key=subkey,
         n=n,
         nb=nb,
-        nt=nt,
-        omega_batch_size=omega_batch_size,
-        omega_border_batch_size=omega_border_batch_size,
-        temporal_batch_size=temporal_batch_size,
+        ni=ni,
         dim=dim,
         min_pts=(xmin,),
         max_pts=(xmax,),
         tmin=tmin,
         tmax=tmax,
         method=method,
-    )
-
-    # the next line is to be able to use the the same test values as the legacy
-    # DataGenerators. We need to align the object parameters because their
-    # respective init is not the same
-    train_data = eqx.tree_at(
-        lambda m: (
-            m.curr_omega_idx,
-            m.curr_omega_border_idx,
-            m.curr_time_idx,
-            m.omega,
-            m.times,
-        ),
-        train_data,
-        (
-            0,
-            0,
-            0,
-            random.choice(
-                jnp.array([3403514854, 2121154009], dtype=jnp.uint32),
-                train_data.omega,
-                shape=(train_data.omega.shape[0],),
-                replace=False,
-                p=train_data.p_omega,
-            ),
-            random.choice(
-                jnp.array([1414439136, 3381782969], dtype=jnp.uint32),
-                train_data.times,
-                shape=(train_data.times.shape[0],),
-                replace=False,
-                p=train_data.p_times,
-            ),
-        ),
     )
 
     sigma_init = 0.2 * jnp.ones((1))
@@ -103,17 +63,12 @@ def train_Fisher_init():
         return norm.pdf(x, loc=mu_init, scale=sigma_init)[0]  # output a scalar
 
     D = 1.0
-    r = 3.0
+    r = 4.0
     g = 3.0
-    l = xmax - xmin
 
     boundary_condition = "dirichlet"
 
-    if boundary_condition == "dirichlet":
-        omega_boundary_fun = lambda t, dx: 0  # cte func returning 0
-
-    elif boundary_condition == "neumann":
-        omega_boundary_fun = lambda t, dx: 0  # cte func returning 0
+    omega_boundary_fun = lambda t_dx: 0  # cte func returning 0
 
     init_params = jinns.parameters.Params(
         nn_params=init_nn_params,
@@ -146,13 +101,9 @@ def train_Fisher_10it(train_Fisher_init):
     """
     init_params, loss, train_data = train_Fisher_init
 
-    # NOTE we need to waste one get_batch() here to stay synchronized with the
-    # notebook
-    train_data, _ = train_data.get_batch()
-
     params = init_params
 
-    tx = optax.adam(learning_rate=1e-4)
+    tx = optax.adamw(learning_rate=1e-4)
     n_iter = 10
     params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _ = jinns.solve(
         init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
@@ -162,11 +113,10 @@ def train_Fisher_10it(train_Fisher_init):
 
 def test_initial_loss_Fisher(train_Fisher_init):
     init_params, loss, train_data = train_Fisher_init
-    assert jnp.allclose(
-        loss.evaluate(init_params, train_data.get_batch()[1])[0], 12.15913, atol=1e-1
-    )
+    train_data, batch = train_data.get_batch()
+    assert jnp.allclose(loss.evaluate(init_params, batch)[0], 46.52867383, atol=1e-1)
 
 
 def test_10it_Fisher(train_Fisher_10it):
     total_loss_val = train_Fisher_10it
-    assert jnp.allclose(total_loss_val, 10.89091, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 43.48264213, atol=1e-1)
