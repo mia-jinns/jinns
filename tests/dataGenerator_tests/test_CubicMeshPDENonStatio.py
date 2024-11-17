@@ -10,10 +10,11 @@ def create_1DCubicMeshPDENonStatio():
     key, subkey = jax.random.split(key)
     n = 1000
     nb = 2
-    nt = 1000
-    omega_batch_size = 32
-    temporal_batch_size = 20
-    omega_border_batch_size = 2
+    ni = 1000
+    domain_batch_size = 32
+    initial_batch_size = 20
+    border_batch_size = None  # NOTE that a border_batch_size for nb=2 in dim=1
+    # is totally useless
     dim = 1
     xmin = -3
     xmax = 3
@@ -24,10 +25,10 @@ def create_1DCubicMeshPDENonStatio():
         key=subkey,
         n=n,
         nb=nb,
-        nt=nt,
-        omega_batch_size=omega_batch_size,
-        omega_border_batch_size=omega_border_batch_size,
-        temporal_batch_size=temporal_batch_size,
+        ni=ni,
+        domain_batch_size=domain_batch_size,
+        border_batch_size=border_batch_size,
+        initial_batch_size=initial_batch_size,
         dim=dim,
         min_pts=(xmin,),
         max_pts=(xmax,),
@@ -38,29 +39,29 @@ def create_1DCubicMeshPDENonStatio():
 
 def test_t_range_1D(create_1DCubicMeshPDENonStatio):
     OneD_obj = create_1DCubicMeshPDENonStatio
-    assert jnp.all(OneD_obj.times >= OneD_obj.tmin) and jnp.all(
-        OneD_obj.times <= OneD_obj.tmax
+    assert jnp.all(OneD_obj.domain[:, 0] >= OneD_obj.tmin) and jnp.all(
+        OneD_obj.domain[:, 0] <= OneD_obj.tmax
     )
 
 
 def test_omega_range_1D(create_1DCubicMeshPDENonStatio):
     OneD_obj = create_1DCubicMeshPDENonStatio
-    assert jnp.all(OneD_obj.omega >= OneD_obj.min_pts[0]) and jnp.all(
-        OneD_obj.omega <= OneD_obj.max_pts[0]
+    assert jnp.all(OneD_obj.domain[:, 1] >= OneD_obj.min_pts[0]) and jnp.all(
+        OneD_obj.domain[:, 1] <= OneD_obj.max_pts[0]
     )
 
 
 def test_omega_border_range_1D(create_1DCubicMeshPDENonStatio):
     OneD_obj = create_1DCubicMeshPDENonStatio
-    assert jnp.all(OneD_obj.omega_border >= OneD_obj.min_pts[0]) and jnp.all(
-        OneD_obj.omega_border <= OneD_obj.max_pts[0]
+    assert jnp.all(OneD_obj.border[:, 1] >= OneD_obj.min_pts[0]) and jnp.all(
+        OneD_obj.border[:, 1] <= OneD_obj.max_pts[0]
     )
 
 
 def test_get_batch_1D(create_1DCubicMeshPDENonStatio):
     OneD_obj = create_1DCubicMeshPDENonStatio
     _, batch = OneD_obj.get_batch()
-    t_x, t_dx = batch.times_x_inside_batch, batch.times_x_border_batch
+    t_x, t_dx = batch.domain_batch, batch.border_batch
     times_batch = t_x[:, 0]
     inside_batch = t_x[:, 1:]
     border_batch = t_dx[:, 1:]
@@ -80,10 +81,10 @@ def create_2DCubicMeshPDENonStatio():
     key, subkey = jax.random.split(key)
     n = 1024
     nb = 8
-    nt = 1000
+    ni = 1000
     omega_batch_size = 32
-    temporal_batch_size = 20
-    omega_border_batch_size = 2
+    initial_batch_size = 20
+    border_batch_size = 2
     dim = 2
     xmin = -3
     xmax = 3
@@ -96,10 +97,10 @@ def create_2DCubicMeshPDENonStatio():
         key=subkey,
         n=n,
         nb=nb,
-        nt=nt,
+        ni=ni,
         omega_batch_size=omega_batch_size,
-        omega_border_batch_size=omega_border_batch_size,
-        temporal_batch_size=temporal_batch_size,
+        border_batch_size=border_batch_size,
+        initial_batch_size=initial_batch_size,
         dim=dim,
         min_pts=(xmin, ymin),
         max_pts=(xmax, ymax),
@@ -110,8 +111,8 @@ def create_2DCubicMeshPDENonStatio():
 
 def test_t_range_2D(create_2DCubicMeshPDENonStatio):
     TwoD_obj = create_2DCubicMeshPDENonStatio
-    assert jnp.all(TwoD_obj.times >= TwoD_obj.tmin) and jnp.all(
-        TwoD_obj.times <= TwoD_obj.tmax
+    assert jnp.all(TwoD_obj.domain[:, 0] >= TwoD_obj.tmin) and jnp.all(
+        TwoD_obj.domain[:, 0] <= TwoD_obj.tmax
     )
 
 
@@ -120,8 +121,8 @@ def test_omega_ranges_2D(create_2DCubicMeshPDENonStatio):
     assert all(
         [
             (
-                jnp.all(TwoD_obj.omega[:, i] >= TwoD_obj.min_pts[i])
-                and jnp.all(TwoD_obj.omega[:, i] <= TwoD_obj.max_pts[i])
+                jnp.all(TwoD_obj.domain[:, i + 1] >= TwoD_obj.min_pts[i])
+                and jnp.all(TwoD_obj.domain[:, i + 1] <= TwoD_obj.max_pts[i])
             )
             for i in range(TwoD_obj.dim)
         ]
@@ -133,8 +134,8 @@ def test_omega_border_ranges_2D(create_2DCubicMeshPDENonStatio):
     assert all(
         [
             (
-                jnp.all(TwoD_obj.omega_border[:, i] >= TwoD_obj.min_pts[i])
-                and jnp.all(TwoD_obj.omega_border[:, i] <= TwoD_obj.max_pts[i])
+                jnp.all(TwoD_obj.border[:, i + 1] >= TwoD_obj.min_pts[i])
+                and jnp.all(TwoD_obj.border[:, i + 1] <= TwoD_obj.max_pts[i])
             )
             for i in range(TwoD_obj.dim)
         ]
@@ -144,7 +145,7 @@ def test_omega_border_ranges_2D(create_2DCubicMeshPDENonStatio):
 def test_get_batch_2D(create_2DCubicMeshPDENonStatio):
     TwoD_obj = create_2DCubicMeshPDENonStatio
     _, batch = TwoD_obj.get_batch()
-    t_x, t_dx = batch.times_x_inside_batch, batch.times_x_border_batch
+    t_x, t_dx = batch.domain_batch, batch.border_batch
     times_batch = t_x[:, 0]
     inside_batch = t_x[:, 1:]
     border_batch = t_dx[:, 1:]

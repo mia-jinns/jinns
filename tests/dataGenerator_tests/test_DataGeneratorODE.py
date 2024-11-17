@@ -15,7 +15,14 @@ def create_DataGeneratorODE():
     tmin = 0
     tmax = 1
 
-    return jinns.data.DataGeneratorODE(subkey, n, tmin, tmax, batch_size, method)
+    return jinns.data.DataGeneratorODE(
+        key=subkey,
+        nt=n,
+        tmin=tmin,
+        tmax=tmax,
+        temporal_batch_size=batch_size,
+        method=method,
+    )
 
 
 def test_t_range_DataGeneratorODE(create_DataGeneratorODE):

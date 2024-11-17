@@ -22,16 +22,12 @@ def train_Burger_init():
         (eqx.nn.Linear, 20, 1),
     )
     key, subkey = random.split(key)
-    u = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
-
-    init_nn_params = u.init_params()
+    u, init_nn_params = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
 
     n = 1000
-    nt = 1000
-    nb = 2
+    ni = 1000
     omega_batch_size = 32
-    temporal_batch_size = 20
-    omega_border_batch_size = 1
+    initial_batch_size = 20
     dim = 1
     xmin = -1
     xmax = 1
@@ -43,50 +39,16 @@ def train_Burger_init():
     train_data = jinns.data.CubicMeshPDENonStatio(
         key=subkey,
         n=n,
-        nb=nb,
-        nt=nt,
+        ni=ni,
+        nb=2,
         omega_batch_size=omega_batch_size,
-        omega_border_batch_size=omega_border_batch_size,
-        temporal_batch_size=temporal_batch_size,
+        initial_batch_size=initial_batch_size,
         dim=dim,
         min_pts=(xmin,),
         max_pts=(xmax,),
         tmin=tmin,
         tmax=tmax,
         method=method,
-    )
-
-    # the next line is to be able to use the the same test values as the legacy
-    # DataGenerators. We need to align the object parameters because their
-    # respective init is not the same
-    train_data = eqx.tree_at(
-        lambda m: (
-            m.curr_omega_idx,
-            m.curr_omega_border_idx,
-            m.curr_time_idx,
-            m.omega,
-            m.times,
-        ),
-        train_data,
-        (
-            0,
-            0,
-            0,
-            random.choice(
-                jnp.array([514834130, 3419754500], dtype=jnp.uint32),
-                train_data.omega,
-                shape=(train_data.omega.shape[0],),
-                replace=False,
-                p=train_data.p_omega,
-            ),
-            random.choice(
-                jnp.array([2180730075, 137981201], dtype=jnp.uint32),
-                train_data.times,
-                shape=(train_data.times.shape[0],),
-                replace=False,
-                p=train_data.p_times,
-            ),
-        ),
     )
 
     nu = 1 / (100 * jnp.pi)
@@ -107,7 +69,7 @@ def train_Burger_init():
         u=u,
         loss_weights=loss_weights,
         dynamic_loss=be_loss,
-        omega_boundary_fun=lambda t, dx: 0,
+        omega_boundary_fun=lambda t_dx: 0,
         omega_boundary_condition="dirichlet",
         initial_condition_fun=u0,
         params=init_params,

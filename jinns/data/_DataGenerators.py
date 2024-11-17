@@ -851,6 +851,24 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         else:
             self.curr_domain_idx = jnp.iinfo(jnp.int32).max - self.domain_batch_size - 1
         if self.nb is not None:
+            # the check below has already been done in super.__post_init__ if
+            # dim > 1. Here we retest it in whatever dim
+            if self.nb % (2 * self.dim) != 0 or self.nb < 2 * self.dim:
+                raise ValueError(
+                    "number of border point must be"
+                    " a multiple of 2xd (the # of faces of a d-dimensional cube)"
+                )
+            # the check below concern omega_border_batch_size for dim > 1 in
+            # super.__post_init__. Here it concerns all dim values since our
+            # border_batch is the concatenation or cartesian product with times
+            if (
+                self.border_batch_size is not None
+                and self.nb // (2 * self.dim) < self.border_batch_size
+            ):
+                raise ValueError(
+                    "number of points per facets (nb//2*self.dim)"
+                    " cannot be lower than border batch size"
+                )
             self.key, boundary_times = self.generate_time_data(
                 self.key, self.nb // (2 * self.dim)
             )
@@ -872,6 +890,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
                 self.curr_border_idx = (
                     jnp.iinfo(jnp.int32).max - self.border_batch_size - 1
                 )
+            print(self.border.shape)
 
         else:
             self.border = None

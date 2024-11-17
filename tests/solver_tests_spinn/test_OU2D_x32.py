@@ -25,16 +25,15 @@ def train_OU_init():
         (eqx.nn.Linear, 128, r),
     )
     key, subkey = random.split(key)
-    u = jinns.utils.create_SPINN(subkey, d, r, eqx_list, "nonstatio_PDE")
+    u, init_nn_params = jinns.utils.create_SPINN(
+        subkey, d, r, eqx_list, "nonstatio_PDE"
+    )
 
-    init_nn_params = u.init_params()
-
-    n = 500
-    nt = 500
+    n = 5000
+    ni = 200
     nb = None
-    omega_batch_size = 32
-    temporal_batch_size = 32
-    omega_border_batch_size = None
+    domain_batch_size = 32
+    initial_batch_size = 32
     dim = 2
     xmin = -3
     xmax = 3
@@ -42,50 +41,23 @@ def train_OU_init():
     ymax = 3
     tmin = 0
     tmax = 1
-    Tmax = 10
+    Tmax = 5
     method = "uniform"
 
+    key, subkey = random.split(key)
     train_data = jinns.data.CubicMeshPDENonStatio(
         key=subkey,
         n=n,
         nb=nb,
-        nt=nt,
-        omega_batch_size=omega_batch_size,
-        omega_border_batch_size=omega_border_batch_size,
-        temporal_batch_size=temporal_batch_size,
+        ni=ni,
+        domain_batch_size=domain_batch_size,
+        initial_batch_size=initial_batch_size,
         dim=2,
         min_pts=(xmin, ymin),
         max_pts=(xmax, ymax),
         tmin=tmin,
         tmax=tmax,
         method=method,
-        cartesian_product=False,
-    )
-
-    # the next line is to be able to use the the same test values as the legacy
-    # DataGenerators. We need to align the object parameters because their
-    # respective init is not the same
-    train_data = eqx.tree_at(
-        lambda m: (m.curr_omega_idx, m.curr_time_idx, m.omega, m.times),
-        train_data,
-        (
-            0,
-            0,
-            random.choice(
-                jnp.array([3420271947, 3128279307], dtype=jnp.uint32),
-                train_data.omega,
-                shape=(train_data.omega.shape[0],),
-                replace=False,
-                p=train_data.p_omega,
-            ),
-            random.choice(
-                jnp.array([276632615, 1451260385], dtype=jnp.uint32),
-                train_data.times,
-                shape=(train_data.times.shape[0],),
-                replace=False,
-                p=train_data.p_times,
-            ),
-        ),
     )
 
     sigma = 0.5 * jnp.ones((2))
@@ -100,8 +72,8 @@ def train_OU_init():
     def u0(x):
         return multivariate_normal.pdf(x, mean=jnp.array([1, 1]), cov=0.1 * jnp.eye(2))
 
-    int_xmin, int_xmax = -5, 5
-    int_ymin, int_ymax = -5, 5
+    int_xmin, int_xmax = -3, 3
+    int_ymin, int_ymax = -3, 3
 
     n_samples = 32
     int_length = (int_xmax - int_xmin) * (int_ymax - int_ymin)
@@ -119,7 +91,7 @@ def train_OU_init():
     )
 
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
-        dyn_loss=10, initial_condition=1 * Tmax, norm_loss=0.00001 * Tmax
+        dyn_loss=1, initial_condition=1 * Tmax, norm_loss=1 * Tmax
     )
     OU_fpe_non_statio_2D_loss = jinns.loss.OU_FPENonStatioLoss2D(Tmax=Tmax)
 
@@ -146,13 +118,9 @@ def train_OU_10it(train_OU_init):
     """
     init_params, loss, train_data = train_OU_init
 
-    # NOTE we need to waste one get_batch() here to stay synchronized with the
-    # notebook
-    train_data, _ = train_data.get_batch()
-
     params = init_params
 
-    tx = optax.adamw(learning_rate=5e-4)
+    tx = optax.adamw(learning_rate=1e-4)
     n_iter = 10
     params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _ = jinns.solve(
         init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
@@ -164,10 +132,10 @@ def train_OU_10it(train_OU_init):
 def test_initial_loss_OU(train_OU_init):
     init_params, loss, train_data = train_OU_init
     assert jnp.allclose(
-        loss.evaluate(init_params, train_data.get_batch()[1])[0], 0.75162, atol=1e-1
+        loss.evaluate(init_params, train_data.get_batch()[1])[0], 4.2433505, atol=1e-1
     )
 
 
 def test_10it_OU(train_OU_10it):
     total_loss_val = train_OU_10it
-    assert jnp.allclose(total_loss_val, 0.86301, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 0.6654949, atol=1e-1)
