@@ -20,18 +20,18 @@ def function_to_string(
     We need this transformation for eqx_list to be pickled
 
     From `((eqx.nn.Linear, 2, 20),
-            (jax.nn.tanh),
+            (jax.nn.tanh,),
             (eqx.nn.Linear, 20, 20),
-            (jax.nn.tanh),
+            (jax.nn.tanh,),
             (eqx.nn.Linear, 20, 20),
-            (jax.nn.tanh),
+            (jax.nn.tanh,),
             (eqx.nn.Linear, 20, 1))` to
     `(("Linear", 2, 20),
-                ("tanh"),
+                ("tanh",),
                 ("Linear", 20, 20),
-                ("tanh"),
+                ("tanh",),
                 ("Linear", 20, 20),
-                ("tanh"),
+                ("tanh",),
                 ("Linear", 20, 1))`
     """
     return jax.tree_util.tree_map(
@@ -210,14 +210,16 @@ def load_pinn(
     if type_ == "pinn":
         # next line creates a shallow model, the jax arrays are just shapes and
         # not populated, this just recreates the correct pytree structure
-        u_reloaded_shallow = eqx.filter_eval_shape(create_PINN, **kwargs_reloaded)
+        u_reloaded_shallow, _ = eqx.filter_eval_shape(create_PINN, **kwargs_reloaded)
     elif type_ == "spinn":
-        u_reloaded_shallow = eqx.filter_eval_shape(create_SPINN, **kwargs_reloaded)
+        u_reloaded_shallow, _ = eqx.filter_eval_shape(create_SPINN, **kwargs_reloaded)
     elif type_ == "hyperpinn":
         kwargs_reloaded["eqx_list_hyper"] = string_to_function(
             kwargs_reloaded["eqx_list_hyper"]
         )
-        u_reloaded_shallow = eqx.filter_eval_shape(create_HYPERPINN, **kwargs_reloaded)
+        u_reloaded_shallow, _ = eqx.filter_eval_shape(
+            create_HYPERPINN, **kwargs_reloaded
+        )
     else:
         raise ValueError(f"{type_} is not valid")
     if key_list_for_paramsdict is None:
@@ -226,15 +228,13 @@ def load_pinn(
         u_reloaded = eqx.tree_deserialise_leaves(
             filename + "-module.eqx", u_reloaded_shallow
         )
-        params = Params(
-            nn_params=u_reloaded.init_params(), eq_params=eq_params_reloaded
-        )
+        params = Params(nn_params=u_reloaded.init_params, eq_params=eq_params_reloaded)
     else:
         nn_params_dict = {}
         for key in key_list_for_paramsdict:
             u_reloaded = eqx.tree_deserialise_leaves(
                 filename + f"-module_{key}.eqx", u_reloaded_shallow
             )
-            nn_params_dict[key] = u_reloaded.init_params()
+            nn_params_dict[key] = u_reloaded.init_params
         params = ParamsDict(nn_params=nn_params_dict, eq_params=eq_params_reloaded)
     return u_reloaded, params
