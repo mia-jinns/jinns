@@ -88,7 +88,9 @@ def _check_batch_size(other_data, main_data, attr_name):
                 )
         else:
             if main_data.nb is not None:
-                if getattr(other_data, attr_name) != (main_data.nb // 2**main_data.dim):
+                if main_data.dim > 1 and getattr(other_data, attr_name) != (
+                    main_data.nb // 2**main_data.dim
+                ):
                     raise ValueError(
                         f"{other_data.__class__}.{attr_name} must be equal"
                         f" to ({main_data.__class__}.nb // 2**{main_data.__class__}.dim)"
