@@ -18,7 +18,7 @@ if [ $status -ne 0 ]; then
    exit $status
 fi
 cd ../solver_tests
-pytest -s --ignore=test_NSPipeFlow_x64_eqx.py
+pytest -s --ignore=test_NSPipeFlow_x64.py
 status=$?
 if [ $status -ne 0 ]; then
    exit $status

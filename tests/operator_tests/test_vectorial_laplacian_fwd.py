@@ -15,10 +15,10 @@ def create_u_statio():
         (jax.nn.tanh,),
         (eqx.nn.Linear, 20, 20),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 10),
+        (eqx.nn.Linear, 20, 10 * 4),
     )
     key, subkey = jax.random.split(key)
-    return jinns.utils.create_SPINN(subkey, 4, 10, eqx_list, "statio_PDE", 1)
+    return jinns.utils.create_SPINN(subkey, 2, 10, eqx_list, "statio_PDE", 4)
 
 
 def test_laplacian_fwd_statio(create_u_statio):
@@ -68,10 +68,10 @@ def create_u_nonstatio():
         (jax.nn.tanh,),
         (eqx.nn.Linear, 20, 20),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 10),
+        (eqx.nn.Linear, 20, 10 * 3),
     )
     key, subkey = jax.random.split(key)
-    return jinns.utils.create_SPINN(subkey, 4, 10, eqx_list, "nonstatio_PDE", 1)
+    return jinns.utils.create_SPINN(subkey, 3, 10, eqx_list, "nonstatio_PDE", 3)
 
 
 def test_laplacian_fwd_nonstatio(create_u_nonstatio):
@@ -81,25 +81,25 @@ def test_laplacian_fwd_nonstatio(create_u_nonstatio):
         [
             jinns.loss.laplacian_fwd(
                 t_x,
-                lambda t_x, params: u_nonstatio(t_x, params)[0],
+                lambda t_x, params: u_nonstatio(t_x, params)[..., 0],
                 params,
                 eq_type="nonstatio_PDE",
             ),
             jinns.loss.laplacian_fwd(
                 t_x,
-                lambda t_x, params: u_nonstatio(t_x, params)[1],
+                lambda t_x, params: u_nonstatio(t_x, params)[..., 1],
                 params,
                 eq_type="nonstatio_PDE",
             ),
             jinns.loss.laplacian_fwd(
                 t_x,
-                lambda t_x, params: u_nonstatio(t_x, params)[2],
+                lambda t_x, params: u_nonstatio(t_x, params)[..., 2],
                 params,
                 eq_type="nonstatio_PDE",
             ),
             jinns.loss.laplacian_fwd(
                 t_x,
-                lambda t_x, params: u_nonstatio(t_x, params)[3],
+                lambda t_x, params: u_nonstatio(t_x, params)[..., 3],
                 params,
                 eq_type="nonstatio_PDE",
             ),
