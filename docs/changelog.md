@@ -1,5 +1,13 @@
 # Changelog
 
+* v1.2.0
+
+    - :rocket: **jinns** is now much faster, with computational times reduced by at least a factor 2 in the non-stationary settings. This is due to important changes in the mini-batches handling, internal changes for non-stationary PINNs and changes in DataGenerators:
+        1. Please refer to the documentation of the new DataGenerators because many breaking changes have been introduced.
+        2. Please note that, globally, the philosophy in to consider `t` and `x` as always concatenated, when possible, under the most common name `t_x`.
+        3. Please note that we can now choose to use mini-batches or not.
+    - Another breaking change is that functions of the type `create_PINN` now returns the PINN and their initial set of parameters.
+
 * v1.1.0
 
     - New `DerivativeKeys*` classes for more granularity. We can now differentiation through one particular equation parameter. This introduces breaking changes:
