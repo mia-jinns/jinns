@@ -890,7 +890,6 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
                 self.curr_border_idx = (
                     jnp.iinfo(jnp.int32).max - self.border_batch_size - 1
                 )
-            print(self.border.shape)
 
         else:
             self.border = None
