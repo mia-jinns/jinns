@@ -134,7 +134,10 @@ def _rar_step_init(sample_size: Int, selected_sample_size: Int) -> tuple[
         elif isinstance(data, CubicMeshPDENonStatio):
             new_key, subkey = jax.random.split(data.key)
             new_samples_times = data.sample_in_time_domain(subkey, sample_size)
-            new_key, *subkeys = jax.random.split(new_key, data.dim + 1)
+            if data.dim == 1:
+                new_key, subkeys = jax.random.split(new_key, 2)
+            else:
+                new_key, *subkeys = jax.random.split(new_key, data.dim + 1)
             new_samples_omega = data.sample_in_omega_domain(subkeys, sample_size)
             new_samples = jnp.concatenate(
                 [new_samples_times, new_samples_omega], axis=1
