@@ -837,6 +837,14 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
                 keys[1:].squeeze(), sample_size=int(jnp.round(jnp.sqrt(self.n)))
             )
             self.domain = make_cartesian_product(half_domain_times, half_domain_omega)
+
+            # NOTE
+            (
+                self.n_start,
+                self.p,
+                self.rar_iter_from_last_sampling,
+                self.rar_iter_nb,
+            ) = _check_and_set_rar_parameters(self.rar_parameters, self.n, self.n_start)
         elif self.method == "uniform":
             self.key, domain_times = self.generate_time_data(self.key, self.n)
             self.domain = jnp.concatenate([domain_times, self.omega], axis=1)
@@ -1041,7 +1049,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.initial,
             self.curr_initial_idx,
             self.initial_batch_size,
-            self.p,
+            None,
         )
 
     def initial_batch(
