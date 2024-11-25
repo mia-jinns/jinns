@@ -140,15 +140,6 @@ def plot2d(
         )
 
         for idx, (t, ax) in enumerate(zip(times, grid)):
-            t_x = jnp.concatenate(
-                [
-                    t * jnp.ones((xy_data[0].shape[0], 1)),
-                    jnp.concatenate(
-                        [xy_data[0][..., None], xy_data[1][..., None]], axis=-1
-                    ),
-                ],
-                axis=-1,
-            )
             if not spinn:
                 x_grid, y_grid = mesh
                 v_fun_at_t = vmap(fun)(
@@ -170,6 +161,15 @@ def plot2d(
                     vmin_vmax=vmin_vmax,
                 )
             elif spinn:
+                t_x = jnp.concatenate(
+                    [
+                        t * jnp.ones((xy_data[0].shape[0], 1)),
+                        jnp.concatenate(
+                            [xy_data[0][..., None], xy_data[1][..., None]], axis=-1
+                        ),
+                    ],
+                    axis=-1,
+                )
                 values_grid = jnp.squeeze(fun(t_x)[0]).T
                 t_slice, _ = _plot_2D_statio(
                     values_grid,

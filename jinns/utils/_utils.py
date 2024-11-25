@@ -136,7 +136,7 @@ def _check_nan_in_pytree(pytree: PyTree) -> bool:
     )
 
 
-def _get_grid(in_array: Array) -> Array:
+def get_grid(in_array: Array) -> Array:
     """
     From an array of shape (B, D), D > 1, get the grid array, i.e., an array of
     shape (B, B, ...(D times)..., B, D): along the last axis we have the array

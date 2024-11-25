@@ -84,12 +84,12 @@ def train_ReacDiff_init():
         },
     )
 
-    from jinns.utils._utils import _get_grid
+    from jinns.utils._utils import get_grid
 
     def r_fun(t_x, u, params):
         """must be a jittable function"""
         x = t_x[:, 1:]
-        x = _get_grid(x.squeeze())
+        x = get_grid(x.squeeze())
         eq_params = params.eq_params
         r1, r2, r3 = eq_params["r"]
 

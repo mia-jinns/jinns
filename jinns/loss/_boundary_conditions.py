@@ -12,7 +12,7 @@ import jax.numpy as jnp
 from jax import vmap, grad
 import equinox as eqx
 from jinns.utils._utils import (
-    _get_grid,
+    get_grid,
     _check_user_func_return,
 )
 from jinns.data._Batchs import *
@@ -158,7 +158,7 @@ def boundary_dirichlet(
         )
     elif isinstance(u, SPINN):
         values = u(batch_array, params)[..., dim_to_apply]
-        grid = _get_grid(batch_array)
+        grid = get_grid(batch_array)
         boundaries = _check_user_func_return(f(grid), values.shape)
         res = values - boundaries
         mse_u_boundary = jnp.sum(res**2, axis=-1)
@@ -324,7 +324,7 @@ def boundary_neumann(
         else:
             raise ValueError("Not implemented, we'll do that with a loop")
 
-        grid = _get_grid(batch_array)
+        grid = get_grid(batch_array)
         boundaries = _check_user_func_return(f(grid), values.shape)
         res = values - boundaries
         mse_u_boundary = jnp.sum(

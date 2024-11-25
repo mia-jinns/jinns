@@ -286,7 +286,7 @@ class DataGeneratorODE(eqx.Module):
         reshuffle them, otherwise we just return the next unseen batch.
         """
         if self.temporal_batch_size is None or self.temporal_batch_size == self.nt:
-            # do not lose time reshuffling or anything
+            # Avoid unnecessary reshuffling
             return self, self.times
 
         bstart = self.curr_time_idx
@@ -430,6 +430,9 @@ class CubicMeshPDEStatio(eqx.Module):
             self.rar_iter_nb,
         ) = _check_and_set_rar_parameters(self.rar_parameters, self.n, self.n_start)
 
+        if self.method == "grid":
+            self.n = int(jnp.round(jnp.sqrt(self.n)) ** 2)
+
         if self.nb is not None:
             if self.dim == 1:
                 self.omega_border_batch_size = None
@@ -570,9 +573,8 @@ class CubicMeshPDEStatio(eqx.Module):
         if self.method == "grid":
             if self.dim == 1:
                 xmin, xmax = self.min_pts[0], self.max_pts[0]
-                partial = (xmax - xmin) / self.n
-                # shape (n, 1)
-                omega = jnp.arange(xmin, xmax, partial)[:, None]
+                ## shape (n, 1)
+                omega = jnp.linspace(xmin, xmax, self.n)[:, None]
             else:
                 partials = [
                     (self.max_pts[i] - self.min_pts[i]) / jnp.sqrt(self.n)
@@ -580,7 +582,9 @@ class CubicMeshPDEStatio(eqx.Module):
                 ]
                 xyz_ = jnp.meshgrid(
                     *[
-                        jnp.arange(self.min_pts[i], self.max_pts[i], partials[i])
+                        jnp.linspace(
+                            self.min_pts[i], self.max_pts[i], int(jnp.sqrt(self.n))
+                        )
                         for i in range(self.dim)
                     ]
                 )
@@ -624,7 +628,7 @@ class CubicMeshPDEStatio(eqx.Module):
         otherwise we just return the next unseen batch.
         """
         if self.omega_batch_size is None or self.omega_batch_size == self.n:
-            # in this case, do not waste time reshuffling or anything
+            # Avoid unnecessary reshuffling
             return self, self.omega
 
         # Compute the effective number of used collocation points
@@ -686,9 +690,11 @@ class CubicMeshPDEStatio(eqx.Module):
 
         """
         if self.nb is None:
+            # Avoid unnecessary reshuffling
             return self, None
 
         if self.dim == 1:
+            # Avoid unnecessary reshuffling
             # 1-D case, no randomness : we always return the whole omega border,
             # i.e. (1, 1, 2) shape jnp.array([[[xmin], [xmax]]]).
             return self, self.omega_border[None, None]  # shape is (1, 1, 2)
@@ -697,6 +703,7 @@ class CubicMeshPDEStatio(eqx.Module):
             self.omega_border_batch_size is None
             or self.omega_border_batch_size == self.nb // 2**self.dim
         ):
+            # Avoid unnecessary reshuffling
             return self, self.omega_border
 
         bstart = self.curr_omega_border_idx
@@ -963,6 +970,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
     ) -> tuple["CubicMeshPDEStatio", Float[Array, "domain_batch_size 1+dim"]]:
 
         if self.domain_batch_size is None or self.domain_batch_size == self.n:
+            # Avoid unnecessary reshuffling
             return self, self.domain
 
         bstart = self.curr_domain_idx
@@ -1011,12 +1019,14 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         | None,
     ]:
         if self.nb is None:
+            # Avoid unnecessary reshuffling
             return self, None
 
         if (
             self.border_batch_size is None
             or self.border_batch_size == self.nb // 2**self.dim
         ):
+            # Avoid unnecessary reshuffling
             return self, self.border
 
         bstart = self.curr_border_idx
@@ -1056,6 +1066,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         self,
     ) -> tuple["CubicMeshPDEStatio", Float[Array, "initial_batch_size dim"]]:
         if self.initial_batch_size is None:
+            # Avoid unnecessary reshuffling
             return self, self.initial
 
         bstart = self.curr_initial_idx
@@ -1237,6 +1248,13 @@ class DataGeneratorObservations(eqx.Module):
         observed_pinn_in, observed_values, etc. are dictionaries with keys
         representing the PINNs.
         """
+        if self.obs_batch_size is None or self.obs_batch_size == self.n:
+            # Avoid unnecessary reshuffling
+            return self, {
+                "pinn_in": self.observed_pinn_in,
+                "val": self.observed_values,
+                "eq_params": self.observed_eq_param,
+            }
 
         new_attributes = _reset_or_increment(
             self.curr_idx + self.obs_batch_size, self.n, self._get_operands()

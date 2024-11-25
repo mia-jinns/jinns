@@ -16,7 +16,7 @@ from jaxtyping import Float, Array, PyTree
 from jinns.loss._boundary_conditions import (
     _compute_boundary_loss,
 )
-from jinns.utils._utils import _check_user_func_return, _get_grid
+from jinns.utils._utils import _check_user_func_return, get_grid
 from jinns.data._DataGenerators import append_obs_batch, make_cartesian_product
 from jinns.parameters._params import _get_vmap_in_axes_params
 from jinns.utils._pinn import PINN
@@ -279,7 +279,7 @@ def initial_condition_apply(
             t_x,
             params,
         )[0]
-        omega_batch_grid = _get_grid(omega_batch)
+        omega_batch_grid = get_grid(omega_batch)
         v_ini = values(t0_omega_batch)
         ini = _check_user_func_return(
             initial_condition_fun(omega_batch_grid), v_ini.shape

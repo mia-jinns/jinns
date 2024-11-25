@@ -16,7 +16,7 @@ import equinox as eqx
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
 
-from jinns.utils._utils import _get_grid
+from jinns.utils._utils import get_grid
 from jinns.loss._DynamicLossAbstract import ODE, PDEStatio, PDENonStatio
 from jinns.loss._operators import (
     laplacian_rev,
@@ -351,6 +351,15 @@ class FPENonStatioLoss2D(PDENonStatio):
                     jax.jacrev(lambda t_x: grad_order_2_fun(t_x)[1, :, 1])(t_x)[..., 1:]
                 )[None]
             )
+            # This is be a condensed form of the explicit which is less efficient
+            # since 4 jacrev are called (as compared to 2)
+            # grad_order_2_fun = lambda t_x, i, j: jax.jacrev(order_2_fun)(t_x)[i, j, 1:]
+            # grad_grad_order_2 = (
+            #    jax.jacrev(lambda t_x: grad_order_2_fun(t_x, 0, 0))(t_x)[0, 1] +
+            #    jax.jacrev(lambda t_x: grad_order_2_fun(t_x, 1, 0))(t_x)[1, 1] +
+            #    jax.jacrev(lambda t_x: grad_order_2_fun(t_x, 0, 1))(t_x)[0, 2] +
+            #    jax.jacrev(lambda t_x: grad_order_2_fun(t_x, 1, 1))(t_x)[1, 2]
+            # )[None]
 
             du_dt = grad(u_)(t_x)[0:1]
 
@@ -370,7 +379,7 @@ class FPENonStatioLoss2D(PDENonStatio):
             v1 = jnp.repeat(jnp.array([[0.0, 1.0, 0.0]]), t_x.shape[0], axis=0)
             v2 = jnp.repeat(jnp.array([[0.0, 0.0, 1.0]]), t_x.shape[0], axis=0)
             _, dau_dx1 = jax.jvp(
-                lambda t_x: self.drift(_get_grid(t_x[:, 1:]), params.eq_params)[
+                lambda t_x: self.drift(get_grid(t_x[:, 1:]), params.eq_params)[
                     None, ..., 0:1
                 ]
                 * u(t_x, params),
@@ -378,7 +387,7 @@ class FPENonStatioLoss2D(PDENonStatio):
                 (v1,),
             )
             _, dau_dx2 = jax.jvp(
-                lambda t_x: self.drift(_get_grid(t_x[:, 1:]), params.eq_params)[
+                lambda t_x: self.drift(get_grid(t_x[:, 1:]), params.eq_params)[
                     None, ..., 1:2
                 ]
                 * u(t_x, params),
@@ -388,7 +397,7 @@ class FPENonStatioLoss2D(PDENonStatio):
 
             dsu_dx1_fun = lambda t_x, i, j: jax.jvp(
                 lambda t_x: self.diffusion(
-                    _get_grid(t_x[:, 1:]), params.eq_params, i, j
+                    get_grid(t_x[:, 1:]), params.eq_params, i, j
                 )[None, None, None, None]
                 * u(t_x, params),
                 (t_x,),
@@ -396,7 +405,7 @@ class FPENonStatioLoss2D(PDENonStatio):
             )[1]
             dsu_dx2_fun = lambda t_x, i, j: jax.jvp(
                 lambda t_x: self.diffusion(
-                    _get_grid(t_x[:, 1:]), params.eq_params, i, j
+                    get_grid(t_x[:, 1:]), params.eq_params, i, j
                 )[None, None, None, None]
                 * u(t_x, params),
                 (t_x,),
