@@ -307,10 +307,8 @@ class PDENonStatio(DynamicLoss):
 
         Parameters
         ----------
-        t : Float[Array, "1"]
-            A 1-dimensional jnp.array representing the time point.
-        x : Float[Array, "d"]
-            A `d` dimensional jnp.array representing a point in the spatial domain $\Omega$.
+        t_x : Float[Array, "1 + dim"]
+            A jnp array containing the concatenation of a time point and a point in $\Omega$
         u : eqx.Module
             The neural network.
         params : Params | ParamsDict

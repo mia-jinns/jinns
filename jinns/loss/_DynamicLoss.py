@@ -59,14 +59,13 @@ class FisherKPP(PDENonStatio):
         params: Params,
     ) -> Float[Array, "1"]:
         r"""
-        Evaluate the dynamic loss at $(t,x)$.
+        Evaluate the dynamic loss at $(t, x)$.
 
         Parameters
         ---------
-        t
-            A time point.
-        x
-            A point in $\Omega$.
+        t_x
+            A jnp array containing the concatenation of a time point
+            and a point in $\Omega$
         u
             The PINN
         params
@@ -322,7 +321,7 @@ class FPENonStatioLoss2D(PDENonStatio):
 
         Parameters
         ---------
-        x_t
+        t_x
             A collocation point in  $I\times\Omega$
         u
             The PINN
