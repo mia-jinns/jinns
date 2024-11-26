@@ -16,7 +16,8 @@ from jax import jit
 import jax.numpy as jnp
 from jaxtyping import Int, Bool, Float, Array
 from jinns.solver._rar import init_rar, trigger_rar
-from jinns.utils._utils import _check_nan_in_pytree, _check_batch_size
+from jinns.utils._utils import _check_nan_in_pytree
+from jinns.solver._utils import _check_batch_size
 from jinns.utils._containers import *
 from jinns.data._DataGenerators import (
     DataGeneratorODE,
