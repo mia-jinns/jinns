@@ -178,3 +178,30 @@ def test_get_batch_2D(create_2DCubicMeshPDENonStatio):
             ]
         )
     )
+
+
+def test_n_samples_in_grid_sampling():
+    key = jax.random.PRNGKey(2)
+    key, subkey = jax.random.split(key)
+    n = 99
+    ni = 8
+    domain_batch_size = 32
+    dim = 2
+    xmin = -3
+    xmax = 3
+    method = "grid"
+
+    with pytest.warns(UserWarning):
+        datagenerator = jinns.data.CubicMeshPDENonStatio(
+            key=subkey,
+            n=n,
+            ni=ni,
+            domain_batch_size=domain_batch_size,
+            dim=dim,
+            min_pts=(xmin, xmin),
+            max_pts=(xmax, xmax),
+            tmin=0,
+            tmax=1,
+            method=method,
+        )
+    assert datagenerator.n == int(jnp.round(jnp.sqrt(datagenerator.n)) ** 2)

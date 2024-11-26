@@ -127,3 +127,30 @@ def test_get_batch_2D(create_2DCubicMeshPDEStatio):
             for i in range(TwoD_obj.dim)
         ]
     )
+
+
+def test_n_samples_in_grid_sampling():
+    key = jax.random.PRNGKey(2)
+    key, subkey = jax.random.split(key)
+    n = 99
+    nb = 8
+    omega_batch_size = 32
+    omega_border_batch_size = 2
+    dim = 2
+    xmin = -3
+    xmax = 3
+    method = "grid"
+
+    with pytest.warns(UserWarning):
+        datagenerator = jinns.data.CubicMeshPDEStatio(
+            key=subkey,
+            n=n,
+            nb=nb,
+            omega_batch_size=omega_batch_size,
+            omega_border_batch_size=omega_border_batch_size,
+            dim=dim,
+            min_pts=(xmin, xmin),
+            max_pts=(xmax, xmax),
+            method=method,
+        )
+    assert datagenerator.n == int(jnp.round(jnp.sqrt(datagenerator.n)) ** 2)

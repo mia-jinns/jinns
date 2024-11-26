@@ -5,7 +5,7 @@ Define the DataGeneratorODE equinox module
 from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
-
+import warnings
 from typing import TYPE_CHECKING, Dict
 from dataclasses import InitVar
 import equinox as eqx
@@ -430,8 +430,15 @@ class CubicMeshPDEStatio(eqx.Module):
             self.rar_iter_nb,
         ) = _check_and_set_rar_parameters(self.rar_parameters, self.n, self.n_start)
 
-        if self.method == "grid":
-            self.n = int(jnp.round(jnp.sqrt(self.n)) ** 2)
+        if self.method == "grid" and self.dim == 2:
+            perfect_sq = int(jnp.round(jnp.sqrt(self.n)) ** 2)
+            if self.n != perfect_sq:
+                warnings.warn(
+                    "Grid sampling is requested in dimension 2 with a non"
+                    f" perfect square dataset size (self.n = {self.n})."
+                    f" Modifying self.n to self.n = {perfect_sq}."
+                )
+            self.n = perfect_sq
 
         if self.nb is not None:
             if self.dim == 1:
