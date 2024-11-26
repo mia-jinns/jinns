@@ -583,10 +583,6 @@ class CubicMeshPDEStatio(eqx.Module):
                 ## shape (n, 1)
                 omega = jnp.linspace(xmin, xmax, self.n)[:, None]
             else:
-                partials = [
-                    (self.max_pts[i] - self.min_pts[i]) / jnp.sqrt(self.n)
-                    for i in range(self.dim)
-                ]
                 xyz_ = jnp.meshgrid(
                     *[
                         jnp.linspace(
@@ -919,11 +915,30 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.border_batch_size = None
 
         if self.ni is not None:
-            keys = jax.random.split(self.key, self.dim + 1)
-            self.key = keys[0]
-            self.initial = self.sample_in_omega_domain(
-                keys[1:].squeeze(), sample_size=self.ni
-            )
+            if self.method == "grid":
+                if self.dim == 1:
+                    xmin, xmax = self.min_pts[0], self.max_pts[0]
+                    ## shape (n, 1)
+                    self.initial = jnp.linspace(xmin, xmax, self.ni)[:, None]
+                else:
+                    xyz_ = jnp.meshgrid(
+                        *[
+                            jnp.linspace(
+                                self.min_pts[i], self.max_pts[i], int(jnp.sqrt(self.ni))
+                            )
+                            for i in range(self.dim)
+                        ]
+                    )
+                    xyz_ = [a.reshape((self.ni, 1)) for a in xyz_]
+                    self.initial = jnp.concatenate(xyz_, axis=-1)
+            elif self.method == "uniform":
+                keys = jax.random.split(self.key, self.dim + 1)
+                self.key = keys[0]
+                self.initial = self.sample_in_omega_domain(
+                    keys[1:].squeeze(), sample_size=self.ni
+                )
+            else:
+                raise ValueError("Method " + self.method + " is not implemented.")
 
             if self.initial_batch_size is None or self.initial_batch_size == self.ni:
                 self.curr_initial_idx = 0
