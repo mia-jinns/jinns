@@ -593,12 +593,14 @@ class NavierStokes2DStatio(PDEStatio):
 
 
     $$
-        \begin{pmatrix}u_x\frac{\partial}{\partial x} u_x + u_y\frac{\partial}{\partial y} u_x \\
+        \begin{pmatrix}u_x\frac{\partial}{\partial x} u_x +
+        u_y\frac{\partial}{\partial y} u_x, \\
         u_x\frac{\partial}{\partial x} u_y + u_y\frac{\partial}{\partial y} u_y  \end{pmatrix} +
-        \frac{1}{\rho} \begin{pmatrix} \frac{\partial}{\partial x} p \\ \frac{\partial}{\partial y} p \end{pmatrix}
+        \frac{1}{\rho} \begin{pmatrix} \frac{\partial}{\partial x} p, \\ \frac{\partial}{\partial y} p \end{pmatrix}
         - \theta
         \begin{pmatrix}
-        \frac{\partial^2}{\partial x^2} u_x + \frac{\partial^2}{\partial y^2} u_x \\
+        \frac{\partial^2}{\partial x^2} u_x + \frac{\partial^2}{\partial y^2}
+        u_x, \\
         \frac{\partial^2}{\partial x^2} u_y + \frac{\partial^2}{\partial y^2} u_y
         \end{pmatrix} = 0,
     $$
