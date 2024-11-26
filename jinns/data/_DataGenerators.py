@@ -170,8 +170,7 @@ class DataGeneratorODE(eqx.Module):
         The maximum value of the time domain to consider
     temporal_batch_size : int | None, default=None
         The size of the batch of randomly selected points among
-        the `nt` points. If None, `temporal_batch_size` is set to `nt`, ie., no minibatches
-        are used.
+        the `nt` points. If None, no minibatches are used.
     method : str, default="uniform"
         Either `grid` or `uniform`, default is `uniform`.
         The method that generates the `nt` time points. `grid` means
@@ -341,12 +340,11 @@ class CubicMeshPDEStatio(eqx.Module):
         boundary condition is specified.
     omega_batch_size : Int | None, default=None
         The size of the batch of randomly selected points among
-        the `n` points. If None, `omega_batch_size` is set to `n`, ie., no minibatches
-        are used.
+        the `n` points. If None no minibatches are used.
     omega_border_batch_size : Int | None, default=None
         The size of the batch of points randomly selected
-        among the `nb` points. If None, `omega_border_batch_size` is set to
-        `nb//4` in dimension 2, ie., no minibatches are used. In dimension 1,
+        among the `nb` points. If None, `omega_border_batch_size`
+        no minibatches are used. In dimension 1,
         minibatches are never used since the boundary is composed of two
         singletons.
     dim : Int
@@ -760,16 +758,14 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         once during 1 epoch.
     domain_batch_size : Int | None, default=None
         The size of the batch of randomly selected points among
-        the `n` points. If None, `domain_batch_size` is set to `n`, ie., no
-        mini-batches are used.
+        the `n` points. If None no mini-batches are used.
     border_batch_size : Int | None, default=None
         The size of the batch of points randomly selected
-        among the `nb` points. If None, `domain_batch_size` is set to `nb//2`
-        in dimension 1 or `nb//4` in dimension 2, ie., no
+        among the `nb` points. If None, `domain_batch_size` no
         mini-batches are used.
     initial_batch_size : Int | None, default=None
         The size of the batch of randomly selected points among
-        the `ni` points. If None, `initial_batch_size` is set to `ni`, ie., no
+        the `ni` points. If None no
         mini-batches are used.
     dim : Int
         An integer. Dimension of $\Omega$ domain.
@@ -1149,7 +1145,7 @@ class DataGeneratorObservations(eqx.Module):
         = False). In the second case, `obs_batch_size` =
         `temporal_batch_size * omega_batch_size` if the present
         DataGeneratorParameter complements a PDENonStatioBatch
-        with self.cartesian_product = True
+        with self.cartesian_product = True. If None, no minibatch are used
     observed_pinn_in : Float[Array, "n_obs nb_pinn_in"]
         Observed values corresponding to the input of the PINN
         (eg. the time at which we recorded the observations). The first
@@ -1336,7 +1332,7 @@ class DataGeneratorParameter(eqx.Module):
         The size of the batch of randomly selected points among
         the `n` points. `param_batch_size` will be the same for all
         additional batch of parameter. If None, `param_batch_size`
-        is set to `n`, ie., no mini-batches are used.
+        no mini-batches are used.
     param_ranges : Dict[str, tuple[Float, Float] | None, default={}
         A dict. A dict of tuples (min, max), which
         reprensents the range of real numbers where to sample batches (of
@@ -1464,7 +1460,7 @@ class DataGeneratorParameter(eqx.Module):
         otherwise we just return the next unseen batch.
         """
 
-        if self.param_batch_size is None:
+        if self.param_batch_size is None or self.param_batch_size == self.n:
             return self, self.param_n_samples
 
         def _reset_or_increment_wrapper(param_k, idx_k, key_k):
