@@ -1137,7 +1137,7 @@ class DataGeneratorObservations(eqx.Module):
     ----------
     key : Key
         Jax random key to shuffle batches
-    obs_batch_size : Int
+    obs_batch_size : Int | None
         The size of the batch of randomly selected points among
         the `n` points. `obs_batch_size` will be the same for all
         elements of the return observation dict batch.
@@ -1179,7 +1179,7 @@ class DataGeneratorObservations(eqx.Module):
     """
 
     key: Key
-    obs_batch_size: Int = eqx.field(static=True)
+    obs_batch_size: Int | None = eqx.field(static=True)
     observed_pinn_in: Float[Array, "n_obs nb_pinn_in"]
     observed_values: Float[Array, "n_obs nb_pinn_out"]
     observed_eq_params: Dict[str, Float[Array, "n_obs 1"]] = eqx.field(
@@ -1231,7 +1231,10 @@ class DataGeneratorObservations(eqx.Module):
                 self.observed_eq_params, self.sharding_device
             )
 
-        self.curr_idx = jnp.iinfo(jnp.int32).max - self.obs_batch_size - 1
+        if self.obs_batch_size is not None:
+            self.curr_idx = jnp.iinfo(jnp.int32).max - self.obs_batch_size - 1
+        else:
+            self.curr_idx = 0
         # For speed and to avoid duplicating data what is really
         # shuffled is a vector of indices
         if self.sharding_device is not None:
