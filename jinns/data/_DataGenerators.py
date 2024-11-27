@@ -1274,7 +1274,7 @@ class DataGeneratorObservations(eqx.Module):
             return self, {
                 "pinn_in": self.observed_pinn_in,
                 "val": self.observed_values,
-                "eq_params": self.observed_eq_param,
+                "eq_params": self.observed_eq_params,
             }
 
         new_attributes = _reset_or_increment(

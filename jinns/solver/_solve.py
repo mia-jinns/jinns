@@ -153,9 +153,13 @@ def solve(
             # vectorization using `n`, and the same checks must be done
             _check_batch_size(param_data, data, "n")
 
-    if obs_data is not None:
-        # Here an `obs_batch_size` is mandatory for observations
-        _check_batch_size(obs_data, data, "obs_batch_size")
+    if obs_data is not None and param_data is not None:
+        # obs_data batch dimensions need only to be aligned with param_data
+        # batch dimensions if the latter exist
+        if obs_data.obs_batch_size is not None:
+            _check_batch_size(obs_data, param_data, "obs_batch_size")
+        else:
+            _check_batch_size(obs_data, param_data, "n")
 
     if opt_state is None:
         opt_state = optimizer.init(init_params)
