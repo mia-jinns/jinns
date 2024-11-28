@@ -363,6 +363,7 @@ def plot1d_image(
         values_grid = jnp.squeeze(
             fun(jnp.concatenate([times[..., None], xdata[..., None]], axis=-1))
         ).T
+
     fig, ax = plt.subplots(1, 1, figsize=figsize)
     if vmin_vmax is not None:
         im = ax.pcolormesh(
@@ -378,3 +379,5 @@ def plot1d_image(
     if colorbar:
         fig.colorbar(im, format="%0.2f")
     ax.set_title(title)
+
+    return fig, ax
