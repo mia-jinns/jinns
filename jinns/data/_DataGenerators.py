@@ -473,8 +473,8 @@ class CubicMeshPDEStatio(eqx.Module):
                 jnp.iinfo(jnp.int32).max - self.omega_border_batch_size - 1
             )
 
-        self.key, self.omega, self.omega_border = self.generate_data(self.key)
-        # see explaination in DataGeneratorODE for the key
+        self.key, self.omega = self.generate_omega_data(self.key)
+        self.key, self.omega_border = self.generate_omega_border_data(self.key)
 
     def sample_in_omega_domain(
         self, keys: Key, sample_size: Int = None
@@ -500,9 +500,10 @@ class CubicMeshPDEStatio(eqx.Module):
         )
 
     def sample_in_omega_border_domain(
-        self, keys: Key
+        self, keys: Key, sample_size: int = None
     ) -> Float[Array, "1 2"] | Float[Array, "(nb//4) 2 4"] | None:
-        if self.nb is None:
+        sample_size = self.nb if sample_size is None else sample_size
+        if sample_size is None:
             return None
         if self.dim == 1:
             xmin = self.min_pts[0]
@@ -512,7 +513,7 @@ class CubicMeshPDEStatio(eqx.Module):
             # currently hard-coded the 4 edges for d==2
             # TODO : find a general & efficient way to sample from the border
             # (facets) of the hypercube in general dim.
-            facet_n = self.nb // (2 * self.dim)
+            facet_n = sample_size // (2 * self.dim)
             xmin = jnp.hstack(
                 [
                     self.min_pts[0] * jnp.ones((facet_n, 1)),
@@ -563,51 +564,64 @@ class CubicMeshPDEStatio(eqx.Module):
             + f"implemented yet. You are asking for generation in dimension d={self.dim}."
         )
 
-    def generate_data(self, key: Key) -> tuple[
+    def generate_omega_data(self, key: Key, data_size: int = None) -> tuple[
         Key,
         Float[Array, "n dim"],
-        Float[Array, "1 2"] | Float[Array, "(nb//4) 2 4"] | None,
     ]:
         r"""
         Construct a complete set of `self.n` $\Omega$ points according to the
-        specified `self.method`. Also constructs a complete set of `self.nb`
-        $\partial\Omega$ points if `self.omega_border_batch_size` is not
-        `None`. If the latter is `None` we set `self.omega_border` to `None`.
+        specified `self.method`.
         """
+        data_size = self.n if data_size is None else data_size
         # Generate Omega
         if self.method == "grid":
             if self.dim == 1:
                 xmin, xmax = self.min_pts[0], self.max_pts[0]
                 ## shape (n, 1)
-                omega = jnp.linspace(xmin, xmax, self.n)[:, None]
+                omega = jnp.linspace(xmin, xmax, data_size)[:, None]
             else:
                 xyz_ = jnp.meshgrid(
                     *[
                         jnp.linspace(
-                            self.min_pts[i], self.max_pts[i], int(jnp.sqrt(self.n))
+                            self.min_pts[i],
+                            self.max_pts[i],
+                            int(jnp.round(jnp.sqrt(data_size))),
                         )
                         for i in range(self.dim)
                     ]
                 )
-                xyz_ = [a.reshape((self.n, 1)) for a in xyz_]
+                xyz_ = [a.reshape((data_size, 1)) for a in xyz_]
                 omega = jnp.concatenate(xyz_, axis=-1)
         elif self.method == "uniform":
             if self.dim == 1:
                 key, subkeys = jax.random.split(key, 2)
             else:
                 key, *subkeys = jax.random.split(key, self.dim + 1)
-            omega = self.sample_in_omega_domain(subkeys)
+            omega = self.sample_in_omega_domain(subkeys, sample_size=data_size)
         else:
             raise ValueError("Method " + self.method + " is not implemented.")
+        return key, omega
 
+    def generate_omega_border_data(self, key: Key, data_size: int = None) -> tuple[
+        Key,
+        Float[Array, "1 2"] | Float[Array, "(nb//4) 2 4"] | None,
+    ]:
+        r"""
+        Also constructs a complete set of `self.nb`
+        $\partial\Omega$ points if `self.omega_border_batch_size` is not
+        `None`. If the latter is `None` we set `self.omega_border` to `None`.
+        """
         # Generate border of omega
+        data_size = self.nb if data_size is None else data_size
         if self.dim == 2:
             key, *subkeys = jax.random.split(key, 5)
         else:
             subkeys = None
-        omega_border = self.sample_in_omega_border_domain(subkeys)
+        omega_border = self.sample_in_omega_border_domain(
+            subkeys, sample_size=data_size
+        )
 
-        return key, omega, omega_border
+        return key, omega_border
 
     def _get_omega_operands(
         self,
@@ -833,14 +847,25 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             # NOTE we must redo the sampling with the square root number of samples
             # and then take the cartesian product
             self.n = int(jnp.round(jnp.sqrt(self.n)) ** 2)
+            if self.dim == 2:
+                # in the case of grid sampling in 2D in dim 2 in non-statio,
+                # self.n needs to be a perfect ^4, because there is the
+                # cartesian product with time domain which is also present
+                perfect_4 = int(jnp.round(self.n**0.25) ** 4)
+                if self.n != perfect_4:
+                    warnings.warn(
+                        "Grid sampling is requested in dimension 2 in non"
+                        " stationary setting with a non"
+                        f" perfect square dataset size (self.n = {self.n})."
+                        f" Modifying self.n to self.n = {perfect_4}."
+                    )
+                self.n = perfect_4
             self.key, half_domain_times = self.generate_time_data(
                 self.key, int(jnp.round(jnp.sqrt(self.n)))
             )
 
-            keys = jax.random.split(self.key, self.dim + 1)
-            self.key = keys[0]
-            half_domain_omega = self.sample_in_omega_domain(
-                keys[1:].squeeze(), sample_size=int(jnp.round(jnp.sqrt(self.n)))
+            self.key, half_domain_omega = self.generate_omega_data(
+                self.key, data_size=int(jnp.round(jnp.sqrt(self.n)))
             )
             self.domain = make_cartesian_product(half_domain_times, half_domain_omega)
 
@@ -911,30 +936,17 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.border_batch_size = None
 
         if self.ni is not None:
-            if self.method == "grid":
-                if self.dim == 1:
-                    xmin, xmax = self.min_pts[0], self.max_pts[0]
-                    ## shape (n, 1)
-                    self.initial = jnp.linspace(xmin, xmax, self.ni)[:, None]
-                else:
-                    xyz_ = jnp.meshgrid(
-                        *[
-                            jnp.linspace(
-                                self.min_pts[i], self.max_pts[i], int(jnp.sqrt(self.ni))
-                            )
-                            for i in range(self.dim)
-                        ]
-                    )
-                    xyz_ = [a.reshape((self.ni, 1)) for a in xyz_]
-                    self.initial = jnp.concatenate(xyz_, axis=-1)
-            elif self.method == "uniform":
-                keys = jax.random.split(self.key, self.dim + 1)
-                self.key = keys[0]
-                self.initial = self.sample_in_omega_domain(
-                    keys[1:].squeeze(), sample_size=self.ni
+            perfect_sq = int(jnp.round(jnp.sqrt(self.ni)) ** 2)
+            if self.ni != perfect_sq:
+                warnings.warn(
+                    "Grid sampling is requested in dimension 2 with a non"
+                    f" perfect square dataset size (self.ni = {self.ni})."
+                    f" Modifying self.ni to self.ni = {perfect_sq}."
                 )
-            else:
-                raise ValueError("Method " + self.method + " is not implemented.")
+            self.ni = perfect_sq
+            self.key, self.initial = self.generate_omega_data(
+                self.key, data_size=self.ni
+            )
 
             if self.initial_batch_size is None or self.initial_batch_size == self.ni:
                 self.curr_initial_idx = 0
@@ -1083,7 +1095,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
     def initial_batch(
         self,
     ) -> tuple["CubicMeshPDEStatio", Float[Array, "initial_batch_size dim"]]:
-        if self.initial_batch_size is None:
+        if self.initial_batch_size is None or self.initial_batch_size == self.ni:
             # Avoid unnecessary reshuffling
             return self, self.initial
 
