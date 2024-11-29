@@ -122,6 +122,9 @@ nav:
           - Navier-Stokes in pipe flow: 'Notebooks/PDE/2D_Navier_Stokes_PipeFlow_Metamodel_hyperpinn.ipynb'
           - Fisher-KPP: 'Notebooks/PDE/Reaction_Diffusion_2D_homogeneous_metamodel_hyperpinn_diffrax.ipynb'
     - Basic API:
+      - DataGenerators:
+        - Main DataGenerators: 'api/datagenerators/datagenerators_core.md'
+        - Other DataGenerators: 'api/datagenerators/datagenerators_other.md'
       - Loss:
         - Dynamic loss: 'api/loss/dynamic_loss.md'
         - Total loss: 'api/loss/loss_xde.md'
@@ -132,6 +135,7 @@ nav:
         - 'api/pinn/hyperpinn.md'
         - 'api/pinn/save_load.md'
       - Plot: 'api/plot.md'
+      - Solve: 'api/solver.md'
       - Advanced:
         - Differential operators: 'api/advanced/differential_operators.md'
         - Derivative keys: 'api/advanced/derivative_keys.md'
