@@ -1,6 +1,6 @@
 # pylint: disable=unsubscriptable-object
 """
-Define the DataGeneratorODE equinox module
+Define the DataGenerators modules
 """
 from __future__ import (
     annotations,
