@@ -267,6 +267,7 @@ def plot1d_slice(
     title: str = "",
     figsize: tuple[int, int] = (10, 10),
     spinn: Bool = False,
+    ax=None,
 ):
     """Function for plotting time slices of a function :math:`f(t_i, x)` where
     `t_i` is time (1-D) and x is 1-D
@@ -284,14 +285,18 @@ def plot1d_slice(
         default 1
     title
         title of the plot, by default ""
-    spinn :
-        True if a SPINN is to be plotted. False for PINNs and HYPERPINNs
     figsize
         size of the figure, by default (10, 10)
+    spinn
+        True if a SPINN is to be plotted. False for PINNs and HYPERPINNs
+    ax
+        A pre-defined `matplotlib.Axes` where you want to plot.
     """
     if time_slices is None:
         time_slices = jnp.array([0])
-    plt.figure(figsize=figsize)
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+
     for t in time_slices:
         t0_xdata = jnp.concatenate(
             [t * jnp.ones((xdata.shape[0], 1)), xdata[:, None]], axis=1
@@ -303,11 +308,12 @@ def plot1d_slice(
             values = v_u_tfixed(t0_xdata)
         elif spinn:
             values = jnp.squeeze(fun(t0_xdata)[0])
-        plt.plot(xdata, values, label=f"$t_i={t * Tmax:.2f}$")
-    plt.xlabel("x")
-    plt.ylabel(r"$u(t_i, x)$")
-    plt.legend()
-    plt.title(title)
+        ax.plot(xdata, values, label=f"$t_i={t * Tmax:.2f}$")
+    ax.set_xlabel("x")
+    ax.set_ylabel(r"$u(t_i, x)$")
+    ax.legend()
+    ax.set_title(title)
+    return ax
 
 
 def plot1d_image(
