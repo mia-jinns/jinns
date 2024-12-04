@@ -455,7 +455,7 @@ def vectorial_laplacian_fwd(
     Compute the vectorial Laplacian of a vector field $\mathbf{u}$ when
     `u` is a SPINN, in this case, it corresponds to a vector
     field from from $\mathbb{R}^{b\times d}$ to
-    $\mathbb{R}^{b\times b\times n}$ or from from $\mathbb{R}^{b\times 1+d}$ to
+    $\mathbb{R}^{b\times b\times n}$ or from $\mathbb{R}^{b\times 1+d}$ to
     $\mathbb{R}^{b\times b\times n}$, i.e., this
     function can be used for stationary or non-stationary PINNs.
 
