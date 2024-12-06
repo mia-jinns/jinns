@@ -291,6 +291,11 @@ def plot1d_slice(
         True if a SPINN is to be plotted. False for PINNs and HYPERPINNs
     ax
         A pre-defined `matplotlib.Axes` where you want to plot.
+
+    Returns
+    -------
+    ax
+        A `matplotlib.Axes` object
     """
     if time_slices is None:
         time_slices = jnp.array([0])
@@ -355,6 +360,11 @@ def plot1d_image(
         True if a SPINN is to be plotted. False for PINNs and HYPERPINNs
     vmin_vmax:
         The colorbar minimum and maximum value. Defaults None.
+
+    Returns
+    -------
+    fig, ax
+        A `matplotlib` `Figure` and `Axes` objects with the figure.
     """
 
     mesh = jnp.meshgrid(times, xdata)  # cartesian product

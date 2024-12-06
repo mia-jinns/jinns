@@ -33,7 +33,7 @@ def append_param_batch(batch: AnyBatch, param_batch_dict: dict) -> AnyBatch:
 
 def append_obs_batch(batch: AnyBatch, obs_batch_dict: dict) -> AnyBatch:
     """
-    Utility function that fill the obs_batch_dict of a batch object with a
+    Utility function that fills the obs_batch_dict of a batch object with a
     obs_batch_dict
     """
     return eqx.tree_at(

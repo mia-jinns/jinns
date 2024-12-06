@@ -1,6 +1,6 @@
 # jinns' `solve()` function
 
-This is the main function to solve forward and inverse problems.
+This is the main function to train the PINN in forward, metamodeling and inverse problems.
 
 ::: jinns.solve
     options:
