@@ -11,10 +11,7 @@ import jax
 import jax.numpy as jnp
 from jax import vmap, grad
 import equinox as eqx
-from jinns.utils._utils import (
-    get_grid,
-    _check_user_func_return,
-)
+from jinns.utils._utils import get_grid, _subtract_with_check
 from jinns.data._Batchs import *
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
@@ -143,11 +140,14 @@ def boundary_dirichlet(
 
     if isinstance(u, PINN):
         v_u_boundary = vmap(
-            lambda inputs, params: u(
-                inputs,
-                params,
-            )[dim_to_apply]
-            - f(inputs),
+            lambda inputs, params: _subtract_with_check(
+                f(inputs),
+                u(
+                    inputs,
+                    params,
+                )[dim_to_apply],
+                cause="boundary condition fun",
+            ),
             vmap_in_axes,
             0,
         )
@@ -159,8 +159,7 @@ def boundary_dirichlet(
     elif isinstance(u, SPINN):
         values = u(batch_array, params)[..., dim_to_apply]
         grid = get_grid(batch_array)
-        boundaries = _check_user_func_return(f(grid), values.shape)
-        res = values - boundaries
+        res = _subtract_with_check(f(grid), values, cause="boundary condition fun")
         mse_u_boundary = jnp.sum(res**2, axis=-1)
     else:
         raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
@@ -229,24 +228,32 @@ def boundary_neumann(
 
         if u.eq_type == "statio_PDE":
             v_neumann = vmap(
-                lambda inputs, params: jnp.dot(
-                    grad(u_, 0)(inputs, params),
-                    n[..., facet],
-                )
-                - f(inputs),
+                lambda inputs, params: _subtract_with_check(
+                    f(inputs),
+                    jnp.dot(
+                        grad(u_, 0)(inputs, params),
+                        n[..., facet],
+                    ),
+                    cause="boundary condition fun",
+                ),
                 vmap_in_axes,
                 0,
             )
         elif u.eq_type == "nonstatio_PDE":
             v_neumann = vmap(
-                lambda inputs, params: jnp.dot(
-                    grad(u_, 0)(inputs, params)[1:],  # get rid of time dim
-                    n[..., facet],
-                )
-                - f(inputs),
+                lambda inputs, params: _subtract_with_check(
+                    f(inputs),
+                    jnp.dot(
+                        grad(u_, 0)(inputs, params)[1:],  # get rid of time dim
+                        n[..., facet],
+                    ),
+                    cause="boundary condition fun",
+                ),
                 vmap_in_axes,
                 0,
             )
+        else:
+            raise ValueError("Wrong u.eq_type")
         mse_u_boundary = jnp.sum(
             (
                 v_neumann(
@@ -325,8 +332,7 @@ def boundary_neumann(
             raise ValueError("Not implemented, we'll do that with a loop")
 
         grid = get_grid(batch_array)
-        boundaries = _check_user_func_return(f(grid), values.shape)
-        res = values - boundaries
+        res = _subtract_with_check(f(grid), values, cause="boundary condition fun")
         mse_u_boundary = jnp.sum(
             res**2,
             axis=-1,

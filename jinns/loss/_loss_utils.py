@@ -16,7 +16,7 @@ from jaxtyping import Float, Array, PyTree
 from jinns.loss._boundary_conditions import (
     _compute_boundary_loss,
 )
-from jinns.utils._utils import _check_user_func_return, get_grid
+from jinns.utils._utils import _subtract_with_check, get_grid
 from jinns.data._DataGenerators import append_obs_batch, make_cartesian_product
 from jinns.parameters._params import _get_vmap_in_axes_params
 from jinns.utils._pinn import PINN
@@ -240,8 +240,10 @@ def observations_loss_apply(
         mse_observation_loss = jnp.mean(
             jnp.sum(
                 loss_weight
-                * (val - _check_user_func_return(observed_values, val.shape)) ** 2,
-                # the reshape above avoids a potential missing (1,)
+                * _subtract_with_check(
+                    observed_values, val, cause="user defined observed_values"
+                )
+                ** 2,
                 axis=-1,
             )
         )
@@ -264,7 +266,11 @@ def initial_condition_apply(
     t0_omega_batch = jnp.concatenate([jnp.zeros((n, 1)), omega_batch], axis=1)
     if isinstance(u, (PINN, HYPERPINN)):
         v_u_t0 = vmap(
-            lambda t0_x, params: initial_condition_fun(t0_x[1:]) - u(t0_x, params),
+            lambda t0_x, params: _subtract_with_check(
+                initial_condition_fun(t0_x[1:]),
+                u(t0_x, params),
+                cause="Output of initial_condition_fun",
+            ),
             vmap_axes,
             0,
         )
@@ -281,10 +287,11 @@ def initial_condition_apply(
         )[0]
         omega_batch_grid = get_grid(omega_batch)
         v_ini = values(t0_omega_batch)
-        ini = _check_user_func_return(
-            initial_condition_fun(omega_batch_grid), v_ini.shape
+        res = _subtract_with_check(
+            initial_condition_fun(omega_batch_grid),
+            v_ini,
+            cause="Output of initial_condition_fun",
         )
-        res = ini - v_ini
         mse_initial_condition = jnp.mean(jnp.sum(loss_weight * res**2, axis=-1))
     else:
         raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")

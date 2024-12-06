@@ -2,6 +2,8 @@
 Implements various utility functions
 """
 
+from math import prod
+import warnings
 import jax
 import jax.numpy as jnp
 from jaxtyping import PyTree, Array
@@ -52,7 +54,9 @@ def get_grid(in_array: Array) -> Array:
     return in_array
 
 
-def _check_user_func_return(r: Array | int, shape: tuple) -> Array | int:
+def _check_user_func_return(
+    r: Array | int, shape: tuple, cause: str = ""
+) -> Array | float:
     """
     Correctly handles the result from a user defined function (eg a boundary
     condition) to get the correct broadcast
@@ -68,4 +72,18 @@ def _check_user_func_return(r: Array | int, shape: tuple) -> Array | int:
         return r.astype(float)
     # the reshape below avoids a missing (1,) ending dimension
     # depending on how the user has coded the inital function
+    if r.shape != shape:
+        warnings.warn(
+            f"[{cause}] Performing a operation between arrays"
+            f" of different shapes: got {r.shape} and {shape}."
+            f" This can cause unexpected broadcast!"
+            f" Reshaping {r.shape} into {shape}"
+        )
     return r.reshape(shape)
+
+
+def _subtract_with_check(
+    a: Array | int, b: Array | int, cause: str = ""
+) -> Array | float:
+    a = _check_user_func_return(a, b.shape, cause=cause)
+    return a - b
