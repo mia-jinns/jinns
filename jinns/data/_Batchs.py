@@ -17,7 +17,7 @@ class PDENonStatioBatch(eqx.Module):
 
 
 class PDEStatioBatch(eqx.Module):
-    inside_batch: Float[Array, "batch_size dimension"]
+    domain_batch: Float[Array, "batch_size dimension"]
     border_batch: Float[Array, "batch_size dimension n_facets"]
     param_batch_dict: dict = eqx.field(default=None)
     obs_batch_dict: dict = eqx.field(default=None)

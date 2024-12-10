@@ -63,11 +63,11 @@ def test_get_batch_1D(create_1DCubicMeshPDENonStatio):
     _, batch = OneD_obj.get_batch()
     t_x, t_dx = batch.domain_batch, batch.border_batch
     times_batch = t_x[:, 0]
-    inside_batch = t_x[:, 1:]
+    domain_batch = t_x[:, 1:]
     border_batch = t_dx[:, 1:]
     assert (
-        jnp.all(inside_batch[:] >= OneD_obj.min_pts[0])
-        and jnp.all(inside_batch[:] <= OneD_obj.max_pts[0])
+        jnp.all(domain_batch[:] >= OneD_obj.min_pts[0])
+        and jnp.all(domain_batch[:] <= OneD_obj.max_pts[0])
         and jnp.all(border_batch[:] >= OneD_obj.min_pts[0])
         and jnp.all(border_batch[:] <= OneD_obj.max_pts[0])
         and jnp.all(times_batch[:] >= OneD_obj.tmin)
@@ -147,14 +147,14 @@ def test_get_batch_2D(create_2DCubicMeshPDENonStatio):
     _, batch = TwoD_obj.get_batch()
     t_x, t_dx = batch.domain_batch, batch.border_batch
     times_batch = t_x[:, 0]
-    inside_batch = t_x[:, 1:]
+    domain_batch = t_x[:, 1:]
     border_batch = t_dx[:, 1:]
     assert (
         all(
             [
                 (
-                    jnp.all(inside_batch[:, i] >= TwoD_obj.min_pts[i])
-                    and jnp.all(inside_batch[:, i] <= TwoD_obj.max_pts[i])
+                    jnp.all(domain_batch[:, i] >= TwoD_obj.min_pts[i])
+                    and jnp.all(domain_batch[:, i] <= TwoD_obj.max_pts[i])
                 )
                 for i in range(TwoD_obj.dim)
             ]

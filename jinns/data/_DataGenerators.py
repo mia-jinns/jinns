@@ -744,7 +744,7 @@ class CubicMeshPDEStatio(eqx.Module):
         """
         new, inside_batch = self.inside_batch()
         new, border_batch = new.border_batch()
-        return new, PDEStatioBatch(inside_batch=inside_batch, border_batch=border_batch)
+        return new, PDEStatioBatch(domain_batch=inside_batch, border_batch=border_batch)
 
 
 class CubicMeshPDENonStatio(CubicMeshPDEStatio):

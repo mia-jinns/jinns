@@ -369,7 +369,7 @@ class LossPDEStatio(_LossPDEAbstract):
     def _get_dynamic_loss_batch(
         self, batch: PDEStatioBatch
     ) -> Float[Array, "batch_size dimension"]:
-        return batch.inside_batch
+        return batch.domain_batch
 
     def _get_normalization_loss_batch(
         self, _
@@ -1038,7 +1038,7 @@ class SystemLossPDE(eqx.Module):
                 dyn_loss.evaluate,
                 self.u_dict,
                 (
-                    batch.inside_batch
+                    batch.domain_batch
                     if isinstance(batch, PDEStatioBatch)
                     else batch.domain_batch
                 ),
