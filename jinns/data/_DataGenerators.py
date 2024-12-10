@@ -20,8 +20,7 @@ if TYPE_CHECKING:
 
 def append_param_batch(batch: AnyBatch, param_batch_dict: dict) -> AnyBatch:
     """
-    Utility function that fill the param_batch_dict of a batch object with a
-    param_batch_dict
+    Utility function that fills the field `batch.param_batch_dict` of a batch object.
     """
     return eqx.tree_at(
         lambda m: m.param_batch_dict,
@@ -33,8 +32,7 @@ def append_param_batch(batch: AnyBatch, param_batch_dict: dict) -> AnyBatch:
 
 def append_obs_batch(batch: AnyBatch, obs_batch_dict: dict) -> AnyBatch:
     """
-    Utility function that fills the obs_batch_dict of a batch object with a
-    obs_batch_dict
+    Utility function that fills the field `batch.obs_batch_dict` of a batch object
     """
     return eqx.tree_at(
         lambda m: m.obs_batch_dict, batch, obs_batch_dict, is_leaf=lambda x: x is None
@@ -1354,15 +1352,15 @@ class DataGeneratorParameter(eqx.Module):
         By providing several entries in this dictionary we can sample
         an arbitrary number of parameters.
         **Note** that we currently only support unidimensional parameters.
-        This argument can be done if we only use `user_data`.
+        This argument can be None if we use `user_data`.
     method : str, default="uniform"
         Either `grid` or `uniform`, default is `uniform`. `grid` means
         regularly spaced points over the domain. `uniform` means uniformly
         sampled points over the domain
     user_data : Dict[str, Float[Array, "n"]] | None, default={}
         A dictionary containing user-provided data for parameters.
-        As for `param_ranges`, the key corresponds to the parameter name,
-        the keys must match the keys in `params["eq_params"]` and only
+        The keys corresponds to the parameter name,
+        and must match the keys in `params["eq_params"]`. Only
         unidimensional arrays are supported. Therefore, the jnp arrays
         found at `user_data[k]` must have shape `(n, 1)` or `(n,)`.
         Note that if the same key appears in `param_ranges` and `user_data`
