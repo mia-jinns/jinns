@@ -4,6 +4,7 @@ import os
 seed = 1
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 # from PINNACLE
 DEFAULT_NUM_DOMAIN_POINTS = 8192 // 2
@@ -20,8 +21,6 @@ class BurgersEquation(PDE):
     name = "BurgersEquation"
 
     def __init__(self, c=1.0):
-
-        self.dim = 1
 
         # coordinates
         x = Symbol("x")
@@ -69,6 +68,7 @@ import torch
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+import time
 import sys
 
 sys.path.append("../")
@@ -84,7 +84,7 @@ def run(cfg: ModulusConfig) -> None:
     # add constraints to solver
     # make geometry
     x, t_symbol = Symbol("x"), Symbol("t")
-    geo = Line1D(0, 1)
+    geo = Line1D(-1, 1)
     domain = Domain()
 
     be = BurgersEquation(c=0.01 / np.pi)
@@ -108,7 +108,6 @@ def run(cfg: ModulusConfig) -> None:
         outvar={"u": -sin(np.pi * x)},
         batch_size=DEFAULT_NUM_INITIAL_POINTS,
         batch_per_epoch=1,  # total nb of points=batch_size*batch_per_epoch
-        lambda_weighting={"u": 1.0},
         parameterization={t_symbol: 0.0},
         fixed_dataset=True,
     )
@@ -139,7 +138,7 @@ def run(cfg: ModulusConfig) -> None:
     domain.add_constraint(interior, "interior")
 
     ref_data_ = trans_time_data_to_dataset(ref_data, "../../burgers1d.dat", 2, 1)
-    ref_data_ = ref_data_  # torch.from_numpy(ref_data_).float()
+    ref_data_ = ref_data_
     invar_numpy = {"x": ref_data_[:, 0:1], "t": ref_data_[:, 1:2]}
     true_outvar = {"u": ref_data_[:, 2:3]}
     # monitor = PointwiseMonitor(
@@ -152,7 +151,6 @@ def run(cfg: ModulusConfig) -> None:
     #    },
     #    nodes=nodes,
     # )
-    print(invar_numpy["x"].shape)
     validator = PointwiseValidator(
         nodes=nodes,
         invar=invar_numpy,
@@ -164,10 +162,31 @@ def run(cfg: ModulusConfig) -> None:
     solver = Solver(cfg, domain)
 
     # timeit(solver.solve(), (), steps=1, warmup=0)
+    start = time.time()
     solver.solve()
+    end = time.time()
+    print("Training time=", end - start)
 
     with np.load("validators/validator.npz", allow_pickle=True) as data:
-        print(data["arr_0"])
+        compute_relative_errors(
+            data["arr_0"][()]["true_u"], data["arr_0"][()]["pred_u"]
+        )  # about indexing https://stackoverflow.com/a/37949466
+        # plt.scatter(
+        #    x=data["arr_0"][()]["x"],
+        #    y=data["arr_0"][()]["t"],
+        #    c=data["arr_0"][()]["pred_u"],
+        #    #cmap="viridis"
+        # )
+        # plt.colorbar()
+        # plt.savefig("burgers_modulus_pred.png")
+        # plt.scatter(
+        #    x=data["arr_0"][()]["x"],
+        #    y=data["arr_0"][()]["t"],
+        #    c=data["arr_0"][()]["true_u"],
+        #    #cmap="viridis"
+        # )
+        # plt.colorbar()
+        # plt.savefig("burgers_modulus_true.png")
 
 
 run()
