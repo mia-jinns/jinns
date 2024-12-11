@@ -141,16 +141,6 @@ def run(cfg: ModulusConfig) -> None:
     ref_data_ = ref_data_
     invar_numpy = {"x": ref_data_[:, 0:1], "t": ref_data_[:, 1:2]}
     true_outvar = {"u": ref_data_[:, 2:3]}
-    # monitor = PointwiseMonitor(
-    #    invar_numpy,
-    #    output_names=["u"],
-    #    metrics={"l1re": lambda var: torch.mean(torch.abs(var["u"] -
-    #        true_outvar)) / torch.mean(true_outvar),
-    #             "l2re": lambda var: torch.mean(torch.square(var["u"] -
-    #        true_outvar)) / torch.mean(torch.sqrt(true_outvar ** 2))
-    #    },
-    #    nodes=nodes,
-    # )
     validator = PointwiseValidator(
         nodes=nodes,
         invar=invar_numpy,
@@ -161,7 +151,6 @@ def run(cfg: ModulusConfig) -> None:
 
     solver = Solver(cfg, domain)
 
-    # timeit(solver.solve(), (), steps=1, warmup=0)
     start = time.time()
     solver.solve()
     end = time.time()
