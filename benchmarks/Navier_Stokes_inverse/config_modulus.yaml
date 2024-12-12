@@ -1,0 +1,19 @@
+defaults :
+  - modulus_default
+  - arch:
+      - fully_connected
+  - optimizer: adam
+  - loss: sum
+training:
+  rec_monitor_freq: 1000
+  rec_validation_freq: 30000
+  max_steps: 30000
+  print_stats_freq: 1000
+  grad_clip_max_norm: 100
+  monitor_grad_clip: false
+optimizer:
+  lr: 1e-3
+amp:
+  enabled: false
+  dtype: float32
+save_filetypes: np
