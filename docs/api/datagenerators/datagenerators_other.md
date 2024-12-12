@@ -2,13 +2,13 @@
 
 Those DataGenerators are for more advanced modeling problems.
 
-## Integrating observations
+## Adding observations
 
 ::: jinns.data.DataGeneratorObservations
     options:
         heading_level: 3
 
-## Metamodeling
+## Metamodeling : batch of PDE parameters
 
 ::: jinns.data.DataGeneratorParameter
     options:

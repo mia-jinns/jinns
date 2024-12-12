@@ -1,6 +1,6 @@
 # Main Datagenerators
 
-There are jinns' equivalents for traditional datasets and dataloaders.
+These are jinns' equivalents for traditional datasets and dataloaders.
 
 ## For ODEs
 
