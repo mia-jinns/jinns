@@ -252,5 +252,32 @@ def run(cfg: ModulusConfig) -> None:
     end = time.time()
     print("Training time=", end - start)
 
+    with open("monitors/mean_D.csv", "r") as f:
+        last_line = f.readlines()[-1]
+    pred_D = float(last_line.split(",")[-1])
+    with open("monitors/mean_kf.csv", "r") as f:
+        last_line = f.readlines()[-1]
+    pred_kf = float(last_line.split(",")[-1])
+
+    true_D = 0.002
+    true_kf = 0.1
+
+    print(
+        "NVIDIA Modulus: estimated D=",
+        pred_D,
+        "l1re=",
+        np.abs(pred_D - true_D) / np.abs(true_D),
+        "l2re=",
+        np.sqrt((pred_D - true_D) ** 2) / np.sqrt(true_D**2),
+    )
+    print(
+        "NVIDIA Modulus: estimated kf=",
+        pred_kf,
+        "l1re=",
+        np.abs(pred_kf - true_kf) / np.abs(true_kf),
+        "l2re=",
+        np.sqrt((pred_kf - true_kf) ** 2) / np.sqrt(true_kf**2),
+    )
+
 
 run()
