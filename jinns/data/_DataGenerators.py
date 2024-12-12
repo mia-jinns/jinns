@@ -13,6 +13,7 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Key, Int, PyTree, Array, Float, Bool
 from jinns.data._Batchs import *
+import numpy as onp
 
 if TYPE_CHECKING:
     from jinns.utils._types import *
@@ -175,15 +176,17 @@ class DataGeneratorODE(eqx.Module):
         regularly spaced points over the domain. `uniform` means uniformly
         sampled points over the domain
     rar_parameters : Dict[str, Int], default=None
-        Default to None: do not use Residual Adaptative Resampling.
-        Otherwise a dictionary with keys. `start_iter`: the iteration at
-        which we start the RAR sampling scheme (we first have a burn in
-        period). `update_rate`: the number of gradient steps taken between
-        each appending of collocation points in the RAR algo.
-        `sample_size`: the size of the sample from which we will select new
-        collocation points. `selected_sample_size`: the number of selected
+        Defaults to None: do not use Residual Adaptative Resampling.
+        Otherwise a dictionary with keys
+
+        - `start_iter`: the iteration at which we start the RAR sampling scheme (we first have a "burn-in" period).
+        - `update_every`: the number of gradient steps taken between
+        each update of collocation points in the RAR algo.
+        - `sample_size`: the size of the sample from which we will select new
+        collocation points.
+        - `selected_sample_size`: the number of selected
         points from the sample to be added to the current collocation
-        points
+        points.
     n_start : Int, default=None
         Defaults to None. The effective size of nt used at start time.
         This value must be
@@ -361,22 +364,24 @@ class CubicMeshPDEStatio(eqx.Module):
         regularly spaced points over the domain. `uniform` means uniformly
         sampled points over the domain
     rar_parameters : Dict[str, Int], default=None
-        Default to None: do not use Residual Adaptative Resampling.
-        Otherwise a dictionary with keys. `start_iter`: the iteration at
-        which we start the RAR sampling scheme (we first have a burn in
-        period). `update_every`: the number of gradient steps taken between
-        each appending of collocation points in the RAR algo.
-        `sample_size`: the size of the sample from which we will select new
-        collocation points. `selected_sample_size`: the number of selected
+        Defaults to None: do not use Residual Adaptative Resampling.
+        Otherwise a dictionary with keys
+
+        - `start_iter`: the iteration at which we start the RAR sampling scheme (we first have a "burn-in" period).
+        - `update_every`: the number of gradient steps taken between
+        each update of collocation points in the RAR algo.
+        - `sample_size`: the size of the sample from which we will select new
+        collocation points.
+        - `selected_sample_size`: the number of selected
         points from the sample to be added to the current collocation
-        points
+        points.
     n_start : Int, default=None
         Defaults to None. The effective size of n used at start time.
         This value must be
         provided when rar_parameters is not None. Otherwise we set internally
         n_start = n and this is hidden from the user.
         In RAR, n_start
-        then corresponds to the initial number of points we train the PINN.
+        then corresponds to the initial number of points we train the PINN on.
     """
 
     # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
@@ -799,13 +804,15 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         regularly spaced points over the domain. `uniform` means uniformly
         sampled points over the domain
     rar_parameters : Dict[str, Int], default=None
-        Default to None: do not use Residual Adaptative Resampling.
-        Otherwise a dictionary with keys. `start_iter`: the iteration at
-        which we start the RAR sampling scheme (we first have a burn in
-        period). `update_every`: the number of gradient steps taken between
-        each appending of collocation points in the RAR algo.
-        `sample_size`: the size of the sample from which we will select new
-        collocation points. `selected_sample_size`: the number of selected
+        Defaults to None: do not use Residual Adaptative Resampling.
+        Otherwise a dictionary with keys
+
+        - `start_iter`: the iteration at which we start the RAR sampling scheme (we first have a "burn-in" period).
+        - `update_every`: the number of gradient steps taken between
+        each update of collocation points in the RAR algo.
+        - `sample_size`: the size of the sample from which we will select new
+        collocation points.
+        - `selected_sample_size`: the number of selected
         points from the sample to be added to the current collocation
         points.
     n_start : Int, default=None
@@ -1136,8 +1143,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
 class DataGeneratorObservations(eqx.Module):
     r"""
-    Despite the class name, it is rather a dataloader from user provided
-    observations that will be used for the observations loss
+    Despite the class name, it is rather a dataloader for user-provided
+    observations which will are used in the observations loss.
 
     Parameters
     ----------
@@ -1145,17 +1152,7 @@ class DataGeneratorObservations(eqx.Module):
         Jax random key to shuffle batches
     obs_batch_size : Int | None
         The size of the batch of randomly selected points among
-        the `n` points. `obs_batch_size` will be the same for all
-        elements of the return observation dict batch.
-        NOTE: no check is done BUT users should be careful that
-        `obs_batch_size` must be equal to `temporal_batch_size` or
-        `omega_batch_size` or the product of both. In the first case, the
-        present DataGeneratorObservations instance complements an ODEBatch,
-        PDEStatioBatch or a PDENonStatioBatch (with self.cartesian_product
-        = False). In the second case, `obs_batch_size` =
-        `temporal_batch_size * omega_batch_size` if the present
-        DataGeneratorParameter complements a PDENonStatioBatch
-        with self.cartesian_product = True. If None, no minibatch are used
+        the `n` points. If None, no minibatch are used.
     observed_pinn_in : Float[Array, "n_obs nb_pinn_in"]
         Observed values corresponding to the input of the PINN
         (eg. the time at which we recorded the observations). The first
@@ -1327,7 +1324,9 @@ class DataGeneratorObservations(eqx.Module):
 
 class DataGeneratorParameter(eqx.Module):
     r"""
-    A data generator for additional unidimensional parameter(s)
+    A data generator for additional unidimensional equation parameter(s).
+    Mostly useful for metamodeling where batch of `params.eq_params` are fed
+    to the network.
 
     Parameters
     ----------
@@ -1340,9 +1339,9 @@ class DataGeneratorParameter(eqx.Module):
         once during 1 epoch.
     param_batch_size : Int | None, default=None
         The size of the batch of randomly selected points among
-        the `n` points. `param_batch_size` will be the same for all
-        additional batch of parameter. If None, `param_batch_size`
-        no mini-batches are used.
+        the `n` points.  **Important**: no check is performed but
+        `param_batch_size` must be the same as other collocation points
+        batch_size (time, space or timexspace depending on the context). This is because we vmap the network on all its axes at once to compute the MSE. Also, `param_batch_size` will be the same for all parameters. If None, no mini-batches are used.
     param_ranges : Dict[str, tuple[Float, Float] | None, default={}
         A dict. A dict of tuples (min, max), which
         reprensents the range of real numbers where to sample batches (of
@@ -1357,12 +1356,12 @@ class DataGeneratorParameter(eqx.Module):
         Either `grid` or `uniform`, default is `uniform`. `grid` means
         regularly spaced points over the domain. `uniform` means uniformly
         sampled points over the domain
-    user_data : Dict[str, Float[Array, "n"]] | None, default={}
+    user_data : Dict[str, Float[onp.ndarray, "n"]] | None, default={}
         A dictionary containing user-provided data for parameters.
         The keys corresponds to the parameter name,
         and must match the keys in `params["eq_params"]`. Only
-        unidimensional arrays are supported. Therefore, the jnp arrays
-        found at `user_data[k]` must have shape `(n, 1)` or `(n,)`.
+        unidimensional `jnp.array` are supported. Therefore, the array at
+        `user_data[k]` must have shape `(n, 1)` or `(n,)`.
         Note that if the same key appears in `param_ranges` and `user_data`
         priority goes for the content in `user_data`.
         Defaults to None.
@@ -1375,8 +1374,8 @@ class DataGeneratorParameter(eqx.Module):
         static=True, default_factory=lambda: {}
     )
     method: str = eqx.field(static=True, default="uniform")
-    user_data: Dict[str, Float[Array, "n"]] | None = eqx.field(
-        static=True, default_factory=lambda: {}
+    user_data: Dict[str, Float[onp.Array, "n"]] | None = eqx.field(
+        default_factory=lambda: {}
     )
 
     curr_param_idx: Dict[str, Int] = eqx.field(init=False)
@@ -1524,7 +1523,7 @@ class DataGeneratorObservationsMultiPINNs(eqx.Module):
 
     Technically, the constraint on the observations in SystemLossXDE are
     applied in `constraints_system_loss_apply` and in this case the
-    batch.obs_batch_dict is a dict of obs_batch_dict over which the tree_map
+    `batch.obs_batch_dict` is a dict of obs_batch_dict over which the tree_map
     applies (we select the obs_batch_dict corresponding to its `u_dict` entry)
 
     Parameters
@@ -1533,15 +1532,6 @@ class DataGeneratorObservationsMultiPINNs(eqx.Module):
         The size of the batch of randomly selected observations
         `obs_batch_size` will be the same for all the
         elements of the obs dict.
-        NOTE: no check is done BUT users should be careful that
-        `obs_batch_size` must be equal to `temporal_batch_size` or
-        `omega_batch_size` or the product of both. In the first case, the
-        present DataGeneratorObservations instance complements an ODEBatch,
-        PDEStatioBatch or a PDENonStatioBatch (with self.cartesian_product
-        = False). In the second case, `obs_batch_size` =
-        `temporal_batch_size * omega_batch_size` if the present
-        DataGeneratorParameter complements a PDENonStatioBatch
-        with self.cartesian_product = True
     observed_pinn_in_dict : Dict[str, Float[Array, "n_obs nb_pinn_in"] | None]
         A dict of observed_pinn_in as defined in DataGeneratorObservations.
         Keys must be that of `u_dict`.
