@@ -13,7 +13,6 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Key, Int, PyTree, Array, Float, Bool
 from jinns.data._Batchs import *
-import numpy as onp
 
 if TYPE_CHECKING:
     from jinns.utils._types import *
@@ -1356,7 +1355,7 @@ class DataGeneratorParameter(eqx.Module):
         Either `grid` or `uniform`, default is `uniform`. `grid` means
         regularly spaced points over the domain. `uniform` means uniformly
         sampled points over the domain
-    user_data : Dict[str, Float[onp.ndarray, "n"]] | None, default={}
+    user_data : Dict[str, Float[jnp.ndarray, "n"]] | None, default={}
         A dictionary containing user-provided data for parameters.
         The keys corresponds to the parameter name,
         and must match the keys in `params["eq_params"]`. Only
