@@ -1,6 +1,6 @@
 # pylint: disable=unsubscriptable-object
 """
-Define the DataGeneratorODE equinox module
+Define the DataGenerators modules
 """
 from __future__ import (
     annotations,
@@ -1195,7 +1195,7 @@ class DataGeneratorObservations(eqx.Module):
     )
     sharding_device: jax.sharding.Sharding = eqx.field(static=True, default=None)
 
-    n: Int = eqx.field(init=False)
+    n: Int = eqx.field(init=False, static=True)
     curr_idx: Int = eqx.field(init=False)
     indices: Array = eqx.field(init=False)
 
@@ -1371,7 +1371,7 @@ class DataGeneratorParameter(eqx.Module):
     """
 
     keys: Key | Dict[str, Key]
-    n: Int
+    n: Int = eqx.field(static=True)
     param_batch_size: Int | None = eqx.field(static=True, default=None)
     param_ranges: Dict[str, tuple[Float, Float]] = eqx.field(
         static=True, default_factory=lambda: {}

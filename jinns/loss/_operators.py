@@ -256,7 +256,7 @@ def laplacian_fwd(
     inputs: Float[Array, "batch_size 1+dim"] | Float[Array, "batch_size dim"],
     u: eqx.Module,
     params: Params,
-    method: Literal["trace_hessian_t_x", "loop"] = "loop",
+    method: Literal["trace_hessian_t_x", "trace_hessian_x", "loop"] = "loop",
     eq_type: Literal["nonstatio_PDE", "statio_PDE"] = None,
 ) -> Float[Array, "batch_size * (1+dim) 1"] | Float[Array, "batch_size * (dim) 1"]:
     r"""
@@ -277,7 +277,8 @@ def laplacian_fwd(
     !!! warning "Warning"
 
         Because of the batch dimension, the current implementation of
-        `method="trace_hessian_t_x"` should not be used except for debugging
+        `method="trace_hessian_t_x"` or `method="trace_hessian_x"`
+        should not be used except for debugging
         purposes. Indeed, computing the Hessian is very costly.
 
     Parameters
@@ -291,7 +292,8 @@ def laplacian_fwd(
     method
         how to compute the Laplacian. `"trace_hessian_t_x"` means that the computation
         of the Hessian integrates `t` which is excluded at the end (**see
-        Warning below**). `"loop"` means that we
+        Warning**). `"trace_hessian_x"` means an Hessian computation which
+        excludes `t` (**see Warning**). `"loop"` means that we
         directly compute the second order derivatives with a loop (we avoid
         non-diagonal derivatives at the cost of a loop).
     eq_type
@@ -376,8 +378,25 @@ def laplacian_fwd(
             lap = jnp.einsum(res_dims + "ii->" + res_dims, r)
             return lap[..., None]
         raise ValueError("Unexpected eq_type!")
-    else:
-        raise ValueError("Unexpected method argument!")
+    if method == "trace_hessian_x":
+        if eq_type == "statio_PDE":
+            # compute the Hessian including the batch dimension, get rid of the
+            # (..,1,..) axis that is here because of the scalar output
+            # if inputs.shape==(10,2), r.shape=(10,10,1,10,2,10,2)
+            # there are way too much derivatives!
+            r = jax.hessian(u)(inputs, params).squeeze()
+            # compute the traces, after that r.shape=(10,10,10,10)
+            r = jnp.trace(r, axis1=-3, axis2=-1)
+            # but then we are in a cartesian product, for each coordinate on
+            # the first two dimensions we only want the trace at the same
+            # coordinate on the last two dimensions
+            # this is done easily with einsum but we need to automate the
+            # formula according to the input dim
+            res_dims = "".join([f"{chr(97 + d)}" for d in range(inputs.shape[-1])])
+            lap = jnp.einsum(res_dims + "ii->" + res_dims, r)
+            return lap[..., None]
+        raise ValueError("Unexpected eq_type!")
+    raise ValueError("Unexpected method argument!")
 
 
 def vectorial_laplacian_rev(

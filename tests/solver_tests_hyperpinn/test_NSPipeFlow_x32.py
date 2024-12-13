@@ -105,7 +105,7 @@ def train_NSPipeFlow_init():
     hyperparams = ["nu"]
     hypernet_input_size = 1
     dim_x = 2
-    u_hyper, p_hyper = jinns.utils.create_HYPERPINN(
+    (u_hyper, p_hyper), (u_init_nn_params, _) = jinns.utils.create_HYPERPINN(
         subkey,
         eqx_list,
         "statio_PDE",
@@ -116,7 +116,6 @@ def train_NSPipeFlow_init():
         output_transform=output_transform,
         shared_pinn_outputs=(jnp.s_[:2], jnp.s_[2]),
     )
-    u_init_nn_params = u_hyper.init_params()
     p_init_nn_params = u_init_nn_params
     param_train_data, param_batch = param_train_data.get_batch()
     init_params_hyper = jinns.parameters.ParamsDict(

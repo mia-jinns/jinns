@@ -27,7 +27,7 @@ def test_laplacian_fwd_statio(create_u_statio):
 
     assert jnp.allclose(
         jinns.loss.laplacian_fwd(x, u_statio, params, method="loop"),
-        jinns.loss.laplacian_fwd(x, u_statio, params, method="trace_hessian_t_x"),
+        jinns.loss.laplacian_fwd(x, u_statio, params, method="trace_hessian_x"),
     )
 
 

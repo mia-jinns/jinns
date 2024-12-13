@@ -29,6 +29,12 @@ status=$?
 if [ $status -ne 0 ]; then
    exit $status
 fi
+cd ../solver_tests_hyperpinn
+pytest -s
+status=$?
+if [ $status -ne 0 ]; then
+   exit $status
+fi
 cd ../utils_tests
 pytest -s
 status=$?
