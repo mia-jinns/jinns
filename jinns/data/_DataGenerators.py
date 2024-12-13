@@ -1172,7 +1172,7 @@ class DataGeneratorObservations(eqx.Module):
         datasets of observations. Note that computations for **batches**
         can still be performed on other devices (*e.g.* GPU, TPU or
         any pre-defined Sharding) thanks to the `obs_batch_sharding`
-        arguments of `jinns.solve()`. Read the docs for more info.
+        arguments of `jinns.solve()`. Read `jinns.solve()` doc for more info.
     """
 
     key: Key
