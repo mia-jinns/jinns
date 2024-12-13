@@ -222,23 +222,20 @@ class DataGeneratorODE(eqx.Module):
         ) = _check_and_set_rar_parameters(self.rar_parameters, self.nt, self.n_start)
 
         if self.temporal_batch_size is not None:
-            self.curr_time_idx = jnp.iinfo(jnp.int32).max - self.temporal_batch_size - 1
+            self.curr_time_idx = self.nt + self.temporal_batch_size
+            # to be sure there is a shuffling at first get_batch()
+            # NOTE in the extreme case we could do:
+            # self.curr_time_idx=jnp.iinfo(jnp.int32).max - self.temporal_batch_size - 1
+            # but we do not test for such extreme values. Where we subtract
+            # self.temporal_batch_size - 1 because otherwise when computing
+            # `bend` we do not want to overflow the max int32 with unwanted behaviour
         else:
             self.curr_time_idx = 0
-        # to be sure there is a
-        # shuffling at first get_batch() we do not call
-        # _reset_batch_idx_and_permute in __init__ or __post_init__ because it
-        # would return a copy of self and we have not investigate what would
-        # happen
-        # NOTE the (- self.temporal_batch_size - 1) because otherwise when computing
-        # `bend` we overflow the max int32 with unwanted behaviour
 
         self.key, self.times = self.generate_time_data(self.key)
         # Note that, here, in __init__ (and __post_init__), this is the
         # only place where self assignment are authorized so we do the
-        # above way for the key. Note that one of the motivation to return the
-        # key from generate_*_data is to easily align key with legacy
-        # DataGenerators to use same unit tests
+        # above way for the key.
 
     def sample_in_time_domain(
         self, key: Key, sample_size: Int = None
@@ -465,15 +462,14 @@ class CubicMeshPDEStatio(eqx.Module):
         if self.omega_batch_size is None:
             self.curr_omega_idx = 0
         else:
-            self.curr_omega_idx = jnp.iinfo(jnp.int32).max - self.omega_batch_size - 1
-            # see explaination in DataGeneratorODE
+            self.curr_omega_idx = self.n + self.omega_batch_size
+            # to be sure there is a shuffling at first get_batch()
 
         if self.omega_border_batch_size is None:
             self.curr_omega_border_idx = 0
         else:
-            self.curr_omega_border_idx = (
-                jnp.iinfo(jnp.int32).max - self.omega_border_batch_size - 1
-            )
+            self.curr_omega_border_idx = self.nb + self.omega_border_batch_size
+            # to be sure there is a shuffling at first get_batch()
 
         self.key, self.omega = self.generate_omega_data(self.key)
         self.key, self.omega_border = self.generate_omega_border_data(self.key)
@@ -892,7 +888,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         if self.domain_batch_size is None:
             self.curr_domain_idx = 0
         else:
-            self.curr_domain_idx = jnp.iinfo(jnp.int32).max - self.domain_batch_size - 1
+            self.curr_domain_idx = self.n + self.domain_batch_size
+            # to be sure there is a shuffling at first get_batch()
         if self.nb is not None:
             # the check below has already been done in super.__post_init__ if
             # dim > 1. Here we retest it in whatever dim
@@ -930,9 +927,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             if self.border_batch_size is None:
                 self.curr_border_idx = 0
             else:
-                self.curr_border_idx = (
-                    jnp.iinfo(jnp.int32).max - self.border_batch_size - 1
-                )
+                self.curr_border_idx = self.nb + self.border_batch_size
+                # to be sure there is a shuffling at first get_batch()
 
         else:
             self.border = None
@@ -955,9 +951,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             if self.initial_batch_size is None or self.initial_batch_size == self.ni:
                 self.curr_initial_idx = 0
             else:
-                self.curr_initial_idx = (
-                    jnp.iinfo(jnp.int32).max - self.initial_batch_size - 1
-                )
+                self.curr_initial_idx = self.ni + self.initial_batch_size
+                # to be sure there is a shuffling at first get_batch()
         else:
             self.initial = None
             self.initial_batch_size = None
@@ -1234,7 +1229,8 @@ class DataGeneratorObservations(eqx.Module):
             )
 
         if self.obs_batch_size is not None:
-            self.curr_idx = jnp.iinfo(jnp.int32).max - self.obs_batch_size - 1
+            self.curr_idx = self.n + self.obs_batch_size
+            # to be sure there is a shuffling at first get_batch()
         else:
             self.curr_idx = 0
         # For speed and to avoid duplicating data what is really
@@ -1399,9 +1395,8 @@ class DataGeneratorParameter(eqx.Module):
         else:
             self.curr_param_idx = {}
             for k in self.keys.keys():
-                self.curr_param_idx[k] = (
-                    jnp.iinfo(jnp.int32).max - self.param_batch_size - 1
-                )
+                self.curr_param_idx[k] = self.n + self.param_batch_size
+                # to be sure there is a shuffling at first get_batch()
 
         # The call to self.generate_data() creates
         # the dict self.param_n_samples and then we will only use this one
