@@ -14,7 +14,7 @@ import jinns
 
 
 @pytest.fixture
-def train_Burger_init_sharding():
+def train_Burgers_init_sharding():
     jax.config.update("jax_enable_x64", False)
     # We have forced CPU computations and 2 fake CPU devices
     # in order to test the sharding
@@ -77,7 +77,7 @@ def train_Burger_init_sharding():
     def u0(x):
         return -jnp.sin(jnp.pi * x)
 
-    be_loss = jinns.loss.BurgerEquation(Tmax=Tmax)
+    be_loss = jinns.loss.BurgersEquation(Tmax=Tmax)
 
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
         dyn_loss=1, initial_condition=5, boundary_loss=1
@@ -97,11 +97,11 @@ def train_Burger_init_sharding():
 
 
 @pytest.fixture
-def train_Burger_10it_sharding(train_Burger_init_sharding):
+def train_Burgers_10it_sharding(train_Burgers_init_sharding):
     """
     Fixture that requests a fixture
     """
-    init_params, loss, train_data, cpu2_sharding = train_Burger_init_sharding
+    init_params, loss, train_data, cpu2_sharding = train_Burgers_init_sharding
 
     # NOTE we need to waste one get_batch() here to stay synchronized with the
     # notebook
@@ -123,7 +123,7 @@ def train_Burger_10it_sharding(train_Burger_init_sharding):
 
 
 @pytest.fixture
-def train_Burger_init_no_sharding():
+def train_Burgers_init_no_sharding():
     jax.config.update("jax_enable_x64", False)
 
     key = random.PRNGKey(2)
@@ -177,7 +177,7 @@ def train_Burger_init_no_sharding():
     def u0(x):
         return -jnp.sin(jnp.pi * x)
 
-    be_loss = jinns.loss.BurgerEquation(Tmax=Tmax)
+    be_loss = jinns.loss.BurgersEquation(Tmax=Tmax)
 
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
         dyn_loss=1, initial_condition=5, boundary_loss=1
@@ -197,11 +197,11 @@ def train_Burger_init_no_sharding():
 
 
 @pytest.fixture
-def train_Burger_10it_no_sharding(train_Burger_init_no_sharding):
+def train_Burgers_10it_no_sharding(train_Burgers_init_no_sharding):
     """
     Fixture that requests a fixture
     """
-    init_params, loss, train_data = train_Burger_init_no_sharding
+    init_params, loss, train_data = train_Burgers_init_no_sharding
 
     # NOTE we need to waste one get_batch() here to stay synchronized with the
     # notebook
@@ -217,11 +217,11 @@ def train_Burger_10it_no_sharding(train_Burger_init_no_sharding):
     return total_loss_list[9]
 
 
-def test_10it_Burger_sharding(
-    train_Burger_10it_sharding, train_Burger_10it_no_sharding
+def test_10it_Burgers_sharding(
+    train_Burgers_10it_sharding, train_Burgers_10it_no_sharding
 ):
     # Test the equivalency sharding / no sharding across two CPUs devices
-    # The no sharding example is taken from the test_Burger_x32 file
-    total_loss_val_for = train_Burger_10it_sharding
-    total_loss_val_scan = train_Burger_10it_no_sharding
+    # The no sharding example is taken from the test_Burgers_x32 file
+    total_loss_val_for = train_Burgers_10it_sharding
+    total_loss_val_scan = train_Burgers_10it_no_sharding
     assert jnp.allclose(total_loss_val_for, total_loss_val_scan, atol=1e-1)

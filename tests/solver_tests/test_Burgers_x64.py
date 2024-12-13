@@ -9,8 +9,8 @@ import jinns
 
 
 @pytest.fixture
-def train_Burger_init():
-    jax.config.update("jax_enable_x64", False)
+def train_Burgers_init():
+    jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
     eqx_list = (
         (eqx.nn.Linear, 2, 32),
@@ -57,7 +57,7 @@ def train_Burger_init():
     def u0(x):
         return -jnp.sin(jnp.pi * x)
 
-    be_loss = jinns.loss.BurgerEquation(Tmax=Tmax)
+    be_loss = jinns.loss.BurgersEquation(Tmax=Tmax)
 
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
         dyn_loss=1, initial_condition=100, boundary_loss=1
@@ -77,11 +77,11 @@ def train_Burger_init():
 
 
 @pytest.fixture
-def train_Burger_10it(train_Burger_init):
+def train_Burgers_10it(train_Burgers_init):
     """
     Fixture that requests a fixture
     """
-    init_params, loss, train_data = train_Burger_init
+    init_params, loss, train_data = train_Burgers_init
 
     params = init_params
 
@@ -93,12 +93,12 @@ def train_Burger_10it(train_Burger_init):
     return total_loss_list[9]
 
 
-def test_initial_loss_Burger(train_Burger_init):
-    init_params, loss, train_data = train_Burger_init
+def test_initial_loss_Burgers(train_Burgers_init):
+    init_params, loss, train_data = train_Burgers_init
     train_data, batch = train_data.get_batch()
-    assert jnp.allclose(loss.evaluate(init_params, batch)[0], 57.44712, atol=1e-1)
+    assert jnp.allclose(loss.evaluate(init_params, batch)[0], 50.4698, atol=1e-1)
 
 
-def test_10it_Burger(train_Burger_10it):
-    total_loss_val = train_Burger_10it
-    assert jnp.allclose(total_loss_val, 39.558655, atol=1e-1)
+def test_10it_Burgers(train_Burgers_10it):
+    total_loss_val = train_Burgers_10it
+    assert jnp.allclose(total_loss_val, 34.80941357, atol=1e-1)

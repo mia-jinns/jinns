@@ -96,7 +96,7 @@ nav:
       - Implementing your own problem: 'Notebooks/Tutorials/implementing_your_own_PDE_problem.ipynb'
       - Saving / loading your model: 'Notebooks/Tutorials/load_save_model.ipynb'
       - Using validation module: 'Notebooks/Tutorials/introducing_validation_loss.ipynb'
-      - A simple inverse problem: 'Notebooks/Tutorials/1D_non_stationary_Burger_JointEstimation_Vanilla.ipynb'
+      - A simple inverse problem: 'Notebooks/Tutorials/1D_non_stationary_Burgers_JointEstimation_Vanilla.ipynb'
     - Examples:
       - Forward problems:
         - ODE:
@@ -106,7 +106,7 @@ nav:
           - Navier-Stokes in pipe flow:
             - Hard-constraints: 'Notebooks/PDE/2D_Navier_Stokes_PipeFlow.ipynb'
             - Soft-constraints: 'Notebooks/PDE/2D_Navier_Stokes_PipeFlow_SoftConstraints.ipynb'
-          - 1D Burger equation: 'Notebooks/PDE/1D_non_stationary_Burger.ipynb'
+          - 1D Burgers equation: 'Notebooks/PDE/1D_non_stationary_Burgers.ipynb'
           - 1D Fisher-KPP: 'Notebooks/PDE/1D_non_stationary_Fisher_KPP_Bounded_Domain.ipynb'
           - 2D Fisher-KPP  with covariates: 'Notebooks/PDE/Reaction_Diffusion_2D_heterogenous_model.ipynb'
           - 2D learning Ornstein Uhlenbeck pdf (RAR sampling): 'Notebooks/PDE/2D_non_stationary_OU.ipynb'

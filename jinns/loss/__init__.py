@@ -3,7 +3,7 @@ from ._LossODE import LossODE, SystemLossODE
 from ._LossPDE import LossPDEStatio, LossPDENonStatio, SystemLossPDE
 from ._DynamicLoss import (
     GeneralizedLotkaVolterra,
-    BurgerEquation,
+    BurgersEquation,
     FPENonStatioLoss2D,
     OU_FPENonStatioLoss2D,
     FisherKPP,

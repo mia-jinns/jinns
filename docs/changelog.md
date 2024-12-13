@@ -116,7 +116,7 @@
 
 * v0.6.0:
 
-    - Code refactoring: now we only pass `params` to the PINN. If we want to add some elements of `params["eq_params"]` as inputs of the PINN we can do so through a `input_transform(t, x, params)` function. See the Burger notebook for inverse problem.
+    - Code refactoring: now we only pass `params` to the PINN. If we want to add some elements of `params["eq_params"]` as inputs of the PINN we can do so through a `input_transform(t, x, params)` function. See the Burgers notebook for inverse problem.
 
     - Set gradients is now highly modular: for each term of the loss you can chose the parameter(s) w.r.t. which you want to compute the gradient
 
@@ -165,13 +165,13 @@
 
     - Add printing of loss value along the optimization process
 
-    - Updated notebook: inverse problem in Burger equation
+    - Updated notebook: inverse problem in Burgers equation
 
 * v0.3.2
 
     - Improve `solve()` for storing loss values and parameters
 
-    - Clean inverse problem notebooks. Add the updated notebook for joint estimation of viscosity and PINN in Burger equation
+    - Clean inverse problem notebooks. Add the updated notebook for joint estimation of viscosity and PINN in Burgers equation
 
     - Minor fixes
 

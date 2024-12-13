@@ -9,27 +9,22 @@ import jinns
 
 
 @pytest.fixture
-def train_Burger_init():
+def train_Burgers_init():
     jax.config.update("jax_enable_x64", False)
     key = random.PRNGKey(2)
-    d = 2
-    r = 256
     eqx_list = (
-        (eqx.nn.Linear, 1, 128),
+        (eqx.nn.Linear, 2, 32),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 128),
+        (eqx.nn.Linear, 32, 32),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 128),
+        (eqx.nn.Linear, 32, 32),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, r),
+        (eqx.nn.Linear, 32, 1),
     )
     key, subkey = random.split(key)
-    key, subkey = random.split(key)
-    u, init_nn_params = jinns.utils.create_SPINN(
-        subkey, d, r, eqx_list, "nonstatio_PDE"
-    )
+    u, init_nn_params = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
 
-    n = 5000
+    n = 2500
     ni = 200
     nb = 200
     dim = 1
@@ -40,14 +35,12 @@ def train_Burger_init():
     Tmax = 1
     method = "uniform"
 
+    key, subkey = random.split(key)
     train_data = jinns.data.CubicMeshPDENonStatio(
         key=subkey,
         n=n,
         nb=nb,
         ni=ni,
-        domain_batch_size=32,
-        border_batch_size=32,
-        initial_batch_size=32,
         dim=dim,
         min_pts=(xmin,),
         max_pts=(xmax,),
@@ -64,10 +57,10 @@ def train_Burger_init():
     def u0(x):
         return -jnp.sin(jnp.pi * x)
 
-    be_loss = jinns.loss.BurgerEquation(Tmax=Tmax)
+    be_loss = jinns.loss.BurgersEquation(Tmax=Tmax)
 
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
-        dyn_loss=1, initial_condition=10, boundary_loss=1
+        dyn_loss=1, initial_condition=100, boundary_loss=1
     )
 
     loss = jinns.loss.LossPDENonStatio(
@@ -84,30 +77,28 @@ def train_Burger_init():
 
 
 @pytest.fixture
-def train_Burger_10it(train_Burger_init):
+def train_Burgers_10it(train_Burgers_init):
     """
     Fixture that requests a fixture
     """
-    init_params, loss, train_data = train_Burger_init
+    init_params, loss, train_data = train_Burgers_init
 
     params = init_params
 
-    tx = optax.adamw(learning_rate=1e-4)
+    tx = optax.adamw(learning_rate=1e-3)
     n_iter = 10
     params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _ = jinns.solve(
         init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
     )
-    return total_loss_list[-1]
+    return total_loss_list[9]
 
 
-def test_initial_loss_Burger(train_Burger_init):
-    init_params, loss, train_data = train_Burger_init
-
-    assert jnp.allclose(
-        loss.evaluate(init_params, train_data.get_batch()[1])[0], 5.3324, atol=1e-1
-    )
+def test_initial_loss_Burgers(train_Burgers_init):
+    init_params, loss, train_data = train_Burgers_init
+    train_data, batch = train_data.get_batch()
+    assert jnp.allclose(loss.evaluate(init_params, batch)[0], 57.44712, atol=1e-1)
 
 
-def test_10it_Burger(train_Burger_10it):
-    total_loss_val = train_Burger_10it
-    assert jnp.allclose(total_loss_val, 2.629433, atol=1e-1)
+def test_10it_Burgers(train_Burgers_10it):
+    total_loss_val = train_Burgers_10it
+    assert jnp.allclose(total_loss_val, 39.558655, atol=1e-1)

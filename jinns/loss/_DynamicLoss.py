@@ -190,9 +190,9 @@ class GeneralizedLotkaVolterra(ODE):
         )
 
 
-class BurgerEquation(PDENonStatio):
+class BurgersEquation(PDENonStatio):
     r"""
-    Return the Burger dynamic loss term (in 1 space dimension):
+    Return the Burgers dynamic loss term (in 1 space dimension):
 
     $$
         \frac{\partial}{\partial t} u(t,x) + u(t,x)\frac{\partial}{\partial x}

@@ -9,7 +9,7 @@ import jinns
 
 
 @pytest.fixture
-def train_Burger_init():
+def train_Burgers_init():
     jax.config.update("jax_enable_x64", False)
     key = random.PRNGKey(2)
     eqx_list = (
@@ -59,7 +59,7 @@ def train_Burger_init():
     def u0(x):
         return -jnp.sin(jnp.pi * x)
 
-    be_loss = jinns.loss.BurgerEquation(Tmax=Tmax)
+    be_loss = jinns.loss.BurgersEquation(Tmax=Tmax)
 
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
         dyn_loss=1, initial_condition=5, boundary_loss=1
@@ -79,11 +79,11 @@ def train_Burger_init():
 
 
 @pytest.fixture
-def train_Burger_10it(train_Burger_init):
+def train_Burgers_10it(train_Burgers_init):
     """
     Fixture that requests a fixture
     """
-    init_params, loss, train_data = train_Burger_init
+    init_params, loss, train_data = train_Burgers_init
     params = init_params
 
     tracked_params = jinns.parameters.Params(nn_params=None, eq_params={"nu": True})
@@ -103,6 +103,6 @@ def train_Burger_10it(train_Burger_init):
     return tracked_params, params.eq_params["nu"]
 
 
-def test_tracked_params_value(train_Burger_10it):
-    tracked_params, nu = train_Burger_10it
+def test_tracked_params_value(train_Burgers_10it):
+    tracked_params, nu = train_Burgers_10it
     assert jnp.array_equal(tracked_params.eq_params["nu"], jnp.ones((10,)) * nu)
