@@ -14,7 +14,7 @@ It can also be used for forward problems and hybrid-modeling.
 
 - **Jinns is highly modular** - It gives users maximum control for defining their problems, and extending the package. The maths and computations are visible and not hidden behind layers of code!
 
-- **Jinns is efficient** - It compares favorably to other existing Python package for PINNs on the [PINNacle benchmarks](https://github.com/i207M/PINNacle/), as demonstrated in the table below. For more details on the benchmarks, checkout the [pre-publication]()
+- **Jinns is efficient** - It compares favorably to other existing Python package for PINNs on the [PINNacle benchmarks](https://github.com/i207M/PINNacle/), as demonstrated in the table below. For more details on the benchmarks, checkout the [PINN multi-library benchmark](https://gitlab.com/mia_jinns/pinn-multi-library-benchmark)
 
 - Implemented PINN architectures
     - Vanilla Multi-Layer Perceptron popular accross the PINNs litterature.
@@ -26,7 +26,18 @@ It can also be used for forward problems and hybrid-modeling.
 
 - **Get started**: check out our various notebooks on the [documentation](https://mia_jinns.gitlab.io/jinns/index.html).
 
-![A table with jinns timings on various PINNacle benchmarks comparing with DeepXDE (JAX/PyTorch), PINA and Modulus](img/jinns-timings.png "Training time in seconds on an Nvidia T600  GPU. NI means problem cannot be implemented in the backend, CC means the code crashed.")
+|  | jinns | DeepXDE - JAX | DeepXDE - Pytorch | PINA | Nvidia Modulus |
+|---|:---:|:---:|:---:|:---:|:---:|
+| Burgers1D | **445** | 723 | 671 | 1977 | 646 |
+| NS2d-C | **265** | 278 | 441 | 1600 | 275 |
+| PInv | 149 | 218 | *CC* | 1509 | **135** |
+| Diffusion-Reaction-Inv | **284** | *NI* | 3424 | 4061 | 2541 |
+| Navier-Stokes-Inv | **175** | *NI* | 1511 | 1403 | 498 |
+
+*Training time in seconds on an Nvidia T600  GPU. NI means problem cannot be implemented in the backend, CC means the code crashed.*
+
+![jinns-diagram.png](img/jinns-diagram.png)
+
 
 # Installation
 
@@ -78,7 +89,7 @@ Don't hesitate to contribute and get your name on the list here !
 Please consider citing our work if you found it useful to yours, using the following lines
 ```
 @software{jinns2024,
-    title={\texttt{jinns}: Physics-Informed Neural Networks with JA},
+    title={\texttt{jinns}: Physics-Informed Neural Networks with JAX},
     author={Gangloff, Hugo and Jouvin, Nicolas},
     url={https://gitlab.com/mia_jinns},
     year={2024}
