@@ -12,7 +12,7 @@ It can also be used for forward problems and hybrid-modeling.
 
 **jinns** specific points:
 
-- **Jinns uses JAX** - It isdirected to JAX users: forward and backward autodiff, vmapping, jitting and more! No reinventing the wheel: it relies on the JAX ecosystem whenever possible, such as [equinox](https://github.com/patrick-kidger/equinox/) for neural networks or [optax](https://optax.readthedocs.io/) for optimization.
+- **Jinns uses JAX** - It is directed to JAX users: forward and backward autodiff, vmapping, jitting and more! No reinventing the wheel: it relies on the JAX ecosystem whenever possible, such as [equinox](https://github.com/patrick-kidger/equinox/) for neural networks or [optax](https://optax.readthedocs.io/) for optimization.
 
 - **Jinns is highly modular** - It gives users maximum control for defining their problems, and extending the package. The maths and computations are visible and not hidden behind layers of code!
 
@@ -38,7 +38,7 @@ It can also be used for forward problems and hybrid-modeling.
 
 *Training time in seconds on an Nvidia T600  GPU. NI means problem cannot be implemented in the backend, CC means the code crashed.*
 
-![jinns-diagram.png](img/jinns-diagram.png)
+![A diagram of jinns workflow](img/jinns-diagram.png)
 
 
 # Installation
