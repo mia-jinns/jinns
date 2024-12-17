@@ -22,7 +22,7 @@ run_tests:
     - pip install --break-system-packages .
     - cd tests
     - sh runtests.sh
-  coverage: '/TOTAL\s+\d+\s+\d+\s+(\d+%)/'
+  coverage: '\TOTAL.*\s+(\d+%)$\'
 
 build_doc:
   stage: build
