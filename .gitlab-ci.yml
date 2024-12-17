@@ -20,7 +20,7 @@ run_tests:
     - pip install --break-system-packages pytest coverage pytest-cov
   script:
     - pip install --break-system-packages .
-    - pytest --cov --ignore=tests/solver_tests/test_NSPipeFlow_x64.py
+    - pytest --cov=jinns --ignore=tests/solver_tests/test_NSPipeFlow_x64.py
   coverage: '/TOTAL.*\s+(\d+%)$/'
 
 build_doc:
