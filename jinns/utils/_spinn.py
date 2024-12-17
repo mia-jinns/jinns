@@ -23,7 +23,8 @@ class _SPINN(eqx.Module):
     key : InitVar[Key]
         A jax random key for the layer initializations.
     d : int
-        The number of dimensions to treat separately.
+        The number of dimensions to treat separately, including time `t` if
+        used for non-stationnary equations.
     eqx_list : InitVar[tuple[tuple[Callable, int, int] | Callable, ...]]
         A tuple of tuples of successive equinox modules and activation functions to
         describe the PINN architecture. The inner tuples must have the eqx module or
@@ -80,13 +81,11 @@ class SPINN(eqx.Module):
     A SPINN object compatible with the rest of jinns.
     This is typically created with `create_SPINN`.
 
-    **NOTE**: SPINNs with `t` and `x` as inputs are best used with a
-    DataGenerator with `self.cartesian_product=False` for memory consideration
-
     Parameters
     ----------
     d : int
-        The number of dimensions to treat separately.
+        The number of dimensions to treat separately, including time `t` if
+        used for non-stationnary equations.
 
     """
 
@@ -202,10 +201,6 @@ def create_SPINN(
         then sum groups of `r` embedding dimensions to compute each output.
         Default is 1.
 
-    !!! note
-        SPINNs with `t` and `x` as inputs are best used with a
-        DataGenerator with `self.cartesian_product=False` for memory
-        consideration
 
 
     Returns
