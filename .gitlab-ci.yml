@@ -17,24 +17,12 @@ black:
 run_tests:
   stage: tests
   before_script:
-    - pip install --break-system-packages pytest
-  script:
-    - pip install --break-system-packages .
-    - cd tests
-    - sh runtests.sh # without GPU on gitlab CI/CD
-
-run_coverage:
-  stage: tests
-  before_script:
     - pip install --break-system-packages pytest coverage pytest-cov
   script:
     - pip install --break-system-packages .
     - cd tests
-    - pytest --cov=../jinns
-  coverage: /TOTAL.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/
-  allow_failure: true
-  #only:
-  #  - main
+    - sh runtests.sh
+  coverage: '/TOTAL\s+\d+\s+\d+\s+(\d+%)/'
 
 build_doc:
   stage: build
