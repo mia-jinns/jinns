@@ -21,7 +21,7 @@ run_tests:
     - pwd
   script:
     - pip install --break-system-packages .
-    - pytest --cov=/builds/mia_jinns/jinns --ignore=tests/solver_tests/test_NSPipeFlow_x64.py
+    - pytest /builds/mia_jinns/jinns/tests --cov=/builds/mia_jinns/jinns/jinns --ignore=/builds/mia_jinns/jinns/tests/solver_tests/test_NSPipeFlow_x64.py
   coverage: '/TOTAL.*\s+(\d+%)$/'
 
 build_doc:
