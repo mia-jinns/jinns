@@ -1,7 +1,7 @@
 jinns
 =====
 
-![status](https://gitlab.com/mia_jinns/jinns/badges/benchmark/pipeline.svg) ![coverage](https://gitlab.com/mia_jinns/jinns/badges/benchmark/coverage.svg?job=coverage)
+![status](https://gitlab.com/mia_jinns/jinns/badges/benchmark/pipeline.svg) ![coverage](https://gitlab.com/mia_jinns/jinns/badges/benchmark/coverage.svg)
 
 Physics Informed Neural Networks with JAX. **jinns** is developed to estimate solutions of ODE and PDE problems using neural networks, with a strong focus on
 
