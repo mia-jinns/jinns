@@ -18,9 +18,10 @@ run_tests:
   stage: tests
   before_script:
     - pip install --break-system-packages pytest coverage pytest-cov
+    - pwd
   script:
     - pip install --break-system-packages .
-    - pytest --cov=jinns --ignore=tests/solver_tests/test_NSPipeFlow_x64.py
+    - pytest --cov=/builds/mia_jinns/jinns --ignore=tests/solver_tests/test_NSPipeFlow_x64.py
   coverage: '/TOTAL.*\s+(\d+%)$/'
 
 build_doc:
