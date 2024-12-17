@@ -20,8 +20,8 @@ run_tests:
     - pip install --break-system-packages pytest coverage pytest-cov
     - pwd
   script:
-    - pip install --break-system-packages .
-    - pytest /builds/mia_jinns/jinns/tests --cov=/builds/mia_jinns/jinns/jinns --ignore=/builds/mia_jinns/jinns/tests/solver_tests/test_NSPipeFlow_x64.py
+    - pip install --break-system-packages -e .
+    - pytest --cov=jinns --ignore=tests/solver_tests/test_NSPipeFlow_x64.py
   coverage: '/TOTAL.*\s+(\d+%)$/'
 
 build_doc:
@@ -30,7 +30,7 @@ build_doc:
   before_script:
 
   script:
-    - pip install --break-system-packages .
+    - pip install --break-system-packages -e .
     - pip install --break-system-packages -r docs/doc_requirements.txt
     - mkdocs build
     - mkdocs build  # twice, see https://github.com/patrick-kidger/pytkdocs_tweaks
