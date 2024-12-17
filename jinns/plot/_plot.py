@@ -303,16 +303,16 @@ def plot1d_slice(
         fig, ax = plt.subplots(figsize=figsize)
 
     for t in time_slices:
-        t0_xdata = jnp.concatenate(
+        t_xdata = jnp.concatenate(
             [t * jnp.ones((xdata.shape[0], 1)), xdata[:, None]], axis=1
         )
         if not spinn:
             # fix t with partial : shape is (1,)
             v_u_tfixed = vmap(fun)
             # add an axis to xdata for the concatenate function in the neural net
-            values = v_u_tfixed(t0_xdata)
+            values = v_u_tfixed(t_xdata)
         elif spinn:
-            values = jnp.squeeze(fun(t0_xdata)[0])
+            values = jnp.squeeze(fun(t_xdata)[0])
         ax.plot(xdata, values, label=f"$t_i={t * Tmax:.2f}$")
     ax.set_xlabel("x")
     ax.set_ylabel(r"$u(t_i, x)$")
