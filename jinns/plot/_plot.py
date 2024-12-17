@@ -21,8 +21,7 @@ def plot2d(
     figsize: tuple = (7, 7),
     cmap: str = "inferno",
     spinn: bool = False,
-    vmin_vmax: tuple[float, float] | None = None,
-    ax_for_plot: plt.Axes | None = None,
+    vmin_vmax: tuple[float, float] = [None, None],
 ):
     r"""Generic function for plotting functions over rectangular 2-D domains
     $\Omega$. It handles both the
@@ -55,11 +54,7 @@ def plot2d(
     vmin_vmax :
         The colorbar minimum and maximum value. Defaults None.
     spinn :
-        True if a SPINN is to be plotted. False for PINNs and HYPERPINNs
-    ax_for_plot :
-        If None, jinns triggers the plotting. Otherwise this argument
-        corresponds to the axis which will host the plot. Default is None.
-        NOTE: that this argument will have an effect only if times is None.
+        True if the function is a `SPINN` object.
 
     Raises
     ------
@@ -73,16 +68,17 @@ def plot2d(
             "xy_data must be a list of length 2 containing"
             "jnp.array of shape (nx,) and (ny,)."
         )
+
     mesh = jnp.meshgrid(xy_data[0], xy_data[1])  # cartesian product
 
     if times is None:
         # Statio case : expect a function of one argument fun(x)
+
         if not spinn:
             v_fun = vmap(fun, 0, 0)
             ret = _plot_2D_statio(
                 v_fun,
                 mesh,
-                plot=not ax_for_plot,
                 colorbar=True,
                 cmap=cmap,
                 figsize=figsize,
@@ -93,33 +89,27 @@ def plot2d(
             ret = _plot_2D_statio(
                 values_grid,
                 mesh,
-                plot=not ax_for_plot,
                 colorbar=True,
                 cmap=cmap,
-                spinn=True,
                 figsize=figsize,
                 vmin_vmax=vmin_vmax,
             )
-        if not ax_for_plot:
-            plt.title(title)
         else:
-            if vmin_vmax is not None:
-                im = ax_for_plot.pcolormesh(
-                    mesh[0],
-                    mesh[1],
-                    ret[0],
-                    cmap=cmap,
-                    vmin=vmin_vmax[0],
-                    vmax=vmin_vmax[1],
-                )
-            else:
-                im = ax_for_plot.pcolormesh(mesh[0], mesh[1], ret[0], cmap=cmap)
-            ax_for_plot.set_title(title)
-            ax_for_plot.cax.colorbar(im, format="%0.2f")
+            fig, ax = plt.subplots(1, 1, figsize=figsize)
+
+            im = ax.pcolormesh(
+                mesh[0],
+                mesh[1],
+                ret[0],
+                cmap=cmap,
+                vmin=vmin_vmax[0],
+                vmax=vmin_vmax[1],
+            )
+
+            ax.set_title(title)
+            fig.cax.colorbar(im, format="%0.2f")
 
     else:
-        if ax_for_plot is not None:
-            warnings.warn("ax_for_plot is ignored. jinns will plot the figure")
         if not isinstance(times, list):
             try:
                 times = times.tolist()
@@ -155,7 +145,7 @@ def plot2d(
                 t_slice, _ = _plot_2D_statio(
                     v_fun_at_t,
                     mesh,
-                    plot=False,
+                    plot=False,  # only use to compute t_slice
                     colorbar=False,
                     cmap=None,
                     vmin_vmax=vmin_vmax,
@@ -174,35 +164,31 @@ def plot2d(
                 t_slice, _ = _plot_2D_statio(
                     values_grid,
                     mesh,
-                    plot=False,
+                    plot=False,  # only use to compute t_slice
                     colorbar=True,
-                    spinn=True,
                     vmin_vmax=vmin_vmax,
                 )
-            if vmin_vmax is not None:
-                im = ax.pcolormesh(
-                    mesh[0],
-                    mesh[1],
-                    t_slice,
-                    cmap=cmap,
-                    vmin=vmin_vmax[0],
-                    vmax=vmin_vmax[1],
-                )
-            else:
-                im = ax.pcolormesh(mesh[0], mesh[1], t_slice, cmap=cmap)
+
+            im = ax.pcolormesh(
+                mesh[0],
+                mesh[1],
+                t_slice,
+                cmap=cmap,
+                vmin=vmin_vmax[0],
+                vmax=vmin_vmax[1],
+            )
             ax.set_title(f"t = {times[idx] * Tmax:.2f}")
             ax.cax.colorbar(im, format="%0.2f")
 
 
 def _plot_2D_statio(
-    v_fun,
+    v_fun: Callable | Float[Array, "(nx*ny)^2 1"],
     mesh: Float[Array, "nx*ny nx*ny"],
     plot: Bool = True,
     colorbar: Bool = True,
     cmap: str = "inferno",
     figsize: tuple[int, int] = (7, 7),
-    spinn: Bool = False,
-    vmin_vmax: tuple[float, float] = None,
+    vmin_vmax: tuple[float, float] = [None, None],
 ):
     """Function that plot the function u(x) with 2-D input x using pcolormesh()
 
@@ -210,11 +196,11 @@ def _plot_2D_statio(
     Parameters
     ----------
     v_fun :
-        a vmapped function over jnp.array of shape (*, 2)
+        a vmapped function over jnp.array of shape (*, 2) OR a precomputed array of function values with shape compatible with `mesh`.
     mesh :
         a tuple of size 2, containing the x and y meshgrid.
     plot : bool, optional
-        either show or return the plot, by default True
+        either displays the plot, or silently returns the grid of values `v_fun(mesh)`.
     colorbar : bool, optional
         add a colorbar, by default True
     cmap :
@@ -223,7 +209,7 @@ def _plot_2D_statio(
         By default (7, 7)
     spinn :
         True if a SPINN is to be plotted. False for PINNs and HYPERPINNs
-    vmin_vmax: tuple, optional
+    vmin_vmax: list, optional
         The colorbar minimum and maximum value. Defaults None.
 
     Returns
@@ -241,17 +227,15 @@ def _plot_2D_statio(
 
     if plot:
         fig = plt.figure(figsize=figsize)
-        if vmin_vmax is not None:
-            im = plt.pcolormesh(
-                x_grid,
-                y_grid,
-                values_grid,
-                cmap=cmap,
-                vmin=vmin_vmax[0],
-                vmax=vmin_vmax[1],
-            )
-        else:
-            im = plt.pcolormesh(x_grid, y_grid, values_grid, cmap=cmap)
+        im = plt.pcolormesh(
+            x_grid,
+            y_grid,
+            values_grid,
+            cmap=cmap,
+            vmin=vmin_vmax[0],
+            vmax=vmin_vmax[1],
+        )
+
         if colorbar:
             fig.colorbar(im, format="%0.2f")
         # don't plt.show() because it is done in plot2d()
@@ -331,7 +315,7 @@ def plot1d_image(
     colorbar: Bool = True,
     cmap: str = "inferno",
     spinn: Bool = False,
-    vmin_vmax: tuple[float, float] = None,
+    vmin_vmax: tuple[float, float] = [None, None],
 ):
     """Function for plotting the 2-D image of a function :math:`f(t, x)` where
     `t` is time (1-D) and x is space (1-D).
@@ -381,17 +365,15 @@ def plot1d_image(
         ).T
 
     fig, ax = plt.subplots(1, 1, figsize=figsize)
-    if vmin_vmax is not None:
-        im = ax.pcolormesh(
-            mesh[0] * Tmax,
-            mesh[1],
-            values_grid,
-            cmap=cmap,
-            vmin=vmin_vmax[0],
-            vmax=vmin_vmax[1],
-        )
-    else:
-        im = ax.pcolormesh(mesh[0] * Tmax, mesh[1], values_grid, cmap=cmap)
+    im = ax.pcolormesh(
+        mesh[0] * Tmax,
+        mesh[1],
+        values_grid,
+        cmap=cmap,
+        vmin=vmin_vmax[0],
+        vmax=vmin_vmax[1],
+    )
+
     if colorbar:
         fig.colorbar(im, format="%0.2f")
     ax.set_title(title)
