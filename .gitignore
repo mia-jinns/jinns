@@ -30,3 +30,7 @@ doc/source/param_estim_pinn.rst
 
 # MkDocs build
 site/
+
+# Coverage
+.coverage
+tests/.coverage
