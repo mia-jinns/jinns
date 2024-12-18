@@ -28,8 +28,7 @@ def create_pinn_ode():
         (eqx.nn.Linear, 20, 1),
     )
     _, subkey = random.split(key)
-    u = jinns.utils.create_PINN(subkey, eqx_list, "ODE")
-    return u
+    return jinns.utils.create_PINN(subkey, eqx_list, "ODE")
 
 
 @pytest.fixture
@@ -43,7 +42,12 @@ def create_datagenerator():
     Tmax = 1
     _, subkey = random.split(key)
     train_data = jinns.data.DataGeneratorODE(
-        subkey, n, tmin, tmax, batch_size, method=method
+        key=subkey,
+        nt=n,
+        tmin=tmin,
+        tmax=tmax,
+        temporal_batch_size=batch_size,
+        method=method,
     )
     return train_data, tmin, Tmax
 
@@ -51,8 +55,7 @@ def create_datagenerator():
 @pytest.fixture
 def initialize_parameters(create_pinn_ode):
     a = 1.0
-    u = create_pinn_ode
-    init_nn_params = u.init_params()
+    _, init_nn_params = create_pinn_ode
     init_params = jinns.parameters.Params(
         nn_params=init_nn_params,
         eq_params={"a": a},
@@ -108,7 +111,7 @@ def test_derivative_keys_via_Params_ValueError(initialize_parameters):
 def test_derivative_keys_via_Params_values_updates1(
     create_pinn_ode, initialize_parameters, create_datagenerator
 ):
-    u = create_pinn_ode
+    u, _ = create_pinn_ode
     params = initialize_parameters
     train_data, tmin, Tmax = create_datagenerator
 
@@ -129,7 +132,7 @@ def test_derivative_keys_via_Params_values_updates1(
 def test_derivative_keys_via_Params_values_updates2(
     create_pinn_ode, initialize_parameters, create_datagenerator
 ):
-    u = create_pinn_ode
+    u, _ = create_pinn_ode
     params = initialize_parameters
     train_data, tmin, Tmax = create_datagenerator
 
@@ -150,7 +153,7 @@ def test_derivative_keys_via_Params_values_updates2(
 def test_derivative_keys_via_Params_values_updates3(
     create_pinn_ode, initialize_parameters, create_datagenerator
 ):
-    u = create_pinn_ode
+    u, _ = create_pinn_ode
     params = initialize_parameters
     train_data, tmin, Tmax = create_datagenerator
 
@@ -173,7 +176,7 @@ def test_derivative_keys_via_Params_values_updates3(
 def test_derivative_keys_via_Params_values_updates4(
     create_pinn_ode, initialize_parameters, create_datagenerator
 ):
-    u = create_pinn_ode
+    u, _ = create_pinn_ode
     params = initialize_parameters
     train_data, tmin, Tmax = create_datagenerator
 
@@ -196,7 +199,7 @@ def test_derivative_keys_via_Params_values_updates4(
 def test_derivative_keys_via_Params_values_updates5(
     create_pinn_ode, initialize_parameters, create_datagenerator
 ):
-    u = create_pinn_ode
+    u, _ = create_pinn_ode
     params = initialize_parameters
     train_data, tmin, Tmax = create_datagenerator
 
@@ -222,7 +225,7 @@ def test_derivative_keys_via_Params_values_updates5(
 def test_derivative_keys_via_Str_values_updates1(
     create_pinn_ode, initialize_parameters, create_datagenerator
 ):
-    u = create_pinn_ode
+    u, _ = create_pinn_ode
     params = initialize_parameters
     train_data, tmin, Tmax = create_datagenerator
 
@@ -241,7 +244,7 @@ def test_derivative_keys_via_Str_values_updates1(
 def test_derivative_keys_via_Str_values_updates2(
     create_pinn_ode, initialize_parameters, create_datagenerator
 ):
-    u = create_pinn_ode
+    u, _ = create_pinn_ode
     params = initialize_parameters
     train_data, tmin, Tmax = create_datagenerator
 
@@ -262,7 +265,7 @@ def test_derivative_keys_via_Str_values_updates2(
 def test_derivative_keys_via_Str_values_updates3(
     create_pinn_ode, initialize_parameters, create_datagenerator
 ):
-    u = create_pinn_ode
+    u, _ = create_pinn_ode
     params = initialize_parameters
     train_data, tmin, Tmax = create_datagenerator
 

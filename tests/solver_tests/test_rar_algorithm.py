@@ -13,11 +13,8 @@ from jax.scipy.stats import multivariate_normal
 
 key = random.PRNGKey(1)
 n = 117
-nb = 1  # not used here
-nt = 59  # is != n
-omega_batch_size = 2
-omega_border_batch_size = None  # not used here
-temporal_batch_size = 3
+nb = None
+ni = 5
 xmin = -3
 xmax = 3
 ymin = -3
@@ -35,8 +32,8 @@ int_length = (int_xmax - int_xmin) * (int_ymax - int_ymin)
 key, subkey1, subkey2 = random.split(key, 3)
 mc_samples = jnp.concatenate(
     [
-        random.uniform(subkey1, shape=(1000, 1), minval=int_xmin, maxval=int_xmax),
-        random.uniform(subkey2, shape=(1000, 1), minval=int_ymin, maxval=int_ymax),
+        random.uniform(subkey1, shape=(100, 1), minval=int_xmin, maxval=int_xmax),
+        random.uniform(subkey2, shape=(100, 1), minval=int_ymin, maxval=int_ymax),
     ],
     axis=-1,
 )
@@ -53,9 +50,7 @@ eqx_list = (
     (jnp.exp,),
 )
 key, subkey = random.split(key)
-u = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 2)
-
-init_nn_params = u.init_params()
+u, init_nn_params = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 2)
 
 # true solution N(0,1)
 sigma = 0.5 * jnp.ones((2))
@@ -85,16 +80,16 @@ loss_weights = jinns.loss.LossWeightsPDENonStatio(
     norm_loss=0.1 * Tmax,
 )
 
-with pytest.warns(UserWarning):
-    loss = jinns.loss.LossPDENonStatio(
-        u=u,
-        loss_weights=loss_weights,
-        dynamic_loss=OU_fpe_non_statio_2D_loss,
-        initial_condition_fun=u0,
-        norm_int_length=int_length,
-        norm_samples=mc_samples,
-        params=init_params,
-    )
+# with pytest.warns(UserWarning):
+loss = jinns.loss.LossPDENonStatio(
+    u=u,
+    loss_weights=loss_weights,
+    dynamic_loss=OU_fpe_non_statio_2D_loss,
+    initial_condition_fun=u0,
+    norm_int_length=int_length,
+    norm_samples=mc_samples,
+    params=init_params,
+)
 
 
 # Optimizer
@@ -111,13 +106,10 @@ def get_datagenerator_rar(start_iter, update_every):
     rar_parameters = {
         "start_iter": start_iter,  # the gradient step at which RAR algo starts (enables a burn in period)
         "update_every": update_every,  # nb of gradient steps between two RAR procedures
-        "sample_size_times": 10,  # the number of new candidates time points
-        "selected_sample_size_times": 4,  # the number of selected times collocation points from the sample, to join the dataset.
-        "sample_size_omega": 20,  # the number of new candidates space points
-        "selected_sample_size_omega": 7,
+        "sample_size": 20,  # the number of new candidates space points
+        "selected_sample_size": 7,
     }
     n_start = 10  # the initial number of spatial collocation points at beginning
-    nt_start = 5  # the initial number of temporal collocation points at beginning
 
     key = random.PRNGKey(12345)
 
@@ -126,10 +118,7 @@ def get_datagenerator_rar(start_iter, update_every):
         key=subkey,
         n=n,
         nb=nb,
-        nt=nt,
-        omega_batch_size=omega_batch_size,
-        omega_border_batch_size=omega_border_batch_size,
-        temporal_batch_size=temporal_batch_size,
+        ni=ni,
         dim=2,
         min_pts=(xmin, ymin),
         max_pts=(xmax, ymax),
@@ -138,7 +127,6 @@ def get_datagenerator_rar(start_iter, update_every):
         method=method,
         rar_parameters=rar_parameters,
         n_start=n_start,
-        nt_start=nt_start,
     )
 
     return train_data, rar_parameters
@@ -151,8 +139,7 @@ def all_tests(pytestconfig):
 
 def test_data_proba_shape_before_solve():
     train_data, rar_parameters = get_datagenerator_rar(1, 1)
-    assert (train_data.p_times != 0).sum() == train_data.nt_start
-    assert (train_data.p_omega != 0).sum() == train_data.n_start
+    assert (train_data.p != 0).sum() == train_data.n_start
 
 
 def control_shape_after_solve_with_rar(start_iter, update_every):
@@ -160,13 +147,9 @@ def control_shape_after_solve_with_rar(start_iter, update_every):
     _, _, _, train_data, _, _, _, _, _ = jinns.solve(
         init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
     )
-    assert (train_data.p_times != 0).sum() == train_data.nt_start + jnp.ceil(
+    assert (train_data.p != 0).sum() == train_data.n_start + jnp.round(
         (n_iter - rar_parameters["start_iter"]) / rar_parameters["update_every"]
-    ) * rar_parameters["selected_sample_size_times"]
-
-    assert (train_data.p_omega != 0).sum() == train_data.n_start + jnp.ceil(
-        (n_iter - rar_parameters["start_iter"]) / rar_parameters["update_every"]
-    ) * rar_parameters["selected_sample_size_omega"]
+    ) * rar_parameters["selected_sample_size"]
 
 
 def test_rar_with_various_combination_of_start_and_update_values(all_tests):
@@ -176,8 +159,7 @@ def test_rar_with_various_combination_of_start_and_update_values(all_tests):
         update_every_list = [1, 3]
         for start_iter in start_iter_list:
             for update_every in update_every_list:
-                with pytest.warns(UserWarning):
-                    control_shape_after_solve_with_rar(start_iter, update_every)
+                control_shape_after_solve_with_rar(start_iter, update_every)
     else:
         print(
             "\ntest_rar_with_various_combination_of_start_and_update_values "
@@ -190,7 +172,6 @@ def test_rar_error_with_SPINN(all_tests):
     if all_tests:
         train_data, rar_parameters = get_datagenerator_rar(0, 1)
         # ensure same batch size in time & space for SPINN
-        train_data.temporal_batch_size = train_data.omega_batch_size
         d = 3
         r = 256
         eqx_list = [
@@ -204,15 +185,25 @@ def test_rar_error_with_SPINN(all_tests):
         ]
         key = jax.random.PRNGKey(12345)
         key, subkey = random.split(key)
-        u = jinns.utils.create_SPINN(subkey, d, r, eqx_list, "nonstatio_PDE")
-        init_nn_params = u.init_params()
+        u, init_nn_params = jinns.utils.create_SPINN(
+            subkey, d, r, eqx_list, "nonstatio_PDE"
+        )
 
-        # update loss and params
-        init_params["nn_params"] = init_nn_params
-        loss.u = u
-        train_data.temporal_batch_size = train_data.omega_batch_size
+        init_params = jinns.parameters.Params(
+            nn_params=init_nn_params,
+            eq_params={"sigma": sigma, "alpha": alpha, "mu": mu},
+        )
+        loss = jinns.loss.LossPDENonStatio(
+            u=u,
+            loss_weights=loss_weights,
+            dynamic_loss=OU_fpe_non_statio_2D_loss,
+            initial_condition_fun=u0,
+            norm_int_length=int_length,
+            norm_samples=mc_samples,
+            params=init_params,
+        )
         # expect error
-        with pytest.raises(NotImplementedError) as e_info, pytest.warns(UserWarning):
+        with pytest.raises(NotImplementedError):
             tx = optax.adamw(learning_rate=1e-3)
             jinns.solve(
                 init_params=init_params,

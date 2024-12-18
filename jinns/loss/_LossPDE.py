@@ -22,9 +22,7 @@ from jinns.loss._loss_utils import (
     initial_condition_apply,
     constraints_system_loss_apply,
 )
-from jinns.data._DataGenerators import (
-    append_obs_batch,
-)
+from jinns.data._DataGenerators import append_obs_batch
 from jinns.parameters._params import (
     _get_vmap_in_axes_params,
     _update_eq_params_dict,
@@ -370,8 +368,8 @@ class LossPDEStatio(_LossPDEAbstract):
 
     def _get_dynamic_loss_batch(
         self, batch: PDEStatioBatch
-    ) -> tuple[Float[Array, "batch_size dimension"]]:
-        return (batch.inside_batch,)
+    ) -> Float[Array, "batch_size dimension"]:
+        return batch.domain_batch
 
     def _get_normalization_loss_batch(
         self, _
@@ -432,7 +430,7 @@ class LossPDEStatio(_LossPDEAbstract):
                 self.u,
                 self._get_normalization_loss_batch(batch),
                 _set_derivatives(params, self.derivative_keys.norm_loss),
-                self.vmap_in_axes + vmap_in_axes_params,
+                vmap_in_axes_params,
                 self.norm_int_length,
                 self.loss_weights.norm_loss,
             )
@@ -575,6 +573,9 @@ class LossPDENonStatio(LossPDEStatio):
         kw_only=True, default=None, static=True
     )
 
+    _max_norm_samples_omega: Int = eqx.field(init=False, static=True)
+    _max_norm_time_slices: Int = eqx.field(init=False, static=True)
+
     def __post_init__(self, params=None):
         """
         Note that neither __init__ or __post_init__ are called when udating a
@@ -585,7 +586,7 @@ class LossPDENonStatio(LossPDEStatio):
         )  # because __init__ or __post_init__ of Base
         # class is not automatically called
 
-        self.vmap_in_axes = (0, 0)  # for t and x
+        self.vmap_in_axes = (0,)  # for t_x
 
         if self.initial_condition_fun is None:
             warnings.warn(
@@ -593,28 +594,28 @@ class LossPDENonStatio(LossPDEStatio):
                 "case (e.g by. hardcoding it into the PINN output)."
             )
 
+        # witht the variables below we avoid memory overflow since a cartesian
+        # product is taken
+        self._max_norm_time_slices = 100
+        self._max_norm_samples_omega = 1000
+
     def _get_dynamic_loss_batch(
         self, batch: PDENonStatioBatch
-    ) -> tuple[Float[Array, "batch_size 1"], Float[Array, "batch_size dimension"]]:
-        times_batch = batch.times_x_inside_batch[:, 0:1]
-        omega_batch = batch.times_x_inside_batch[:, 1:]
-        return (times_batch, omega_batch)
+    ) -> Float[Array, "batch_size 1+dimension"]:
+        return batch.domain_batch
 
     def _get_normalization_loss_batch(
         self, batch: PDENonStatioBatch
-    ) -> tuple[Float[Array, "batch_size 1"], Float[Array, "nb_norm_samples dimension"]]:
+    ) -> Float[Array, "nb_norm_time_slices nb_norm_samples dimension"]:
         return (
-            batch.times_x_inside_batch[:, 0:1],
-            self.norm_samples,
+            batch.domain_batch[: self._max_norm_time_slices, 0:1],
+            self.norm_samples[: self._max_norm_samples_omega],
         )
 
     def _get_observations_loss_batch(
         self, batch: PDENonStatioBatch
     ) -> tuple[Float[Array, "batch_size 1"], Float[Array, "batch_size dimension"]]:
-        return (
-            batch.obs_batch_dict["pinn_in"][:, 0:1],
-            batch.obs_batch_dict["pinn_in"][:, 1:],
-        )
+        return (batch.obs_batch_dict["pinn_in"],)
 
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
@@ -637,7 +638,7 @@ class LossPDENonStatio(LossPDEStatio):
             of parameters (eg. for metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
         """
-        omega_batch = batch.times_x_inside_batch[:, 1:]
+        omega_batch = batch.initial_batch
 
         # Retrieve the optional eq_params_batch
         # and update eq_params with the latter
@@ -660,7 +661,6 @@ class LossPDENonStatio(LossPDEStatio):
                 _set_derivatives(params, self.derivative_keys.initial_condition),
                 (0,) + vmap_in_axes_params,
                 self.initial_condition_fun,
-                omega_batch.shape[0],
                 self.loss_weights.initial_condition,
             )
         else:
@@ -1016,19 +1016,7 @@ class SystemLossPDE(eqx.Module):
         if self.u_dict.keys() != params_dict.nn_params.keys():
             raise ValueError("u_dict and params_dict[nn_params] should have same keys ")
 
-        if isinstance(batch, PDEStatioBatch):
-            omega_batch, _ = batch.inside_batch, batch.border_batch
-            vmap_in_axes_x_or_x_t = (0,)
-
-            batches = (omega_batch,)
-        elif isinstance(batch, PDENonStatioBatch):
-            times_batch = batch.times_x_inside_batch[:, 0:1]
-            omega_batch = batch.times_x_inside_batch[:, 1:]
-
-            batches = (omega_batch, times_batch)
-            vmap_in_axes_x_or_x_t = (0, 0)
-        else:
-            raise ValueError("Wrong type of batch")
+        vmap_in_axes = (0,)
 
         # Retrieve the optional eq_params_batch
         # and update eq_params with the latter
@@ -1036,7 +1024,6 @@ class SystemLossPDE(eqx.Module):
         if batch.param_batch_dict is not None:
             eq_params_batch_dict = batch.param_batch_dict
 
-            # TODO
             # feed the eq_params with the batch
             for k in eq_params_batch_dict.keys():
                 params_dict.eq_params[k] = eq_params_batch_dict[k]
@@ -1050,9 +1037,13 @@ class SystemLossPDE(eqx.Module):
             return dynamic_loss_apply(
                 dyn_loss.evaluate,
                 self.u_dict,
-                batches,
+                (
+                    batch.domain_batch
+                    if isinstance(batch, PDEStatioBatch)
+                    else batch.domain_batch
+                ),
                 _set_derivatives(params_dict, self.derivative_keys_dyn_loss.dyn_loss),
-                vmap_in_axes_x_or_x_t + vmap_in_axes_params,
+                vmap_in_axes + vmap_in_axes_params,
                 loss_weight,
                 u_type=type(list(self.u_dict.values())[0]),
             )

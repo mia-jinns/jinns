@@ -10,7 +10,7 @@ import jinns
 
 @pytest.fixture
 def train_NSPipeFlow_init():
-    jax.config.update("jax_enable_x64", False)
+    jax.config.update("jax_enable_x64", True)
 
     L = 1
     R = 0.05
@@ -41,13 +41,13 @@ def train_NSPipeFlow_init():
     )
     key, subkey = random.split(key)
     u_output_transform = lambda pinn_in, pinn_out, params: pinn_out * (
-        R**2 - pinn_in[1] ** 2
+        R**2 - pinn_in(1) ** 2
     )
     # This output transform is equivalent to defining afterwards:
     # u = lambda x, nn_params, eq_params: u_raw(x, nn_params, eq_params) * (
     #    R**2 - x(1) ** 2
     # )  # multiplies the 2 components
-    u = jinns.utils.create_PINN(
+    u, u_init_nn_params = jinns.utils.create_PINN(
         subkey, eqx_list, "statio_PDE", 2, output_transform=u_output_transform
     )
 
@@ -67,12 +67,10 @@ def train_NSPipeFlow_init():
         + (xmin - pinn_in[0]) * (xmax - pinn_in[0]) * pinn_out
     )
     # This output transform is equivalent to defining afterwards:
-    p = jinns.utils.create_PINN(
+    p, p_init_nn_params = jinns.utils.create_PINN(
         subkey, eqx_list, "statio_PDE", 2, output_transform=p_output_transform
     )
 
-    u_init_nn_params = u.init_params()
-    p_init_nn_params = p.init_params()
     method = "uniform"
     key, subkey = random.split(key)
     train_data = jinns.data.CubicMeshPDEStatio(
@@ -105,7 +103,7 @@ def train_NSPipeFlow_init():
     loss_weights = jinns.loss.LossWeightsPDEDict(dyn_loss=1.0)
 
     # Catching an expected UserWarning since no border condition is given
-    # for this specific PDE (Fokker-Planck).
+    # for this specific PDE system.
     with pytest.warns(UserWarning):
         loss = jinns.loss.SystemLossPDE(
             u_dict={"u": u, "p": p},
@@ -126,7 +124,6 @@ def train_NSPipeFlow_10it(train_NSPipeFlow_init):
 
     # NOTE we need to waste one get_batch() here to stay synchronized with the
     # notebook
-
     _, batch = train_data.get_batch()
     _ = loss.evaluate(init_params, batch)[0]
 
@@ -144,10 +141,11 @@ def train_NSPipeFlow_10it(train_NSPipeFlow_init):
 def test_initial_loss_NSPipeFlow(train_NSPipeFlow_init):
     init_params, loss, train_data = train_NSPipeFlow_init
 
-    _, batch = train_data.get_batch()
-    assert jnp.allclose(loss.evaluate(init_params, batch)[0], 0.01134, atol=1e-1)
+    assert jnp.allclose(
+        loss.evaluate(init_params, train_data.get_batch()[1])[0], 0.01055, atol=1e-1
+    )
 
 
 def test_10it_NSPipeFlow(train_NSPipeFlow_10it):
     total_loss_val = train_NSPipeFlow_10it
-    assert jnp.allclose(total_loss_val, 0.01133, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 0.01061, atol=1e-1)

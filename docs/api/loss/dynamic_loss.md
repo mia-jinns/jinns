@@ -43,7 +43,7 @@
             - equation
         heading_level: 3
 
-::: jinns.loss.BurgerEquation
+::: jinns.loss.BurgersEquation
     options:
       heading_level: 3
 

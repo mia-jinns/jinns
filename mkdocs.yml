@@ -1,7 +1,7 @@
 # Adapted from : https://github.com/patrick-kidger/equinox/blob/main/mkdocs.yml
 
-site_name: Jinns
-site_description: The documentation for the Jinns software library.
+site_name: jinns
+site_description: The documentation for the jinns software library.
 site_author: Hugo Gangloff & Nicolas Jouvin
 site_url: https://mia_jinns.gitlab.io/jinns/
 
@@ -13,7 +13,7 @@ theme:
       - header.autohide  # header disappears as you scroll
   icon:
       repo: fontawesome/brands/gitlab  # GitHub logo in top right
-      logo: "material/oil-lamp"  # Jinns logo in top left
+      logo: "material/oil-lamp"  # jinns logo in top left
   favicon: "_static/favicon.png"
   palette:
           # Light mode / dark mode
@@ -40,6 +40,10 @@ markdown_extensions:
   - admonition
   - pymdownx.details
   - pymdownx.superfences
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
 
 
 extra_javascript:
@@ -87,11 +91,12 @@ repo_name: mia_jinns/jinns
 
 nav:
     - 'index.md'
+    - 'changelog.md'
     - Tutorials:
       - Implementing your own problem: 'Notebooks/Tutorials/implementing_your_own_PDE_problem.ipynb'
       - Saving / loading your model: 'Notebooks/Tutorials/load_save_model.ipynb'
       - Using validation module: 'Notebooks/Tutorials/introducing_validation_loss.ipynb'
-      - A simple inverse problem: 'Notebooks/Tutorials/1D_non_stationary_Burger_JointEstimation_Vanilla.ipynb'
+      - A simple inverse problem: 'Notebooks/Tutorials/1D_non_stationary_Burgers_JointEstimation_Vanilla.ipynb'
     - Examples:
       - Forward problems:
         - ODE:
@@ -99,11 +104,11 @@ nav:
           - Generalized Lotka-Volterra: 'Notebooks/ODE/1D_Generalized_Lotka_Volterra.ipynb'
         - PDE:
           - Navier-Stokes in pipe flow:
-            - Soft-constraint: 'Notebooks/PDE/2D_Navier_Stokes_PipeFlow.ipynb'
-            - Hard-constraint: 'Notebooks/PDE/2D_Navier_Stokes_PipeFlow_SoftConstraints.ipynb'
-          - 1D Burger equation: 'Notebooks/PDE/1D_non_stationary_Burger.ipynb'
+            - Hard-constraints: 'Notebooks/PDE/2D_Navier_Stokes_PipeFlow.ipynb'
+            - Soft-constraints: 'Notebooks/PDE/2D_Navier_Stokes_PipeFlow_SoftConstraints.ipynb'
+          - 1D Burgers equation: 'Notebooks/PDE/1D_non_stationary_Burgers.ipynb'
           - 1D Fisher-KPP: 'Notebooks/PDE/1D_non_stationary_Fisher_KPP_Bounded_Domain.ipynb'
-          - 1D Fisher-KPP with covariates: 'Notebooks/PDE/Reaction_Diffusion_2D_heterogenous_model.ipynb'
+          - 2D Fisher-KPP  with covariates: 'Notebooks/PDE/Reaction_Diffusion_2D_heterogenous_model.ipynb'
           - 2D learning Ornstein Uhlenbeck pdf (RAR sampling): 'Notebooks/PDE/2D_non_stationary_OU.ipynb'
       - Inverse problems:
         - ODE:
@@ -117,6 +122,9 @@ nav:
           - Navier-Stokes in pipe flow: 'Notebooks/PDE/2D_Navier_Stokes_PipeFlow_Metamodel_hyperpinn.ipynb'
           - Fisher-KPP: 'Notebooks/PDE/Reaction_Diffusion_2D_homogeneous_metamodel_hyperpinn_diffrax.ipynb'
     - Basic API:
+      - DataGenerators:
+        - Main DataGenerators: 'api/datagenerators/datagenerators_core.md'
+        - Other DataGenerators: 'api/datagenerators/datagenerators_other.md'
       - Loss:
         - Dynamic loss: 'api/loss/dynamic_loss.md'
         - Total loss: 'api/loss/loss_xde.md'
@@ -127,6 +135,7 @@ nav:
         - 'api/pinn/hyperpinn.md'
         - 'api/pinn/save_load.md'
       - Plot: 'api/plot.md'
+      - Solve: 'api/solver.md'
       - Advanced:
         - Differential operators: 'api/advanced/differential_operators.md'
         - Derivative keys: 'api/advanced/derivative_keys.md'

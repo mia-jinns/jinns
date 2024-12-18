@@ -36,7 +36,7 @@ def _assert_attr_equal(u):
 def create_SPINN_ode():
     key = random.PRNGKey(2)
     key, subkey = random.split(key)
-    u_statio = create_SPINN(subkey, 1, r, eqx_list, "ODE", m)
+    u_statio = create_SPINN(subkey, 1, r, eqx_list, "ODE", m)[0]
 
     return u_statio
 
@@ -45,7 +45,7 @@ def create_SPINN_ode():
 def create_SPINN_statio():
     key = random.PRNGKey(2)
     key, subkey = random.split(key)
-    u_statio = create_SPINN(subkey, d, r, eqx_list, "statio_PDE", m)
+    u_statio = create_SPINN(subkey, d, r, eqx_list, "statio_PDE", m)[0]
 
     return u_statio
 
@@ -54,7 +54,7 @@ def create_SPINN_statio():
 def create_SPINN_nonstatio():
     key = random.PRNGKey(2)
     key, subkey = random.split(key)
-    u_nonstatio = create_SPINN(subkey, d, r, eqx_list, "nonstatio_PDE", m)
+    u_nonstatio = create_SPINN(subkey, d, r, eqx_list, "nonstatio_PDE", m)[0]
 
     return u_nonstatio
 
@@ -66,7 +66,6 @@ def test_ode_pinn_struct(create_SPINN_ode):
     assert isinstance(u_ode, jinns.utils._spinn.SPINN)
     assert u_ode.d == 1
     _assert_attr_equal(u_ode)
-    _ = u_ode.init_params()
 
 
 def test_statio_pinn_struct(create_SPINN_statio):
@@ -77,7 +76,6 @@ def test_statio_pinn_struct(create_SPINN_statio):
 
     assert u_statio.d == d
     _assert_attr_equal(u_statio)
-    _ = u_statio.init_params()
 
 
 def test_nonstatio_pinn_struct(create_SPINN_nonstatio):
@@ -87,7 +85,6 @@ def test_nonstatio_pinn_struct(create_SPINN_nonstatio):
     assert isinstance(u_nonstatio, jinns.utils._spinn.SPINN)
     assert u_nonstatio.d == d  # in non-statio SPINN user should include `t` in `d`
     _assert_attr_equal(u_nonstatio)
-    _ = u_nonstatio.init_params()
 
 
 def test_raising_error_init_SPINN():

@@ -24,9 +24,8 @@ def save_reload(tmpdir):
         (eqx.nn.Linear, 128, r),
     )
     key, subkey = random.split(key)
-    u = jinns.utils.create_SPINN(subkey, d, r, eqx_list, "nonstatio_PDE")
+    u, params = jinns.utils.create_SPINN(subkey, d, r, eqx_list, "nonstatio_PDE")
 
-    params = u.init_params()
     params = jinns.parameters.Params(nn_params=params, eq_params={})
 
     # Save
@@ -54,8 +53,8 @@ def test_equality_save_reload(save_reload):
     test_points = jax.random.normal(subkey, shape=(10, 2))
 
     assert jnp.allclose(
-        u(test_points[:, 0:1], test_points[:, 1:], params),
-        u_reloaded(test_points[:, 0:1], test_points[:, 1:], params_reloaded),
+        u(test_points, params),
+        u_reloaded(test_points, params_reloaded),
         atol=1e-3,
     )
 
@@ -75,4 +74,4 @@ def test_jitting_reloaded_spinn(save_reload):
     test_points = jax.random.normal(subkey, shape=(10, 2))
 
     u_reloaded_jitted = jax.jit(u_reloaded.__call__)
-    u_reloaded_jitted(test_points[:, 0:1], test_points[:, 1:], params_reloaded)
+    u_reloaded_jitted(test_points, params_reloaded)

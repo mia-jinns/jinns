@@ -14,7 +14,7 @@ import jinns
 
 
 @pytest.fixture
-def train_Burger_init_sharding():
+def train_Burgers_init_sharding():
     jax.config.update("jax_enable_x64", False)
     # We have forced CPU computations and 2 fake CPU devices
     # in order to test the sharding
@@ -37,16 +37,14 @@ def train_Burger_init_sharding():
         (eqx.nn.Linear, 20, 1),
     )
     key, subkey = random.split(key)
-    u = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
-
-    init_nn_params = u.init_params()
+    u, init_nn_params = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
 
     n = 1000
-    nt = 1000
+    ni = 1000
     nb = 2
-    omega_batch_size = 32
-    temporal_batch_size = 20
-    omega_border_batch_size = 1
+    domain_batch_size = 32
+    initial_batch_size = 20
+    border_batch_size = 1
     dim = 1
     xmin = -1
     xmax = 1
@@ -59,49 +57,16 @@ def train_Burger_init_sharding():
         key=subkey,
         n=n,
         nb=nb,
-        nt=nt,
-        omega_batch_size=omega_batch_size,
-        omega_border_batch_size=omega_border_batch_size,
-        temporal_batch_size=temporal_batch_size,
+        ni=ni,
+        domain_batch_size=domain_batch_size,
+        border_batch_size=border_batch_size,
+        initial_batch_size=initial_batch_size,
         dim=dim,
         min_pts=(xmin,),
         max_pts=(xmax,),
         tmin=tmin,
         tmax=tmax,
         method=method,
-    )
-
-    # the next line is to be able to use the the same test values as the legacy
-    # DataGenerators. We need to align the object parameters because their
-    # respective init is not the same
-    train_data = eqx.tree_at(
-        lambda m: (
-            m.curr_omega_idx,
-            m.curr_omega_border_idx,
-            m.curr_time_idx,
-            m.omega,
-            m.times,
-        ),
-        train_data,
-        (
-            0,
-            0,
-            0,
-            random.choice(
-                jnp.array([514834130, 3419754500], dtype=jnp.uint32),
-                train_data.omega,
-                shape=(train_data.omega.shape[0],),
-                replace=False,
-                p=train_data.p_omega,
-            ),
-            random.choice(
-                jnp.array([2180730075, 137981201], dtype=jnp.uint32),
-                train_data.times,
-                shape=(train_data.times.shape[0],),
-                replace=False,
-                p=train_data.p_times,
-            ),
-        ),
     )
 
     nu = 1 / (100 * jnp.pi)
@@ -112,7 +77,7 @@ def train_Burger_init_sharding():
     def u0(x):
         return -jnp.sin(jnp.pi * x)
 
-    be_loss = jinns.loss.BurgerEquation(Tmax=Tmax)
+    be_loss = jinns.loss.BurgersEquation(Tmax=Tmax)
 
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
         dyn_loss=1, initial_condition=5, boundary_loss=1
@@ -122,7 +87,7 @@ def train_Burger_init_sharding():
         u=u,
         loss_weights=loss_weights,
         dynamic_loss=be_loss,
-        omega_boundary_fun=lambda t, dx: 0,
+        omega_boundary_fun=lambda t_dx: 0,
         omega_boundary_condition="dirichlet",
         initial_condition_fun=u0,
         params=init_params,
@@ -132,11 +97,11 @@ def train_Burger_init_sharding():
 
 
 @pytest.fixture
-def train_Burger_10it_sharding(train_Burger_init_sharding):
+def train_Burgers_10it_sharding(train_Burgers_init_sharding):
     """
     Fixture that requests a fixture
     """
-    init_params, loss, train_data, cpu2_sharding = train_Burger_init_sharding
+    init_params, loss, train_data, cpu2_sharding = train_Burgers_init_sharding
 
     # NOTE we need to waste one get_batch() here to stay synchronized with the
     # notebook
@@ -158,7 +123,7 @@ def train_Burger_10it_sharding(train_Burger_init_sharding):
 
 
 @pytest.fixture
-def train_Burger_init_no_sharding():
+def train_Burgers_init_no_sharding():
     jax.config.update("jax_enable_x64", False)
 
     key = random.PRNGKey(2)
@@ -172,16 +137,14 @@ def train_Burger_init_no_sharding():
         [eqx.nn.Linear, 20, 1],
     ]
     key, subkey = random.split(key)
-    u = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
-
-    init_nn_params = u.init_params()
+    u, init_nn_params = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
 
     n = 1000
-    nt = 1000
+    ni = 1000
     nb = 2
-    omega_batch_size = 32
-    temporal_batch_size = 20
-    omega_border_batch_size = 1
+    domain_batch_size = 32
+    initial_batch_size = 20
+    border_batch_size = 1
     dim = 1
     xmin = -1
     xmax = 1
@@ -194,49 +157,16 @@ def train_Burger_init_no_sharding():
         key=subkey,
         n=n,
         nb=nb,
-        nt=nt,
-        omega_batch_size=omega_batch_size,
-        omega_border_batch_size=omega_border_batch_size,
-        temporal_batch_size=temporal_batch_size,
+        ni=ni,
+        domain_batch_size=domain_batch_size,
+        border_batch_size=border_batch_size,
+        initial_batch_size=initial_batch_size,
         dim=dim,
         min_pts=(xmin,),
         max_pts=(xmax,),
         tmin=tmin,
         tmax=tmax,
         method=method,
-    )
-
-    # the next line is to be able to use the the same test values as the legacy
-    # DataGenerators. We need to align the object parameters because their
-    # respective init is not the same
-    train_data = eqx.tree_at(
-        lambda m: (
-            m.curr_omega_idx,
-            m.curr_omega_border_idx,
-            m.curr_time_idx,
-            m.omega,
-            m.times,
-        ),
-        train_data,
-        (
-            0,
-            0,
-            0,
-            random.choice(
-                jnp.array([514834130, 3419754500], dtype=jnp.uint32),
-                train_data.omega,
-                shape=(train_data.omega.shape[0],),
-                replace=False,
-                p=train_data.p_omega,
-            ),
-            random.choice(
-                jnp.array([2180730075, 137981201], dtype=jnp.uint32),
-                train_data.times,
-                shape=(train_data.times.shape[0],),
-                replace=False,
-                p=train_data.p_times,
-            ),
-        ),
     )
 
     nu = 1 / (100 * jnp.pi)
@@ -247,7 +177,7 @@ def train_Burger_init_no_sharding():
     def u0(x):
         return -jnp.sin(jnp.pi * x)
 
-    be_loss = jinns.loss.BurgerEquation(Tmax=Tmax)
+    be_loss = jinns.loss.BurgersEquation(Tmax=Tmax)
 
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
         dyn_loss=1, initial_condition=5, boundary_loss=1
@@ -257,7 +187,7 @@ def train_Burger_init_no_sharding():
         u=u,
         loss_weights=loss_weights,
         dynamic_loss=be_loss,
-        omega_boundary_fun=lambda t, dx: 0,
+        omega_boundary_fun=lambda t_dx: 0,
         omega_boundary_condition="dirichlet",
         initial_condition_fun=u0,
         params=init_params,
@@ -267,11 +197,11 @@ def train_Burger_init_no_sharding():
 
 
 @pytest.fixture
-def train_Burger_10it_no_sharding(train_Burger_init_no_sharding):
+def train_Burgers_10it_no_sharding(train_Burgers_init_no_sharding):
     """
     Fixture that requests a fixture
     """
-    init_params, loss, train_data = train_Burger_init_no_sharding
+    init_params, loss, train_data = train_Burgers_init_no_sharding
 
     # NOTE we need to waste one get_batch() here to stay synchronized with the
     # notebook
@@ -287,11 +217,11 @@ def train_Burger_10it_no_sharding(train_Burger_init_no_sharding):
     return total_loss_list[9]
 
 
-def test_10it_Burger_sharding(
-    train_Burger_10it_sharding, train_Burger_10it_no_sharding
+def test_10it_Burgers_sharding(
+    train_Burgers_10it_sharding, train_Burgers_10it_no_sharding
 ):
     # Test the equivalency sharding / no sharding across two CPUs devices
-    # The no sharding example is taken from the test_Burger_x32 file
-    total_loss_val_for = train_Burger_10it_sharding
-    total_loss_val_scan = train_Burger_10it_no_sharding
+    # The no sharding example is taken from the test_Burgers_x32 file
+    total_loss_val_for = train_Burgers_10it_sharding
+    total_loss_val_scan = train_Burgers_10it_no_sharding
     assert jnp.allclose(total_loss_val_for, total_loss_val_scan, atol=1e-1)

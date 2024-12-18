@@ -9,19 +9,15 @@ class ODEBatch(eqx.Module):
 
 
 class PDENonStatioBatch(eqx.Module):
-    times_x_inside_batch: (
-        Float[Array, "batch_size dimension"] | Float[Array, "(batch_size**2) dimension"]
-    )
-    times_x_border_batch: (
-        Float[Array, "border_batch_size dimension n_facets"]
-        | Float[Array, "(border_batch_size**2) dimension n_facets"]
-    )
+    domain_batch: Float[Array, "batch_size 1+dimension"]
+    border_batch: Float[Array, "batch_size dimension n_facets"]
+    initial_batch: Float[Array, "batch_size dimension"]
     param_batch_dict: dict = eqx.field(default=None)
     obs_batch_dict: dict = eqx.field(default=None)
 
 
 class PDEStatioBatch(eqx.Module):
-    inside_batch: Float[Array, "batch_size dimension"]
+    domain_batch: Float[Array, "batch_size dimension"]
     border_batch: Float[Array, "batch_size dimension n_facets"]
     param_batch_dict: dict = eqx.field(default=None)
     obs_batch_dict: dict = eqx.field(default=None)

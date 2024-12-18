@@ -16,7 +16,7 @@ import equinox as eqx
 import numpy as onp
 
 from jinns.utils._pinn import PINN, _MLP
-from jinns.parameters._params import Params
+from jinns.parameters._params import Params, ParamsDict
 
 
 def _get_param_nb(
@@ -114,6 +114,7 @@ class HYPERPINN(PINN):
         )
         self.pinn_params_sum, self.pinn_params_cumsum = _get_param_nb(self.params)
 
+    @property
     def init_params(self) -> Params:
         """
         Returns an initial set of parameters
@@ -138,14 +139,20 @@ class HYPERPINN(PINN):
             is_leaf=lambda x: isinstance(x, jnp.ndarray),
         )
 
-    def eval_nn(
+    def __call__(
         self,
         inputs: Float[Array, "input_dim"],
-        params: Params | PyTree,
+        params: Params | ParamsDict | PyTree,
     ) -> Float[Array, "output_dim"]:
         """
-        Evaluate the HYPERPINN on some inputs with some params.
+        Evaluate the HyperPINN on some inputs with some params.
         """
+        if len(inputs.shape) == 0:
+            # This can happen often when the user directly provides some
+            # collocation points (eg for plotting, whithout using
+            # DataGenerators)
+            inputs = inputs[None]
+
         try:
             hyper = eqx.combine(params.nn_params, self.static_hyper)
         except (KeyError, AttributeError, TypeError) as e:  # give more flexibility
@@ -190,7 +197,7 @@ def create_HYPERPINN(
     slice_solution: slice = None,
     shared_pinn_outputs: slice = None,
     eqx_list_hyper: tuple[tuple[Callable, int, int] | Callable, ...] = None,
-) -> HYPERPINN | list[HYPERPINN]:
+) -> tuple[HYPERPINN | list[HYPERPINN], PyTree | list[PyTree]]:
     r"""
     Utility function to create a standard PINN neural network with the equinox
     library.
@@ -274,6 +281,9 @@ def create_HYPERPINN(
         A HYPERPINN instance or, when `shared_pinn_ouput` is not None,
         a list of HYPERPINN instances with the same structure is returned,
         only differing by there final slicing of the network output.
+    hyperpinn.init_params
+        The initial set of parameters for the HyperPINN or a list of the latter
+        when `shared_pinn_ouput` is not None.
 
 
     Raises
@@ -389,7 +399,7 @@ def create_HYPERPINN(
                     output_slice=output_slice,
                 )
             hyperpinns.append(hyperpinn)
-        return hyperpinns
+        return hyperpinns, [h.init_params for h in hyperpinns]
     with warnings.catch_warnings():
         # Catch the equinox warning because we put the number of
         # parameters as static while being jnp.Array. This this time
@@ -407,4 +417,4 @@ def create_HYPERPINN(
             hypernet_input_size=hypernet_input_size,
             output_slice=None,
         )
-    return hyperpinn
+    return hyperpinn, hyperpinn.init_params

@@ -45,10 +45,10 @@ def test_omega_border_range_1D(create_1DCubicMeshPDEStatio):
 def test_get_batch_1D(create_1DCubicMeshPDEStatio):
     OneD_obj = create_1DCubicMeshPDEStatio
     _, batch = OneD_obj.get_batch()
-    inside_batch, border_batch = batch.inside_batch, batch.border_batch
+    domain_batch, border_batch = batch.domain_batch, batch.border_batch
     assert (
-        jnp.all(inside_batch[:] >= OneD_obj.min_pts[0])
-        and jnp.all(inside_batch[:] <= OneD_obj.max_pts[0])
+        jnp.all(domain_batch[:] >= OneD_obj.min_pts[0])
+        and jnp.all(domain_batch[:] <= OneD_obj.max_pts[0])
         and jnp.all(border_batch[:] >= OneD_obj.min_pts[0])
         and jnp.all(border_batch[:] <= OneD_obj.max_pts[0])
     )
@@ -109,12 +109,12 @@ def test_omega_border_ranges_2D(create_2DCubicMeshPDEStatio):
 def test_get_batch_2D(create_2DCubicMeshPDEStatio):
     TwoD_obj = create_2DCubicMeshPDEStatio
     _, batch = TwoD_obj.get_batch()
-    inside_batch, border_batch = batch.inside_batch, batch.border_batch
+    domain_batch, border_batch = batch.domain_batch, batch.border_batch
     assert all(
         [
             (
-                jnp.all(inside_batch[:, i] >= TwoD_obj.min_pts[i])
-                and jnp.all(inside_batch[:, i] <= TwoD_obj.max_pts[i])
+                jnp.all(domain_batch[:, i] >= TwoD_obj.min_pts[i])
+                and jnp.all(domain_batch[:, i] <= TwoD_obj.max_pts[i])
             )
             for i in range(TwoD_obj.dim)
         ]
@@ -127,3 +127,30 @@ def test_get_batch_2D(create_2DCubicMeshPDEStatio):
             for i in range(TwoD_obj.dim)
         ]
     )
+
+
+def test_n_samples_in_grid_sampling():
+    key = jax.random.PRNGKey(2)
+    key, subkey = jax.random.split(key)
+    n = 99
+    nb = 8
+    omega_batch_size = 32
+    omega_border_batch_size = 2
+    dim = 2
+    xmin = -3
+    xmax = 3
+    method = "grid"
+
+    with pytest.warns(UserWarning):
+        datagenerator = jinns.data.CubicMeshPDEStatio(
+            key=subkey,
+            n=n,
+            nb=nb,
+            omega_batch_size=omega_batch_size,
+            omega_border_batch_size=omega_border_batch_size,
+            dim=dim,
+            min_pts=(xmin, xmin),
+            max_pts=(xmax, xmax),
+            method=method,
+        )
+    assert datagenerator.n == int(jnp.round(jnp.sqrt(datagenerator.n)) ** 2)
