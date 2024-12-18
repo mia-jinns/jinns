@@ -17,11 +17,12 @@ black:
 run_tests:
   stage: tests
   before_script:
-    - pip install --break-system-packages pytest
+    - pip install --break-system-packages pytest coverage pytest-cov
+    - pwd
   script:
-    - pip install --break-system-packages .
-    - cd tests
-    - sh runtests.sh # without GPU on gitlab CI/CD
+    - pip install --break-system-packages -e .
+    - pytest --cov=jinns --ignore=tests/solver_tests/test_NSPipeFlow_x64.py
+  coverage: '/TOTAL.*\s+(\d+%)$/'
 
 build_doc:
   stage: build
@@ -29,7 +30,7 @@ build_doc:
   before_script:
 
   script:
-    - pip install --break-system-packages .
+    - pip install --break-system-packages -e .
     - pip install --break-system-packages -r docs/doc_requirements.txt
     - mkdocs build
     - mkdocs build  # twice, see https://github.com/patrick-kidger/pytkdocs_tweaks

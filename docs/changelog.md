@@ -1,5 +1,13 @@
 # Changelog
 
+* v1.2.0
+
+    - :rocket: **jinns** is now much faster, with computational times reduced by at least a factor 2 in the non-stationary settings. This is due to important changes in the mini-batches handling, internal changes for non-stationary PINNs and changes in DataGenerators:
+        1. The philosophy in to consider `t` and `x` as always concatenated, when possible, under the most common name `t_x`.
+        2. Mini-batches are now optional and not mandatory.
+        3. **Old code is almost guaranteed to break**: please refer to the documentation of the new DataGenerators, updating should be straightforward.
+    - Another minor breaking change is that functions of the type `create_PINN` now returns the PINN and their initial set of parameters.
+
 * v1.1.0
 
     - New `DerivativeKeys*` classes for more granularity. We can now differentiation through one particular equation parameter. This introduces breaking changes:
@@ -108,7 +116,7 @@
 
 * v0.6.0:
 
-    - Code refactoring: now we only pass `params` to the PINN. If we want to add some elements of `params["eq_params"]` as inputs of the PINN we can do so through a `input_transform(t, x, params)` function. See the Burger notebook for inverse problem.
+    - Code refactoring: now we only pass `params` to the PINN. If we want to add some elements of `params["eq_params"]` as inputs of the PINN we can do so through a `input_transform(t, x, params)` function. See the Burgers notebook for inverse problem.
 
     - Set gradients is now highly modular: for each term of the loss you can chose the parameter(s) w.r.t. which you want to compute the gradient
 
@@ -157,13 +165,13 @@
 
     - Add printing of loss value along the optimization process
 
-    - Updated notebook: inverse problem in Burger equation
+    - Updated notebook: inverse problem in Burgers equation
 
 * v0.3.2
 
     - Improve `solve()` for storing loss values and parameters
 
-    - Clean inverse problem notebooks. Add the updated notebook for joint estimation of viscosity and PINN in Burger equation
+    - Clean inverse problem notebooks. Add the updated notebook for joint estimation of viscosity and PINN in Burgers equation
 
     - Minor fixes
 

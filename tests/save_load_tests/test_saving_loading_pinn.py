@@ -22,9 +22,8 @@ def save_reload_with_params(tmpdir):
         (eqx.nn.Linear, 128, 1),
     )
     key, subkey = random.split(key)
-    u = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
+    u, params = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
 
-    params = u.init_params()
     params = jinns.parameters.Params(nn_params=params, eq_params={})
     # Save
     filename = str(tmpdir.join("test"))
@@ -48,12 +47,12 @@ def test_equality_save_reload_with_params(save_reload_with_params):
     key, params, u, params_reloaded, u_reloaded = save_reload_with_params
     key, subkey = jax.random.split(key, 2)
     test_points = jax.random.normal(subkey, shape=(10, 2))
-    v_u = jax.vmap(u, (0, 0, None))
-    v_u_reloaded = jax.vmap(u_reloaded, (0, 0, None))
+    v_u = jax.vmap(u, (0, None))
+    v_u_reloaded = jax.vmap(u_reloaded, (0, None))
 
     assert jnp.allclose(
-        v_u(test_points[:, 0:1], test_points[:, 1:], params),
-        v_u_reloaded(test_points[:, 0:1], test_points[:, 1:], params_reloaded),
+        v_u(test_points, params),
+        v_u_reloaded(test_points, params_reloaded),
         atol=1e-3,
     )
 
@@ -71,10 +70,10 @@ def test_jitting_reloaded_pinn_with_params(save_reload_with_params):
 
     key, subkey = jax.random.split(key, 2)
     test_points = jax.random.normal(subkey, shape=(10, 2))
-    v_u_reloaded = jax.vmap(u_reloaded, (0, 0, None))
+    v_u_reloaded = jax.vmap(u_reloaded, (0, None))
     v_u_reloaded_jitted = jax.jit(v_u_reloaded)
 
-    v_u_reloaded_jitted(test_points[:, 0:1], test_points[:, 1:3], params_reloaded)
+    v_u_reloaded_jitted(test_points, params_reloaded)
 
 
 @pytest.fixture
@@ -93,15 +92,12 @@ def save_reload_with_paramsdict(tmpdir):
         [jnp.exp],
     ]
     key, subkey = random.split(key)
-    u = jinns.utils.create_PINN(subkey, eqx_list, "ODE")
-
-    init_nn_params = u.init_params()
+    u, init_nn_params = jinns.utils.create_PINN(subkey, eqx_list, "ODE")
 
     init_nn_params_list = []
     for _ in range(3):
         key, subkey = random.split(key)
-        nn = jinns.utils.create_PINN(subkey, eqx_list, "ODE", 0)
-        init_nn_params = nn.init_params()
+        nn, init_nn_params = jinns.utils.create_PINN(subkey, eqx_list, "ODE", 0)
         init_nn_params_list.append(init_nn_params)
 
     growth_rates = jnp.array([0.1, 0.5, 0.8])

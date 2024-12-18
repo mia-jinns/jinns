@@ -29,6 +29,7 @@ def pytest_configure(config):
     gpu = config.getoption("--gpu")
     if not gpu:
         os.environ["JAX_PLATFORMS"] = "cpu"
+        os.environ["XLA_FLAGS"] = f"--xla_force_host_platform_device_count=2"
 
 
 # Note that the we cannot get the option using fixtures as suggested by the

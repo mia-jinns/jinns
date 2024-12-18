@@ -7,6 +7,7 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
+import time
 from typing import TYPE_CHECKING, NamedTuple, Dict, Union
 from functools import partial
 import optax
@@ -16,6 +17,7 @@ import jax.numpy as jnp
 from jaxtyping import Int, Bool, Float, Array
 from jinns.solver._rar import init_rar, trigger_rar
 from jinns.utils._utils import _check_nan_in_pytree
+from jinns.solver._utils import _check_batch_size
 from jinns.utils._containers import *
 from jinns.data._DataGenerators import (
     DataGeneratorODE,
@@ -27,31 +29,6 @@ from jinns.data._DataGenerators import (
 
 if TYPE_CHECKING:
     from jinns.utils._types import *
-
-
-def _check_batch_size(other_data, main_data, attr_name):
-    if (
-        (
-            isinstance(main_data, DataGeneratorODE)
-            and getattr(other_data, attr_name) != main_data.temporal_batch_size
-        )
-        or (
-            isinstance(main_data, CubicMeshPDEStatio)
-            and not isinstance(main_data, CubicMeshPDENonStatio)
-            and getattr(other_data, attr_name) != main_data.omega_batch_size
-        )
-        or (
-            isinstance(main_data, CubicMeshPDENonStatio)
-            and getattr(other_data, attr_name)
-            != main_data.omega_batch_size * main_data.temporal_batch_size
-        )
-    ):
-        raise ValueError(
-            "Optional other_data.param_batch_size must be"
-            " equal to main_data.temporal_batch_size or main_data.omega_batch_size or"
-            " the product of both dependeing on the type of the main"
-            " datagenerator"
-        )
 
 
 def solve(
@@ -167,10 +144,22 @@ def solve(
         The best parameters according to the validation criterion
     """
     if param_data is not None:
-        _check_batch_size(param_data, data, "param_batch_size")
+        if param_data.param_batch_size is not None:
+            # We need to check that batch sizes will all be compliant for
+            # correct vectorization
+            _check_batch_size(param_data, data, "param_batch_size")
+        else:
+            # If DataGeneratorParameter does not have a batch size we will
+            # vectorization using `n`, and the same checks must be done
+            _check_batch_size(param_data, data, "n")
 
-    if obs_data is not None:
-        _check_batch_size(obs_data, data, "obs_batch_size")
+    if obs_data is not None and param_data is not None:
+        # obs_data batch dimensions need only to be aligned with param_data
+        # batch dimensions if the latter exist
+        if obs_data.obs_batch_size is not None:
+            _check_batch_size(obs_data, param_data, "obs_batch_size")
+        else:
+            _check_batch_size(obs_data, param_data, "n")
 
     if opt_state is None:
         opt_state = optimizer.init(init_params)
@@ -224,6 +213,8 @@ def solve(
     )
     optimization_extra = OptimizationExtraContainer(
         curr_seq=curr_seq,
+        best_iter_id=0,
+        best_val_criterion=jnp.nan,
         best_val_params=init_params,
     )
     loss_container = LossContainer(
@@ -323,16 +314,26 @@ def solve(
                 validation_criterion
             )
 
-            # update best_val_params w.r.t val_loss if needed
-            best_val_params = jax.lax.cond(
+            # update best_val_params and best_val_criterion w.r.t val_loss if needed
+            (best_val_params, best_val_criterion, best_iter_id) = jax.lax.cond(
                 update_best_params,
-                lambda _: params,  # update with current value
-                lambda operands: operands[0].best_val_params,  # unchanged
+                lambda operands: (
+                    params,
+                    validation_criterion,
+                    i,
+                ),  # update with current value
+                lambda operands: (
+                    operands[0].best_val_params,
+                    operands[0].best_val_criterion,
+                    operands[0].best_iter_id,
+                ),  # unchanged
                 (optimization_extra,),
             )
         else:
             early_stopping = False
+            best_iter_id = 0
             best_val_params = params
+            best_val_criterion = jnp.nan
 
         # Trigger RAR
         loss, params, data = trigger_rar(
@@ -358,7 +359,13 @@ def solve(
             i,
             loss,
             OptimizationContainer(params, last_non_nan_params, opt_state),
-            OptimizationExtraContainer(curr_seq, best_val_params, early_stopping),
+            OptimizationExtraContainer(
+                curr_seq,
+                best_iter_id,
+                best_val_criterion,
+                best_val_params,
+                early_stopping,
+            ),
             DataGeneratorContainer(data, param_data, obs_data),
             validation,
             LossContainer(stored_loss_terms, train_loss_values),
@@ -373,7 +380,20 @@ def solve(
         while break_fun(carry):
             carry = _one_iteration(carry)
     else:
-        carry = jax.lax.while_loop(break_fun, _one_iteration, carry)
+
+        def train_fun(carry):
+            return jax.lax.while_loop(break_fun, _one_iteration, carry)
+
+        start = time.time()
+        compiled_train_fun = jax.jit(train_fun).lower(carry).compile()
+        end = time.time()
+        print("\nCompilation took\n", end - start, "\n")
+
+        start = time.time()
+        carry = compiled_train_fun(carry)
+        jax.block_until_ready(carry)
+        end = time.time()
+        print("\nTraining took\n", end - start, "\n")
 
     (
         i,
@@ -389,15 +409,30 @@ def solve(
 
     if verbose:
         jax.debug.print(
-            "Final iteration {i}: train loss value = {train_loss_val}",
+            "\nFinal iteration {i}: train loss value = {train_loss_val}",
             i=i,
             train_loss_val=loss_container.train_loss_values[i - 1],
         )
+
+    # get ready to return the parameters at last iteration...
+    # (by default arbitrary choice, this could be None)
+    validation_parameters = optimization.last_non_nan_params
     if validation is not None:
         jax.debug.print(
             "validation loss value = {validation_loss_val}",
             validation_loss_val=validation_crit_values[i - 1],
         )
+        if optimization_extra.early_stopping:
+            jax.debug.print(
+                "\n Returning a set of best parameters from early stopping"
+                " as last argument!\n"
+                " Best parameters from iteration {best_iter_id}"
+                " with validation loss criterion = {best_val_criterion}",
+                best_iter_id=optimization_extra.best_iter_id,
+                best_val_criterion=optimization_extra.best_val_criterion,
+            )
+            # ...but if early stopping, return the parameters at the best_iter_id
+            validation_parameters = optimization_extra.best_val_params
 
     return (
         optimization.last_non_nan_params,
@@ -408,7 +443,7 @@ def solve(
         optimization.opt_state,
         stored_objects.stored_params,
         validation_crit_values if validation is not None else None,
-        optimization_extra.best_val_params if validation is not None else None,
+        validation_parameters,
     )
 
 
@@ -531,7 +566,7 @@ def _get_break_fun(n_iter: Int, verbose: Bool) -> Callable[[main_carry], Bool]:
             string is not a valid JAX type that can be fed into the operands
             """
             if verbose:
-                jax.debug.print(f"Stopping main optimization loop, cause: {msg}")
+                jax.debug.print(f"\nStopping main optimization loop, cause: {msg}")
             return False
 
         def continue_while_loop(_):

@@ -16,10 +16,9 @@ from jaxtyping import Float, Array, PyTree
 from jinns.loss._boundary_conditions import (
     _compute_boundary_loss,
 )
-from jinns.utils._utils import _check_user_func_return, _get_grid
-from jinns.data._DataGenerators import (
-    append_obs_batch,
-)
+from jinns.utils._utils import _subtract_with_check, get_grid
+from jinns.data._DataGenerators import append_obs_batch, make_cartesian_product
+from jinns.parameters._params import _get_vmap_in_axes_params
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
 from jinns.utils._hyperpinn import HYPERPINN
@@ -33,7 +32,11 @@ if TYPE_CHECKING:
 def dynamic_loss_apply(
     dyn_loss: DynamicLoss,
     u: eqx.Module,
-    batches: ODEBatch | PDEStatioBatch | PDENonStatioBatch,
+    batch: (
+        Float[Array, "batch_size 1"]
+        | Float[Array, "batch_size dim"]
+        | Float[Array, "batch_size 1+dim"]
+    ),
     params: Params | ParamsDict,
     vmap_axes: tuple[int | None, ...],
     loss_weight: float | Float[Array, "dyn_loss_dimension"],
@@ -45,16 +48,16 @@ def dynamic_loss_apply(
     """
     if u_type == PINN or u_type == HYPERPINN or isinstance(u, (PINN, HYPERPINN)):
         v_dyn_loss = vmap(
-            lambda *args: dyn_loss(
-                *args[:-1], u, args[-1]  # we must place the params at the end
+            lambda batch, params: dyn_loss(
+                batch, u, params  # we must place the params at the end
             ),
             vmap_axes,
             0,
         )
-        residuals = v_dyn_loss(*batches, params)
+        residuals = v_dyn_loss(batch, params)
         mse_dyn_loss = jnp.mean(jnp.sum(loss_weight * residuals**2, axis=-1))
     elif u_type == SPINN or isinstance(u, SPINN):
-        residuals = dyn_loss(*batches, u, params)
+        residuals = dyn_loss(batch, u, params)
         mse_dyn_loss = jnp.mean(jnp.sum(loss_weight * residuals**2, axis=-1))
     else:
         raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
@@ -64,35 +67,49 @@ def dynamic_loss_apply(
 
 def normalization_loss_apply(
     u: eqx.Module,
-    batches: ODEBatch | PDEStatioBatch | PDENonStatioBatch,
+    batches: (
+        tuple[Float[Array, "nb_norm_samples dim"]]
+        | tuple[
+            Float[Array, "nb_norm_time_slices 1"], Float[Array, "nb_norm_samples dim"]
+        ]
+    ),
     params: Params | ParamsDict,
-    vmap_axes: tuple[int | None, ...],
+    vmap_axes_params: tuple[int | None, ...],
     int_length: int,
     loss_weight: float,
 ) -> float:
-    # TODO merge stationary and non stationary cases
+    """
+    Note the squeezing on each result. We expect unidimensional *PINN since
+    they represent probability distributions
+    """
     if isinstance(u, (PINN, HYPERPINN)):
         if len(batches) == 1:
             v_u = vmap(
-                lambda *args: u(*args)[u.slice_solution],
-                vmap_axes,
+                lambda b: u(b)[u.slice_solution],
+                (0,) + vmap_axes_params,
                 0,
             )
-            mse_norm_loss = loss_weight * jnp.mean(
-                jnp.abs(jnp.mean(v_u(*batches, params), axis=-1) * int_length - 1) ** 2
+            res = v_u(*batches, params)
+            mse_norm_loss = loss_weight * (
+                jnp.abs(jnp.mean(res.squeeze()) * int_length - 1) ** 2
             )
         else:
+            # NOTE this cartesian product is costly
+            batches = make_cartesian_product(
+                batches[0],
+                batches[1],
+            ).reshape(batches[0].shape[0], batches[1].shape[0], -1)
             v_u = vmap(
                 vmap(
-                    lambda t, x, params_: u(t, x, params_),
-                    in_axes=(None, 0) + vmap_axes[2:],
+                    lambda t_x, params_: u(t_x, params_),
+                    in_axes=(0,) + vmap_axes_params,
                 ),
-                in_axes=(0, None) + vmap_axes[2:],
+                in_axes=(0,) + vmap_axes_params,
             )
-            res = v_u(*batches, params)
-            # the outer mean() below is for the times stamps
+            res = v_u(batches, params)
+            # Over all the times t, we perform a integration
             mse_norm_loss = loss_weight * jnp.mean(
-                jnp.abs(jnp.mean(res, axis=(-2, -1)) * int_length - 1) ** 2
+                jnp.abs(jnp.mean(res.squeeze(), axis=-1) * int_length - 1) ** 2
             )
     elif isinstance(u, SPINN):
         if len(batches) == 1:
@@ -101,8 +118,7 @@ def normalization_loss_apply(
                 loss_weight
                 * jnp.abs(
                     jnp.mean(
-                        jnp.mean(res, axis=-1),
-                        axis=tuple(range(res.ndim - 1)),
+                        res.squeeze(),
                     )
                     * int_length
                     - 1
@@ -112,12 +128,17 @@ def normalization_loss_apply(
         else:
             assert batches[1].shape[0] % batches[0].shape[0] == 0
             rep_t = batches[1].shape[0] // batches[0].shape[0]
-            res = u(jnp.repeat(batches[0], rep_t, axis=0), batches[1], params)
+            res = u(
+                jnp.concatenate(
+                    [jnp.repeat(batches[0], rep_t, axis=0), batches[1]], axis=-1
+                ),
+                params,
+            )
             # the outer mean() below is for the times stamps
             mse_norm_loss = loss_weight * jnp.mean(
                 jnp.abs(
                     jnp.mean(
-                        jnp.mean(res, axis=-1),
+                        res.squeeze(),
                         axis=(d + 1 for d in range(res.ndim - 2)),
                     )
                     * int_length
@@ -140,23 +161,16 @@ def boundary_condition_apply(
     omega_boundary_dim: int,
     loss_weight: float | Float[Array, "boundary_cond_dim"],
 ) -> float:
+
+    vmap_in_axes = (0,) + _get_vmap_in_axes_params(batch.param_batch_dict, params)
+
     if isinstance(omega_boundary_fun, dict):
         # We must create the facet tree dictionary as we do not have the
         # enumerate from the for loop to pass the id integer
-        if (
-            isinstance(batch, PDEStatioBatch) and batch.border_batch.shape[-1] == 2
-        ) or (
-            isinstance(batch, PDENonStatioBatch)
-            and batch.times_x_border_batch.shape[-1] == 2
-        ):
+        if batch.border_batch.shape[-1] == 2:
             # 1D
             facet_tree = {"xmin": 0, "xmax": 1}
-        elif (
-            isinstance(batch, PDEStatioBatch) and batch.border_batch.shape[-1] == 4
-        ) or (
-            isinstance(batch, PDENonStatioBatch)
-            and batch.times_x_border_batch.shape[-1] == 4
-        ):
+        elif batch.border_batch.shape[-1] == 4:
             # 2D
             facet_tree = {"xmin": 0, "xmax": 1, "ymin": 2, "ymax": 3}
         else:
@@ -166,7 +180,10 @@ def boundary_condition_apply(
                 None
                 if c is None
                 else jnp.mean(
-                    loss_weight * _compute_boundary_loss(c, f, batch, u, params, fa, d)
+                    loss_weight
+                    * _compute_boundary_loss(
+                        c, f, batch, u, params, fa, d, vmap_in_axes
+                    )
                 )
             ),
             omega_boundary_condition,
@@ -180,10 +197,7 @@ def boundary_condition_apply(
         # Note that to keep the behaviour given in the comment above we neede
         # to specify is_leaf according to the note in the release of 0.4.29
     else:
-        if isinstance(batch, PDEStatioBatch):
-            facet_tuple = tuple(f for f in range(batch.border_batch.shape[-1]))
-        else:
-            facet_tuple = tuple(f for f in range(batch.times_x_border_batch.shape[-1]))
+        facet_tuple = tuple(f for f in range(batch.border_batch.shape[-1]))
         b_losses_by_facet = jax.tree_util.tree_map(
             lambda fa: jnp.mean(
                 loss_weight
@@ -195,6 +209,7 @@ def boundary_condition_apply(
                     params,
                     fa,
                     omega_boundary_dim,
+                    vmap_in_axes,
                 )
             ),
             facet_tuple,
@@ -225,8 +240,10 @@ def observations_loss_apply(
         mse_observation_loss = jnp.mean(
             jnp.sum(
                 loss_weight
-                * (val - _check_user_func_return(observed_values, val.shape)) ** 2,
-                # the reshape above avoids a potential missing (1,)
+                * _subtract_with_check(
+                    observed_values, val, cause="user defined observed_values"
+                )
+                ** 2,
                 axis=-1,
             )
         )
@@ -243,33 +260,38 @@ def initial_condition_apply(
     params: Params | ParamsDict,
     vmap_axes: tuple[int | None, ...],
     initial_condition_fun: Callable,
-    n: int,
     loss_weight: float | Float[Array, "initial_condition_dimension"],
 ) -> float:
+    n = omega_batch.shape[0]
+    t0_omega_batch = jnp.concatenate([jnp.zeros((n, 1)), omega_batch], axis=1)
     if isinstance(u, (PINN, HYPERPINN)):
         v_u_t0 = vmap(
-            lambda x, params: initial_condition_fun(x) - u(jnp.zeros((1,)), x, params),
+            lambda t0_x, params: _subtract_with_check(
+                initial_condition_fun(t0_x[1:]),
+                u(t0_x, params),
+                cause="Output of initial_condition_fun",
+            ),
             vmap_axes,
             0,
         )
-        res = v_u_t0(omega_batch, params)  # NOTE take the tiled
+        res = v_u_t0(t0_omega_batch, params)  # NOTE take the tiled
         # omega_batch (ie omega_batch_) to have the same batch
         # dimension as params to be able to vmap.
         # Recall that by convention:
         # param_batch_dict = times_batch_size * omega_batch_size
         mse_initial_condition = jnp.mean(jnp.sum(loss_weight * res**2, axis=-1))
     elif isinstance(u, SPINN):
-        values = lambda x: u(
-            jnp.repeat(jnp.zeros((1, 1)), n, axis=0),
-            x,
+        values = lambda t_x: u(
+            t_x,
             params,
         )[0]
-        omega_batch_grid = _get_grid(omega_batch)
-        v_ini = values(omega_batch)
-        ini = _check_user_func_return(
-            initial_condition_fun(omega_batch_grid), v_ini.shape
+        omega_batch_grid = get_grid(omega_batch)
+        v_ini = values(t0_omega_batch)
+        res = _subtract_with_check(
+            initial_condition_fun(omega_batch_grid),
+            v_ini,
+            cause="Output of initial_condition_fun",
         )
-        res = ini - v_ini
         mse_initial_condition = jnp.mean(jnp.sum(loss_weight * res**2, axis=-1))
     else:
         raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")

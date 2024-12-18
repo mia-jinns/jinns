@@ -57,7 +57,7 @@ def save_reload(tmpdir):
 
     dim_x = 2
 
-    u = jinns.utils.create_HYPERPINN(
+    u, params = jinns.utils.create_HYPERPINN(
         subkey,
         eqx_list,
         "nonstatio_PDE",
@@ -67,7 +67,6 @@ def save_reload(tmpdir):
         eqx_list_hyper=eqx_list_hyper,
     )
 
-    params = u.init_params()
     params = jinns.parameters.Params(
         nn_params=params,
         eq_params={"D": jnp.empty((10, 1)), "r": jnp.empty((10, 1))},
@@ -80,7 +79,7 @@ def save_reload(tmpdir):
         "eq_type": "nonstatio_PDE",
         "hyperparams": hyperparams,
         "hypernet_input_size": hypernet_input_size,
-        "dim_x": 1,
+        "dim_x": dim_x,
         "eqx_list_hyper": eqx_list_hyper,
     }
     save_pinn(filename, u, params, kwargs_creation)
@@ -96,23 +95,21 @@ def test_equality_save_reload(save_reload):
     """
     key, params, u, params_reloaded, u_reloaded = save_reload
     key, subkey = jax.random.split(key, 2)
-    test_points = jax.random.normal(subkey, shape=(10, 5))
+    test_points = jax.random.normal(subkey, shape=(10, 3))
     vmap_axes_params = _get_vmap_in_axes_params({"D": None, "r": None}, params)
     v_u = jax.vmap(
         u,
-        (0, 0)
-        + vmap_axes_params,  # (0, 0, jinns.parameters.Params(nn_params=None, eq_params={"D": 0, "r": 0}))
+        (0,) + vmap_axes_params,
     )
     vmap_axes_params = _get_vmap_in_axes_params({"D": None, "r": None}, params_reloaded)
     v_u_reloaded = jax.vmap(
         u_reloaded,
-        (0, 0)
-        + vmap_axes_params,  # (0, 0, jinns.parameters.Params(nn_params=None, eq_params={"D": 0, "r": 0})),
+        (0,) + vmap_axes_params,
     )
 
     assert jnp.allclose(
-        v_u(test_points[:, 0:1], test_points[:, 1:3], params),
-        v_u_reloaded(test_points[:, 0:1], test_points[:, 1:3], params_reloaded),
+        v_u(test_points, params),
+        v_u_reloaded(test_points, params_reloaded),
         atol=1e-3,
     )
 
@@ -130,10 +127,10 @@ def test_jitting_reloaded_hyperpinn(save_reload):
 
     v_u_reloaded = jax.vmap(
         u_reloaded,
-        (0, 0, jinns.parameters.Params(nn_params=None, eq_params={"D": 0, "r": 0})),
+        (0, jinns.parameters.Params(nn_params=None, eq_params={"D": 0, "r": 0})),
     )
     v_u_reloaded_jitted = jax.jit(v_u_reloaded)
 
     key, subkey = jax.random.split(key, 2)
-    test_points = jax.random.normal(subkey, shape=(10, 5))
-    v_u_reloaded_jitted(test_points[:, 0:1], test_points[:, 1:3], params_reloaded)
+    test_points = jax.random.normal(subkey, shape=(10, 3))
+    v_u_reloaded_jitted(test_points, params_reloaded)

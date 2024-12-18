@@ -24,7 +24,7 @@ def create_pinn_ode():
         (eqx.nn.Linear, 128, 1),
     )
     key, subkey = random.split(key)
-    u_statio = create_PINN(subkey, eqx_list, "ODE")
+    u_statio = create_PINN(subkey, eqx_list, "ODE")[0]
 
     return u_statio
 
@@ -38,7 +38,7 @@ def create_pinn_statio():
         (eqx.nn.Linear, 128, 1),
     )
     key, subkey = random.split(key)
-    u_statio = create_PINN(subkey, eqx_list, "statio_PDE", d)
+    u_statio = create_PINN(subkey, eqx_list, "statio_PDE", d)[0]
 
     return u_statio
 
@@ -52,7 +52,7 @@ def create_pinn_nonstatio():
         (eqx.nn.Linear, 128, 1),
     )
     key, subkey = random.split(key)
-    u_nonstatio = create_PINN(subkey, eqx_list, "nonstatio_PDE", d)
+    u_nonstatio = create_PINN(subkey, eqx_list, "nonstatio_PDE", d)[0]
 
     return u_nonstatio
 
@@ -72,14 +72,14 @@ def create_pinn_nonstatio_shared_output():
         jnp.s_[2],
     )
 
-    u1, u2 = jinns.utils.create_PINN(
+    (u1, u2), (param1, param2) = jinns.utils.create_PINN(
         subkey,
         eqx_list,
         "nonstatio_PDE",
         d,
         shared_pinn_outputs=shared_pinn_output,
     )
-    return u1, u2, shared_pinn_output
+    return u1, u2, shared_pinn_output, param1, param2
 
 
 def test_ode_pinn_struct(create_pinn_ode):
@@ -89,7 +89,6 @@ def test_ode_pinn_struct(create_pinn_ode):
     assert isinstance(u_ode, jinns.utils._pinn.PINN)
     assert u_ode.output_slice is None
     assert isinstance(u_ode.slice_solution, slice)
-    _ = u_ode.init_params()
 
 
 def test_statio_pinn_struct(create_pinn_statio):
@@ -100,7 +99,6 @@ def test_statio_pinn_struct(create_pinn_statio):
 
     assert u_statio.output_slice is None
     assert isinstance(u_statio.slice_solution, slice)
-    _ = u_statio.init_params()
 
 
 def test_nonstatio_pinn_struct(create_pinn_nonstatio):
@@ -110,12 +108,11 @@ def test_nonstatio_pinn_struct(create_pinn_nonstatio):
     assert isinstance(u_nonstatio, jinns.utils._pinn.PINN)
     assert u_nonstatio.output_slice is None
     assert isinstance(u_nonstatio.slice_solution, slice)
-    _ = u_nonstatio.init_params()
 
 
 def test_nonstatio_pinn_shared_output(create_pinn_nonstatio_shared_output):
 
-    u1, u2, shared_pinn_ouput = create_pinn_nonstatio_shared_output
+    u1, u2, shared_pinn_ouput, param1, param2 = create_pinn_nonstatio_shared_output
     assert u1.eq_type == "nonstatio_PDE"
     assert u1.output_slice == shared_pinn_ouput[0]
     assert isinstance(u1.slice_solution, slice)
@@ -123,9 +120,6 @@ def test_nonstatio_pinn_shared_output(create_pinn_nonstatio_shared_output):
     assert u2.eq_type == "nonstatio_PDE"
     assert u2.output_slice == shared_pinn_ouput[1]
     assert isinstance(u2.slice_solution, slice)
-
-    param1 = u1.init_params()
-    param2 = u2.init_params()
 
     # the init parameters for the 2 nns should be the same PyTree
     assert eqx.tree_equal(param1, param2)

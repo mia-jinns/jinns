@@ -16,14 +16,15 @@ import equinox as eqx
 from jinns.utils._pinn import PINN
 from jinns.utils._spinn import SPINN
 
-from jinns.utils._utils import _get_grid
+from jinns.utils._utils import get_grid
 from jinns.loss._DynamicLossAbstract import ODE, PDEStatio, PDENonStatio
 from jinns.loss._operators import (
-    _laplacian_rev,
-    _laplacian_fwd,
-    _div_rev,
-    _div_fwd,
-    _vectorial_laplacian,
+    laplacian_rev,
+    laplacian_fwd,
+    divergence_rev,
+    divergence_fwd,
+    vectorial_laplacian_rev,
+    vectorial_laplacian_fwd,
     _u_dot_nabla_times_u_rev,
     _u_dot_nabla_times_u_fwd,
 )
@@ -42,24 +43,29 @@ class FisherKPP(PDENonStatio):
     $$
     \frac{\partial}{\partial t} u(t,x)=D\Delta u(t,x) + u(t,x)(r(x) - \gamma(x)u(t,x))
     $$
+
+    Parameters
+    ----------
+    dim_x : int, default=1
+        The dimension of x, the space domain. Default is 1.
     """
+
+    dim_x: int = eqx.field(default=1, static=True)
 
     def equation(
         self,
-        t: Float[Array, "1"],
-        x: Float[Array, "dim"],
+        t_x: Float[Array, "1+dim"],
         u: eqx.Module,
         params: Params,
     ) -> Float[Array, "1"]:
         r"""
-        Evaluate the dynamic loss at $(t,x)$.
+        Evaluate the dynamic loss at $(t, x)$.
 
         Parameters
         ---------
-        t
-            A time point.
-        x
-            A point in $\Omega$.
+        t_x
+            A jnp array containing the concatenation of a time point
+            and a point in $\Omega$
         u
             The PINN
         params
@@ -70,28 +76,31 @@ class FisherKPP(PDENonStatio):
         """
         if isinstance(u, PINN):
             # Note that the last dim of u is nec. 1
-            u_ = lambda t, x: u(t, x, params)[0]
+            u_ = lambda t_x: u(t_x, params)[0]
 
-            du_dt = grad(u_, 0)(t, x)
+            du_dt = grad(u_)(t_x)[0]
 
-            lap = _laplacian_rev(t, x, u, params)[..., None]
+            lap = laplacian_rev(t_x, u, params, eq_type=u.eq_type)[..., None]
 
             return du_dt + self.Tmax * (
                 -params.eq_params["D"] * lap
-                - u(t, x, params)
-                * (params.eq_params["r"] - params.eq_params["g"] * u(t, x, params))
+                - u(t_x, params)
+                * (params.eq_params["r"] - params.eq_params["g"] * u(t_x, params))
             )
         if isinstance(u, SPINN):
+            s = jnp.zeros((1, self.dim_x + 1))
+            s = s.at[0].set(1.0)
+            v0 = jnp.repeat(s, t_x.shape[0], axis=0)
             u_tx, du_dt = jax.jvp(
-                lambda t: u(t, x, params),
-                (t,),
-                (jnp.ones_like(t),),
+                lambda t_x: u(t_x, params),
+                (t_x,),
+                (v0,),
             )
-            lap = _laplacian_fwd(t, x, u, params)[..., None]
+            lap = laplacian_fwd(t_x, u, params, eq_type=u.eq_type)
+
             return du_dt + self.Tmax * (
                 -params.eq_params["D"] * lap
-                - u_tx
-                * (params.eq_params["r"][..., None] - params.eq_params["g"] * u_tx)
+                - u_tx * (params.eq_params["r"] - params.eq_params["g"] * u_tx)
             )
         raise ValueError("u is not among the recognized types (PINN or SPINN)")
 
@@ -181,9 +190,9 @@ class GeneralizedLotkaVolterra(ODE):
         )
 
 
-class BurgerEquation(PDENonStatio):
+class BurgersEquation(PDENonStatio):
     r"""
-    Return the Burger dynamic loss term (in 1 space dimension):
+    Return the Burgers dynamic loss term (in 1 space dimension):
 
     $$
         \frac{\partial}{\partial t} u(t,x) + u(t,x)\frac{\partial}{\partial x}
@@ -207,8 +216,7 @@ class BurgerEquation(PDENonStatio):
 
     def equation(
         self,
-        t: Float[Array, "1"],
-        x: Float[Array, "dim"],
+        t_x: Float[Array, "1+dim"],
         u: eqx.Module,
         params: Params,
     ) -> Float[Array, "1"]:
@@ -216,44 +224,51 @@ class BurgerEquation(PDENonStatio):
         Evaluate the dynamic loss at :math:`(t,x)`.
 
         Parameters
-        ---------
-        t
-            A time point
-        x
-            A point in $\Omega$
+        ----------
+        t_x
+            A jnp array containing the concatenation of a time point
+            and a point in $\Omega$
         u
             The PINN
         params
             The dictionary of parameters of the model.
         """
         if isinstance(u, PINN):
-            # Note that the last dim of u is nec. 1
-            u_ = lambda t, x: jnp.squeeze(u(t, x, params)[u.slice_solution])
-            du_dt = grad(u_, 0)
-            du_dx = grad(u_, 1)
-            d2u_dx2 = grad(
-                lambda t, x: du_dx(t, x)[0],
-                1,
-            )
+            u_ = lambda t_x: jnp.squeeze(u(t_x, params)[u.slice_solution])
+            du_dtx = grad(u_)
+            d2u_dx_dtx = grad(lambda t_x: du_dtx(t_x)[1])
+            du_dtx_values = du_dtx(t_x)
 
-            return du_dt(t, x) + self.Tmax * (
-                u(t, x, params) * du_dx(t, x) - params.eq_params["nu"] * d2u_dx2(t, x)
+            return du_dtx_values[0:1] + self.Tmax * (
+                u_(t_x) * du_dtx_values[1:2]
+                - params.eq_params["nu"] * d2u_dx_dtx(t_x)[1:2]
             )
 
         if isinstance(u, SPINN):
             # d=2 JVP calls are expected since we have time and x
             # then with a batch of size B, we then have Bd JVP calls
+            v0 = jnp.repeat(jnp.array([[1.0, 0.0]]), t_x.shape[0], axis=0)
+            v1 = jnp.repeat(jnp.array([[0.0, 1.0]]), t_x.shape[0], axis=0)
             u_tx, du_dt = jax.jvp(
-                lambda t: u(t, x, params),
-                (t,),
-                (jnp.ones_like(t),),
+                lambda t_x: u(t_x, params),
+                (t_x,),
+                (v0,),
             )
-            du_dx_fun = lambda x: jax.jvp(
-                lambda x: u(t, x, params),
-                (x,),
-                (jnp.ones_like(x),),
+            _, du_dx = jax.jvp(
+                lambda t_x: u(t_x, params),
+                (t_x,),
+                (v1,),
+            )
+            # both calls above could be condensed into the one jacfwd below
+            # u_ = lambda t_x: u(t_x, params)
+            # J = jax.jacfwd(u_)(t_x)
+
+            du_dx_fun = lambda t_x: jax.jvp(
+                lambda t_x: u(t_x, params),
+                (t_x,),
+                (v1,),
             )[1]
-            du_dx, d2u_dx2 = jax.jvp(du_dx_fun, (x,), (jnp.ones_like(x),))
+            _, d2u_dx2 = jax.jvp(du_dx_fun, (t_x,), (v1,))
             # Note that ones_like(x) works because x is Bx1 !
             return du_dt + self.Tmax * (u_tx * du_dx - params.eq_params["nu"] * d2u_dx2)
         raise ValueError("u is not among the recognized types (PINN or SPINN)")
@@ -297,8 +312,7 @@ class FPENonStatioLoss2D(PDENonStatio):
 
     def equation(
         self,
-        t: Float[Array, "1"],
-        x: Float[Array, "dim"],
+        t_x: Float[Array, "1+dim"],
         u: eqx.Module,
         params: Params,
     ) -> Float[Array, "1"]:
@@ -307,10 +321,8 @@ class FPENonStatioLoss2D(PDENonStatio):
 
         Parameters
         ---------
-        t
-            A time point
-        x
-            A point in $\Omega$
+        t_x
+            A collocation point in  $I\times\Omega$
         u
             The PINN
         params
@@ -321,114 +333,87 @@ class FPENonStatioLoss2D(PDENonStatio):
         """
         if isinstance(u, PINN):
             # Note that the last dim of u is nec. 1
-            u_ = lambda t, x: u(t, x, params)[0]
+            u_ = lambda t_x: u(t_x, params)[0]
 
-            order_1 = (
-                grad(
-                    lambda t, x: self.drift(t, x, params.eq_params)[0] * u_(t, x),
-                    1,
-                )(
-                    t, x
-                )[0:1]
-                + grad(
-                    lambda t, x: self.drift(t, x, params.eq_params)[1] * u_(t, x),
-                    1,
-                )(t, x)[1:2]
+            order_1_fun = lambda t_x: self.drift(t_x[1:], params.eq_params) * u_(t_x)
+            grad_order_1 = jnp.trace(jax.jacrev(order_1_fun)(t_x)[..., 1:])[None]
+
+            order_2_fun = lambda t_x: self.diffusion(t_x[1:], params.eq_params) * u_(
+                t_x
             )
-
-            order_2 = (
-                grad(
-                    lambda t, x: grad(
-                        lambda t, x: u_(t, x)
-                        * self.diffusion(t, x, params.eq_params)[0, 0],
-                        1,
-                    )(t, x)[0],
-                    1,
-                )(t, x)[0:1]
-                + grad(
-                    lambda t, x: grad(
-                        lambda t, x: u_(t, x)
-                        * self.diffusion(t, x, params.eq_params)[1, 0],
-                        1,
-                    )(t, x)[1],
-                    1,
-                )(t, x)[0:1]
-                + grad(
-                    lambda t, x: grad(
-                        lambda t, x: u_(t, x)
-                        * self.diffusion(t, x, params.eq_params)[0, 1],
-                        1,
-                    )(t, x)[0],
-                    1,
-                )(t, x)[1:2]
-                + grad(
-                    lambda t, x: grad(
-                        lambda t, x: u_(t, x)
-                        * self.diffusion(t, x, params.eq_params)[1, 1],
-                        1,
-                    )(t, x)[1],
-                    1,
-                )(t, x)[1:2]
+            grad_order_2_fun = lambda t_x: jax.jacrev(order_2_fun)(t_x)[..., 1:]
+            grad_grad_order_2 = (
+                jnp.trace(
+                    jax.jacrev(lambda t_x: grad_order_2_fun(t_x)[0, :, 0])(t_x)[..., 1:]
+                )[None]
+                + jnp.trace(
+                    jax.jacrev(lambda t_x: grad_order_2_fun(t_x)[1, :, 1])(t_x)[..., 1:]
+                )[None]
             )
+            # This is be a condensed form of the explicit which is less efficient
+            # since 4 jacrev are called (as compared to 2)
+            # grad_order_2_fun = lambda t_x, i, j: jax.jacrev(order_2_fun)(t_x)[i, j, 1:]
+            # grad_grad_order_2 = (
+            #    jax.jacrev(lambda t_x: grad_order_2_fun(t_x, 0, 0))(t_x)[0, 1] +
+            #    jax.jacrev(lambda t_x: grad_order_2_fun(t_x, 1, 0))(t_x)[1, 1] +
+            #    jax.jacrev(lambda t_x: grad_order_2_fun(t_x, 0, 1))(t_x)[0, 2] +
+            #    jax.jacrev(lambda t_x: grad_order_2_fun(t_x, 1, 1))(t_x)[1, 2]
+            # )[None]
 
-            du_dt = grad(u_, 0)(t, x)
+            du_dt = grad(u_)(t_x)[0:1]
 
-            return -du_dt + self.Tmax * (-order_1 + order_2)
+            return -du_dt + self.Tmax * (-grad_order_1 + grad_grad_order_2)
 
         if isinstance(u, SPINN):
-            x_grid = _get_grid(x)
+            v0 = jnp.repeat(jnp.array([[1.0, 0.0, 0.0]]), t_x.shape[0], axis=0)
             _, du_dt = jax.jvp(
-                lambda t: u(t, x, params),
-                (t,),
-                (jnp.ones_like(t),),
+                lambda t_x: u(t_x, params),
+                (t_x,),
+                (v0,),
             )
 
             # in forward AD we do not have the results for all the input
             # dimension at once (as it is the case with grad), we then write
             # two jvp calls
-            tangent_vec_0 = jnp.repeat(jnp.array([1.0, 0.0])[None], x.shape[0], axis=0)
-            tangent_vec_1 = jnp.repeat(jnp.array([0.0, 1.0])[None], x.shape[0], axis=0)
+            v1 = jnp.repeat(jnp.array([[0.0, 1.0, 0.0]]), t_x.shape[0], axis=0)
+            v2 = jnp.repeat(jnp.array([[0.0, 0.0, 1.0]]), t_x.shape[0], axis=0)
             _, dau_dx1 = jax.jvp(
-                lambda x: self.drift(t, _get_grid(x), params.eq_params)[None, ..., 0:1]
-                * u(t, x, params)[..., 0:1],
-                (x,),
-                (tangent_vec_0,),
+                lambda t_x: self.drift(get_grid(t_x[:, 1:]), params.eq_params)[
+                    None, ..., 0:1
+                ]
+                * u(t_x, params),
+                (t_x,),
+                (v1,),
             )
             _, dau_dx2 = jax.jvp(
-                lambda x: self.drift(t, _get_grid(x), params.eq_params)[None, ..., 1:2]
-                * u(t, x, params)[..., 0:1],
-                (x,),
-                (tangent_vec_1,),
+                lambda t_x: self.drift(get_grid(t_x[:, 1:]), params.eq_params)[
+                    None, ..., 1:2
+                ]
+                * u(t_x, params),
+                (t_x,),
+                (v2,),
             )
 
-            dsu_dx1_fun = lambda x, i, j: jax.jvp(
-                lambda x: self.diffusion(t, _get_grid(x), params.eq_params, i, j)[
-                    None, None, None, None
-                ]
-                * u(t, x, params)[..., 0:1],
-                (x,),
-                (tangent_vec_0,),
+            dsu_dx1_fun = lambda t_x, i, j: jax.jvp(
+                lambda t_x: self.diffusion(
+                    get_grid(t_x[:, 1:]), params.eq_params, i, j
+                )[None, None, None, None]
+                * u(t_x, params),
+                (t_x,),
+                (v1,),
             )[1]
-            dsu_dx2_fun = lambda x, i, j: jax.jvp(
-                lambda x: self.diffusion(t, _get_grid(x), params.eq_params, i, j)[
-                    None, None, None, None
-                ]
-                * u(t, x, params)[..., 0:1],
-                (x,),
-                (tangent_vec_1,),
+            dsu_dx2_fun = lambda t_x, i, j: jax.jvp(
+                lambda t_x: self.diffusion(
+                    get_grid(t_x[:, 1:]), params.eq_params, i, j
+                )[None, None, None, None]
+                * u(t_x, params),
+                (t_x,),
+                (v2,),
             )[1]
-            _, d2su_dx12 = jax.jvp(
-                lambda x: dsu_dx1_fun(x, 0, 0), (x,), (tangent_vec_0,)
-            )
-            _, d2su_dx1dx2 = jax.jvp(
-                lambda x: dsu_dx1_fun(x, 0, 1), (x,), (tangent_vec_1,)
-            )
-            _, d2su_dx22 = jax.jvp(
-                lambda x: dsu_dx2_fun(x, 1, 1), (x,), (tangent_vec_1,)
-            )
-            _, d2su_dx2dx1 = jax.jvp(
-                lambda x: dsu_dx2_fun(x, 1, 0), (x,), (tangent_vec_0,)
-            )
+            _, d2su_dx12 = jax.jvp(lambda t_x: dsu_dx1_fun(t_x, 0, 0), (t_x,), (v1,))
+            _, d2su_dx1dx2 = jax.jvp(lambda t_x: dsu_dx1_fun(t_x, 0, 1), (t_x,), (v2,))
+            _, d2su_dx22 = jax.jvp(lambda t_x: dsu_dx2_fun(t_x, 1, 1), (t_x,), (v2,))
+            _, d2su_dx2dx1 = jax.jvp(lambda t_x: dsu_dx2_fun(t_x, 1, 0), (t_x,), (v1,))
 
             return -du_dt + self.Tmax * (
                 -(dau_dx1 + dau_dx2)
@@ -474,14 +459,12 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
         heterogeneity for no parameters.
     """
 
-    def drift(self, t, x, eq_params):
+    def drift(self, x, eq_params):
         r"""
         Return the drift term
 
         Parameters
         ----------
-        t
-            A time point
         x
             A point in $\Omega$
         eq_params
@@ -489,15 +472,13 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
         """
         return eq_params["alpha"] * (eq_params["mu"] - x)
 
-    def sigma_mat(self, t, x, eq_params):
+    def sigma_mat(self, x, eq_params):
         r"""
         Return the square root of the diffusion tensor in the sense of the outer
         product used to create the diffusion tensor
 
         Parameters
         ----------
-        t
-            A time point
         x
             A point in $\Omega$
         eq_params
@@ -506,15 +487,13 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
 
         return jnp.diag(eq_params["sigma"])
 
-    def diffusion(self, t, x, eq_params, i=None, j=None):
+    def diffusion(self, x, eq_params, i=None, j=None):
         r"""
         Return the computation of the diffusion tensor term in 2D (or
         higher)
 
         Parameters
         ----------
-        t
-            A time point
         x
             A point in $\Omega$
         eq_params
@@ -523,14 +502,14 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
         if i is None or j is None:
             return 0.5 * (
                 jnp.matmul(
-                    self.sigma_mat(t, x, eq_params),
-                    jnp.transpose(self.sigma_mat(t, x, eq_params)),
+                    self.sigma_mat(x, eq_params),
+                    jnp.transpose(self.sigma_mat(x, eq_params)),
                 )
             )
         return 0.5 * (
             jnp.matmul(
-                self.sigma_mat(t, x, eq_params),
-                jnp.transpose(self.sigma_mat(t, x, eq_params)),
+                self.sigma_mat(x, eq_params),
+                jnp.transpose(self.sigma_mat(x, eq_params)),
             )[i, j]
         )
 
@@ -591,12 +570,12 @@ class MassConservation2DStatio(PDEStatio):
         if isinstance(u_dict[self.nn_key], PINN):
             u = u_dict[self.nn_key]
 
-            return _div_rev(None, x, u, params)[..., None]
+            return divergence_rev(x, u, params)[..., None]
 
         if isinstance(u_dict[self.nn_key], SPINN):
             u = u_dict[self.nn_key]
 
-            return _div_fwd(None, x, u, params)[..., None]
+            return divergence_fwd(x, u, params)[..., None]
         raise ValueError("u is not among the recognized types (PINN or SPINN)")
 
 
@@ -614,12 +593,14 @@ class NavierStokes2DStatio(PDEStatio):
 
 
     $$
-        \begin{pmatrix}u_x\frac{\partial}{\partial x} u_x + u_y\frac{\partial}{\partial y} u_x \\
+        \begin{pmatrix}u_x\frac{\partial}{\partial x} u_x +
+        u_y\frac{\partial}{\partial y} u_x, \\
         u_x\frac{\partial}{\partial x} u_y + u_y\frac{\partial}{\partial y} u_y  \end{pmatrix} +
-        \frac{1}{\rho} \begin{pmatrix} \frac{\partial}{\partial x} p \\ \frac{\partial}{\partial y} p \end{pmatrix}
+        \frac{1}{\rho} \begin{pmatrix} \frac{\partial}{\partial x} p, \\ \frac{\partial}{\partial y} p \end{pmatrix}
         - \theta
         \begin{pmatrix}
-        \frac{\partial^2}{\partial x^2} u_x + \frac{\partial^2}{\partial y^2} u_x \\
+        \frac{\partial^2}{\partial x^2} u_x + \frac{\partial^2}{\partial y^2}
+        u_x, \\
         \frac{\partial^2}{\partial x^2} u_y + \frac{\partial^2}{\partial y^2} u_y
         \end{pmatrix} = 0,
     $$
@@ -680,12 +661,12 @@ class NavierStokes2DStatio(PDEStatio):
         if isinstance(u_dict[self.u_key], PINN):
             u = u_dict[self.u_key]
 
-            u_dot_nabla_x_u = _u_dot_nabla_times_u_rev(None, x, u, u_params)
+            u_dot_nabla_x_u = _u_dot_nabla_times_u_rev(x, u, u_params)
 
             p = lambda x: u_dict[self.p_key](x, p_params)
             jac_p = jax.jacrev(p, 0)(x)  # compute the gradient
 
-            vec_laplacian_u = _vectorial_laplacian(None, x, u, u_params, u_vec_ndim=2)
+            vec_laplacian_u = vectorial_laplacian_rev(x, u, u_params, dim_out=2)
 
             # dynamic loss on x axis
             result_x = (
@@ -707,7 +688,7 @@ class NavierStokes2DStatio(PDEStatio):
         if isinstance(u_dict[self.u_key], SPINN):
             u = u_dict[self.u_key]
 
-            u_dot_nabla_x_u = _u_dot_nabla_times_u_fwd(None, x, u, u_params)
+            u_dot_nabla_x_u = _u_dot_nabla_times_u_fwd(x, u, u_params)
 
             p = lambda x: u_dict[self.p_key](x, p_params)
 
@@ -716,11 +697,7 @@ class NavierStokes2DStatio(PDEStatio):
             tangent_vec_1 = jnp.repeat(jnp.array([0.0, 1.0])[None], x.shape[0], axis=0)
             _, dp_dy = jax.jvp(p, (x,), (tangent_vec_1,))
 
-            vec_laplacian_u = jnp.moveaxis(
-                _vectorial_laplacian(None, x, u, u_params, u_vec_ndim=2),
-                source=0,
-                destination=-1,
-            )
+            vec_laplacian_u = vectorial_laplacian_fwd(x, u, u_params, dim_out=2)
 
             # dynamic loss on x axis
             result_x = (

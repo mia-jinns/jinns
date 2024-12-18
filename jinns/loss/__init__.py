@@ -3,7 +3,7 @@ from ._LossODE import LossODE, SystemLossODE
 from ._LossPDE import LossPDEStatio, LossPDENonStatio, SystemLossPDE
 from ._DynamicLoss import (
     GeneralizedLotkaVolterra,
-    BurgerEquation,
+    BurgersEquation,
     FPENonStatioLoss2D,
     OU_FPENonStatioLoss2D,
     FisherKPP,
@@ -19,9 +19,10 @@ from ._loss_weights import (
 )
 
 from ._operators import (
-    _div_fwd,
-    _div_rev,
-    _laplacian_fwd,
-    _laplacian_rev,
-    _vectorial_laplacian,
+    divergence_fwd,
+    divergence_rev,
+    laplacian_fwd,
+    laplacian_rev,
+    vectorial_laplacian_fwd,
+    vectorial_laplacian_rev,
 )
