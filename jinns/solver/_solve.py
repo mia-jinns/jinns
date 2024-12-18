@@ -47,6 +47,7 @@ def solve(
     validation: AbstractValidationModule | None = None,
     obs_batch_sharding: jax.sharding.Sharding | None = None,
     verbose: Bool = True,
+    ahead_of_time: Bool = True,
 ) -> tuple[
     Params | ParamsDict,
     Float[Array, "n_iter"],
@@ -118,6 +119,12 @@ def solve(
     verbose
         Default True. If False, no std output (loss or cause of
         exiting the optimization loop) will be produced.
+    ahead_of_time
+        Default True. Separate the compilation of the main training loop from
+        the execution to get both timings. You might need to avoid this
+        behaviour if you need to perform JAX transforms over chunks of code
+        containing `jinns.solve()` since AOT-compiled functions cannot be JAX
+        transformed (see https://jax.readthedocs.io/en/latest/aot.html#aot-compiled-functions-cannot-be-transformed)
 
     Returns
     -------
@@ -384,16 +391,26 @@ def solve(
         def train_fun(carry):
             return jax.lax.while_loop(break_fun, _one_iteration, carry)
 
-        start = time.time()
-        compiled_train_fun = jax.jit(train_fun).lower(carry).compile()
-        end = time.time()
-        print("\nCompilation took\n", end - start, "\n")
+        if ahead_of_time:
+            start = time.time()
+            compiled_train_fun = jax.jit(train_fun).lower(carry).compile()
+            end = time.time()
+            if verbose:
+                print("\nCompilation took\n", end - start, "\n")
 
-        start = time.time()
-        carry = compiled_train_fun(carry)
-        jax.block_until_ready(carry)
-        end = time.time()
-        print("\nTraining took\n", end - start, "\n")
+            start = time.time()
+            carry = compiled_train_fun(carry)
+            jax.block_until_ready(carry)
+            end = time.time()
+            if verbose:
+                print("\nTraining took\n", end - start, "\n")
+        else:
+            start = time.time()
+            carry = train_fun(carry)
+            jax.block_until_ready(carry)
+            end = time.time()
+            if verbose:
+                jax.debug.print("\nTraining took {t}\n", t=end - start)
 
     (
         i,
