@@ -35,3 +35,13 @@ notebook = ["jupyter", "seaborn"]
 [project.urls]
 Repository = "https://gitlab.com/mia_jinns/jinns"
 Documentation = "https://mia_jinns.gitlab.io/jinns/index.html"
+
+[tool.coverage.report]
+exclude_also = [
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@(abc\\.)?abstractmethod",
+    ]
