@@ -54,12 +54,14 @@ def get_grid(in_array: Array) -> Array:
     return in_array
 
 
-def _check_user_func_return(
-    r: Array | int, shape: tuple, cause: str = ""
+def _check_shape_and_type(
+    r: Array | int, expected_shape: tuple, cause: str = "", binop: str = ""
 ) -> Array | float:
     """
-    Correctly handles the result from a user defined function (eg a boundary
-    condition) to get the correct broadcast
+    Ensures float type and correct shapes for broadcasting when performing a
+    binary operation (like -, + or *) between two arrays.
+    First array is a custom user (observation data or output of initial/BC
+    functions), the expected shape is the same as the PINN's.
     """
     if isinstance(r, (int, float)):
         # if we have a scalar cast it to float
@@ -67,23 +69,28 @@ def _check_user_func_return(
     if r.shape == ():
         # if we have a scalar inside a ndarray
         return r.astype(float)
-    if r.shape[-1] == shape[-1]:
-        # the broadcast will be OK
+    if r.shape[-1] == expected_shape[-1]:
+        # broadcasting will be OK
         return r.astype(float)
-    # the reshape below avoids a missing (1,) ending dimension
-    # depending on how the user has coded the inital function
-    if r.shape != shape:
+
+    if r.shape != expected_shape:
+        # Usually, the reshape below  adds a missing (1,) final axis to ensure # the PINN output and the other function (initial/boundary condition)
+        # have the correct shape, depending on how the user has coded the
+        # initial/boundary condition.
         warnings.warn(
-            f"[{cause}] Performing a operation between arrays"
-            f" of different shapes: got {r.shape} and {shape}."
-            f" This can cause unexpected broadcast!"
-            f" Reshaping {r.shape} into {shape}"
+            f"[{cause}] Performing operation `{binop}` between arrays"
+            f" of different shapes: got {r.shape} for the custom array and"
+            f" {expected_shape} for the PINN."
+            f" This can cause unexpected and wrong broadcasting."
+            f" Reshaping {r.shape} into {expected_shape}. Reshape your"
+            f" custom array to math the {expected_shape=} to prevent this"
+            f" warning."
         )
-    return r.reshape(shape)
+    return r.reshape(expected_shape)
 
 
 def _subtract_with_check(
     a: Array | int, b: Array | int, cause: str = ""
 ) -> Array | float:
-    a = _check_user_func_return(a, b.shape, cause=cause)
+    a = _check_shape_and_type(a, b.shape, cause=cause, binop="-")
     return a - b
