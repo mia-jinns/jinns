@@ -446,16 +446,18 @@ class CubicMeshPDEStatio(eqx.Module):
             else:
                 if self.nb % (2 * self.dim) != 0 or self.nb < 2 * self.dim:
                     raise ValueError(
-                        "number of border point must be"
-                        " a multiple of 2xd (the # of faces of a d-dimensional cube)"
+                        f"number of border point must be"
+                        f" a multiple of 2xd = {2*self.dim} (the # of faces of"
+                        f" a d-dimensional cube). Got {self.nb=}."
                     )
                 if (
                     self.omega_border_batch_size is not None
                     and self.nb // (2 * self.dim) < self.omega_border_batch_size
                 ):
                     raise ValueError(
-                        "number of points per facets (nb//2*self.dim)"
-                        " cannot be lower than border batch size"
+                        f"number of points per facets ({self.nb//(2*self.dim)})"
+                        f" cannot be lower than border batch size "
+                        f" ({self.omega_border_batch_size})."
                     )
                 self.nb = int((2 * self.dim) * (self.nb // (2 * self.dim)))
 
