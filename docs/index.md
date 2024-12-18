@@ -1,10 +1,10 @@
-# Welcome to Jinns' documentation
+# Welcome to jinns' documentation
 
 !!! tip "jinns is getting a new look!"
 
     This is the new documentation page for jinns v1.0.0. Checkout the API changes for all the cool changes done to the library: plot, pytree declaration via eqx.Module, notebooks, etc.
 
-**Jinns** is a Python package for physics-informed neural networks (PINNs) in the [JAX](https://jax.readthedocs.io/en/latest/) ecosystem. It provides an intuitive and flexible interface for
+**jinns** is a Python package for physics-informed neural networks (PINNs) in the [JAX](https://jax.readthedocs.io/en/latest/) ecosystem. It provides an intuitive and flexible interface for
 
  * forward problem: learning a PDE solution.
  * inverse problem: learning the parameters of a PDE.

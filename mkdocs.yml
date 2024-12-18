@@ -1,7 +1,7 @@
 # Adapted from : https://github.com/patrick-kidger/equinox/blob/main/mkdocs.yml
 
-site_name: Jinns
-site_description: The documentation for the Jinns software library.
+site_name: jinns
+site_description: The documentation for the jinns software library.
 site_author: Hugo Gangloff & Nicolas Jouvin
 site_url: https://mia_jinns.gitlab.io/jinns/
 
@@ -13,7 +13,7 @@ theme:
       - header.autohide  # header disappears as you scroll
   icon:
       repo: fontawesome/brands/gitlab  # GitHub logo in top right
-      logo: "material/oil-lamp"  # Jinns logo in top left
+      logo: "material/oil-lamp"  # jinns logo in top left
   favicon: "_static/favicon.png"
   palette:
           # Light mode / dark mode
