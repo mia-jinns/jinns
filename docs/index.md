@@ -27,3 +27,15 @@ Navigate the tutorials and example sections of the left, with many introductory 
 # News and updates
 
 See the [changelog page](./changelog.md) for the last updates, features and bug fixes.
+
+# Citing us
+
+Please consider citing our work if you found it useful to yours, using this [ArXiV preprint](https://arxiv.org/abs/2412.14132)
+```
+@software{jinns2024,
+    title={\texttt{jinns}: Physics-Informed Neural Networks with JAX},
+    author={Gangloff, Hugo and Jouvin, Nicolas},
+    url={https://gitlab.com/mia_jinns},
+    year={2024}
+}
+```

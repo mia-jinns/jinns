@@ -88,7 +88,7 @@ Don't hesitate to contribute and get your name on the list here !
 
 # Cite us
 
-Please consider citing our work if you found it useful to yours, using the following lines
+Please consider citing our work if you found it useful to yours, using this [ArXiV preprint](https://arxiv.org/abs/2412.14132)
 ```
 @software{jinns2024,
     title={\texttt{jinns}: Physics-Informed Neural Networks with JAX},
