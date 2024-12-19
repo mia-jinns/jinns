@@ -90,10 +90,10 @@ Don't hesitate to contribute and get your name on the list here !
 
 Please consider citing our work if you found it useful to yours, using this [ArXiV preprint](https://arxiv.org/abs/2412.14132)
 ```
-@software{jinns2024,
-    title={\texttt{jinns}: Physics-Informed Neural Networks with JAX},
-    author={Gangloff, Hugo and Jouvin, Nicolas},
-    url={https://gitlab.com/mia_jinns},
-    year={2024}
+@article{gangloff_jouvin2024jinns,
+  title={jinns: a JAX Library for Physics-Informed Neural Networks},
+  author={Gangloff, Hugo and Jouvin, Nicolas},
+  journal={arXiv preprint arXiv:2412.14132},
+  year={2024}
 }
 ```

@@ -1,9 +1,5 @@
 # Welcome to jinns' documentation
 
-!!! tip "jinns is getting a new look!"
-
-    This is the new documentation page for jinns v1.0.0. Checkout the API changes for all the cool changes done to the library: plot, pytree declaration via eqx.Module, notebooks, etc.
-
 **jinns** is a Python package for physics-informed neural networks (PINNs) in the [JAX](https://jax.readthedocs.io/en/latest/) ecosystem. It provides an intuitive and flexible interface for
 
  * forward problem: learning a PDE solution.
@@ -32,10 +28,10 @@ See the [changelog page](./changelog.md) for the last updates, features and bug 
 
 Please consider citing our work if you found it useful to yours, using this [ArXiV preprint](https://arxiv.org/abs/2412.14132)
 ```
-@software{jinns2024,
-    title={\texttt{jinns}: Physics-Informed Neural Networks with JAX},
-    author={Gangloff, Hugo and Jouvin, Nicolas},
-    url={https://gitlab.com/mia_jinns},
-    year={2024}
+@article{gangloff_jouvin2024jinns,
+  title={jinns: a JAX Library for Physics-Informed Neural Networks},
+  author={Gangloff, Hugo and Jouvin, Nicolas},
+  journal={arXiv preprint arXiv:2412.14132},
+  year={2024}
 }
 ```
