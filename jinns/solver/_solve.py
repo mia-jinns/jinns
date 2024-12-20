@@ -124,7 +124,9 @@ def solve(
         the execution to get both timings. You might need to avoid this
         behaviour if you need to perform JAX transforms over chunks of code
         containing `jinns.solve()` since AOT-compiled functions cannot be JAX
-        transformed (see https://jax.readthedocs.io/en/latest/aot.html#aot-compiled-functions-cannot-be-transformed)
+        transformed (see https://jax.readthedocs.io/en/latest/aot.html#aot-compiled-functions-cannot-be-transformed).
+        When False, jinns does not provide any timing information (which would
+        be nonsense in a JIT transformed `solve()` function).
 
     Returns
     -------
@@ -409,8 +411,6 @@ def solve(
             carry = train_fun(carry)
             jax.block_until_ready(carry)
             end = time.time()
-            if verbose:
-                jax.debug.print("\nTraining took {t}\n", t=end - start)
 
     (
         i,
