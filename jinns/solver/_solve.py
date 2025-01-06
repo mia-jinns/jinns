@@ -407,10 +407,7 @@ def solve(
             if verbose:
                 print("\nTraining took\n", end - start, "\n")
         else:
-            start = time.time()
             carry = train_fun(carry)
-            jax.block_until_ready(carry)
-            end = time.time()
 
     (
         i,
