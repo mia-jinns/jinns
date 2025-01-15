@@ -22,6 +22,7 @@ def plot2d(
     cmap: str = "inferno",
     spinn: bool = False,
     vmin_vmax: tuple[float, float] = [None, None],
+    equal: bool = False,
 ):
     r"""Generic function for plotting functions over rectangular 2-D domains
     $\Omega$. It handles both the
@@ -55,6 +56,8 @@ def plot2d(
         The colorbar minimum and maximum value. Defaults None.
     spinn :
         True if the function is a `SPINN` object.
+    equal :
+        True if we want an equal aspect ratio
 
     Raises
     ------
@@ -83,6 +86,7 @@ def plot2d(
                 cmap=cmap,
                 figsize=figsize,
                 vmin_vmax=vmin_vmax,
+                equal=equal,
             )
         elif spinn:
             values_grid = jnp.squeeze(fun(jnp.stack([xy_data[0], xy_data[1]], axis=1)))
@@ -93,6 +97,7 @@ def plot2d(
                 cmap=cmap,
                 figsize=figsize,
                 vmin_vmax=vmin_vmax,
+                equal=equal,
             )
         else:
             fig, ax = plt.subplots(1, 1, figsize=figsize)
@@ -106,6 +111,8 @@ def plot2d(
                 vmax=vmin_vmax[1],
             )
 
+            if equal:
+                ax.set_aspect("equal", adjustable="box")
             ax.set_title(title)
             fig.cax.colorbar(im, format="%0.2f")
 
@@ -177,6 +184,8 @@ def plot2d(
                 vmin=vmin_vmax[0],
                 vmax=vmin_vmax[1],
             )
+            if equal:
+                ax.set_aspect("equal", adjustable="box")
             ax.set_title(f"t = {times[idx] * Tmax:.2f}")
             ax.cax.colorbar(im, format="%0.2f")
 
@@ -189,6 +198,7 @@ def _plot_2D_statio(
     cmap: str = "inferno",
     figsize: tuple[int, int] = (7, 7),
     vmin_vmax: tuple[float, float] = [None, None],
+    equal: Bool = False,
 ):
     """Function that plot the function u(x) with 2-D input x using pcolormesh()
 
@@ -211,6 +221,8 @@ def _plot_2D_statio(
         True if a SPINN is to be plotted. False for PINNs and HYPERPINNs
     vmin_vmax: list, optional
         The colorbar minimum and maximum value. Defaults None.
+    equal : bool, optional
+        True if we want an equal aspect ratio
 
     Returns
     -------
@@ -239,6 +251,8 @@ def _plot_2D_statio(
         if colorbar:
             fig.colorbar(im, format="%0.2f")
         # don't plt.show() because it is done in plot2d()
+        if equal:
+            plt.gca().set_aspect("equal", adjustable="box")
     else:
         return values_grid, plt.gca()
 
@@ -251,6 +265,7 @@ def plot1d_slice(
     title: str = "",
     figsize: tuple[int, int] = (10, 10),
     spinn: Bool = False,
+    equal: Bool = False,
     ax=None,
 ):
     """Function for plotting time slices of a function :math:`f(t_i, x)` where
@@ -275,6 +290,8 @@ def plot1d_slice(
         True if a SPINN is to be plotted. False for PINNs and HYPERPINNs
     ax
         A pre-defined `matplotlib.Axes` where you want to plot.
+    equal
+        True if we want an equal aspect ratio
 
     Returns
     -------
@@ -302,6 +319,8 @@ def plot1d_slice(
     ax.set_ylabel(r"$u(t_i, x)$")
     ax.legend()
     ax.set_title(title)
+    if equal:
+        ax.set_aspect("equal", adjustable="box")
     return ax
 
 
@@ -316,6 +335,7 @@ def plot1d_image(
     cmap: str = "inferno",
     spinn: Bool = False,
     vmin_vmax: tuple[float, float] = [None, None],
+    equal: Bool = False,
 ):
     """Function for plotting the 2-D image of a function :math:`f(t, x)` where
     `t` is time (1-D) and x is space (1-D).
@@ -344,6 +364,8 @@ def plot1d_image(
         True if a SPINN is to be plotted. False for PINNs and HYPERPINNs
     vmin_vmax:
         The colorbar minimum and maximum value. Defaults None.
+    equal :
+        True if we want an equal aspect ratio
 
     Returns
     -------
@@ -376,6 +398,8 @@ def plot1d_image(
 
     if colorbar:
         fig.colorbar(im, format="%0.2f")
+    if equal:
+        ax.set_aspect("equal", adjustable="box")
     ax.set_title(title)
 
     return fig, ax
