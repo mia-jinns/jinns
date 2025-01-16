@@ -85,7 +85,7 @@ def normalization_loss_apply(
     if isinstance(u, (PINN, HYPERPINN)):
         if len(batches) == 1:
             v_u = vmap(
-                lambda b: u(b)[u.slice_solution],
+                lambda *b: u(*b)[u.slice_solution],
                 (0,) + vmap_axes_params,
                 0,
             )
