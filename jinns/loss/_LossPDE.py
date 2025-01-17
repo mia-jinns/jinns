@@ -92,12 +92,14 @@ class _LossPDEAbstract(eqx.Module):
         Note that it must be a slice and not an integer
         (but a preprocessing of the user provided argument takes care of it)
     norm_samples : Float[Array, "nb_norm_samples dimension"], default=None
-        Fixed sample point in the space over which to compute the
+        Monte-Carlo sample points for computing the
         normalization constant. Default is None.
-    norm_int_length : float, default=None
-        A float. Must be provided if `norm_samples` is provided. The domain area
-        (or interval length in 1D) upon which we perform the numerical
-        integration. Default None
+    norm_weights : Float[Array, "nb_norm_samples"], default=None
+        The importance sampling weights for Monte-Carlo integration of the
+        normalization constant. Must be provided if `norm_samples` is provided.
+        An array of similar shape to `norm_samples` or shape `(1,)` is expected.
+        These corresponds to the weights $w_k = \frac{1}{q(x_k)}$ where
+        $q(\cdot)$ is the proposal p.d.f. and $x_k$ are the Monte-Carlo samples.
     obs_slice : slice, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
@@ -127,7 +129,9 @@ class _LossPDEAbstract(eqx.Module):
     norm_samples: Float[Array, "nb_norm_samples dimension"] | None = eqx.field(
         kw_only=True, default=None
     )
-    norm_int_length: float | None = eqx.field(kw_only=True, default=None)
+    norm_weights: Float[Array, "nb_norm_samples"] | None = eqx.field(
+        kw_only=True, default=None
+    )
     obs_slice: slice | None = eqx.field(kw_only=True, default=None, static=True)
 
     params: InitVar[Params] = eqx.field(kw_only=True, default=None)
@@ -251,8 +255,20 @@ class _LossPDEAbstract(eqx.Module):
             if not isinstance(self.omega_boundary_dim, slice):
                 raise ValueError("self.omega_boundary_dim must be a jnp.s_ object")
 
-        if self.norm_samples is not None and self.norm_int_length is None:
-            raise ValueError("self.norm_samples and norm_int_length must be provided")
+        if self.norm_samples is not None:
+            if self.norm_weights is None:
+                raise ValueError(
+                    "`norm_weights` must be provided when `norm_samples` is used!"
+                )
+            elif not eqx.is_array(self.norm_weights):
+                raise ValueError("`norm_weights` should be a JAX or NumPy ndarray.")
+            elif (
+                self.norm_weights.shape[0] != 1
+                and self.norm_weights.shape[0] != self.norm_samples.shape[0]
+            ):
+                raise ValueError(
+                    "`norm_weights` should have shape (1,) or similar to `norm_samples`."
+                )
 
     @abc.abstractmethod
     def evaluate(
@@ -324,12 +340,14 @@ class LossPDEStatio(_LossPDEAbstract):
         Note that it must be a slice and not an integer
         (but a preprocessing of the user provided argument takes care of it)
     norm_samples : Float[Array, "nb_norm_samples dimension"], default=None
-        Fixed sample point in the space over which to compute the
+        Monte-Carlo sample points for computing the
         normalization constant. Default is None.
-    norm_int_length : float, default=None
-        A float. Must be provided if `norm_samples` is provided. The domain area
-        (or interval length in 1D) upon which we perform the numerical
-        integration. Default None
+    norm_weights : Float[Array, "nb_norm_samples"], default=None
+        The importance sampling weights for Monte-Carlo integration of the
+        normalization constant. Must be provided if `norm_samples` is provided.
+        An array of similar shape to `norm_samples` or shape `(1,)` is expected.
+        These corresponds to the weights $w_k = \frac{1}{q(x_k)}$ where
+        $q(\cdot)$ is the proposal p.d.f. and $x_k$ are the Monte-Carlo samples.
     obs_slice : slice, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
@@ -431,7 +449,7 @@ class LossPDEStatio(_LossPDEAbstract):
                 self._get_normalization_loss_batch(batch),
                 _set_derivatives(params, self.derivative_keys.norm_loss),
                 vmap_in_axes_params,
-                self.norm_int_length,
+                self.norm_weights,
                 self.loss_weights.norm_loss,
             )
         else:
@@ -549,12 +567,14 @@ class LossPDENonStatio(LossPDEStatio):
         Note that it must be a slice and not an integer
         (but a preprocessing of the user provided argument takes care of it)
     norm_samples : Float[Array, "nb_norm_samples dimension"], default=None
-        Fixed sample point in the space over which to compute the
+        Monte-Carlo sample points for computing the
         normalization constant. Default is None.
-    norm_int_length : float, default=None
-        A float. Must be provided if `norm_samples` is provided. The domain area
-        (or interval length in 1D) upon which we perform the numerical
-        integration. Default None
+    norm_weights : Float[Array, "nb_norm_samples"], default=None
+        The importance sampling weights for Monte-Carlo integration of the
+        normalization constant. Must be provided if `norm_samples` is provided.
+        An array of similar shape to `norm_samples` or shape `(1,)` is expected.
+        These corresponds to the weights $w_k = \frac{1}{q(x_k)}$ where
+        $q(\cdot)$ is the proposal p.d.f. and $x_k$ are the Monte-Carlo samples.
     obs_slice : slice, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
@@ -730,15 +750,18 @@ class SystemLossPDE(eqx.Module):
         (default) then no temporal boundary condition is applied
         Must share the keys of `u_dict`
     norm_samples_dict : Dict[str, Float[Array, "nb_norm_samples dimension"] | None, default=None
-        A dict of fixed sample point in the space over which to compute the
-        normalization constant. Default is None
+        A dict of Monte-Carlo sample points for computing the
+        normalization constant. Default is None.
         Must share the keys of `u_dict`
-    norm_int_length_dict : Dict[str, float | None] | None, default=None
-        A dict of Float. The domain area
-        (or interval length in 1D) upon which we perform the numerical
-        integration for each element of u_dict.
-        Default is None
-        Must share the keys of `u_dict`
+    norm_weights_dict : Dict[str, Array[Float, "nb_norm_samples"] | None] | None, default=None
+        A dict of jnp.array with the same keys as `u_dict`. The importance
+        sampling weights for Monte-Carlo integration of the
+        normalization constant for each element of u_dict.. Must be provided if
+        `norm_samples_dict` is provided.
+        For each `key`, an array of similar shape to `norm_samples_dict[key]`
+        or shape `(1,)` is expected. These corresponds to the weights $w_k =
+        \frac{1}{q(x_k)}$ where $q(\cdot)$ is the proposal p.d.f. and $x_k$ are
+        the Monte-Carlo samples. Default is None
     obs_slice_dict : Dict[str, slice | None] | None, default=None
         dict of obs_slice, with keys from `u_dict` to designate the
         output(s) channels that are forced to observed values, for each
@@ -774,9 +797,9 @@ class SystemLossPDE(eqx.Module):
     norm_samples_dict: Dict[str, Float[Array, "nb_norm_samples dimension"]] | None = (
         eqx.field(kw_only=True, default=None)
     )
-    norm_int_length_dict: Dict[str, float | None] | None = eqx.field(
-        kw_only=True, default=None
-    )
+    norm_weights_dict: (
+        Dict[str, Float[Array, "nb_norm_samples dimension"] | None] | None
+    ) = eqx.field(kw_only=True, default=None)
     obs_slice_dict: Dict[str, slice | None] | None = eqx.field(
         kw_only=True, default=None, static=True
     )
@@ -819,8 +842,8 @@ class SystemLossPDE(eqx.Module):
             self.initial_condition_fun_dict = self.u_dict_with_none
         if self.norm_samples_dict is None:
             self.norm_samples_dict = self.u_dict_with_none
-        if self.norm_int_length_dict is None:
-            self.norm_int_length_dict = self.u_dict_with_none
+        if self.norm_weights_dict is None:
+            self.norm_weights_dict = self.u_dict_with_none
         if self.obs_slice_dict is None:
             self.obs_slice_dict = {k: jnp.s_[...] for k in self.u_dict.keys()}
             if self.u_dict.keys() != self.obs_slice_dict.keys():
@@ -861,7 +884,7 @@ class SystemLossPDE(eqx.Module):
             or self.u_dict.keys() != self.omega_boundary_dim_dict.keys()
             or self.u_dict.keys() != self.initial_condition_fun_dict.keys()
             or self.u_dict.keys() != self.norm_samples_dict.keys()
-            or self.u_dict.keys() != self.norm_int_length_dict.keys()
+            or self.u_dict.keys() != self.norm_weights_dict.keys()
         ):
             raise ValueError("All the dicts concerning the PINNs should have same keys")
 
@@ -890,7 +913,7 @@ class SystemLossPDE(eqx.Module):
                     omega_boundary_condition=self.omega_boundary_condition_dict[i],
                     omega_boundary_dim=self.omega_boundary_dim_dict[i],
                     norm_samples=self.norm_samples_dict[i],
-                    norm_int_length=self.norm_int_length_dict[i],
+                    norm_weights=self.norm_weights_dict[i],
                     obs_slice=self.obs_slice_dict[i],
                 )
             elif self.u_dict[i].eq_type == "nonstatio_PDE":
@@ -911,7 +934,7 @@ class SystemLossPDE(eqx.Module):
                     omega_boundary_dim=self.omega_boundary_dim_dict[i],
                     initial_condition_fun=self.initial_condition_fun_dict[i],
                     norm_samples=self.norm_samples_dict[i],
-                    norm_int_length=self.norm_int_length_dict[i],
+                    norm_weights=self.norm_weights_dict[i],
                     obs_slice=self.obs_slice_dict[i],
                 )
             else:

@@ -75,7 +75,7 @@ def normalization_loss_apply(
     ),
     params: Params | ParamsDict,
     vmap_axes_params: tuple[int | None, ...],
-    int_length: int,
+    norm_weights: Float[Array, "nb_norm_samples"],
     loss_weight: float,
 ) -> float:
     """
@@ -90,8 +90,9 @@ def normalization_loss_apply(
                 0,
             )
             res = v_u(*batches, params)
+            # Monte-Carlo integration using importance sampling
             mse_norm_loss = loss_weight * (
-                jnp.abs(jnp.mean(res.squeeze()) * int_length - 1) ** 2
+                jnp.abs(jnp.mean(res.squeeze() * norm_weights) - 1) ** 2
             )
         else:
             # NOTE this cartesian product is costly
@@ -107,9 +108,10 @@ def normalization_loss_apply(
                 in_axes=(0,) + vmap_axes_params,
             )
             res = v_u(batches, params)
-            # Over all the times t, we perform a integration
+            # For all times t, we perform an integration. Then we average the
+            # losses over times.
             mse_norm_loss = loss_weight * jnp.mean(
-                jnp.abs(jnp.mean(res.squeeze(), axis=-1) * int_length - 1) ** 2
+                jnp.abs(jnp.mean(res.squeeze() * norm_weights, axis=-1) - 1) ** 2
             )
     elif isinstance(u, SPINN):
         if len(batches) == 1:
@@ -120,7 +122,7 @@ def normalization_loss_apply(
                     jnp.mean(
                         res.squeeze(),
                     )
-                    * int_length
+                    * norm_weights
                     - 1
                 )
                 ** 2
@@ -141,7 +143,7 @@ def normalization_loss_apply(
                         res.squeeze(),
                         axis=(d + 1 for d in range(res.ndim - 2)),
                     )
-                    * int_length
+                    * norm_weights
                     - 1
                 )
                 ** 2
