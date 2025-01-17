@@ -15,9 +15,13 @@ def train_OU_init():
     key = random.PRNGKey(2)
     key, subkey = random.split(key)
     eqx_list = [
-        [eqx.nn.Linear, 3, 30],
+        [eqx.nn.Linear, 3, 5],
         [
             jax.nn.tanh,
+        ],
+        [eqx.nn.Linear, 5, 1],
+        [
+            jnp.exp,
         ],
     ]
     key, subkey = random.split(key)
