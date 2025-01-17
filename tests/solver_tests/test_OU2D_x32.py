@@ -44,7 +44,7 @@ def train_OU_init():
 
     n = 2500
     nb = None
-    ni = 200
+    ni = 196
     xmin = -3
     xmax = 3
     ymin = -3
@@ -86,7 +86,8 @@ def train_OU_init():
     int_ymin, int_ymax = -3, 3
 
     n_samples = int(1e3)
-    int_length = (int_xmax - int_xmin) * (int_ymax - int_ymin)
+    volume = (int_xmax - int_xmin) * (int_ymax - int_ymin)
+    norm_weights = jnp.array([volume])
     key, subkey1, subkey2 = random.split(key, 3)
     mc_samples = jnp.concatenate(
         [
@@ -115,7 +116,7 @@ def train_OU_init():
             loss_weights=loss_weights,
             dynamic_loss=OU_fpe_non_statio_2D_loss,
             initial_condition_fun=u0,
-            norm_int_length=int_length,
+            norm_weights=norm_weights,
             norm_samples=mc_samples,
             params=init_params,
         )

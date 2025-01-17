@@ -30,7 +30,7 @@ def train_OU_init():
     )
 
     n = 5000
-    ni = 200
+    ni = 196
     nb = None
     domain_batch_size = 32
     initial_batch_size = 32
@@ -70,13 +70,15 @@ def train_OU_init():
     )
 
     def u0(x):
+        # TODO: find a reshape of init_func to prevent UserWarning from jinns
         return multivariate_normal.pdf(x, mean=jnp.array([1, 1]), cov=0.1 * jnp.eye(2))
 
     int_xmin, int_xmax = -3, 3
     int_ymin, int_ymax = -3, 3
 
     n_samples = 32
-    int_length = (int_xmax - int_xmin) * (int_ymax - int_ymin)
+    volume = (int_xmax - int_xmin) * (int_ymax - int_ymin)
+    norm_weights = jnp.array([volume])
     key, subkey1, subkey2 = random.split(key, 3)
     mc_samples = jnp.concatenate(
         [
@@ -103,7 +105,7 @@ def train_OU_init():
             loss_weights=loss_weights,
             dynamic_loss=OU_fpe_non_statio_2D_loss,
             initial_condition_fun=u0,
-            norm_int_length=int_length,
+            norm_weights=norm_weights,
             norm_samples=mc_samples,
             params=init_params,
         )

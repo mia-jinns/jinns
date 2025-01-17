@@ -59,9 +59,8 @@ def train_OU_init():
     )
 
     good_mc_params = {"int_xmin": 1, "int_xmax": 3}
-    good_mc_params["int_length"] = (
-        good_mc_params["int_xmax"] - good_mc_params["int_xmin"]
-    )
+    volume = good_mc_params["int_xmax"] - good_mc_params["int_xmin"]
+    good_mc_params["norm_weights"] = jnp.array([volume])
 
     n_mc = 1000
     key, subkey = jax.random.split(key, 2)
@@ -97,7 +96,7 @@ def train_OU_init():
             u=u,
             loss_weights=loss_weights,
             dynamic_loss=OU_statio_1D_loss,
-            norm_int_length=good_mc_params["int_length"],
+            norm_weights=good_mc_params["norm_weights"],
             norm_samples=good_mc_samples,
             params=init_params,
         )
