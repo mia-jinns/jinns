@@ -83,19 +83,8 @@ def test_wrong_mc_weights(train_OU_init):
             params=init_params,
         )
 
-    # Catching an expected Error cause norm_weights are not array
-    with pytest.raises(ValueError), pytest.warns(UserWarning):
-        _ = jinns.loss.LossPDENonStatio(
-            u=u,
-            loss_weights=loss_weights,
-            dynamic_loss=dynamic_loss,
-            initial_condition_fun=u0,
-            norm_weights=volume,
-            norm_samples=mc_samples,
-            params=init_params,
-        )
-
-    # Catching an expected Error because norm_weights are None
+    # Catching an expected Error because norm_weights does not have the same
+    # leading dimensions as mc_samples
     with pytest.raises(ValueError), pytest.warns(UserWarning):
         _ = jinns.loss.LossPDENonStatio(
             u=u,
@@ -112,7 +101,7 @@ def test_broadcast_norm_weights(train_OU_init):
 
     u, init_params, loss_weights, dynamic_loss, u0, mc_samples, volume = train_OU_init
     with pytest.warns(UserWarning):
-        nw1 = jnp.array([volume])
+        nw1 = volume
         loss1 = jinns.loss.LossPDENonStatio(
             u=u,
             loss_weights=loss_weights,
