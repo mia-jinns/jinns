@@ -60,7 +60,7 @@ def train_OU_init():
 
     good_mc_params = {"int_xmin": 1, "int_xmax": 3}
     volume = good_mc_params["int_xmax"] - good_mc_params["int_xmin"]
-    good_mc_params["norm_weights"] = jnp.array([volume])
+    good_mc_params["norm_weights"] = volume
 
     n_mc = 1000
     key, subkey = jax.random.split(key, 2)
