@@ -273,8 +273,8 @@ class _LossPDEAbstract(eqx.Module):
                     raise ValueError(
                         "`norm_weights` should have the same leading dimension"
                         " as `norm_samples`,"
-                        f" got shape {self.norm_weights.shape} and "
-                        f"got shape {self.norm_samples.shape} and"
+                        f" got shape {self.norm_weights.shape} and"
+                        f" shape {self.norm_samples.shape}."
                     )
 
     @abc.abstractmethod
