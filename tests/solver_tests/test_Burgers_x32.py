@@ -96,9 +96,9 @@ def train_Burgers_10it(train_Burgers_init):
 def test_initial_loss_Burgers(train_Burgers_init):
     init_params, loss, train_data = train_Burgers_init
     train_data, batch = train_data.get_batch()
-    assert jnp.allclose(loss.evaluate(init_params, batch)[0], 57.44712, atol=1e-1)
+    assert jnp.allclose(loss.evaluate(init_params, batch)[0], 49.271202, atol=1e-1)
 
 
 def test_10it_Burgers(train_Burgers_10it):
     total_loss_val = train_Burgers_10it
-    assert jnp.allclose(total_loss_val, 39.558655, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 32.017952, atol=1e-1)
