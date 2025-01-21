@@ -1,5 +1,12 @@
 # Changelog
 
+* Unreleased (currently on main)
+
+    - Enhance importance sampling for MC integration `[!66] <https://gitlab.com/mia_jinns/jinns/-/merge_requests/66>`_
+    - Update tests for JAX 0.5.0. which introduces a breaking change in the PRNG algorithm `[!67] <https://gitlab.com/mia_jinns/jinns/-/merge_requests/67>`_ Note that expect for the tests, `jinns` still supports lower JAX versions.
+    - Correct `normalization_loss_apply` in a specific use-case `[!65] <https://gitlab.com/mia_jinns/jinns/-/merge_requests/65>`_
+    - Authorize AOT `[!63] <https://gitlab.com/mia_jinns/jinns/-/merge_requests/63>`_
+
 * v1.2.0
 
     - :rocket: **jinns** is now much faster, with computational times reduced by at least a factor 2 in the non-stationary settings. This is due to important changes in the mini-batches handling, internal changes for non-stationary PINNs and changes in DataGenerators:
