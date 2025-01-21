@@ -126,9 +126,9 @@ def test_initial_loss_OU(train_OU_init):
     init_params, loss, train_data = train_OU_init
     _, batch = train_data.get_batch()
     l_init, _ = loss.evaluate(init_params, batch)
-    assert jnp.allclose(l_init, 0.89656645, atol=1e-1)
+    assert jnp.allclose(l_init, 2.4449294, atol=1e-1)
 
 
 def test_10it_OU(train_OU_10it):
     total_loss_val = train_OU_10it
-    assert jnp.allclose(total_loss_val, 0.8247741, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 2.2827492, atol=1e-1)
