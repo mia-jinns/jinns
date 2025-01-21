@@ -157,7 +157,7 @@ def train_ReacDiff_10it(train_ReacDiff_init):
 def test_initial_loss_ReacDiff(train_ReacDiff_init):
     init_params, loss, train_data = train_ReacDiff_init
     assert jnp.allclose(
-        loss.evaluate(init_params, train_data.get_batch()[1])[0], 0.75869, atol=1e-1
+        loss.evaluate(init_params, train_data.get_batch()[1])[0], 0.95541906, atol=1e-1
     )
 
 

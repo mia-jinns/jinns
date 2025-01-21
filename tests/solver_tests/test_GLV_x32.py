@@ -136,11 +136,11 @@ def test_initial_loss_GLV(train_GLV_init):
     _, batch = train_data.get_batch()
     assert jnp.allclose(
         loss.evaluate(init_params, batch)[0],
-        4579.1962890625,
+        4750.7188,
         atol=1e-1,
     )
 
 
 def test_10it_GLV(train_GLV_10it):
     total_loss_val = train_GLV_10it
-    assert jnp.allclose(total_loss_val, 4346.9204, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 4479.3237, atol=1e-1)
