@@ -14,7 +14,7 @@ from jax.scipy.stats import multivariate_normal
 key = random.PRNGKey(1)
 n = 117
 nb = None
-ni = 5
+ni = 4
 xmin = -3
 xmax = 3
 ymin = -3
@@ -28,7 +28,8 @@ int_xmin, int_xmax = -5, 5
 int_ymin, int_ymax = -5, 5
 
 n_samples = int(1e1)
-int_length = (int_xmax - int_xmin) * (int_ymax - int_ymin)
+volume = (int_xmax - int_xmin) * (int_ymax - int_ymin)
+norm_weights = volume
 key, subkey1, subkey2 = random.split(key, 3)
 mc_samples = jnp.concatenate(
     [
@@ -80,16 +81,16 @@ loss_weights = jinns.loss.LossWeightsPDENonStatio(
     norm_loss=0.1 * Tmax,
 )
 
-# with pytest.warns(UserWarning):
-loss = jinns.loss.LossPDENonStatio(
-    u=u,
-    loss_weights=loss_weights,
-    dynamic_loss=OU_fpe_non_statio_2D_loss,
-    initial_condition_fun=u0,
-    norm_int_length=int_length,
-    norm_samples=mc_samples,
-    params=init_params,
-)
+with pytest.warns(UserWarning):
+    loss = jinns.loss.LossPDENonStatio(
+        u=u,
+        loss_weights=loss_weights,
+        dynamic_loss=OU_fpe_non_statio_2D_loss,
+        initial_condition_fun=u0,
+        norm_weights=norm_weights,
+        norm_samples=mc_samples,
+        params=init_params,
+    )
 
 
 # Optimizer
@@ -198,7 +199,7 @@ def test_rar_error_with_SPINN(all_tests):
             loss_weights=loss_weights,
             dynamic_loss=OU_fpe_non_statio_2D_loss,
             initial_condition_fun=u0,
-            norm_int_length=int_length,
+            norm_norm_weights=norm_weights,
             norm_samples=mc_samples,
             params=init_params,
         )

@@ -59,9 +59,8 @@ def train_OU_init():
     )
 
     good_mc_params = {"int_xmin": 1, "int_xmax": 3}
-    good_mc_params["int_length"] = (
-        good_mc_params["int_xmax"] - good_mc_params["int_xmin"]
-    )
+    volume = good_mc_params["int_xmax"] - good_mc_params["int_xmin"]
+    good_mc_params["norm_weights"] = volume
 
     n_mc = 1000
     key, subkey = jax.random.split(key, 2)
@@ -97,7 +96,7 @@ def train_OU_init():
             u=u,
             loss_weights=loss_weights,
             dynamic_loss=OU_statio_1D_loss,
-            norm_int_length=good_mc_params["int_length"],
+            norm_weights=good_mc_params["norm_weights"],
             norm_samples=good_mc_samples,
             params=init_params,
         )
@@ -126,9 +125,9 @@ def test_initial_loss_OU(train_OU_init):
     init_params, loss, train_data = train_OU_init
     _, batch = train_data.get_batch()
     l_init, _ = loss.evaluate(init_params, batch)
-    assert jnp.allclose(l_init, 0.89656645, atol=1e-1)
+    assert jnp.allclose(l_init, 2.4449294, atol=1e-1)
 
 
 def test_10it_OU(train_OU_10it):
     total_loss_val = train_OU_10it
-    assert jnp.allclose(total_loss_val, 0.8247741, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 2.2827492, atol=1e-1)
