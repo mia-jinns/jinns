@@ -90,7 +90,6 @@ def normalization_loss_apply(
                 0,
             )
             res = v_u(*batches, params)
-            assert res.shape[-1] == 1, "norm loss expects unidimensional *PINN"
             # Monte-Carlo integration using importance sampling
             mse_norm_loss = loss_weight * (
                 jnp.abs(jnp.mean(res.squeeze() * norm_weights) - 1) ** 2
@@ -109,7 +108,6 @@ def normalization_loss_apply(
                 in_axes=(0,) + vmap_axes_params,
             )
             res = v_u(batches, params)
-            assert res.shape[-1] == 1, "norm loss expects unidimensional *PINN"
             # For all times t, we perform an integration. Then we average the
             # losses over times.
             mse_norm_loss = loss_weight * jnp.mean(
@@ -118,7 +116,6 @@ def normalization_loss_apply(
     elif isinstance(u, SPINN):
         if len(batches) == 1:
             res = u(*batches, params)
-            assert res.shape[-1] == 1, "norm loss expects unidimensional *PINN"
             mse_norm_loss = (
                 loss_weight
                 * jnp.abs(
@@ -139,7 +136,6 @@ def normalization_loss_apply(
                 ),
                 params,
             )
-            assert res.shape[-1] == 1, "norm loss expects unidimensional *PINN"
             # the outer mean() below is for the times stamps
             mse_norm_loss = loss_weight * jnp.mean(
                 jnp.abs(

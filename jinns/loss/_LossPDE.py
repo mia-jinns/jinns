@@ -94,12 +94,10 @@ class _LossPDEAbstract(eqx.Module):
     norm_samples : Float[Array, "nb_norm_samples dimension"], default=None
         Monte-Carlo sample points for computing the
         normalization constant. Default is None.
-    norm_weights : Float[Array, "nb_norm_samples"] | float | int, default=None
+    norm_weights : Float[Array, "nb_norm_samples"], default=None
         The importance sampling weights for Monte-Carlo integration of the
         normalization constant. Must be provided if `norm_samples` is provided.
-        `norm_weights` should have the same leading dimension as
-        `norm_samples`.
-        Alternatively, the user can pass a float or an integer.
+        An array of similar shape to `norm_samples` or shape `(1,)` is expected.
         These corresponds to the weights $w_k = \frac{1}{q(x_k)}$ where
         $q(\cdot)$ is the proposal p.d.f. and $x_k$ are the Monte-Carlo samples.
     obs_slice : slice, default=None
@@ -131,7 +129,7 @@ class _LossPDEAbstract(eqx.Module):
     norm_samples: Float[Array, "nb_norm_samples dimension"] | None = eqx.field(
         kw_only=True, default=None
     )
-    norm_weights: Float[Array, "nb_norm_samples"] | float | int | None = eqx.field(
+    norm_weights: Float[Array, "nb_norm_samples"] | None = eqx.field(
         kw_only=True, default=None
     )
     obs_slice: slice | None = eqx.field(kw_only=True, default=None, static=True)
@@ -262,20 +260,15 @@ class _LossPDEAbstract(eqx.Module):
                 raise ValueError(
                     "`norm_weights` must be provided when `norm_samples` is used!"
                 )
-            try:
-                assert self.norm_weights.shape[0] == self.norm_samples.shape[0]
-            except (AssertionError, AttributeError):
-                if isinstance(self.norm_weights, (int, float)):
-                    self.norm_weights = jnp.array(
-                        [self.norm_weights], dtype=jax.dtypes.canonicalize_dtype(float)
-                    )
-                else:
-                    raise ValueError(
-                        "`norm_weights` should have the same leading dimension"
-                        " as `norm_samples`,"
-                        f" got shape {self.norm_weights.shape} and"
-                        f" shape {self.norm_samples.shape}."
-                    )
+            elif not eqx.is_array(self.norm_weights):
+                raise ValueError("`norm_weights` should be a JAX or NumPy ndarray.")
+            elif (
+                self.norm_weights.shape[0] != 1
+                and self.norm_weights.shape[0] != self.norm_samples.shape[0]
+            ):
+                raise ValueError(
+                    "`norm_weights` should have shape (1,) or similar to `norm_samples`."
+                )
 
     @abc.abstractmethod
     def evaluate(
@@ -349,12 +342,10 @@ class LossPDEStatio(_LossPDEAbstract):
     norm_samples : Float[Array, "nb_norm_samples dimension"], default=None
         Monte-Carlo sample points for computing the
         normalization constant. Default is None.
-    norm_weights : Float[Array, "nb_norm_samples"] | float | int, default=None
+    norm_weights : Float[Array, "nb_norm_samples"], default=None
         The importance sampling weights for Monte-Carlo integration of the
         normalization constant. Must be provided if `norm_samples` is provided.
-        `norm_weights` should have the same leading dimension as
-        `norm_samples`.
-        Alternatively, the user can pass a float or an integer.
+        An array of similar shape to `norm_samples` or shape `(1,)` is expected.
         These corresponds to the weights $w_k = \frac{1}{q(x_k)}$ where
         $q(\cdot)$ is the proposal p.d.f. and $x_k$ are the Monte-Carlo samples.
     obs_slice : slice, default=None
@@ -578,12 +569,10 @@ class LossPDENonStatio(LossPDEStatio):
     norm_samples : Float[Array, "nb_norm_samples dimension"], default=None
         Monte-Carlo sample points for computing the
         normalization constant. Default is None.
-    norm_weights : Float[Array, "nb_norm_samples"] | float | int, default=None
+    norm_weights : Float[Array, "nb_norm_samples"], default=None
         The importance sampling weights for Monte-Carlo integration of the
         normalization constant. Must be provided if `norm_samples` is provided.
-        `norm_weights` should have the same leading dimension as
-        `norm_samples`.
-        Alternatively, the user can pass a float or an integer.
+        An array of similar shape to `norm_samples` or shape `(1,)` is expected.
         These corresponds to the weights $w_k = \frac{1}{q(x_k)}$ where
         $q(\cdot)$ is the proposal p.d.f. and $x_k$ are the Monte-Carlo samples.
     obs_slice : slice, default=None
@@ -764,15 +753,12 @@ class SystemLossPDE(eqx.Module):
         A dict of Monte-Carlo sample points for computing the
         normalization constant. Default is None.
         Must share the keys of `u_dict`
-    norm_weights_dict : Dict[str, Array[Float, "nb_norm_samples"] | float | int | None] | None, default=None
+    norm_weights_dict : Dict[str, Array[Float, "nb_norm_samples"] | None] | None, default=None
         A dict of jnp.array with the same keys as `u_dict`. The importance
         sampling weights for Monte-Carlo integration of the
-        normalization constant for each element of u_dict. Must be provided if
+        normalization constant for each element of u_dict.. Must be provided if
         `norm_samples_dict` is provided.
-        `norm_weights_dict[key]` should have the same leading dimension as
-        `norm_samples_dict[key]` for each `key`.
-        Alternatively, the user can pass a float or an integer.
-        For each key, an array of similar shape to `norm_samples_dict[key]`
+        For each `key`, an array of similar shape to `norm_samples_dict[key]`
         or shape `(1,)` is expected. These corresponds to the weights $w_k =
         \frac{1}{q(x_k)}$ where $q(\cdot)$ is the proposal p.d.f. and $x_k$ are
         the Monte-Carlo samples. Default is None
@@ -812,7 +798,7 @@ class SystemLossPDE(eqx.Module):
         eqx.field(kw_only=True, default=None)
     )
     norm_weights_dict: (
-        Dict[str, Float[Array, "nb_norm_samples dimension"] | float | int | None] | None
+        Dict[str, Float[Array, "nb_norm_samples dimension"] | None] | None
     ) = eqx.field(kw_only=True, default=None)
     obs_slice_dict: Dict[str, slice | None] | None = eqx.field(
         kw_only=True, default=None, static=True

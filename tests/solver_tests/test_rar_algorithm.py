@@ -29,7 +29,7 @@ int_ymin, int_ymax = -5, 5
 
 n_samples = int(1e1)
 volume = (int_xmax - int_xmin) * (int_ymax - int_ymin)
-norm_weights = volume
+norm_weights = jnp.array([volume])
 key, subkey1, subkey2 = random.split(key, 3)
 mc_samples = jnp.concatenate(
     [
