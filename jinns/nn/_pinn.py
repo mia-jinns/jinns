@@ -75,6 +75,9 @@ class PINN(eqx.Module):
         """
         return self._init_params
 
+    def combine(self, params: PyTree) -> PyTree:
+        return eqx.combine(self.static, params)
+
     @abc.abstractmethod
     def __call__(
         self,
@@ -89,4 +92,7 @@ class PINN(eqx.Module):
         architecture. The rest of the content of this function is dependent on
         the network.
         """
+        # recreate the whole PyTree of the network
+        nn = self.combine(params)
+        # ... do stuff
         raise NotImplementedError("A PINN should have a __call__ method")
