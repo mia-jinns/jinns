@@ -15,7 +15,7 @@ from jaxtyping import Array, Float, PyTree, Int, Key
 import equinox as eqx
 import numpy as onp
 
-from jinns.utils._pinn import PINN, _MLP
+from jinns.networks._mlp import MLP, JinnsMLP
 from jinns.parameters._params import Params, ParamsDict
 
 
@@ -38,7 +38,7 @@ def _get_param_nb(
     return onp.asarray(sum(dim_prod_all_arrays)), onp.cumsum(dim_prod_all_arrays)
 
 
-class HYPERPINN(PINN):
+class HYPERPINN(MLP):
     """
     A HYPERPINN object compatible with the rest of jinns.
     Composed of a PINN and an HYPER network. The HYPERPINN is typically

@@ -28,7 +28,7 @@ from jinns.parameters._params import (
 from jinns.parameters._derivative_keys import _set_derivatives, DerivativeKeysODE
 from jinns.loss._loss_weights import LossWeightsODE, LossWeightsODEDict
 from jinns.loss._DynamicLossAbstract import ODE
-from jinns.utils._pinn import PINN
+from jinns.networks._pinn import PINN
 
 if TYPE_CHECKING:
     from jinns.utils._types import *

@@ -19,8 +19,8 @@ from jinns.data._DataGenerators import (
     CubicMeshPDEStatio,
     CubicMeshPDENonStatio,
 )
-from jinns.utils._hyperpinn import HYPERPINN
-from jinns.utils._spinn import SPINN
+from jinns.networks._hyperpinn import HYPERPINN
+from jinns.networks._spinn import SPINN
 
 
 if TYPE_CHECKING:
