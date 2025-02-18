@@ -14,23 +14,23 @@ from jinns.parameters._params import Params, ParamsDict
 
 class PINN(eqx.Module):
     r"""
-    Abstract class for PINN architectures. This can be seen as wrappers for
+    Abstract class for PINN objects. This can be seen as wrappers on
     eqx.Modules which actually implement the NN architectures.
 
     For compatibility with jinns, we require that a PINN architecture:
-        1) has an eqx.partition call in __post_init__ in order to store the initial
-    parameters and static elements
-        2) has an eqx.Module (`eqx_network`) InitVar passed to __post_init__ for the
-    operation described in 1)
-        3) has a eq_type argument, whose type is given below, for internal
-    operation in jinns.
-        4) has a slice solution argument. It is a jnp.s\_ object which
+
+        1) has an eqx.Module (`eqx_network`) InitVar passed to __post_init__
+        representing the network architecture.
+        2) calls `eqx.partition` in __post_init__ in order to store the
+        static part of the model and the initial parameters.
+        3) has a eq_type argument, used for handling internal operations in
+        jinns.
+        4) has a slice solution argument. It is a `jnp.s\_` object which
     indicates which axis of the PINN output is dedicated to the actual equation
     solution. Default None means that slice_solution = the whole PINN output.
-    This argument is useful
-    when the PINN is also used to output equation parameters for example
-    Note that it must be a slice and not an integer (a preprocessing of the
-    user provided argument takes care of it).
+    For example, this argument is useful when the PINN is also used to output
+    equation parameters. Note that it must be a slice and not an integer (a
+    preprocessing of the user provided argument takes care of it).
 
     Raises
     ------

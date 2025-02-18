@@ -26,9 +26,9 @@ if TYPE_CHECKING:
 
     from jinns.loss import DynamicLoss
     from jinns.data._Batchs import *
-    from jinns.networks._pinn import PINN
-    from jinns.networks._hyperpinn import HYPERPINN
-    from jinns.networks._spinn import SPINN
+    from jinns.nn._pinn import PINN
+    from jinns.nn._hyperpinn import HYPERPINN
+    from jinns.nn._spinn import SPINN
     from jinns.utils._containers import *
     from jinns.validation._validation import AbstractValidationModule
 

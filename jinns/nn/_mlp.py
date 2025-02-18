@@ -11,7 +11,7 @@ import equinox as eqx
 from jaxtyping import Array, Key, PyTree, Float
 
 from jinns.parameters._params import Params, ParamsDict
-from jinns.networks._pinn import PINN
+from jinns.nn._pinn import PINN
 
 
 class JinnsMLP(eqx.Module):
@@ -190,7 +190,7 @@ class MLP(PINN):
             is not provided. A JAX random key that will be used to initialize the network
             parameters.
         eqx_list
-            Default is None. Must be provided with `eqx_list` if `eqx_network`
+            Default is None. Must be provided  if `eqx_network`
             is not provided.A tuple of tuples of successive equinox modules and activation
             functions to describe the MLP architecture. The inner tuples must have
             the eqx module or activation function as first item, other items

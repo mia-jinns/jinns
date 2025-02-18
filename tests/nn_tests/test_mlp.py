@@ -21,7 +21,7 @@ def create_MLP_1():
         (eqx.nn.Linear, 128, 1),
     )
     key, subkey = random.split(key)
-    u, params = jinns.networks.MLP.create(
+    u, params = jinns.nn.MLP.create(
         key=subkey, eqx_list=eqx_list, eq_type="nonstatio_PDE"
     )
 
@@ -34,9 +34,7 @@ def create_MLP_2():
     key = random.PRNGKey(2)
     key, subkey = random.split(key)
     eqx_network = eqx.nn.MLP(2, 1, 128, 3, jax.nn.tanh, key=subkey)
-    u, params = jinns.networks.MLP.create(
-        eqx_network=eqx_network, eq_type="nonstatio_PDE"
-    )
+    u, params = jinns.nn.MLP.create(eqx_network=eqx_network, eq_type="nonstatio_PDE")
 
     return u, params
 
@@ -48,7 +46,7 @@ def create_MLP_3():
     """
     jax.config.update("jax_enable_x64", False)
 
-    class MyPINN(jinns.networks.PINN):
+    class MyPINN(jinns.nn.PINN):
         def __call__(self, inputs, params):
             model = eqx.combine(params, self.static)
             return model(inputs)
