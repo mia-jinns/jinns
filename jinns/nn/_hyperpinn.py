@@ -112,10 +112,10 @@ class HYPERPINN(MLP):
         self.params_hyper, self.static_hyper = eqx.partition(
             hyper_mlp, eqx.is_inexact_array
         )
-        self.pinn_params_sum, self.pinn_params_cumsum = _get_param_nb(self.params)
+        self.pinn_params_sum, self.pinn_params_cumsum = _get_param_nb(self._init_params)
 
     @property
-    def init_params(self) -> Params:
+    def _init_params(self) -> Params:
         """
         Returns an initial set of parameters
         """
@@ -128,14 +128,14 @@ class HYPERPINN(MLP):
         """
         pinn_params_flat = eqx.tree_at(
             lambda p: tree_leaves(p, is_leaf=eqx.is_array),
-            self.params,
+            self._init_params,
             jnp.split(hyper_output, self.pinn_params_cumsum[:-1]),
         )
 
         return tree_map(
             lambda a, b: a.reshape(b.shape),
             pinn_params_flat,
-            self.params,
+            self._init_params,
             is_leaf=lambda x: isinstance(x, jnp.ndarray),
         )
 
@@ -417,4 +417,4 @@ def create_HYPERPINN(
             hypernet_input_size=hypernet_input_size,
             output_slice=None,
         )
-    return hyperpinn, hyperpinn.init_params
+    return hyperpinn, hyperpinn._init_params

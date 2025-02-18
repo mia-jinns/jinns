@@ -289,4 +289,4 @@ class MLP(PINN):
             output_transform=output_transform,
             output_slice=None,
         )
-        return mlp, mlp.init_params
+        return mlp, mlp._init_params
