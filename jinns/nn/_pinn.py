@@ -3,13 +3,12 @@ Implement abstract class for PINN architectures
 """
 
 import abc
-from typing import Literal
+from typing import Literal, Callable, Union, Any
 from dataclasses import InitVar
 import equinox as eqx
 from jaxtyping import Float, Array, PyTree
 import jax.numpy as jnp
 import typing
-from typing import Callable
 from jinns.parameters._params import Params, ParamsDict
 
 
@@ -54,7 +53,7 @@ class PINN(eqx.Module):
     )
 
     eqx_network: InitVar[eqx.Module] = eqx.field(kw_only=True)
-    filter_spec: PyTree[typing.Union[bool, Callable[[typing.Any], bool]]] = eqx.field(
+    filter_spec: PyTree[Union[bool, Callable[[Any], bool]]] = eqx.field(
         kw_only=True, default=eqx.is_inexact_array
     )
 
