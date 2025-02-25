@@ -7,9 +7,10 @@ import pickle
 import jax
 import equinox as eqx
 
-from jinns.utils._pinn import create_PINN, PINN
-from jinns.utils._spinn import create_SPINN, SPINN
-from jinns.utils._hyperpinn import create_HYPERPINN, HYPERPINN
+from jinns.nn._pinn_abstract import PINNAbstract
+from jinns.nn._mlp import PINN_MLP
+from jinns.nn._spinn import create_SPINN, SPINN
+from jinns.nn._hyperpinn import create_HYPERPINN, HYPERPINN
 from jinns.parameters._params import Params, ParamsDict
 
 
@@ -84,15 +85,15 @@ def string_to_function(
 
 def save_pinn(
     filename: str,
-    u: PINN | HYPERPINN | SPINN,
+    u: PINNAbstract | HYPERPINN | SPINN,
     params: Params | ParamsDict,
     kwargs_creation,
 ):
     """
-    Save a PINN / HyperPINN / SPINN model
+    Save a PINNAbstract / HyperPINN / SPINN model
     This function creates 3 files, beggining by `filename`
 
-     1. an eqx file to save the eqx.Module (the PINN, HyperPINN, ...)
+     1. an eqx file to save the eqx.Module (the PINNAbstract, HyperPINN, ...)
      2. a pickle file for the parameters of the equation
      3. a pickle file for the arguments that have been used at PINN creation
      and that we need to reconstruct the eqx.module later on.
@@ -103,7 +104,7 @@ def save_pinn(
     tree_serialise_leaves`).
 
     Equation parameters are saved apart because the initial type of attribute
-    `params` in PINN / HYPERPINN / SPINN is not `Params` nor `ParamsDict`
+    `params` in PINNAbstract / HYPERPINN / SPINN is not `Params` nor `ParamsDict`
     but `PyTree` as inherited from `eqx.partition`.
     Therefore, if we want to ensure a proper serialization/deserialization:
     - we cannot save a `Params` object at this
@@ -111,14 +112,14 @@ def save_pinn(
       (type `PyTree`) and `Params.eq_params` (type `dict`).
     - in the case of a `ParamsDict` we cannot save `ParamsDict.nn_params` at
       the attribute field `params` because it is not a `PyTree` (as expected in
-      the PINN / HYPERPINN / SPINN signature) but it is still a dictionary.
+      the PINNAbstract / HYPERPINN / SPINN signature) but it is still a dictionary.
 
     Parameters
     ----------
     filename
         Filename (prefix) without extension
     u
-        The PINN
+        The PINNAbstract
     params
         Params or ParamsDict to be save
     kwargs_creation
@@ -128,16 +129,16 @@ def save_pinn(
     if isinstance(params, Params):
         if isinstance(u, HYPERPINN):
             u = eqx.tree_at(lambda m: m.params_hyper, u, params)
-        elif isinstance(u, (PINN, SPINN)):
-            u = eqx.tree_at(lambda m: m.params, u, params)
+        elif isinstance(u, (PINNAbstract, SPINN)):
+            u = eqx.tree_at(lambda m: m.init_params, u, params)
         eqx.tree_serialise_leaves(filename + "-module.eqx", u)
 
     elif isinstance(params, ParamsDict):
         for key, params_ in params.nn_params.items():
             if isinstance(u, HYPERPINN):
                 u = eqx.tree_at(lambda m: m.params_hyper, u, params_)
-            elif isinstance(u, (PINN, SPINN)):
-                u = eqx.tree_at(lambda m: m.params, u, params_)
+            elif isinstance(u, (PINNAbstract, SPINN)):
+                u = eqx.tree_at(lambda m: m.init_params, u, params_)
             eqx.tree_serialise_leaves(filename + f"-module_{key}.eqx", u)
 
     else:
@@ -167,7 +168,7 @@ def save_pinn(
 
 def load_pinn(
     filename: str,
-    type_: Literal["pinn", "hyperpinn", "spinn"],
+    type_: Literal["pinn_mlp", "hyperpinn", "spinn"],
     key_list_for_paramsdict: list[str] = None,
 ) -> tuple[eqx.Module, Params | ParamsDict]:
     """
@@ -187,7 +188,7 @@ def load_pinn(
     filename
         Filename (prefix) without extension.
     type_
-        Type of model to load. Must be in ["pinn", "hyperpinn", "spinn"].
+        Type of model to load. Must be in ["pinn_mlp", "hyperpinn", "spinn"].
     key_list_for_paramsdict
         Pass the name of the keys of the dictionnary `ParamsDict.nn_params`. Default is None. In this case, we expect to retrieve a ParamsDict.
 
@@ -207,10 +208,12 @@ def load_pinn(
         eq_params_reloaded = {}
         print("No pickle file for equation parameters found!")
     kwargs_reloaded["eqx_list"] = string_to_function(kwargs_reloaded["eqx_list"])
-    if type_ == "pinn":
+    if type_ == "pinn_mlp":
         # next line creates a shallow model, the jax arrays are just shapes and
         # not populated, this just recreates the correct pytree structure
-        u_reloaded_shallow, _ = eqx.filter_eval_shape(create_PINN, **kwargs_reloaded)
+        u_reloaded_shallow, _ = eqx.filter_eval_shape(
+            PINN_MLP.create, **kwargs_reloaded
+        )
     elif type_ == "spinn":
         u_reloaded_shallow, _ = eqx.filter_eval_shape(create_SPINN, **kwargs_reloaded)
     elif type_ == "hyperpinn":
