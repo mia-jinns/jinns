@@ -14,7 +14,7 @@ import jax.numpy as jnp
 import equinox as eqx
 
 from jinns.nn._pinn_abstract import PINNAbstract
-from jinns.nn._spinn import SPINN
+from jinns.nn._spinn import SPINNAbstract
 
 from jinns.utils._utils import get_grid
 from jinns.loss._DynamicLossAbstract import ODE, PDEStatio, PDENonStatio
@@ -87,7 +87,7 @@ class FisherKPP(PDENonStatio):
                 - u(t_x, params)
                 * (params.eq_params["r"] - params.eq_params["g"] * u(t_x, params))
             )
-        if isinstance(u, SPINN):
+        if isinstance(u, SPINNAbstract):
             s = jnp.zeros((1, self.dim_x + 1))
             s = s.at[0].set(1.0)
             v0 = jnp.repeat(s, t_x.shape[0], axis=0)
@@ -102,7 +102,9 @@ class FisherKPP(PDENonStatio):
                 -params.eq_params["D"] * lap
                 - u_tx * (params.eq_params["r"] - params.eq_params["g"] * u_tx)
             )
-        raise ValueError("u is not among the recognized types (PINNAbstract or SPINN)")
+        raise ValueError(
+            "u is not among the recognized types (PINNAbstract or SPINNAbstract)"
+        )
 
 
 class GeneralizedLotkaVolterra(ODE):
@@ -244,7 +246,7 @@ class BurgersEquation(PDENonStatio):
                 - params.eq_params["nu"] * d2u_dx_dtx(t_x)[1:2]
             )
 
-        if isinstance(u, SPINN):
+        if isinstance(u, SPINNAbstract):
             # d=2 JVP calls are expected since we have time and x
             # then with a batch of size B, we then have Bd JVP calls
             v0 = jnp.repeat(jnp.array([[1.0, 0.0]]), t_x.shape[0], axis=0)
@@ -271,7 +273,9 @@ class BurgersEquation(PDENonStatio):
             _, d2u_dx2 = jax.jvp(du_dx_fun, (t_x,), (v1,))
             # Note that ones_like(x) works because x is Bx1 !
             return du_dt + self.Tmax * (u_tx * du_dx - params.eq_params["nu"] * d2u_dx2)
-        raise ValueError("u is not among the recognized types (PINNAbstract or SPINN)")
+        raise ValueError(
+            "u is not among the recognized types (PINNAbstract or SPINNAbstract)"
+        )
 
 
 class FPENonStatioLoss2D(PDENonStatio):
@@ -364,7 +368,7 @@ class FPENonStatioLoss2D(PDENonStatio):
 
             return -du_dt + self.Tmax * (-grad_order_1 + grad_grad_order_2)
 
-        if isinstance(u, SPINN):
+        if isinstance(u, SPINNAbstract):
             v0 = jnp.repeat(jnp.array([[1.0, 0.0, 0.0]]), t_x.shape[0], axis=0)
             _, du_dt = jax.jvp(
                 lambda t_x: u(t_x, params),
@@ -419,7 +423,9 @@ class FPENonStatioLoss2D(PDENonStatio):
                 -(dau_dx1 + dau_dx2)
                 + (d2su_dx12 + d2su_dx22 + d2su_dx1dx2 + d2su_dx2dx1)
             )
-        raise ValueError("u is not among the recognized types (PINNAbstract or SPINN)")
+        raise ValueError(
+            "u is not among the recognized types (PINNAbstract or SPINNAbstract)"
+        )
 
     def drift(self, *args, **kwargs):
         # To be implemented in child classes
@@ -572,11 +578,13 @@ class MassConservation2DStatio(PDEStatio):
 
             return divergence_rev(x, u, params)[..., None]
 
-        if isinstance(u_dict[self.nn_key], SPINN):
+        if isinstance(u_dict[self.nn_key], SPINNAbstract):
             u = u_dict[self.nn_key]
 
             return divergence_fwd(x, u, params)[..., None]
-        raise ValueError("u is not among the recognized types (PINNAbstract or SPINN)")
+        raise ValueError(
+            "u is not among the recognized types (PINNAbstract or SPINNAbstract)"
+        )
 
 
 class NavierStokes2DStatio(PDEStatio):
@@ -685,7 +693,7 @@ class NavierStokes2DStatio(PDEStatio):
             # output is 2D
             return jnp.stack([result_x, result_y], axis=-1)
 
-        if isinstance(u_dict[self.u_key], SPINN):
+        if isinstance(u_dict[self.u_key], SPINNAbstract):
             u = u_dict[self.u_key]
 
             u_dot_nabla_x_u = _u_dot_nabla_times_u_fwd(x, u, u_params)
@@ -714,4 +722,6 @@ class NavierStokes2DStatio(PDEStatio):
 
             # output is 2D
             return jnp.stack([result_x, result_y], axis=-1)
-        raise ValueError("u is not among the recognized types (PINNAbstract or SPINN)")
+        raise ValueError(
+            "u is not among the recognized types (PINNAbstract or SPINNAbstract)"
+        )

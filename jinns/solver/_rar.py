@@ -20,7 +20,7 @@ from jinns.data._DataGenerators import (
     CubicMeshPDENonStatio,
 )
 from jinns.nn._hyperpinn import HYPERPINN
-from jinns.nn._spinn import SPINN
+from jinns.nn._spinn_abstract import SPINNAbstract
 
 
 if TYPE_CHECKING:
@@ -115,8 +115,10 @@ def _rar_step_init(sample_size: Int, selected_sample_size: Int) -> tuple[
 
     def rar_step_true(operands: rar_operands) -> AnyDataGenerator:
         loss, params, data, i = operands
-        if isinstance(loss.u, HYPERPINN) or isinstance(loss.u, SPINN):
-            raise NotImplementedError("RAR not implemented for hyperPINN and SPINN")
+        if isinstance(loss.u, HYPERPINN) or isinstance(loss.u, SPINNAbstract):
+            raise NotImplementedError(
+                "RAR not implemented for hyperPINN and SPINNAbstract"
+            )
 
         if isinstance(data, DataGeneratorODE):
 

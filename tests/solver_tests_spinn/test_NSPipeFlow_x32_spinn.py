@@ -27,7 +27,7 @@ def train_NSPipeFlow_init():
         (eqx.nn.Linear, 25, r * m),
     )
     key, subkey = random.split(key)
-    u, u_init_nn_params = jinns.utils.create_SPINN(
+    u, u_init_nn_params = jinns.nn.SPINN_MLP.create(
         subkey, d_, r, eqx_list, "statio_PDE", m
     )
 
@@ -43,7 +43,7 @@ def train_NSPipeFlow_init():
         (eqx.nn.Linear, 25, r),
     )
     key, subkey = random.split(key)
-    p, p_init_nn_params = jinns.utils.create_SPINN(
+    p, p_init_nn_params = jinns.nn.SPINN_MLP.create(
         subkey, d_, r, eqx_list, "statio_PDE"
     )
 

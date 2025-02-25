@@ -39,7 +39,7 @@ from jinns.loss._loss_weights import (
 )
 from jinns.loss._DynamicLossAbstract import PDEStatio, PDENonStatio
 from jinns.nn._pinn_abstract import PINNAbstract
-from jinns.nn._spinn import SPINN
+from jinns.nn._spinn_abstract import SPINNAbstract
 from jinns.data._Batchs import PDEStatioBatch, PDENonStatioBatch
 
 
@@ -965,13 +965,13 @@ class SystemLossPDE(eqx.Module):
         # happen inside it)
         self.derivative_keys_dyn_loss = DerivativeKeysPDENonStatio(params=params_dict)
 
-        # also make sure we only have PINNAbstracts or SPINNs
+        # also make sure we only have PINNAbstracts or SPINNAbstracts
         if not (
             all(isinstance(value, PINNAbstract) for value in self.u_dict.values())
-            or all(isinstance(value, SPINN) for value in self.u_dict.values())
+            or all(isinstance(value, SPINNAbstract) for value in self.u_dict.values())
         ):
             raise ValueError(
-                "We only accept dictionary of PINNAbstracts or dictionary of SPINNs"
+                "We only accept dictionary of PINNAbstracts or dictionary of SPINNAbstracts"
             )
 
     def set_loss_weights(
@@ -1084,7 +1084,7 @@ class SystemLossPDE(eqx.Module):
                 _set_derivatives(params_dict, self.derivative_keys_dyn_loss.dyn_loss),
                 vmap_in_axes + vmap_in_axes_params,
                 loss_weight,
-                u_type=type(list(self.u_dict.values())[0]),
+                u_type=list(self.u_dict.values())[0].__class__.__base__,
             )
 
         dyn_loss_mse_dict = jax.tree_util.tree_map(

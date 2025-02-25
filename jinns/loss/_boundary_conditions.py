@@ -14,7 +14,7 @@ import equinox as eqx
 from jinns.utils._utils import get_grid, _subtract_with_check
 from jinns.data._Batchs import *
 from jinns.nn._pinn_abstract import PINNAbstract
-from jinns.nn._spinn import SPINN
+from jinns.nn._spinn_abstract import SPINNAbstract
 
 if TYPE_CHECKING:
     from jinns.utils._types import *
@@ -121,7 +121,7 @@ def boundary_dirichlet(
     batch
         The batch
     u
-        The PINNAbstract or SPINN
+        The PINNAbstract or SPINNAbstract
     params
         The dictionary of parameters of the model.
         Typically, it is a dictionary of
@@ -156,14 +156,14 @@ def boundary_dirichlet(
             res**2,
             axis=-1,
         )
-    elif isinstance(u, SPINN):
+    elif isinstance(u, SPINNAbstract):
         values = u(batch_array, params)[..., dim_to_apply]
         grid = get_grid(batch_array)
         res = _subtract_with_check(f(grid), values, cause="boundary condition fun")
         mse_u_boundary = jnp.sum(res**2, axis=-1)
     else:
         raise ValueError(
-            f"Bad type for u. Got {type(u)}, expected PINNAbstract or SPINN"
+            f"Bad type for u. Got {type(u)}, expected PINNAbstract or SPINNAbstract"
         )
     return mse_u_boundary
 
@@ -267,7 +267,7 @@ def boundary_neumann(
             axis=-1,
         )
 
-    elif isinstance(u, SPINN):
+    elif isinstance(u, SPINNAbstract):
         # the gradient we see in the PINN case can get gradients wrt to x
         # dimensions at once. But it would be very inefficient in SPINN because
         # of the high dim output of u. So we do 2 explicit forward AD, handling all the
@@ -341,6 +341,6 @@ def boundary_neumann(
         )
     else:
         raise ValueError(
-            f"Bad type for u. Got {type(u)}, expected PINNAbstract or SPINN"
+            f"Bad type for u. Got {type(u)}, expected PINNAbstract or SPINNAbstract"
         )
     return mse_u_boundary

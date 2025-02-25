@@ -4,19 +4,20 @@ https://arxiv.org/abs/2211.08761
 """
 
 from dataclasses import InitVar
-from typing import Callable, Literal
+from typing import Callable, Literal, Self
 import jax
 import jax.numpy as jnp
 import equinox as eqx
 from jaxtyping import Key, Array, Float, PyTree
 
 from jinns.parameters._params import Params, ParamsDict
+from jinns.nn._mlp import MLP
+from jinns.nn._spinn_abstract import SPINNAbstract
 
 
-class _SPINN(eqx.Module):
+class SMLP(eqx.Module):
     """
-    Construct a Separable PINN as proposed in
-    Cho et al., _Separable Physics-Informed Neural Networks_, NeurIPS, 2023
+    Construct a Separable MLP
 
     Parameters
     ----------
@@ -42,27 +43,19 @@ class _SPINN(eqx.Module):
         )`.
     """
 
-    d: int = eqx.field(static=True, kw_only=True)
-
     key: InitVar[Key] = eqx.field(kw_only=True)
     eqx_list: InitVar[tuple[tuple[Callable, int, int] | Callable, ...]] = eqx.field(
         kw_only=True
     )
+    d: int = eqx.field(static=True, kw_only=True)
 
-    layers: list = eqx.field(init=False)
-    separated_mlp: list = eqx.field(init=False)
+    separated_mlp: list[MLP] = eqx.field(init=False)
 
     def __post_init__(self, key, eqx_list):
-        self.separated_mlp = []
-        for _ in range(self.d):
-            self.layers = []
-            for l in eqx_list:
-                if len(l) == 1:
-                    self.layers.append(l[0])
-                else:
-                    key, subkey = jax.random.split(key, 2)
-                    self.layers.append(l[0](*l[1:], key=subkey))
-            self.separated_mlp.append(self.layers)
+        keys = jax.random.split(key, self.d)
+        self.separated_mlp = [
+            MLP(key=keys[d_], eqx_list=eqx_list) for d_ in range(self.d)
+        ]
 
     def __call__(
         self, inputs: Float[Array, "dim"] | Float[Array, "dim+1"]
@@ -70,180 +63,117 @@ class _SPINN(eqx.Module):
         outputs = []
         for d in range(self.d):
             t_ = inputs[d : d + 1]
-            for layer in self.separated_mlp[d]:
-                t_ = layer(t_)
-            outputs += [t_]
+            outputs += [self.separated_mlp[d](t_)]
         return jnp.asarray(outputs)
 
 
-class SPINN(eqx.Module):
+class SPINN_MLP(SPINNAbstract):
     """
-    A SPINN object compatible with the rest of jinns.
-    This is typically created with `create_SPINN`.
-
-    Parameters
-    ----------
-    d : int
-        The number of dimensions to treat separately, including time `t` if
-        used for non-stationnary equations.
-
+    An implementable SPINN based on a MLP architecture
     """
 
-    d: int = eqx.field(static=True, kw_only=True)
-    r: int = eqx.field(static=True, kw_only=True)
-    eq_type: str = eqx.field(static=True, kw_only=True)
-    m: int = eqx.field(static=True, kw_only=True)
-
-    spinn_mlp: InitVar[eqx.Module] = eqx.field(kw_only=True)
-
-    params: PyTree = eqx.field(init=False)
-    static: PyTree = eqx.field(init=False, static=True)
-
-    def __post_init__(self, spinn_mlp):
-        self.params, self.static = eqx.partition(spinn_mlp, eqx.is_inexact_array)
-
-    @property
-    def init_params(self) -> PyTree:
+    @classmethod
+    def create(
+        cls,
+        key: Key,
+        d: int,
+        r: int,
+        eqx_list: tuple[tuple[Callable, int, int] | Callable, ...],
+        eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"],
+        m: int = 1,
+    ) -> tuple[Self, PyTree]:
         """
-        Returns an initial set of parameters
-        """
-        return self.params
+        Utility function to create a SPINN neural network with the equinox
+        library.
 
-    def __call__(
-        self,
-        t_x: Float[Array, "batch_size 1+dim"],
-        params: Params | ParamsDict | PyTree,
-    ) -> Float[Array, "output_dim"]:
+        *Note* that a SPINN is not vmapped and expects the
+        same batch size for each of its input axis. It directly outputs a solution
+        of shape `(batchsize, batchsize)`. See the paper for more details.
+
+        Parameters
+        ----------
+        key
+            A JAX random key that will be used to initialize the network parameters
+        d
+            The number of dimensions to treat separately.
+        r
+            An integer. The dimension of the embedding.
+        eqx_list
+            A tuple of tuples of successive equinox modules and activation functions to
+            describe the PINN architecture. The inner tuples must have the eqx module or
+            activation function as first item, other items represents arguments
+            that could be required (eg. the size of the layer).
+            The `key` argument need not be given.
+            Thus typical example is
+            `eqx_list=((eqx.nn.Linear, 2, 20),
+                jax.nn.tanh,
+                (eqx.nn.Linear, 20, 20),
+                jax.nn.tanh,
+                (eqx.nn.Linear, 20, 20),
+                jax.nn.tanh,
+                (eqx.nn.Linear, 20, 1)
+            )`.
+        eq_type : Literal["ODE", "statio_PDE", "nonstatio_PDE"]
+            A string with three possibilities.
+            "ODE": the PINN is called with one input `t`.
+            "statio_PDE": the PINN is called with one input `x`, `x`
+            can be high dimensional.
+            "nonstatio_PDE": the PINN is called with two inputs `t` and `x`, `x`
+            can be high dimensional.
+            **Note**: the input dimension as given in eqx_list has to match the sum
+            of the dimension of `t` + the dimension of `x` or the output dimension
+            after the `input_transform` function.
+        m
+            The output dimension of the neural network. According to
+            the SPINN article, a total embedding dimension of `r*m` is defined. We
+            then sum groups of `r` embedding dimensions to compute each output.
+            Default is 1.
+
+
+
+        Returns
+        -------
+        spinn
+            An instanciated SPINN
+        spinn.init_params
+            The initial set of parameters of the model
+
+        Raises
+        ------
+        RuntimeError
+            If the parameter value for eq_type is not in `["ODE", "statio_PDE",
+            "nonstatio_PDE"]` and for various failing checks
         """
-        Evaluate the SPINN on some inputs with some params.
-        """
+
+        if eq_type not in ["ODE", "statio_PDE", "nonstatio_PDE"]:
+            raise RuntimeError("Wrong parameter value for eq_type")
+
         try:
-            spinn = eqx.combine(params.nn_params, self.static)
-        except (KeyError, AttributeError, TypeError) as e:
-            spinn = eqx.combine(params, self.static)
-        v_model = jax.vmap(spinn)
-        res = v_model(t_x)
+            nb_inputs_declared = eqx_list[0][
+                1
+            ]  # normally we look for 2nd ele of 1st layer
+        except IndexError:
+            nb_inputs_declared = eqx_list[1][
+                1
+            ]  # but we can have, eg, a flatten first layer
+        if nb_inputs_declared != 1:
+            raise ValueError("Input dim must be set to 1 in SPINN!")
 
-        a = ", ".join([f"{chr(97 + d)}z" for d in range(res.shape[1])])
-        b = "".join([f"{chr(97 + d)}" for d in range(res.shape[1])])
-        res = jnp.stack(
-            [
-                jnp.einsum(
-                    f"{a} -> {b}",
-                    *(
-                        res[:, d, m * self.r : (m + 1) * self.r]
-                        for d in range(res.shape[1])
-                    ),
-                )
-                for m in range(self.m)
-            ],
-            axis=-1,
-        )  # compute each output dimension
+        try:
+            nb_outputs_declared = eqx_list[-1][2]  # normally we look for 3rd ele of
+            # last layer
+        except IndexError:
+            nb_outputs_declared = eqx_list[-2][2]
+            # but we can have, eg, a `jnp.exp` last layer
+        if nb_outputs_declared != r * m:
+            raise ValueError("Output dim must be set to r * m in SPINN!")
 
-        # force (1,) output for non vectorial solution (consistency)
-        if len(res.shape) == self.d:
-            return jnp.expand_dims(res, axis=-1)
-        return res
+        if d > 24:
+            raise ValueError(
+                "Too many dimensions, not enough letters available in jnp.einsum"
+            )
 
+        smlp = SMLP(key=key, d=d, eqx_list=eqx_list)
+        spinn = cls(eqx_spinn_network=smlp, d=d, r=r, eq_type=eq_type, m=m)
 
-def create_SPINN(
-    key: Key,
-    d: int,
-    r: int,
-    eqx_list: tuple[tuple[Callable, int, int] | Callable, ...],
-    eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"],
-    m: int = 1,
-) -> tuple[SPINN, PyTree]:
-    """
-    Utility function to create a SPINN neural network with the equinox
-    library.
-
-    *Note* that a SPINN is not vmapped and expects the
-    same batch size for each of its input axis. It directly outputs a solution
-    of shape `(batchsize, batchsize)`. See the paper for more details.
-
-    Parameters
-    ----------
-    key
-        A JAX random key that will be used to initialize the network parameters
-    d
-        The number of dimensions to treat separately.
-    r
-        An integer. The dimension of the embedding.
-    eqx_list
-        A tuple of tuples of successive equinox modules and activation functions to
-        describe the PINN architecture. The inner tuples must have the eqx module or
-        activation function as first item, other items represents arguments
-        that could be required (eg. the size of the layer).
-        The `key` argument need not be given.
-        Thus typical example is
-        `eqx_list=((eqx.nn.Linear, 2, 20),
-            jax.nn.tanh,
-            (eqx.nn.Linear, 20, 20),
-            jax.nn.tanh,
-            (eqx.nn.Linear, 20, 20),
-            jax.nn.tanh,
-            (eqx.nn.Linear, 20, 1)
-        )`.
-    eq_type : Literal["ODE", "statio_PDE", "nonstatio_PDE"]
-        A string with three possibilities.
-        "ODE": the PINN is called with one input `t`.
-        "statio_PDE": the PINN is called with one input `x`, `x`
-        can be high dimensional.
-        "nonstatio_PDE": the PINN is called with two inputs `t` and `x`, `x`
-        can be high dimensional.
-        **Note**: the input dimension as given in eqx_list has to match the sum
-        of the dimension of `t` + the dimension of `x` or the output dimension
-        after the `input_transform` function.
-    m
-        The output dimension of the neural network. According to
-        the SPINN article, a total embedding dimension of `r*m` is defined. We
-        then sum groups of `r` embedding dimensions to compute each output.
-        Default is 1.
-
-
-
-    Returns
-    -------
-    spinn
-        An instanciated SPINN
-    spinn.init_params
-        The initial set of parameters of the model
-
-    Raises
-    ------
-    RuntimeError
-        If the parameter value for eq_type is not in `["ODE", "statio_PDE",
-        "nonstatio_PDE"]` and for various failing checks
-    """
-
-    if eq_type not in ["ODE", "statio_PDE", "nonstatio_PDE"]:
-        raise RuntimeError("Wrong parameter value for eq_type")
-
-    try:
-        nb_inputs_declared = eqx_list[0][1]  # normally we look for 2nd ele of 1st layer
-    except IndexError:
-        nb_inputs_declared = eqx_list[1][
-            1
-        ]  # but we can have, eg, a flatten first layer
-    if nb_inputs_declared != 1:
-        raise ValueError("Input dim must be set to 1 in SPINN!")
-
-    try:
-        nb_outputs_declared = eqx_list[-1][2]  # normally we look for 3rd ele of
-        # last layer
-    except IndexError:
-        nb_outputs_declared = eqx_list[-2][2]
-        # but we can have, eg, a `jnp.exp` last layer
-    if nb_outputs_declared != r * m:
-        raise ValueError("Output dim must be set to r * m in SPINN!")
-
-    if d > 24:
-        raise ValueError(
-            "Too many dimensions, not enough letters available in jnp.einsum"
-        )
-
-    spinn_mlp = _SPINN(key=key, d=d, eqx_list=eqx_list)
-    spinn = SPINN(spinn_mlp=spinn_mlp, d=d, r=r, eq_type=eq_type, m=m)
-
-    return spinn, spinn.init_params
+        return spinn, spinn.init_params

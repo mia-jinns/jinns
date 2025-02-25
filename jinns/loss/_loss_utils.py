@@ -20,7 +20,7 @@ from jinns.utils._utils import _subtract_with_check, get_grid
 from jinns.data._DataGenerators import append_obs_batch, make_cartesian_product
 from jinns.parameters._params import _get_vmap_in_axes_params
 from jinns.nn._pinn_abstract import PINNAbstract
-from jinns.nn._spinn import SPINN
+from jinns.nn._spinn_abstract import SPINNAbstract
 from jinns.nn._hyperpinn import HYPERPINN
 from jinns.data._Batchs import *
 from jinns.parameters._params import Params, ParamsDict
@@ -60,12 +60,12 @@ def dynamic_loss_apply(
         )
         residuals = v_dyn_loss(batch, params)
         mse_dyn_loss = jnp.mean(jnp.sum(loss_weight * residuals**2, axis=-1))
-    elif u_type == SPINN or isinstance(u, SPINN):
+    elif u_type == SPINNAbstract or isinstance(u, SPINNAbstract):
         residuals = dyn_loss(batch, u, params)
         mse_dyn_loss = jnp.mean(jnp.sum(loss_weight * residuals**2, axis=-1))
     else:
         raise ValueError(
-            f"Bad type for u. Got {type(u)}, expected PINNAbstract or SPINN"
+            f"Bad type for u. Got {type(u)}, expected PINNAbstract or SPINNAbstract"
         )
 
     return mse_dyn_loss
@@ -121,10 +121,10 @@ def normalization_loss_apply(
             mse_norm_loss = loss_weight * jnp.mean(
                 jnp.abs(jnp.mean(res.squeeze() * norm_weights, axis=-1) - 1) ** 2
             )
-    elif isinstance(u, SPINN):
+    elif isinstance(u, SPINNAbstract):
         if len(batches) == 1:
             res = u(*batches, params)
-            assert res.shape[-1] == 1, "norm loss expects unidimensional *SPINN"
+            assert res.shape[-1] == 1, "norm loss expects unidimensional *SPINNAbstract"
             mse_norm_loss = (
                 loss_weight
                 * jnp.abs(
@@ -145,7 +145,7 @@ def normalization_loss_apply(
                 ),
                 params,
             )
-            assert res.shape[-1] == 1, "norm loss expects unidimensional *SPINN"
+            assert res.shape[-1] == 1, "norm loss expects unidimensional *SPINNAbstract"
             # the outer mean() below is for the times stamps
             mse_norm_loss = loss_weight * jnp.mean(
                 jnp.abs(
@@ -160,7 +160,7 @@ def normalization_loss_apply(
             )
     else:
         raise ValueError(
-            f"Bad type for u. Got {type(u)}, expected PINNAbstract or SPINN"
+            f"Bad type for u. Got {type(u)}, expected PINNAbstract or SPINNAbstract"
         )
 
     return mse_norm_loss
@@ -243,7 +243,7 @@ def observations_loss_apply(
     loss_weight: float | Float[Array, "observation_dim"],
     obs_slice: slice,
 ) -> float:
-    # TODO implement for SPINN
+    # TODO implement for SPINNAbstract
     if isinstance(u, (PINNAbstract, HYPERPINN)):
         v_u = vmap(
             lambda *args: u(*args)[u.slice_solution],
@@ -261,11 +261,13 @@ def observations_loss_apply(
                 axis=-1,
             )
         )
-    elif isinstance(u, SPINN):
-        raise RuntimeError("observation loss term not yet implemented for SPINNs")
+    elif isinstance(u, SPINNAbstract):
+        raise RuntimeError(
+            "observation loss term not yet implemented for SPINNAbstracts"
+        )
     else:
         raise ValueError(
-            f"Bad type for u. Got {type(u)}, expected PINNAbstract or SPINN"
+            f"Bad type for u. Got {type(u)}, expected PINNAbstract or SPINNAbstract"
         )
     return mse_observation_loss
 
@@ -296,7 +298,7 @@ def initial_condition_apply(
         # Recall that by convention:
         # param_batch_dict = times_batch_size * omega_batch_size
         mse_initial_condition = jnp.mean(jnp.sum(loss_weight * res**2, axis=-1))
-    elif isinstance(u, SPINN):
+    elif isinstance(u, SPINNAbstract):
         values = lambda t_x: u(
             t_x,
             params,
@@ -311,7 +313,7 @@ def initial_condition_apply(
         mse_initial_condition = jnp.mean(jnp.sum(loss_weight * res**2, axis=-1))
     else:
         raise ValueError(
-            f"Bad type for u. Got {type(u)}, expected PINNAbstract or SPINN"
+            f"Bad type for u. Got {type(u)}, expected PINNAbstract or SPINNAbstract"
         )
     return mse_initial_condition
 

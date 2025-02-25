@@ -8,8 +8,9 @@ import jax
 import equinox as eqx
 
 from jinns.nn._pinn_abstract import PINNAbstract
+from jinns.nn._spinn_abstract import SPINNAbstract
 from jinns.nn._mlp import PINN_MLP
-from jinns.nn._spinn import create_SPINN, SPINN
+from jinns.nn._spinn import SPINN_MLP
 from jinns.nn._hyperpinn import create_HYPERPINN, HYPERPINN
 from jinns.parameters._params import Params, ParamsDict
 
@@ -85,7 +86,7 @@ def string_to_function(
 
 def save_pinn(
     filename: str,
-    u: PINNAbstract | HYPERPINN | SPINN,
+    u: PINNAbstract | HYPERPINN | SPINNAbstract,
     params: Params | ParamsDict,
     kwargs_creation,
 ):
@@ -129,7 +130,7 @@ def save_pinn(
     if isinstance(params, Params):
         if isinstance(u, HYPERPINN):
             u = eqx.tree_at(lambda m: m.params_hyper, u, params)
-        elif isinstance(u, (PINNAbstract, SPINN)):
+        elif isinstance(u, (PINNAbstract, SPINNAbstract)):
             u = eqx.tree_at(lambda m: m.init_params, u, params)
         eqx.tree_serialise_leaves(filename + "-module.eqx", u)
 
@@ -137,7 +138,7 @@ def save_pinn(
         for key, params_ in params.nn_params.items():
             if isinstance(u, HYPERPINN):
                 u = eqx.tree_at(lambda m: m.params_hyper, u, params_)
-            elif isinstance(u, (PINNAbstract, SPINN)):
+            elif isinstance(u, (PINNAbstract, SPINNAbstract)):
                 u = eqx.tree_at(lambda m: m.init_params, u, params_)
             eqx.tree_serialise_leaves(filename + f"-module_{key}.eqx", u)
 
@@ -168,7 +169,7 @@ def save_pinn(
 
 def load_pinn(
     filename: str,
-    type_: Literal["pinn_mlp", "hyperpinn", "spinn"],
+    type_: Literal["pinn_mlp", "hyperpinn", "spinn_mlp"],
     key_list_for_paramsdict: list[str] = None,
 ) -> tuple[eqx.Module, Params | ParamsDict]:
     """
@@ -214,8 +215,10 @@ def load_pinn(
         u_reloaded_shallow, _ = eqx.filter_eval_shape(
             PINN_MLP.create, **kwargs_reloaded
         )
-    elif type_ == "spinn":
-        u_reloaded_shallow, _ = eqx.filter_eval_shape(create_SPINN, **kwargs_reloaded)
+    elif type_ == "spinn_mlp":
+        u_reloaded_shallow, _ = eqx.filter_eval_shape(
+            SPINN_MLP.create, **kwargs_reloaded
+        )
     elif type_ == "hyperpinn":
         kwargs_reloaded["eqx_list_hyper"] = string_to_function(
             kwargs_reloaded["eqx_list_hyper"]

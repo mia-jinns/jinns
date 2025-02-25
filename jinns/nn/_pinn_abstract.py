@@ -90,7 +90,7 @@ class PINNAbstract(eqx.Module):
 
     eqx_network: InitVar[eqx.Module] = eqx.field(kw_only=True)
     filter_spec: PyTree[Union[bool, Callable[[Any], bool]]] = eqx.field(
-        kw_only=True, default=eqx.is_inexact_array
+        static=True, kw_only=True, default=eqx.is_inexact_array
     )
 
     init_params: PyTree = eqx.field(init=False)

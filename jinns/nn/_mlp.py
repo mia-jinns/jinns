@@ -50,8 +50,8 @@ class MLP(eqx.Module):
 
     def __post_init__(self, key, eqx_list):
         self.layers = []
-        nb_keys_required = sum(1 if len(l) > 1 else 0 for l in eqx_list)
-        keys = jax.random.split(key, nb_keys_required)
+        # nb_keys_required = sum(1 if len(l) > 1 else 0 for l in eqx_list)
+        # keys = jax.random.split(key, nb_keys_required)
         # we need a global split
         # before the loop to maintain strict equivalency with eqx.nn.MLP
         # for debugging purpose
@@ -60,7 +60,8 @@ class MLP(eqx.Module):
             if len(l) == 1:
                 self.layers.append(l[0])
             else:
-                self.layers.append(l[0](*l[1:], key=keys[k]))
+                key, subkey = jax.random.split(key, 2)  # nb_keys_required)
+                self.layers.append(l[0](*l[1:], key=subkey))
                 k += 1
 
     def __call__(self, t: Float[Array, "input_dim"]) -> Float[Array, "output_dim"]:
@@ -70,41 +71,12 @@ class MLP(eqx.Module):
 
 
 class PINN_MLP(PINNAbstract):
-    r"""
-    A PINN MLP object, i.e., a neural network compatible with the rest of jinns.
-    This is typically created with `create`.
-
-    Parameters
-    ----------
-    slice_solution : slice
-        Default is jnp.s\_[...]. A jnp.s\_ object which indicates which axis of the PINN output is
-        dedicated to the actual equation solution. Default None
-        means that slice_solution = the whole PINN output. This argument is useful
-        when the PINN is also used to output equation parameters for example
-        Note that it must be a slice and not an integer (a preprocessing of the
-        user provided argument takes care of it).
-    eq_type : Literal["ODE", "statio_PDE", "nonstatio_PDE"]
-        A string with three possibilities.
-        "ODE": the PINN is called with one input `t`.
-        "statio_PDE": the PINN is called with one input `x`, `x`
-        can be high dimensional.
-        "nonstatio_PDE": the PINN is called with two inputs `t` and `x`, `x`
-        can be high dimensional.
-        **Note**: the input dimension as given in eqx_list has to match the sum
-        of the dimension of `t` + the dimension of `x` or the output dimension
-        after the `input_transform` function.
-    input_transform : Callable[[Float[Array, "input_dim"], Params], Float[Array, "output_dim"]]
-        A function that will be called before entering the PINN. Its output(s)
-        must match the PINN inputs (except for the parameters).
-        Its inputs are the PINN inputs (`t` and/or `x` concatenated together)
-        and the parameters. Default is no operation.
-    output_transform : Callable[[Float[Array, "input_dim"], Float[Array, "output_dim"], Params], Float[Array, "output_dim"]]
-        A function with arguments begin the same input as the PINN, the PINN
-        output and the parameter. This function will be called after exiting the PINN.
-        Default is no operation.
-    eqx_network : eqx.Module
-        The actual neural network instanciated as an eqx.Module.
     """
+    An implementable PINN based on a MLP architecture
+    """
+
+    # Here we could have a more complex __call__ method that redefined the
+    # parent's __call__. But there is no need for the simple PINN_MLP
 
     @classmethod
     def create(
