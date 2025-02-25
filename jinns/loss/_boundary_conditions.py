@@ -13,7 +13,7 @@ from jax import vmap, grad
 import equinox as eqx
 from jinns.utils._utils import get_grid, _subtract_with_check
 from jinns.data._Batchs import *
-from jinns.nn._pinn import PINN
+from jinns.nn._pinn_abstract import PINNAbstract
 from jinns.nn._spinn import SPINN
 
 if TYPE_CHECKING:
@@ -65,7 +65,7 @@ def _compute_boundary_loss(
     batch
         the batch
     u
-        a PINN
+        a PINNAbstract
     params
         Params or ParamsDict
     facet
@@ -121,7 +121,7 @@ def boundary_dirichlet(
     batch
         The batch
     u
-        The PINN or SPINN
+        The PINNAbstract or SPINN
     params
         The dictionary of parameters of the model.
         Typically, it is a dictionary of
@@ -138,7 +138,7 @@ def boundary_dirichlet(
     batch_array = batch.border_batch
     batch_array = batch_array[..., facet]
 
-    if isinstance(u, PINN):
+    if isinstance(u, PINNAbstract):
         v_u_boundary = vmap(
             lambda inputs, params: _subtract_with_check(
                 f(inputs),
@@ -162,7 +162,9 @@ def boundary_dirichlet(
         res = _subtract_with_check(f(grid), values, cause="boundary condition fun")
         mse_u_boundary = jnp.sum(res**2, axis=-1)
     else:
-        raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
+        raise ValueError(
+            f"Bad type for u. Got {type(u)}, expected PINNAbstract or SPINN"
+        )
     return mse_u_boundary
 
 
@@ -194,7 +196,7 @@ def boundary_neumann(
     batch
         The batch
     u
-        The PINN
+        The PINNAbstract
     params
         The dictionary of parameters of the model.
         Typically, it is a dictionary of
@@ -222,7 +224,7 @@ def boundary_neumann(
         # border_batch shape (batch_size, ndim, nfacets)
         n = jnp.array([[-1, 1, 0, 0], [0, 0, -1, 1]])
 
-    if isinstance(u, PINN):
+    if isinstance(u, PINNAbstract):
 
         u_ = lambda inputs, params: jnp.squeeze(u(inputs, params)[dim_to_apply])
 
@@ -338,5 +340,7 @@ def boundary_neumann(
             axis=-1,
         )
     else:
-        raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
+        raise ValueError(
+            f"Bad type for u. Got {type(u)}, expected PINNAbstract or SPINN"
+        )
     return mse_u_boundary

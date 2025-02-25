@@ -28,7 +28,7 @@ from jinns.parameters._params import (
 from jinns.parameters._derivative_keys import _set_derivatives, DerivativeKeysODE
 from jinns.loss._loss_weights import LossWeightsODE, LossWeightsODEDict
 from jinns.loss._DynamicLossAbstract import ODE
-from jinns.nn._pinn import PINN
+from jinns.nn._pinn_abstract import PINNAbstract
 
 if TYPE_CHECKING:
     from jinns.utils._types import *
@@ -54,7 +54,7 @@ class _LossODEAbstract(eqx.Module):
     obs_slice : Slice, default=None
         Slice object specifying the begininning/ending
         slice of u output(s) that is observed. This is useful for
-        multidimensional PINN, with partially observed outputs.
+        multidimensional PINNAbstract, with partially observed outputs.
         Default is None (whole output is observed).
     params : InitVar[Params], default=None
         The main Params object of the problem needed to instanciate the
@@ -87,7 +87,7 @@ class _LossODEAbstract(eqx.Module):
         if self.initial_condition is None:
             warnings.warn(
                 "Initial condition wasn't provided. Be sure to cover for that"
-                "case (e.g by. hardcoding it into the PINN output)."
+                "case (e.g by. hardcoding it into the PINNAbstract output)."
             )
         else:
             if (
@@ -140,13 +140,13 @@ class LossODE(_LossODEAbstract):
     obs_slice Slice, default=None
         Slice object specifying the begininning/ending
         slice of u output(s) that is observed. This is useful for
-        multidimensional PINN, with partially observed outputs.
+        multidimensional PINNAbstract, with partially observed outputs.
         Default is None (whole output is observed).
     params : InitVar[Params], default=None
         The main Params object of the problem needed to instanciate the
         DerivativeKeysODE if the latter is not specified.
     u : eqx.Module
-        the PINN
+        the PINNAbstract
     dynamic_loss : DynamicLoss
         the ODE dynamic part of the loss, basically the differential
         operator $\mathcal{N}[u](t)$. Should implement a method
@@ -281,7 +281,7 @@ class SystemLossODE(eqx.Module):
     Class to implement a system of ODEs.
     The goal is to give maximum freedom to the user. The class is created with
     a dict of dynamic loss and a dict of initial conditions. Then, it iterates
-    over the dynamic losses that compose the system. All PINNs are passed as
+    over the dynamic losses that compose the system. All PINNAbstracts are passed as
     arguments to each dynamic loss evaluate functions, along with all the
     parameter dictionaries. All specification is left to the responsability
     of the user, inside the dynamic loss.
@@ -293,7 +293,7 @@ class SystemLossODE(eqx.Module):
     Parameters
     ----------
     u_dict : Dict[str, eqx.Module]
-        dict of PINNs
+        dict of PINNAbstracts
     loss_weights : LossWeightsODEDict
         A dictionary of LossWeightsODE
     derivative_keys_dict : Dict[str, DerivativeKeysODE], default=None
@@ -305,7 +305,7 @@ class SystemLossODE(eqx.Module):
         dict of tuple of length 2 with initial condition $(t_0, u_0)$
         Must share the keys of `u_dict`. Default is None. No initial
         condition is permitted when the initial condition is hardcoded in
-        the PINN architecture for example
+        the PINNAbstract architecture for example
     dynamic_loss_dict : Dict[str, ODE]
         dict of dynamic part of the loss, basically the differential
         operator $\mathcal{N}[u](t)$. Should implement a method
@@ -313,7 +313,7 @@ class SystemLossODE(eqx.Module):
     obs_slice_dict : Dict[str, Slice]
         dict of obs_slice, with keys from `u_dict` to designate the
         output(s) channels that are observed, for each
-        PINNs. Default is None. But if a value is given, all the entries of
+        PINNAbstracts. Default is None. But if a value is given, all the entries of
         `u_dict` must be represented here with default value `jnp.s_[...]`
         if no particular slice is to be given.
     params_dict : InitVar[ParamsDict], default=None
@@ -526,7 +526,7 @@ class SystemLossODE(eqx.Module):
                 _set_derivatives(params_dict, self.derivative_keys_dyn_loss.dyn_loss),
                 vmap_in_axes_t + vmap_in_axes_params,
                 loss_weight,
-                u_type=PINN,
+                u_type=PINNAbstract,
             )
 
         dyn_loss_mse_dict = jax.tree_util.tree_map(

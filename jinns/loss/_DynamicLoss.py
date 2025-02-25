@@ -13,7 +13,7 @@ from jax import grad
 import jax.numpy as jnp
 import equinox as eqx
 
-from jinns.nn._pinn import PINN
+from jinns.nn._pinn_abstract import PINNAbstract
 from jinns.nn._spinn import SPINN
 
 from jinns.utils._utils import get_grid
@@ -67,14 +67,14 @@ class FisherKPP(PDENonStatio):
             A jnp array containing the concatenation of a time point
             and a point in $\Omega$
         u
-            The PINN
+            The PINNAbstract
         params
             The dictionary of parameters of the model.
             Typically, it is a dictionary of
             dictionaries: `eq_params` and `nn_params`, respectively the
             differential equation parameters and the neural network parameter
         """
-        if isinstance(u, PINN):
+        if isinstance(u, PINNAbstract):
             # Note that the last dim of u is nec. 1
             u_ = lambda t_x: u(t_x, params)[0]
 
@@ -102,7 +102,7 @@ class FisherKPP(PDENonStatio):
                 -params.eq_params["D"] * lap
                 - u_tx * (params.eq_params["r"] - params.eq_params["g"] * u_tx)
             )
-        raise ValueError("u is not among the recognized types (PINN or SPINN)")
+        raise ValueError("u is not among the recognized types (PINNAbstract or SPINN)")
 
 
 class GeneralizedLotkaVolterra(ODE):
@@ -130,7 +130,7 @@ class GeneralizedLotkaVolterra(ODE):
         populations that appear in the equation of the system implemented
         by this dynamic loss
     Tmax
-        Tmax needs to be given when the PINN time input is normalized in
+        Tmax needs to be given when the PINNAbstract time input is normalized in
         $[0, 1]$, ie. we have performed renormalization of the differential
         equation.
     eq_params_heterogeneity
@@ -161,7 +161,7 @@ class GeneralizedLotkaVolterra(ODE):
         t
             A time point
         u_dict
-            A dictionary of PINNS. Must have the same keys as `params_dict`
+            A dictionary of PINNAbstractS. Must have the same keys as `params_dict`
         params_dict
             The dictionary of dictionaries of parameters of the model. Keys at
             top level are "nn_params" and "eq_params"
@@ -202,7 +202,7 @@ class BurgersEquation(PDENonStatio):
     Parameters
     ----------
     Tmax
-        Tmax needs to be given when the PINN time input is normalized in
+        Tmax needs to be given when the PINNAbstract time input is normalized in
         [0, 1], ie. we have performed renormalization of the differential
         equation
     eq_params_heterogeneity
@@ -229,11 +229,11 @@ class BurgersEquation(PDENonStatio):
             A jnp array containing the concatenation of a time point
             and a point in $\Omega$
         u
-            The PINN
+            The PINNAbstract
         params
             The dictionary of parameters of the model.
         """
-        if isinstance(u, PINN):
+        if isinstance(u, PINNAbstract):
             u_ = lambda t_x: jnp.squeeze(u(t_x, params)[u.slice_solution])
             du_dtx = grad(u_)
             d2u_dx_dtx = grad(lambda t_x: du_dtx(t_x)[1])
@@ -271,7 +271,7 @@ class BurgersEquation(PDENonStatio):
             _, d2u_dx2 = jax.jvp(du_dx_fun, (t_x,), (v1,))
             # Note that ones_like(x) works because x is Bx1 !
             return du_dt + self.Tmax * (u_tx * du_dx - params.eq_params["nu"] * d2u_dx2)
-        raise ValueError("u is not among the recognized types (PINN or SPINN)")
+        raise ValueError("u is not among the recognized types (PINNAbstract or SPINN)")
 
 
 class FPENonStatioLoss2D(PDENonStatio):
@@ -298,7 +298,7 @@ class FPENonStatioLoss2D(PDENonStatio):
     Parameters
     ----------
     Tmax
-        Tmax needs to be given when the PINN time input is normalized in
+        Tmax needs to be given when the PINNAbstract time input is normalized in
         [0, 1], ie. we have performed renormalization of the differential
         equation
     eq_params_heterogeneity
@@ -324,14 +324,14 @@ class FPENonStatioLoss2D(PDENonStatio):
         t_x
             A collocation point in  $I\times\Omega$
         u
-            The PINN
+            The PINNAbstract
         params
             The dictionary of parameters of the model.
             Typically, it is a dictionary of
             dictionaries: `eq_params` and `nn_params`, respectively the
             differential equation parameters and the neural network parameter
         """
-        if isinstance(u, PINN):
+        if isinstance(u, PINNAbstract):
             # Note that the last dim of u is nec. 1
             u_ = lambda t_x: u(t_x, params)[0]
 
@@ -419,7 +419,7 @@ class FPENonStatioLoss2D(PDENonStatio):
                 -(dau_dx1 + dau_dx2)
                 + (d2su_dx12 + d2su_dx22 + d2su_dx1dx2 + d2su_dx2dx1)
             )
-        raise ValueError("u is not among the recognized types (PINN or SPINN)")
+        raise ValueError("u is not among the recognized types (PINNAbstract or SPINN)")
 
     def drift(self, *args, **kwargs):
         # To be implemented in child classes
@@ -447,7 +447,7 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
     Parameters
     ----------
     Tmax
-        Tmax needs to be given when the PINN time input is normalized in
+        Tmax needs to be given when the PINNAbstract time input is normalized in
         [0, 1], ie. we have performed renormalization of the differential
         equation
     eq_params_heterogeneity
@@ -528,7 +528,7 @@ class MassConservation2DStatio(PDEStatio):
     Parameters
     ----------
     nn_key
-        A dictionary key which identifies, in `u_dict` the PINN that
+        A dictionary key which identifies, in `u_dict` the PINNAbstract that
         appears in the mass conservation equation.
     eq_params_heterogeneity
         Default None. A dict with the keys being the same as in eq_params
@@ -557,7 +557,7 @@ class MassConservation2DStatio(PDEStatio):
         x
             A point in $\Omega\subset\mathbb{R}^2$
         u_dict
-            A dictionary of PINNs. Must have the same keys as `params_dict`
+            A dictionary of PINNAbstracts. Must have the same keys as `params_dict`
         params_dict
             The dictionary of dictionaries of parameters of the model.
             Typically, each sub-dictionary is a dictionary
@@ -567,7 +567,7 @@ class MassConservation2DStatio(PDEStatio):
         """
         params = params_dict.extract_params(self.nn_key)
 
-        if isinstance(u_dict[self.nn_key], PINN):
+        if isinstance(u_dict[self.nn_key], PINNAbstract):
             u = u_dict[self.nn_key]
 
             return divergence_rev(x, u, params)[..., None]
@@ -576,7 +576,7 @@ class MassConservation2DStatio(PDEStatio):
             u = u_dict[self.nn_key]
 
             return divergence_fwd(x, u, params)[..., None]
-        raise ValueError("u is not among the recognized types (PINN or SPINN)")
+        raise ValueError("u is not among the recognized types (PINNAbstract or SPINN)")
 
 
 class NavierStokes2DStatio(PDEStatio):
@@ -610,13 +610,13 @@ class NavierStokes2DStatio(PDEStatio):
     ----------
     u_key
         A dictionary key which indices the NN u in `u_dict`
-        the PINN with the role of the velocity in the equation.
+        the PINNAbstract with the role of the velocity in the equation.
         Its input is bimensional (points in $\Omega\subset\mathbb{R}^2$).
         Its output is bimensional as it represents a velocity vector
         field
     p_key
         A dictionary key which indices the NN p in `u_dict`
-        the PINN with the role of the pressure in the equation.
+        the PINNAbstract with the role of the pressure in the equation.
         Its input is bimensional (points in $\Omega\subset\mathbb{R}^2).
         Its output is unidimensional as it represents a pressure scalar
         field
@@ -647,7 +647,7 @@ class NavierStokes2DStatio(PDEStatio):
         x
             A point in $\Omega\subset\mathbb{R}^2$
         u_dict
-            A dictionary of PINNs. Must have the same keys as `params_dict`
+            A dictionary of PINNAbstracts. Must have the same keys as `params_dict`
         params_dict
             The dictionary of dictionaries of parameters of the model.
             Typically, each sub-dictionary is a dictionary
@@ -658,7 +658,7 @@ class NavierStokes2DStatio(PDEStatio):
         u_params = params_dict.extract_params(self.u_key)
         p_params = params_dict.extract_params(self.p_key)
 
-        if isinstance(u_dict[self.u_key], PINN):
+        if isinstance(u_dict[self.u_key], PINNAbstract):
             u = u_dict[self.u_key]
 
             u_dot_nabla_x_u = _u_dot_nabla_times_u_rev(x, u, u_params)
@@ -714,4 +714,4 @@ class NavierStokes2DStatio(PDEStatio):
 
             # output is 2D
             return jnp.stack([result_x, result_y], axis=-1)
-        raise ValueError("u is not among the recognized types (PINN or SPINN)")
+        raise ValueError("u is not among the recognized types (PINNAbstract or SPINN)")

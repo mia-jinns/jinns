@@ -10,11 +10,11 @@ import equinox as eqx
 
 from jaxtyping import Array, Key, PyTree, Float
 
-from jinns.parameters._params import Params, ParamsDict
-from jinns.nn._pinn import PINN
+from jinns.parameters._params import Params
+from jinns.nn._pinn_abstract import PINNAbstract
 
 
-class JinnsMLP(eqx.Module):
+class MLP(eqx.Module):
     """
     Custom MLP equinox module from a key and a eqx_list
 
@@ -69,9 +69,9 @@ class JinnsMLP(eqx.Module):
         return t
 
 
-class MLP(PINN):
+class PINN_MLP(PINNAbstract):
     r"""
-    A MLP PINN object, i.e., a neural network compatible with the rest of jinns.
+    A PINN MLP object, i.e., a neural network compatible with the rest of jinns.
     This is typically created with `create`.
 
     Parameters
@@ -102,51 +102,9 @@ class MLP(PINN):
         A function with arguments begin the same input as the PINN, the PINN
         output and the parameter. This function will be called after exiting the PINN.
         Default is no operation.
-    output_slice : slice, default=None
-        A jnp.s\_[] to determine the different dimension for the PINN.
-        See `shared_pinn_outputs` argument of `create_PINN`.
-    mlp : eqx.Module
+    eqx_network : eqx.Module
         The actual neural network instanciated as an eqx.Module.
     """
-
-    input_transform: Callable[
-        [Float[Array, "input_dim"], Params], Float[Array, "output_dim"]
-    ] = eqx.field(static=True, kw_only=True)
-    output_transform: Callable[
-        [Float[Array, "input_dim"], Float[Array, "output_dim"], Params],
-        Float[Array, "output_dim"],
-    ] = eqx.field(static=True, kw_only=True)
-    output_slice: slice = eqx.field(static=True, kw_only=True, default=None)
-
-    def __call__(
-        self,
-        inputs: Float[Array, "1"] | Float[Array, "dim"] | Float[Array, "1+dim"],
-        params: Params | ParamsDict | PyTree,
-    ) -> Float[Array, "output_dim"]:
-        """
-        Evaluate the PINN on some inputs with some params.
-        """
-        if len(inputs.shape) == 0:
-            # This can happen often when the user directly provides some
-            # collocation points (eg for plotting, whithout using
-            # DataGenerators)
-            inputs = inputs[None]
-
-        try:
-            model = eqx.combine(params.nn_params, self.static)
-        except (KeyError, AttributeError, TypeError) as e:  # give more flexibility
-            model = eqx.combine(params, self.static)
-        res = self.output_transform(
-            inputs, model(self.input_transform(inputs, params)).squeeze(), params
-        )
-
-        if self.output_slice is not None:
-            res = res[self.output_slice]
-
-        ## force (1,) output for non vectorial solution (consistency)
-        if not res.shape:
-            return jnp.expand_dims(res, axis=-1)
-        return res
 
     @classmethod
     def create(
@@ -162,13 +120,12 @@ class MLP(PINN):
             [Float[Array, "input_dim"], Float[Array, "output_dim"], Params],
             Float[Array, "output_dim"],
         ] = None,
-        shared_pinn_outputs: tuple[slice] = None,
         slice_solution: slice = None,
     ) -> tuple[Self | list[Self], PyTree | list[PyTree]]:
         r"""
-        Instanciate standard MLP PINN object. The actual NN is either passed as
+        Instanciate standard PINN MLP object. The actual NN is either passed as
         a eqx.nn.MLP (`eqx_network` argument) or constructed as a custom
-        JinnsMLP when `key` and `eqx_list` is provided.
+        jinns.nn.MLP when `key` and `eqx_list` is provided.
 
         Parameters
         ----------
@@ -217,15 +174,6 @@ class MLP(PINN):
             output and the parameter. This function will be called after exiting
             the MLP.
             Default is no operation.
-        shared_pinn_outputs
-            Default is None, for a stantard MLP.
-            A tuple of jnp.s\_[] (slices) to determine the different output for each
-            network. In this case we return a list of MLPs, one for each output in
-            shared_pinn_outputs. This is useful to create MLPs that share the
-            same network and same parameters; **the user must then use the same
-            parameter set in their manipulation**.
-            See the notebook 2D Navier Stokes in pipeflow with metamodel for an
-            example using this option.
         slice_solution
             A jnp.s\_ object which indicates which axis of the MLP output is
             dedicated to the actual equation solution. Default None
@@ -251,42 +199,18 @@ class MLP(PINN):
                 raise ValueError(
                     "If eqx_network is None, then key and eqx_list" " must be provided"
                 )
-            eqx_network = JinnsMLP(key=key, eqx_list=eqx_list)
+            eqx_network = MLP(key=key, eqx_list=eqx_list)
 
         if isinstance(slice_solution, int):
             # rewrite it as a slice to ensure that axis does not disappear when
             # indexing
             slice_solution = jnp.s_[slice_solution : slice_solution + 1]
 
-        if input_transform is None:
-
-            def input_transform(_in, _params):
-                return _in
-
-        if output_transform is None:
-
-            def output_transform(_in_pinn, _out_pinn, _params):
-                return _out_pinn
-
-        if shared_pinn_outputs is not None:
-            mlps = []
-            for output_slice in shared_pinn_outputs:
-                mlp = cls(
-                    eqx_network=eqx_network,
-                    slice_solution=slice_solution,
-                    eq_type=eq_type,
-                    input_transform=input_transform,
-                    output_transform=output_transform,
-                    output_slice=output_slice,
-                )
-                mlps.append(mlp)
-            return mlps, [p.init_params for p in mlps]
         mlp = cls(
             eqx_network=eqx_network,
             slice_solution=slice_solution,
             eq_type=eq_type,
             input_transform=input_transform,
             output_transform=output_transform,
-            output_slice=None,
         )
-        return mlp, mlp._init_params
+        return mlp, mlp.init_params

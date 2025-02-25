@@ -38,7 +38,7 @@ from jinns.loss._loss_weights import (
     LossWeightsPDEDict,
 )
 from jinns.loss._DynamicLossAbstract import PDEStatio, PDENonStatio
-from jinns.nn._pinn import PINN
+from jinns.nn._pinn_abstract import PINNAbstract
 from jinns.nn._spinn import SPINN
 from jinns.data._Batchs import PDEStatioBatch, PDENonStatioBatch
 
@@ -87,7 +87,7 @@ class _LossPDEAbstract(eqx.Module):
     omega_boundary_dim : slice | Dict[str, slice], default=None
         Either None, or a slice object or a dictionary of slice objects as
         values and keys as described in `omega_boundary_condition`.
-        `omega_boundary_dim` indicates which dimension(s) of the PINN
+        `omega_boundary_dim` indicates which dimension(s) of the PINNAbstract
         will be forced to match the boundary condition.
         Note that it must be a slice and not an integer
         (but a preprocessing of the user provided argument takes care of it)
@@ -103,8 +103,8 @@ class _LossPDEAbstract(eqx.Module):
         These corresponds to the weights $w_k = \frac{1}{q(x_k)}$ where
         $q(\cdot)$ is the proposal p.d.f. and $x_k$ are the Monte-Carlo samples.
     obs_slice : slice, default=None
-        slice object specifying the begininning/ending of the PINN output
-        that is observed (this is then useful for multidim PINN). Default is None.
+        slice object specifying the begininning/ending of the PINNAbstract output
+        that is observed (this is then useful for multidim PINNAbstract). Default is None.
     params : InitVar[Params], default=None
         The main Params object of the problem needed to instanciate the
         DerivativeKeysODE if the latter is not specified.
@@ -300,7 +300,7 @@ class LossPDEStatio(_LossPDEAbstract):
     Parameters
     ----------
     u : eqx.Module
-        the PINN
+        the PINNAbstract
     dynamic_loss : DynamicLoss
         the stationary PDE dynamic part of the loss, basically the differential
         operator $\mathcal{N}[u](x)$. Should implement a method
@@ -342,7 +342,7 @@ class LossPDEStatio(_LossPDEAbstract):
     omega_boundary_dim : slice | Dict[str, slice], default=None
         Either None, or a slice object or a dictionary of slice objects as
         values and keys as described in `omega_boundary_condition`.
-        `omega_boundary_dim` indicates which dimension(s) of the PINN
+        `omega_boundary_dim` indicates which dimension(s) of the PINNAbstract
         will be forced to match the boundary condition.
         Note that it must be a slice and not an integer
         (but a preprocessing of the user provided argument takes care of it)
@@ -358,8 +358,8 @@ class LossPDEStatio(_LossPDEAbstract):
         These corresponds to the weights $w_k = \frac{1}{q(x_k)}$ where
         $q(\cdot)$ is the proposal p.d.f. and $x_k$ are the Monte-Carlo samples.
     obs_slice : slice, default=None
-        slice object specifying the begininning/ending of the PINN output
-        that is observed (this is then useful for multidim PINN). Default is None.
+        slice object specifying the begininning/ending of the PINNAbstract output
+        that is observed (this is then useful for multidim PINNAbstract). Default is None.
     params : InitVar[Params], default=None
         The main Params object of the problem needed to instanciate the
         DerivativeKeysODE if the latter is not specified.
@@ -528,7 +528,7 @@ class LossPDENonStatio(LossPDEStatio):
     Parameters
     ----------
     u : eqx.Module
-        the PINN
+        the PINNAbstract
     dynamic_loss : DynamicLoss
         the non stationary PDE dynamic part of the loss, basically the differential
         operator $\mathcal{N}[u](t, x)$. Should implement a method
@@ -571,7 +571,7 @@ class LossPDENonStatio(LossPDEStatio):
     omega_boundary_dim : slice | Dict[str, slice], default=None
         Either None, or a slice object or a dictionary of slice objects as
         values and keys as described in `omega_boundary_condition`.
-        `omega_boundary_dim` indicates which dimension(s) of the PINN
+        `omega_boundary_dim` indicates which dimension(s) of the PINNAbstract
         will be forced to match the boundary condition.
         Note that it must be a slice and not an integer
         (but a preprocessing of the user provided argument takes care of it)
@@ -587,8 +587,8 @@ class LossPDENonStatio(LossPDEStatio):
         These corresponds to the weights $w_k = \frac{1}{q(x_k)}$ where
         $q(\cdot)$ is the proposal p.d.f. and $x_k$ are the Monte-Carlo samples.
     obs_slice : slice, default=None
-        slice object specifying the begininning/ending of the PINN output
-        that is observed (this is then useful for multidim PINN). Default is None.
+        slice object specifying the begininning/ending of the PINNAbstract output
+        that is observed (this is then useful for multidim PINNAbstract). Default is None.
     initial_condition_fun : Callable, default=None
         A function representing the temporal initial condition. If None
         (default) then no initial condition is applied
@@ -622,7 +622,7 @@ class LossPDENonStatio(LossPDEStatio):
         if self.initial_condition_fun is None:
             warnings.warn(
                 "Initial condition wasn't provided. Be sure to cover for that"
-                "case (e.g by. hardcoding it into the PINN output)."
+                "case (e.g by. hardcoding it into the PINNAbstract output)."
             )
 
         # witht the variables below we avoid memory overflow since a cartesian
@@ -712,7 +712,7 @@ class SystemLossPDE(eqx.Module):
     The goal is to give maximum freedom to the user. The class is created with
     a dict of dynamic loss, and dictionaries of all the objects that are used
     in LossPDENonStatio and LossPDEStatio. When then iterate
-    over the dynamic losses that compose the system. All the PINNs with all the
+    over the dynamic losses that compose the system. All the PINNAbstracts with all the
     parameter dictionaries are passed as arguments to each dynamic loss
     evaluate functions; it is inside the dynamic loss that specification are
     performed.
@@ -724,7 +724,7 @@ class SystemLossPDE(eqx.Module):
     Parameters
     ----------
     u_dict : Dict[str, eqx.Module]
-        dict of PINNs
+        dict of PINNAbstracts
     loss_weights : LossWeightsPDEDict
         A dictionary of LossWeightsODE
     derivative_keys_dict : Dict[str, DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio], default=None
@@ -779,7 +779,7 @@ class SystemLossPDE(eqx.Module):
     obs_slice_dict : Dict[str, slice | None] | None, default=None
         dict of obs_slice, with keys from `u_dict` to designate the
         output(s) channels that are forced to observed values, for each
-        PINNs. Default is None. But if a value is given, all the entries of
+        PINNAbstracts. Default is None. But if a value is given, all the entries of
         `u_dict` must be represented here with default value `jnp.s_[...]`
         if no particular slice is to be given
     params : InitVar[ParamsDict], default=None
@@ -900,7 +900,9 @@ class SystemLossPDE(eqx.Module):
             or self.u_dict.keys() != self.norm_samples_dict.keys()
             or self.u_dict.keys() != self.norm_weights_dict.keys()
         ):
-            raise ValueError("All the dicts concerning the PINNs should have same keys")
+            raise ValueError(
+                "All the dicts concerning the PINNAbstracts should have same keys"
+            )
 
         self._loss_weights = self.set_loss_weights(loss_weights)
 
@@ -963,13 +965,13 @@ class SystemLossPDE(eqx.Module):
         # happen inside it)
         self.derivative_keys_dyn_loss = DerivativeKeysPDENonStatio(params=params_dict)
 
-        # also make sure we only have PINNs or SPINNs
+        # also make sure we only have PINNAbstracts or SPINNs
         if not (
-            all(isinstance(value, PINN) for value in self.u_dict.values())
+            all(isinstance(value, PINNAbstract) for value in self.u_dict.values())
             or all(isinstance(value, SPINN) for value in self.u_dict.values())
         ):
             raise ValueError(
-                "We only accept dictionary of PINNs or dictionary of SPINNs"
+                "We only accept dictionary of PINNAbstracts or dictionary of SPINNs"
             )
 
     def set_loss_weights(
