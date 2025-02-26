@@ -137,7 +137,7 @@ class PINNAbstract(eqx.Module):
             inputs, model(self.input_transform(inputs, params)).squeeze(), params
         )
 
-        ## force (1,) output for non vectorial solution (consistency)
+        # force (1,) output for non vectorial solution (consistency)
         if not res.shape:
             return jnp.expand_dims(res, axis=-1)
         return res

@@ -92,29 +92,40 @@ def train_NSPipeFlow_init():
         ),  # 1000 is a random guess, it will automatically be filled with the correct value
     )
 
-    def output_transform(pinn_in, pinn_out, params):
+    def u_output_transform(pinn_in, pinn_out, _):
         u = pinn_out[:2] * (R**2 - pinn_in[1] ** 2)
+        return u
+
+    def p_output_transform(pinn_in, pinn_out, _):
         p = (
             (pinn_in[0] - xmin) / (xmax - xmin) * p_out
             + (xmax - pinn_in[0]) / (xmax - xmin) * p_in
             + (xmin - pinn_in[0]) * (xmax - pinn_in[0]) * pinn_out[2:3]
         )
-        return jnp.concatenate([u, p], axis=-1)
+        return p
 
     key, subkey = random.split(key)
     hyperparams = ["nu"]
     hypernet_input_size = 1
-    dim_x = 2
-    (u_hyper, p_hyper), (u_init_nn_params, _) = jinns.utils.create_HYPERPINN(
-        subkey,
-        eqx_list,
-        "statio_PDE",
-        hyperparams,
-        hypernet_input_size,
-        dim_x,
+    u_hyper, u_init_nn_params = jinns.nn.HYPERPINN.create(
+        eq_type="statio_PDE",
+        hyperparams=hyperparams,
+        hypernet_input_size=hypernet_input_size,
+        key=subkey,
+        eqx_list=eqx_list,
         eqx_list_hyper=eqx_list_hyper,
-        output_transform=output_transform,
-        shared_pinn_outputs=(jnp.s_[:2], jnp.s_[2]),
+        output_transform=u_output_transform,
+        slice_solution=jnp.s_[:2],
+    )
+    p_hyper, _ = jinns.nn.HYPERPINN.create(
+        eq_type="statio_PDE",
+        hyperparams=hyperparams,
+        hypernet_input_size=hypernet_input_size,
+        key=subkey,
+        eqx_list=eqx_list,
+        eqx_list_hyper=eqx_list_hyper,
+        output_transform=p_output_transform,
+        slice_solution=jnp.s_[2],
     )
     p_init_nn_params = u_init_nn_params
     param_train_data, param_batch = param_train_data.get_batch()

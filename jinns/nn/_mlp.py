@@ -93,7 +93,7 @@ class PINN_MLP(PINNAbstract):
             Float[Array, "output_dim"],
         ] = None,
         slice_solution: slice = None,
-    ) -> tuple[Self | list[Self], PyTree | list[PyTree]]:
+    ) -> tuple[Self, PyTree]:
         r"""
         Instanciate standard PINN MLP object. The actual NN is either passed as
         a eqx.nn.MLP (`eqx_network` argument) or constructed as a custom
@@ -113,14 +113,14 @@ class PINN_MLP(PINNAbstract):
             after the `input_transform` function.
         eqx_network
             Default is None. A eqx.nn.MLP object that will be wrapped inside
-            our MLP object in order to make it easily jinns compatible.
+            our PINN_MLP object in order to make it easily jinns compatible.
         key
             Default is None. Must be provided with `eqx_list` if `eqx_network`
             is not provided. A JAX random key that will be used to initialize the network
             parameters.
         eqx_list
             Default is None. Must be provided  if `eqx_network`
-            is not provided.A tuple of tuples of successive equinox modules and activation
+            is not provided. A tuple of tuples of successive equinox modules and activation
             functions to describe the MLP architecture. The inner tuples must have
             the eqx module or activation function as first item, other items
             represent arguments that could be required (eg. the size of the layer).

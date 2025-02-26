@@ -11,7 +11,7 @@ from jinns.nn._pinn_abstract import PINNAbstract
 from jinns.nn._spinn_abstract import SPINNAbstract
 from jinns.nn._mlp import PINN_MLP
 from jinns.nn._spinn import SPINN_MLP
-from jinns.nn._hyperpinn import create_HYPERPINN, HYPERPINN
+from jinns.nn._hyperpinn import HYPERPINN
 from jinns.parameters._params import Params, ParamsDict
 
 
