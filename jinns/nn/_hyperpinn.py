@@ -96,7 +96,7 @@ class HYPERPINN(PINNAbstract):
         init=False, static=True
     )
 
-    _init_params: PyTree = eqx.field(init=False)
+    init_params_hyper: PyTree = eqx.field(init=False)
     static_hyper: PyTree = eqx.field(init=False, static=True)
 
     def __post_init__(self, eqx_network, eqx_hyper_network):
@@ -104,11 +104,10 @@ class HYPERPINN(PINNAbstract):
             eqx_network,
         )
         # below we overwrite the store the init_params set in super().__post_init__()
-        self._init_params = self.init_params
-        self.init_params, self.static_hyper = eqx.partition(
+        self.init_params_hyper, self.static_hyper = eqx.partition(
             eqx_hyper_network, eqx.is_inexact_array
         )
-        self.pinn_params_sum, self.pinn_params_cumsum = _get_param_nb(self._init_params)
+        self.pinn_params_sum, self.pinn_params_cumsum = _get_param_nb(self.init_params)
 
     def _hyper_to_pinn(self, hyper_output: Float[Array, "output_dim"]) -> PyTree:
         """
@@ -117,14 +116,14 @@ class HYPERPINN(PINNAbstract):
         """
         pinn_params_flat = eqx.tree_at(
             lambda p: tree_leaves(p, is_leaf=eqx.is_array),
-            self._init_params,
+            self.init_params,
             jnp.split(hyper_output, self.pinn_params_cumsum[:-1]),
         )
 
         return tree_map(
             lambda a, b: a.reshape(b.shape),
             pinn_params_flat,
-            self._init_params,
+            self.init_params,
             is_leaf=lambda x: isinstance(x, jnp.ndarray),
         )
 
@@ -373,4 +372,4 @@ class HYPERPINN(PINNAbstract):
                 hyperparams=hyperparams,
                 hypernet_input_size=hypernet_input_size,
             )
-        return hyperpinn, hyperpinn.init_params
+        return hyperpinn, hyperpinn.init_params_hyper

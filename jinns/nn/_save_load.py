@@ -129,7 +129,7 @@ def save_pinn(
     """
     if isinstance(params, Params):
         if isinstance(u, HYPERPINN):
-            u = eqx.tree_at(lambda m: m.params_hyper, u, params)
+            u = eqx.tree_at(lambda m: m.init_params_hyper, u, params)
         elif isinstance(u, (PINNAbstract, SPINNAbstract)):
             u = eqx.tree_at(lambda m: m.init_params, u, params)
         eqx.tree_serialise_leaves(filename + "-module.eqx", u)
@@ -137,7 +137,7 @@ def save_pinn(
     elif isinstance(params, ParamsDict):
         for key, params_ in params.nn_params.items():
             if isinstance(u, HYPERPINN):
-                u = eqx.tree_at(lambda m: m.params_hyper, u, params_)
+                u = eqx.tree_at(lambda m: m.init_params_hyper, u, params_)
             elif isinstance(u, (PINNAbstract, SPINNAbstract)):
                 u = eqx.tree_at(lambda m: m.init_params, u, params_)
             eqx.tree_serialise_leaves(filename + f"-module_{key}.eqx", u)
@@ -224,7 +224,7 @@ def load_pinn(
             kwargs_reloaded["eqx_list_hyper"]
         )
         u_reloaded_shallow, _ = eqx.filter_eval_shape(
-            create_HYPERPINN, **kwargs_reloaded
+            HYPERPINN.create, **kwargs_reloaded
         )
     else:
         raise ValueError(f"{type_} is not valid")
@@ -234,13 +234,23 @@ def load_pinn(
         u_reloaded = eqx.tree_deserialise_leaves(
             filename + "-module.eqx", u_reloaded_shallow
         )
-        params = Params(nn_params=u_reloaded.init_params, eq_params=eq_params_reloaded)
+        if isinstance(u_reloaded, HYPERPINN):
+            params = Params(
+                nn_params=u_reloaded.init_params_hyper, eq_params=eq_params_reloaded
+            )
+        elif isinstance(u_reloaded, (PINNAbstract, SPINNAbstract)):
+            params = Params(
+                nn_params=u_reloaded.init_params, eq_params=eq_params_reloaded
+            )
     else:
         nn_params_dict = {}
         for key in key_list_for_paramsdict:
             u_reloaded = eqx.tree_deserialise_leaves(
                 filename + f"-module_{key}.eqx", u_reloaded_shallow
             )
-            nn_params_dict[key] = u_reloaded.init_params
+            if isinstance(u_reloaded, HYPERPINN):
+                nn_params_dict[key] = u_reloaded.init_params_hyper
+            elif isinstance(u_reloaded, (PINNAbstract, SPINNAbstract)):
+                nn_params_dict[key] = u_reloaded.init_params
         params = ParamsDict(nn_params=nn_params_dict, eq_params=eq_params_reloaded)
     return u_reloaded, params
