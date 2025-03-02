@@ -74,9 +74,7 @@ class PINNAbstract(eqx.Module):
         "nonstatio_PDE"]`
     """
 
-    slice_solution: slice = eqx.field(
-        static=True, kw_only=True, default_factory=lambda: jnp.s_[...]
-    )
+    slice_solution: slice = eqx.field(static=True, kw_only=True, default_factory=None)
     eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"] = eqx.field(
         static=True, kw_only=True
     )
@@ -108,6 +106,9 @@ class PINNAbstract(eqx.Module):
 
         if self.output_transform is None:
             self.output_transform = lambda _in_pinn, _out_pinn, _params: _out_pinn
+
+        if self.slice_solution is None:
+            self.slice_solution = jnp.s_[:]
 
     def __call__(
         self,

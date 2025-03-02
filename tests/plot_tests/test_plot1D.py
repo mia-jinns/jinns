@@ -76,7 +76,7 @@ def test_plot1d_slice_with_spinn():
     eqx_list = ((eqx.nn.Linear, 1, r),)  # don't reproduce this architecture at home ;)
 
     key, subkey = jax.random.split(jax.random.PRNGKey(1))
-    u_spinn, init_nn_params_spinn = jinns.utils.create_SPINN(
+    u_spinn, init_nn_params_spinn = jinns.nn.SPINN_MLP.create(
         subkey, d, r, eqx_list, "nonstatio_PDE"
     )
 

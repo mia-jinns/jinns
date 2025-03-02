@@ -55,7 +55,16 @@ def create_MLP_3():
 
     key = random.PRNGKey(2)
     key, subkey = random.split(key)
-    eqx_network = eqx.nn.MLP(2, 1, 128, 3, jax.nn.tanh, key=subkey)
+    eqx_list = (
+        (eqx.nn.Linear, 2, 128),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 128, 128),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 128, 128),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 128, 1),
+    )
+    eqx_network = jinns.nn.MLP(key=subkey, eqx_list=eqx_list)
 
     u = MyPINN(eqx_network=eqx_network, eq_type="nonstatio_PDE")
     params = u.init_params
@@ -63,19 +72,21 @@ def create_MLP_3():
     return u, params
 
 
-def test_equality_1(create_MLP_1, create_MLP_2):
-    u1, p1 = create_MLP_1
-    u2, p2 = create_MLP_2
-    key = random.PRNGKey(2)
-    key, subkey = jax.random.split(key, 2)
-    test_points = jax.random.normal(subkey, shape=(10, 2))
-    v_u1 = jax.vmap(u1, (0, None))
-    v_u2 = jax.vmap(u2, (0, None))
-    assert jnp.allclose(
-        v_u1(test_points, p1),
-        v_u2(test_points, p2),
-        atol=1e-3,
-    )
+# No, we do not have equivalency with a eqx.nn.MLP because of
+# we have a different PRNG scheme
+# def test_equality_1(create_MLP_1, create_MLP_2):
+#    u1, p1 = create_MLP_1
+#    u2, p2 = create_MLP_2
+#    key = random.PRNGKey(2)
+#    key, subkey = jax.random.split(key, 2)
+#    test_points = jax.random.normal(subkey, shape=(10, 2))
+#    v_u1 = jax.vmap(u1, (0, None))
+#    v_u2 = jax.vmap(u2, (0, None))
+#    assert jnp.allclose(
+#        v_u1(test_points, p1),
+#        v_u2(test_points, p2),
+#        atol=1e-3,
+#    )
 
 
 def test_equality_2(create_MLP_1, create_MLP_3):

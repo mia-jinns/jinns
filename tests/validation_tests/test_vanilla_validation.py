@@ -17,7 +17,7 @@ def test_validation_module():
     r = 2
     eqx_list = ((eqx.nn.Linear, 1, r),)
     key, subkey = random.split(key)
-    u_spinn, init_nn_params_spinn = jinns.utils.create_SPINN(
+    u_spinn, init_nn_params_spinn = jinns.nn.SPINN_MLP.create(
         subkey, d, r, eqx_list, "nonstatio_PDE"
     )
 

@@ -28,7 +28,7 @@ def create_pinn_ode():
         (eqx.nn.Linear, 20, 1),
     )
     _, subkey = random.split(key)
-    return jinns.utils.create_PINN(subkey, eqx_list, "ODE")
+    return jinns.nn.PINN_MLP.create(eq_type="ODE", key=subkey, eqx_list=eqx_list)
 
 
 @pytest.fixture

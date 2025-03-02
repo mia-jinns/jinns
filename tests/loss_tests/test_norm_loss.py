@@ -25,7 +25,9 @@ def train_OU_init():
         ],
     ]
     key, subkey = random.split(key)
-    u, init_nn_params = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 2)
+    u, init_nn_params = jinns.nn.PINN_MLP.create(
+        key=subkey, eqx_list=eqx_list, eq_type="nonstatio_PDE"
+    )
 
     Tmax = 5
     sigma = 0.5 * jnp.ones((2))
@@ -87,4 +89,4 @@ def test_unidimensionality(train_OU_init):
     )
     with pytest.raises(AssertionError) as assErr:
         loss.evaluate(init_params, batch)
-    assert str(assErr.value) == "norm loss expects unidimensional *PINN"
+    assert str(assErr.value) == "norm loss expects unidimensional *PINNAbstract"

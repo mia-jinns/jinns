@@ -18,7 +18,7 @@ def create_u_statio():
         (eqx.nn.Linear, 20, 2),
     )
     key, subkey = jax.random.split(key)
-    return jinns.utils.create_PINN(subkey, eqx_list, "statio_PDE", 2)
+    return jinns.nn.PINN_MLP.create(key=subkey, eqx_list=eqx_list, eq_type="statio_PDE")
 
 
 def test_divergence_rev_statio(create_u_statio):
@@ -44,7 +44,9 @@ def create_u_nonstatio():
         (eqx.nn.Linear, 20, 3),
     )
     key, subkey = jax.random.split(key)
-    return jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 2)
+    return jinns.nn.PINN_MLP.create(
+        key=subkey, eqx_list=eqx_list, eq_type="nonstatio_PDE"
+    )
 
 
 def test_divergence_rev_nonstatio(create_u_nonstatio):
