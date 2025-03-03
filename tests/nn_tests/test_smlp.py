@@ -30,9 +30,6 @@ def create_SMLP():
 
 @pytest.fixture
 def create_3_MLPs():
-    """
-    Illustrates the minimal requirements to inherit from PINN
-    """
     jax.config.update("jax_enable_x64", False)
 
     key = random.PRNGKey(2)
@@ -56,6 +53,9 @@ def create_3_MLPs():
 
 
 def test_equality(create_SMLP, create_3_MLPs):
+    """
+    Test that a SMLP is actually 3 separated MLPs
+    """
     u1, p1 = create_SMLP
     eqx_networks = create_3_MLPs
     key = random.PRNGKey(2)
@@ -65,7 +65,6 @@ def test_equality(create_SMLP, create_3_MLPs):
     results2 = [
         jax.vmap(u)(test_points[:, idx][:, None]) for idx, u in enumerate(eqx_networks)
     ]
-    print(results1, results2)
     assert jnp.allclose(
         jnp.array(results1),
         jnp.swapaxes(jnp.array(results2), 0, 1),

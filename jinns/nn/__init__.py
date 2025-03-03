@@ -4,3 +4,4 @@ from ._spinn_abstract import SPINNAbstract
 from ._mlp import PINN_MLP, MLP
 from ._spinn import SPINN_MLP, SMLP
 from ._hyperpinn import HYPERPINN
+from ._ppinn import PPINN_MLP

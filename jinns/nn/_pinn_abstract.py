@@ -110,6 +110,11 @@ class PINNAbstract(eqx.Module):
         if self.slice_solution is None:
             self.slice_solution = jnp.s_[:]
 
+        if isinstance(self.slice_solution, int):
+            # rewrite it as a slice to ensure that axis does not disappear when
+            # indexing
+            slice_solution = jnp.s_[slice_solution : slice_solution + 1]
+
     def __call__(
         self,
         inputs: Float[Array, "input_dim"],

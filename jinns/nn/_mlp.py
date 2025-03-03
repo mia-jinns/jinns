@@ -173,11 +173,6 @@ class PINN_MLP(PINNAbstract):
                 )
             eqx_network = MLP(key=key, eqx_list=eqx_list)
 
-        if isinstance(slice_solution, int):
-            # rewrite it as a slice to ensure that axis does not disappear when
-            # indexing
-            slice_solution = jnp.s_[slice_solution : slice_solution + 1]
-
         mlp = cls(
             eqx_network=eqx_network,
             slice_solution=slice_solution,

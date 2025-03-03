@@ -349,11 +349,6 @@ class HYPERPINN(PINNAbstract):
 
             ### End of finetuning the hypernetwork architecture
 
-        if isinstance(slice_solution, int):
-            # rewrite it as a slice to ensure that axis does not disappear when
-            # indexing
-            slice_solution = jnp.s_[slice_solution : slice_solution + 1]
-
         with warnings.catch_warnings():
             # Catch the equinox warning because we put the number of
             # parameters as static while being jnp.Array. This this time
