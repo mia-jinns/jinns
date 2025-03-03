@@ -134,6 +134,7 @@ nav:
         - 'api/pinn/pinn.md'
         - 'api/pinn/spinn.md'
         - 'api/pinn/hyperpinn.md'
+        - 'api/pinn/ppinn.md'
         - 'api/pinn/save_load.md'
       - Plot: 'api/plot.md'
       - Solve: 'api/solver.md'

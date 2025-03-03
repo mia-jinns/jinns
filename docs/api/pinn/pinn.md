@@ -1,5 +1,7 @@
 # PINN
 
-::: jinns.utils.PINN
+::: jinns.nn.PINNAbstract
 
-::: jinns.utils.create_PINN
+::: jinns.nn.PINN_MLP
+
+::: jinns.nn.MLP

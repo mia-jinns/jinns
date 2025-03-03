@@ -1,5 +1,5 @@
 # Save / Load
 
-::: jinns.utils.save_pinn
+::: jinns.nn.save_pinn
 
-::: jinns.utils.load_pinn
+::: jinns.nn.load_pinn
