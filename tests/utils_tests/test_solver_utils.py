@@ -1,4 +1,4 @@
-""" Module to test for jinns.solve._utils.py helper functions
+"""Module to test for jinns.solve._utils.py helper functions
 
 Mainly throws error for inconsistant batch sizes between DataGenerators
 """

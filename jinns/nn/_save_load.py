@@ -16,7 +16,7 @@ from jinns.parameters._params import Params, ParamsDict
 
 
 def function_to_string(
-    eqx_list: tuple[tuple[Callable, int, int] | Callable, ...]
+    eqx_list: tuple[tuple[Callable, int, int] | Callable, ...],
 ) -> tuple[tuple[str, int, int] | str, ...]:
     """
     We need this transformation for eqx_list to be pickled
@@ -42,7 +42,7 @@ def function_to_string(
 
 
 def string_to_function(
-    eqx_list_with_string: tuple[tuple[str, int, int] | str, ...]
+    eqx_list_with_string: tuple[tuple[str, int, int] | str, ...],
 ) -> tuple[tuple[Callable, int, int] | Callable, ...]:
     """
     We need this transformation for eqx_list at the loading ("unpickling")

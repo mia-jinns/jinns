@@ -54,7 +54,7 @@ def make_cartesian_product(
 
 
 def _reset_batch_idx_and_permute(
-    operands: tuple[Key, Float[Array, "n dimension"], Int, None, Float[Array, "n"]]
+    operands: tuple[Key, Float[Array, "n dimension"], Int, None, Float[Array, "n"]],
 ) -> tuple[Key, Float[Array, "n dimension"], Int]:
     key, domain, curr_idx, _, p = operands
     # resetting counter
@@ -78,7 +78,7 @@ def _reset_batch_idx_and_permute(
 
 
 def _increment_batch_idx(
-    operands: tuple[Key, Float[Array, "n dimension"], Int, None, Float[Array, "n"]]
+    operands: tuple[Key, Float[Array, "n dimension"], Int, None, Float[Array, "n"]],
 ) -> tuple[Key, Float[Array, "n dimension"], Int]:
     key, domain, curr_idx, batch_size, _ = operands
     # simply increases counter and get the batch
