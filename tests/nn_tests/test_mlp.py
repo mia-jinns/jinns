@@ -89,7 +89,7 @@ def create_MLP_3():
 #    )
 
 
-def test_equality_2(create_MLP_1, create_MLP_3):
+def test_equality(create_MLP_1, create_MLP_3):
     u1, p1 = create_MLP_1
     u2, p2 = create_MLP_3
     key = random.PRNGKey(2)

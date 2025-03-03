@@ -74,7 +74,7 @@ class PINNAbstract(eqx.Module):
         "nonstatio_PDE"]`
     """
 
-    slice_solution: slice = eqx.field(static=True, kw_only=True, default_factory=None)
+    slice_solution: slice = eqx.field(static=True, kw_only=True, default=None)
     eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"] = eqx.field(
         static=True, kw_only=True
     )
@@ -113,7 +113,7 @@ class PINNAbstract(eqx.Module):
         if isinstance(self.slice_solution, int):
             # rewrite it as a slice to ensure that axis does not disappear when
             # indexing
-            slice_solution = jnp.s_[slice_solution : slice_solution + 1]
+            self.slice_solution = jnp.s_[self.slice_solution : self.slice_solution + 1]
 
     def __call__(
         self,
