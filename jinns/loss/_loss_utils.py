@@ -19,8 +19,8 @@ from jinns.loss._boundary_conditions import (
 from jinns.utils._utils import _subtract_with_check, get_grid
 from jinns.data._DataGenerators import append_obs_batch, make_cartesian_product
 from jinns.parameters._params import _get_vmap_in_axes_params
-from jinns.nn._pinn_abstract import PINN
-from jinns.nn._spinn_abstract import SPINN
+from jinns.nn._pinn import PINN
+from jinns.nn._spinn import SPINN
 from jinns.nn._hyperpinn import HyperPINN
 from jinns.data._Batchs import *
 from jinns.parameters._params import Params, ParamsDict

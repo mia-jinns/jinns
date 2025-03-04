@@ -20,7 +20,7 @@ from jinns.data._DataGenerators import (
     CubicMeshPDENonStatio,
 )
 from jinns.nn._hyperpinn import HyperPINN
-from jinns.nn._spinn_abstract import SPINN
+from jinns.nn._spinn import SPINN
 
 
 if TYPE_CHECKING:

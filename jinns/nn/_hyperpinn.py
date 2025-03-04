@@ -15,7 +15,7 @@ from jaxtyping import Array, Float, PyTree, Int, Key
 import equinox as eqx
 import numpy as onp
 
-from jinns.nn._pinn_abstract import PINN
+from jinns.nn._pinn import PINN
 from jinns.nn._mlp import MLP
 from jinns.parameters._params import Params, ParamsDict
 

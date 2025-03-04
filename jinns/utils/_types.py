@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from jinns.data._Batchs import *
     from jinns.nn._pinn import PINN
     from jinns.nn._hyperpinn import HyperPINN
-    from jinns.nn._spinn import SPINN
+    from jinns.nn._spinn_mlp import SPINN
     from jinns.utils._containers import *
     from jinns.validation._validation import AbstractValidationModule
 

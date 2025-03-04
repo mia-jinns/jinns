@@ -7,10 +7,10 @@ import pickle
 import jax
 import equinox as eqx
 
-from jinns.nn._pinn_abstract import PINN
-from jinns.nn._spinn_abstract import SPINN
+from jinns.nn._pinn import PINN
+from jinns.nn._spinn import SPINN
 from jinns.nn._mlp import PINN_MLP
-from jinns.nn._spinn import SPINN_MLP
+from jinns.nn._spinn_mlp import SPINN_MLP
 from jinns.nn._hyperpinn import HyperPINN
 from jinns.parameters._params import Params, ParamsDict
 

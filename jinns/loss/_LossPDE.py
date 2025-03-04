@@ -38,8 +38,8 @@ from jinns.loss._loss_weights import (
     LossWeightsPDEDict,
 )
 from jinns.loss._DynamicLossAbstract import PDEStatio, PDENonStatio
-from jinns.nn._pinn_abstract import PINN
-from jinns.nn._spinn_abstract import SPINN
+from jinns.nn._pinn import PINN
+from jinns.nn._spinn import SPINN
 from jinns.data._Batchs import PDEStatioBatch, PDENonStatioBatch
 
 
