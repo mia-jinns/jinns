@@ -118,8 +118,7 @@ class PPINN_MLP(PINN):
         slice_solution: slice = None,
     ) -> tuple[Self, PyTree]:
         r"""
-        Utility function to create a standard PINN neural network with the equinox
-        library.
+        Utility function to create a Parrallel PINN neural network for Jinns.
 
         Parameters
         ----------
