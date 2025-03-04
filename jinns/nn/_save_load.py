@@ -7,11 +7,11 @@ import pickle
 import jax
 import equinox as eqx
 
-from jinns.nn._pinn_abstract import PINNAbstract
-from jinns.nn._spinn_abstract import SPINNAbstract
+from jinns.nn._pinn_abstract import PINN
+from jinns.nn._spinn_abstract import SPINN
 from jinns.nn._mlp import PINN_MLP
 from jinns.nn._spinn import SPINN_MLP
-from jinns.nn._hyperpinn import HYPERPINN
+from jinns.nn._hyperpinn import HyperPINN
 from jinns.parameters._params import Params, ParamsDict
 
 
@@ -86,15 +86,15 @@ def string_to_function(
 
 def save_pinn(
     filename: str,
-    u: PINNAbstract | HYPERPINN | SPINNAbstract,
+    u: PINN | HyperPINN | SPINN,
     params: Params | ParamsDict,
     kwargs_creation,
 ):
     """
-    Save a PINNAbstract / HyperPINN / SPINN model
+    Save a PINN / HyperPINN / SPINN model
     This function creates 3 files, beggining by `filename`
 
-     1. an eqx file to save the eqx.Module (the PINNAbstract, HyperPINN, ...)
+     1. an eqx file to save the eqx.Module (the PINN, HyperPINN, ...)
      2. a pickle file for the parameters of the equation
      3. a pickle file for the arguments that have been used at PINN creation
      and that we need to reconstruct the eqx.module later on.
@@ -105,7 +105,7 @@ def save_pinn(
     tree_serialise_leaves`).
 
     Equation parameters are saved apart because the initial type of attribute
-    `params` in PINNAbstract / HYPERPINN / SPINN is not `Params` nor `ParamsDict`
+    `params` in PINN / HyperPINN / SPINN is not `Params` nor `ParamsDict`
     but `PyTree` as inherited from `eqx.partition`.
     Therefore, if we want to ensure a proper serialization/deserialization:
     - we cannot save a `Params` object at this
@@ -113,14 +113,14 @@ def save_pinn(
       (type `PyTree`) and `Params.eq_params` (type `dict`).
     - in the case of a `ParamsDict` we cannot save `ParamsDict.nn_params` at
       the attribute field `params` because it is not a `PyTree` (as expected in
-      the PINNAbstract / HYPERPINN / SPINN signature) but it is still a dictionary.
+      the PINN / HyperPINN / SPINN signature) but it is still a dictionary.
 
     Parameters
     ----------
     filename
         Filename (prefix) without extension
     u
-        The PINNAbstract
+        The PINN
     params
         Params or ParamsDict to be save
     kwargs_creation
@@ -128,17 +128,17 @@ def save_pinn(
         the layers list, O/PDE type, etc.
     """
     if isinstance(params, Params):
-        if isinstance(u, HYPERPINN):
+        if isinstance(u, HyperPINN):
             u = eqx.tree_at(lambda m: m.init_params_hyper, u, params)
-        elif isinstance(u, (PINNAbstract, SPINNAbstract)):
+        elif isinstance(u, (PINN, SPINN)):
             u = eqx.tree_at(lambda m: m.init_params, u, params)
         eqx.tree_serialise_leaves(filename + "-module.eqx", u)
 
     elif isinstance(params, ParamsDict):
         for key, params_ in params.nn_params.items():
-            if isinstance(u, HYPERPINN):
+            if isinstance(u, HyperPINN):
                 u = eqx.tree_at(lambda m: m.init_params_hyper, u, params_)
-            elif isinstance(u, (PINNAbstract, SPINNAbstract)):
+            elif isinstance(u, (PINN, SPINN)):
                 u = eqx.tree_at(lambda m: m.init_params, u, params_)
             eqx.tree_serialise_leaves(filename + f"-module_{key}.eqx", u)
 
@@ -224,7 +224,7 @@ def load_pinn(
             kwargs_reloaded["eqx_list_hyper"]
         )
         u_reloaded_shallow, _ = eqx.filter_eval_shape(
-            HYPERPINN.create, **kwargs_reloaded
+            HyperPINN.create, **kwargs_reloaded
         )
     else:
         raise ValueError(f"{type_} is not valid")
@@ -234,11 +234,11 @@ def load_pinn(
         u_reloaded = eqx.tree_deserialise_leaves(
             filename + "-module.eqx", u_reloaded_shallow
         )
-        if isinstance(u_reloaded, HYPERPINN):
+        if isinstance(u_reloaded, HyperPINN):
             params = Params(
                 nn_params=u_reloaded.init_params_hyper, eq_params=eq_params_reloaded
             )
-        elif isinstance(u_reloaded, (PINNAbstract, SPINNAbstract)):
+        elif isinstance(u_reloaded, (PINN, SPINN)):
             params = Params(
                 nn_params=u_reloaded.init_params, eq_params=eq_params_reloaded
             )
@@ -248,9 +248,9 @@ def load_pinn(
             u_reloaded = eqx.tree_deserialise_leaves(
                 filename + f"-module_{key}.eqx", u_reloaded_shallow
             )
-            if isinstance(u_reloaded, HYPERPINN):
+            if isinstance(u_reloaded, HyperPINN):
                 nn_params_dict[key] = u_reloaded.init_params_hyper
-            elif isinstance(u_reloaded, (PINNAbstract, SPINNAbstract)):
+            elif isinstance(u_reloaded, (PINN, SPINN)):
                 nn_params_dict[key] = u_reloaded.init_params
         params = ParamsDict(nn_params=nn_params_dict, eq_params=eq_params_reloaded)
     return u_reloaded, params

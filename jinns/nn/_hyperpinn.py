@@ -1,5 +1,5 @@
 """
-Implements utility function to create HYPERPINNs
+Implements utility function to create HyperPINNs
 https://arxiv.org/pdf/2111.01008.pdf
 """
 
@@ -15,7 +15,7 @@ from jaxtyping import Array, Float, PyTree, Int, Key
 import equinox as eqx
 import numpy as onp
 
-from jinns.nn._pinn_abstract import PINNAbstract
+from jinns.nn._pinn_abstract import PINN
 from jinns.nn._mlp import MLP
 from jinns.parameters._params import Params, ParamsDict
 
@@ -39,10 +39,10 @@ def _get_param_nb(
     return onp.asarray(sum(dim_prod_all_arrays)), onp.cumsum(dim_prod_all_arrays)
 
 
-class HYPERPINN(PINNAbstract):
+class HyperPINN(PINN):
     r"""
-    A HYPERPINN object compatible with the rest of jinns.
-    Composed of a PINN and an HYPER network. The HYPERPINN is typically
+    An HyperPINN object compatible with the rest of jinns.
+    Composed of a PINN and an HYPER network. The HyperPINN is typically
     instanciated using with `create`.
 
     Parameters
@@ -63,10 +63,10 @@ class HYPERPINN(PINNAbstract):
         user provided argument takes care of it).
     eq_type : str
         A string with three possibilities.
-        "ODE": the HYPERPINN is called with one input `t`.
-        "statio_PDE": the HYPERPINN is called with one input `x`, `x`
+        "ODE": the HyperPINN is called with one input `t`.
+        "statio_PDE": the HyperPINN is called with one input `x`, `x`
         can be high dimensional.
-        "nonstatio_PDE": the HYPERPINN is called with two inputs `t` and `x`, `x`
+        "nonstatio_PDE": the HyperPINN is called with two inputs `t` and `x`, `x`
         can be high dimensional.
         **Note**: the input dimension as given in eqx_list has to match the sum
         of the dimension of `t` + the dimension of `x` or the output dimension
@@ -195,10 +195,10 @@ class HYPERPINN(PINNAbstract):
             parameters.
         eq_type
             A string with three possibilities.
-            "ODE": the HYPERPINN is called with one input `t`.
-            "statio_PDE": the HYPERPINN is called with one input `x`, `x`
+            "ODE": the HyperPINN is called with one input `t`.
+            "statio_PDE": the HyperPINN is called with one input `x`, `x`
             can be high dimensional.
-            "nonstatio_PDE": the HYPERPINN is called with two inputs `t` and `x`, `x`
+            "nonstatio_PDE": the HyperPINN is called with two inputs `t` and `x`, `x`
             can be high dimensional.
             **Note**: the input dimension as given in eqx_list has to match the sum
             of the dimension of `t` + the dimension of `x` or the output dimension
@@ -285,8 +285,8 @@ class HYPERPINN(PINNAbstract):
         Returns
         -------
         hyperpinn
-            A HYPERPINN instance or, when `shared_pinn_ouput` is not None,
-            a list of HYPERPINN instances with the same structure is returned,
+            A HyperPINN instance or, when `shared_pinn_ouput` is not None,
+            a list of HyperPINN instances with the same structure is returned,
             only differing by there final slicing of the network output.
         hyperpinn.init_params
             The initial set of parameters for the HyperPINN or a list of the latter

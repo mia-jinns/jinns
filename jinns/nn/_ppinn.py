@@ -11,11 +11,11 @@ import equinox as eqx
 from jaxtyping import Array, Key, PyTree, Float
 
 from jinns.parameters._params import Params, ParamsDict
-from jinns.nn._pinn_abstract import PINNAbstract
+from jinns.nn._pinn_abstract import PINN
 from jinns.nn._mlp import MLP
 
 
-class PPINN_MLP(PINNAbstract):
+class PPINN_MLP(PINN):
     r"""
     A PPINN MLP (Parallel PINN with MLPs) object which mimicks the PFNN architecture from
     DeepXDE. This is in fact a PINN MLP that encompasses several PINN MLPs internally.

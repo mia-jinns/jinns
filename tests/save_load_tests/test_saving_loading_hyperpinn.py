@@ -64,7 +64,7 @@ def save_reload(tmpdir):
         "eqx_list_hyper": eqx_list_hyper,
     }
 
-    u, params = jinns.nn.HYPERPINN.create(**kwargs_creation)
+    u, params = jinns.nn.HyperPINN.create(**kwargs_creation)
 
     params = jinns.parameters.Params(
         nn_params=params,

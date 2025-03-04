@@ -9,7 +9,7 @@ import jax.numpy as jnp
 import equinox as eqx
 
 import jinns
-from jinns.nn import HYPERPINN
+from jinns.nn import HyperPINN
 import jinns.utils
 
 key = random.PRNGKey(2)
@@ -42,7 +42,7 @@ eqx_list_hyper = (
 @pytest.fixture
 def create_pinn_ode():
     eqx_list = ((eqx.nn.Linear, 1, 16),) + EQX_LIST
-    u_ode = HYPERPINN.create(
+    u_ode = HyperPINN.create(
         key=subkey,
         eqx_list=eqx_list,
         eq_type="ODE",
@@ -56,7 +56,7 @@ def create_pinn_ode():
 @pytest.fixture
 def create_pinn_statio():
     eqx_list = ((eqx.nn.Linear, d, 16),) + EQX_LIST
-    u_statio = HYPERPINN.create(
+    u_statio = HyperPINN.create(
         key=subkey,
         eqx_list=eqx_list,
         eq_type="statio_PDE",
@@ -70,7 +70,7 @@ def create_pinn_statio():
 @pytest.fixture
 def create_pinn_nonstatio():
     eqx_list = ((eqx.nn.Linear, d + 1, 16),) + EQX_LIST
-    u_nonstatio = HYPERPINN.create(
+    u_nonstatio = HyperPINN.create(
         key=subkey,
         eqx_list=eqx_list,
         eq_type="nonstatio_PDE",
@@ -85,8 +85,8 @@ def create_pinn_nonstatio():
 def test_ode_pinn_struct(create_pinn_ode):
 
     u_ode = create_pinn_ode
-    assert isinstance(u_ode, jinns.nn.PINNAbstract)
-    assert isinstance(u_ode, jinns.nn.HYPERPINN)
+    assert isinstance(u_ode, jinns.nn.PINN)
+    assert isinstance(u_ode, jinns.nn.HyperPINN)
     assert u_ode.eq_type == "ODE"
     assert isinstance(u_ode.slice_solution, slice)
 
@@ -95,8 +95,8 @@ def test_statio_pinn_struct(create_pinn_statio):
 
     u_statio = create_pinn_statio
     assert u_statio.eq_type == "statio_PDE"
-    assert isinstance(u_statio, jinns.nn.PINNAbstract)
-    assert isinstance(u_statio, jinns.nn.HYPERPINN)
+    assert isinstance(u_statio, jinns.nn.PINN)
+    assert isinstance(u_statio, jinns.nn.HyperPINN)
     assert isinstance(u_statio.slice_solution, slice)
 
 
@@ -104,6 +104,6 @@ def test_nonstatio_pinn_struct(create_pinn_nonstatio):
 
     u_nonstatio = create_pinn_nonstatio
     assert u_nonstatio.eq_type == "nonstatio_PDE"
-    assert isinstance(u_nonstatio, jinns.nn.PINNAbstract)
-    assert isinstance(u_nonstatio, jinns.nn.HYPERPINN)
+    assert isinstance(u_nonstatio, jinns.nn.PINN)
+    assert isinstance(u_nonstatio, jinns.nn.HyperPINN)
     assert isinstance(u_nonstatio.slice_solution, slice)

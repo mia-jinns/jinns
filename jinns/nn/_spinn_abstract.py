@@ -8,9 +8,9 @@ import equinox as eqx
 from jinns.parameters._params import Params, ParamsDict
 
 
-class SPINNAbstract(eqx.Module):
+class SPINN(eqx.Module):
     """
-    A SPINN object compatible with the rest of jinns.
+    A Separable PINN object compatible with the rest of jinns.
     This is typically created with `create_SPINN`.
 
     Parameters

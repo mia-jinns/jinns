@@ -13,8 +13,8 @@ from jax import vmap, grad
 import equinox as eqx
 from jinns.utils._utils import get_grid, _subtract_with_check
 from jinns.data._Batchs import *
-from jinns.nn._pinn_abstract import PINNAbstract
-from jinns.nn._spinn_abstract import SPINNAbstract
+from jinns.nn._pinn_abstract import PINN
+from jinns.nn._spinn_abstract import SPINN
 
 if TYPE_CHECKING:
     from jinns.utils._types import *
@@ -65,7 +65,7 @@ def _compute_boundary_loss(
     batch
         the batch
     u
-        a PINNAbstract
+        a PINN
     params
         Params or ParamsDict
     facet
@@ -121,7 +121,7 @@ def boundary_dirichlet(
     batch
         The batch
     u
-        The PINNAbstract or SPINNAbstract
+        The PINN or SPINN
     params
         The dictionary of parameters of the model.
         Typically, it is a dictionary of
@@ -138,7 +138,7 @@ def boundary_dirichlet(
     batch_array = batch.border_batch
     batch_array = batch_array[..., facet]
 
-    if isinstance(u, PINNAbstract):
+    if isinstance(u, PINN):
         v_u_boundary = vmap(
             lambda inputs, params: _subtract_with_check(
                 f(inputs),
@@ -156,15 +156,13 @@ def boundary_dirichlet(
             res**2,
             axis=-1,
         )
-    elif isinstance(u, SPINNAbstract):
+    elif isinstance(u, SPINN):
         values = u(batch_array, params)[..., dim_to_apply]
         grid = get_grid(batch_array)
         res = _subtract_with_check(f(grid), values, cause="boundary condition fun")
         mse_u_boundary = jnp.sum(res**2, axis=-1)
     else:
-        raise ValueError(
-            f"Bad type for u. Got {type(u)}, expected PINNAbstract or SPINNAbstract"
-        )
+        raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
     return mse_u_boundary
 
 
@@ -196,7 +194,7 @@ def boundary_neumann(
     batch
         The batch
     u
-        The PINNAbstract
+        The PINN
     params
         The dictionary of parameters of the model.
         Typically, it is a dictionary of
@@ -224,7 +222,7 @@ def boundary_neumann(
         # border_batch shape (batch_size, ndim, nfacets)
         n = jnp.array([[-1, 1, 0, 0], [0, 0, -1, 1]])
 
-    if isinstance(u, PINNAbstract):
+    if isinstance(u, PINN):
 
         u_ = lambda inputs, params: jnp.squeeze(u(inputs, params)[dim_to_apply])
 
@@ -267,7 +265,7 @@ def boundary_neumann(
             axis=-1,
         )
 
-    elif isinstance(u, SPINNAbstract):
+    elif isinstance(u, SPINN):
         # the gradient we see in the PINN case can get gradients wrt to x
         # dimensions at once. But it would be very inefficient in SPINN because
         # of the high dim output of u. So we do 2 explicit forward AD, handling all the
@@ -340,7 +338,5 @@ def boundary_neumann(
             axis=-1,
         )
     else:
-        raise ValueError(
-            f"Bad type for u. Got {type(u)}, expected PINNAbstract or SPINNAbstract"
-        )
+        raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
     return mse_u_boundary

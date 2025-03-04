@@ -89,4 +89,4 @@ def test_unidimensionality(train_OU_init):
     )
     with pytest.raises(AssertionError) as assErr:
         loss.evaluate(init_params, batch)
-    assert str(assErr.value) == "norm loss expects unidimensional *PINNAbstract"
+    assert str(assErr.value) == "norm loss expects unidimensional *PINN"

@@ -19,9 +19,9 @@ from jinns.loss._boundary_conditions import (
 from jinns.utils._utils import _subtract_with_check, get_grid
 from jinns.data._DataGenerators import append_obs_batch, make_cartesian_product
 from jinns.parameters._params import _get_vmap_in_axes_params
-from jinns.nn._pinn_abstract import PINNAbstract
-from jinns.nn._spinn_abstract import SPINNAbstract
-from jinns.nn._hyperpinn import HYPERPINN
+from jinns.nn._pinn_abstract import PINN
+from jinns.nn._spinn_abstract import SPINN
+from jinns.nn._hyperpinn import HyperPINN
 from jinns.data._Batchs import *
 from jinns.parameters._params import Params, ParamsDict
 
@@ -40,17 +40,13 @@ def dynamic_loss_apply(
     params: Params | ParamsDict,
     vmap_axes: tuple[int | None, ...],
     loss_weight: float | Float[Array, "dyn_loss_dimension"],
-    u_type: PINNAbstract | HYPERPINN | None = None,
+    u_type: PINN | HyperPINN | None = None,
 ) -> float:
     """
     Sometimes when u is a lambda function a or dict we do not have access to
     its type here, hence the last argument
     """
-    if (
-        u_type == PINNAbstract
-        or u_type == HYPERPINN
-        or isinstance(u, (PINNAbstract, HYPERPINN))
-    ):
+    if u_type == PINN or u_type == HyperPINN or isinstance(u, (PINN, HyperPINN)):
         v_dyn_loss = vmap(
             lambda batch, params: dyn_loss(
                 batch, u, params  # we must place the params at the end
@@ -60,13 +56,11 @@ def dynamic_loss_apply(
         )
         residuals = v_dyn_loss(batch, params)
         mse_dyn_loss = jnp.mean(jnp.sum(loss_weight * residuals**2, axis=-1))
-    elif u_type == SPINNAbstract or isinstance(u, SPINNAbstract):
+    elif u_type == SPINN or isinstance(u, SPINN):
         residuals = dyn_loss(batch, u, params)
         mse_dyn_loss = jnp.mean(jnp.sum(loss_weight * residuals**2, axis=-1))
     else:
-        raise ValueError(
-            f"Bad type for u. Got {type(u)}, expected PINNAbstract or SPINNAbstract"
-        )
+        raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
 
     return mse_dyn_loss
 
@@ -85,10 +79,10 @@ def normalization_loss_apply(
     loss_weight: float,
 ) -> float:
     """
-    Note the squeezing on each result. We expect unidimensional *PINNAbstract since
+    Note the squeezing on each result. We expect unidimensional *PINN since
     they represent probability distributions
     """
-    if isinstance(u, (PINNAbstract, HYPERPINN)):
+    if isinstance(u, (PINN, HyperPINN)):
         if len(batches) == 1:
             v_u = vmap(
                 lambda *b: u(*b)[u.slice_solution],
@@ -96,7 +90,7 @@ def normalization_loss_apply(
                 0,
             )
             res = v_u(*batches, params)
-            assert res.shape[-1] == 1, "norm loss expects unidimensional *PINNAbstract"
+            assert res.shape[-1] == 1, "norm loss expects unidimensional *PINN"
             # Monte-Carlo integration using importance sampling
             mse_norm_loss = loss_weight * (
                 jnp.abs(jnp.mean(res.squeeze() * norm_weights) - 1) ** 2
@@ -115,16 +109,16 @@ def normalization_loss_apply(
                 in_axes=(0,) + vmap_axes_params,
             )
             res = v_u(batches, params)
-            assert res.shape[-1] == 1, "norm loss expects unidimensional *PINNAbstract"
+            assert res.shape[-1] == 1, "norm loss expects unidimensional *PINN"
             # For all times t, we perform an integration. Then we average the
             # losses over times.
             mse_norm_loss = loss_weight * jnp.mean(
                 jnp.abs(jnp.mean(res.squeeze() * norm_weights, axis=-1) - 1) ** 2
             )
-    elif isinstance(u, SPINNAbstract):
+    elif isinstance(u, SPINN):
         if len(batches) == 1:
             res = u(*batches, params)
-            assert res.shape[-1] == 1, "norm loss expects unidimensional *SPINNAbstract"
+            assert res.shape[-1] == 1, "norm loss expects unidimensional *SPINN"
             mse_norm_loss = (
                 loss_weight
                 * jnp.abs(
@@ -145,7 +139,7 @@ def normalization_loss_apply(
                 ),
                 params,
             )
-            assert res.shape[-1] == 1, "norm loss expects unidimensional *SPINNAbstract"
+            assert res.shape[-1] == 1, "norm loss expects unidimensional *SPINN"
             # the outer mean() below is for the times stamps
             mse_norm_loss = loss_weight * jnp.mean(
                 jnp.abs(
@@ -159,9 +153,7 @@ def normalization_loss_apply(
                 ** 2
             )
     else:
-        raise ValueError(
-            f"Bad type for u. Got {type(u)}, expected PINNAbstract or SPINNAbstract"
-        )
+        raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
 
     return mse_norm_loss
 
@@ -243,8 +235,8 @@ def observations_loss_apply(
     loss_weight: float | Float[Array, "observation_dim"],
     obs_slice: slice,
 ) -> float:
-    # TODO implement for SPINNAbstract
-    if isinstance(u, (PINNAbstract, HYPERPINN)):
+    # TODO implement for SPINN
+    if isinstance(u, (PINN, HyperPINN)):
         v_u = vmap(
             lambda *args: u(*args)[u.slice_solution],
             vmap_axes,
@@ -261,14 +253,10 @@ def observations_loss_apply(
                 axis=-1,
             )
         )
-    elif isinstance(u, SPINNAbstract):
-        raise RuntimeError(
-            "observation loss term not yet implemented for SPINNAbstracts"
-        )
+    elif isinstance(u, SPINN):
+        raise RuntimeError("observation loss term not yet implemented for SPINNs")
     else:
-        raise ValueError(
-            f"Bad type for u. Got {type(u)}, expected PINNAbstract or SPINNAbstract"
-        )
+        raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
     return mse_observation_loss
 
 
@@ -282,7 +270,7 @@ def initial_condition_apply(
 ) -> float:
     n = omega_batch.shape[0]
     t0_omega_batch = jnp.concatenate([jnp.zeros((n, 1)), omega_batch], axis=1)
-    if isinstance(u, (PINNAbstract, HYPERPINN)):
+    if isinstance(u, (PINN, HyperPINN)):
         v_u_t0 = vmap(
             lambda t0_x, params: _subtract_with_check(
                 initial_condition_fun(t0_x[1:]),
@@ -298,7 +286,7 @@ def initial_condition_apply(
         # Recall that by convention:
         # param_batch_dict = times_batch_size * omega_batch_size
         mse_initial_condition = jnp.mean(jnp.sum(loss_weight * res**2, axis=-1))
-    elif isinstance(u, SPINNAbstract):
+    elif isinstance(u, SPINN):
         values = lambda t_x: u(
             t_x,
             params,
@@ -312,9 +300,7 @@ def initial_condition_apply(
         )
         mse_initial_condition = jnp.mean(jnp.sum(loss_weight * res**2, axis=-1))
     else:
-        raise ValueError(
-            f"Bad type for u. Got {type(u)}, expected PINNAbstract or SPINNAbstract"
-        )
+        raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
     return mse_initial_condition
 
 

@@ -11,7 +11,7 @@ import equinox as eqx
 from jaxtyping import Array, Key, PyTree, Float
 
 from jinns.parameters._params import Params
-from jinns.nn._pinn_abstract import PINNAbstract
+from jinns.nn._pinn_abstract import PINN
 
 
 class MLP(eqx.Module):
@@ -70,7 +70,7 @@ class MLP(eqx.Module):
         return t
 
 
-class PINN_MLP(PINNAbstract):
+class PINN_MLP(PINN):
     """
     An implementable PINN based on a MLP architecture
     """
@@ -169,7 +169,7 @@ class PINN_MLP(PINNAbstract):
         if eqx_network is None:
             if eqx_list is None or key is None:
                 raise ValueError(
-                    "If eqx_network is None, then key and eqx_list" " must be provided"
+                    "If eqx_network is None, then key and eqx_list must be provided"
                 )
             eqx_network = MLP(key=key, eqx_list=eqx_list)
 

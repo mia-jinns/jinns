@@ -48,7 +48,7 @@ def create_MLP_3():
     """
     jax.config.update("jax_enable_x64", False)
 
-    class MyPINN(jinns.nn.PINNAbstract):
+    class MyPINN(jinns.nn.PINN):
         def __call__(self, inputs, params):
             model = eqx.combine(params, self.static)
             return model(inputs)

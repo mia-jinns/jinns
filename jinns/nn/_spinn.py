@@ -12,7 +12,7 @@ from jaxtyping import Key, Array, Float, PyTree
 
 from jinns.parameters._params import Params, ParamsDict
 from jinns.nn._mlp import MLP
-from jinns.nn._spinn_abstract import SPINNAbstract
+from jinns.nn._spinn_abstract import SPINN
 
 
 class SMLP(eqx.Module):
@@ -67,7 +67,7 @@ class SMLP(eqx.Module):
         return jnp.asarray(outputs)
 
 
-class SPINN_MLP(SPINNAbstract):
+class SPINN_MLP(SPINN):
     """
     An implementable SPINN based on a MLP architecture
     """

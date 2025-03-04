@@ -107,7 +107,7 @@ def train_NSPipeFlow_init():
     key, subkey = random.split(key)
     hyperparams = ["nu"]
     hypernet_input_size = 1
-    u_hyper, u_init_nn_params = jinns.nn.HYPERPINN.create(
+    u_hyper, u_init_nn_params = jinns.nn.HyperPINN.create(
         eq_type="statio_PDE",
         hyperparams=hyperparams,
         hypernet_input_size=hypernet_input_size,
@@ -117,7 +117,7 @@ def train_NSPipeFlow_init():
         output_transform=u_output_transform,
         slice_solution=jnp.s_[:2],
     )
-    p_hyper, _ = jinns.nn.HYPERPINN.create(
+    p_hyper, _ = jinns.nn.HyperPINN.create(
         eq_type="statio_PDE",
         hyperparams=hyperparams,
         hypernet_input_size=hypernet_input_size,

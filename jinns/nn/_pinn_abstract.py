@@ -10,18 +10,20 @@ import jax.numpy as jnp
 from jinns.parameters._params import Params, ParamsDict
 
 
-class PINNAbstract(eqx.Module):
+class PINN(eqx.Module):
     r"""
-    Abstract class for PINN objects. This can be seen as wrappers on
-    eqx.Modules which actually implement the NN architectures.
+    Base class for PINN objects. It can be seen as a wrapper on
+    an `eqx.Module` which actually implement the NN architectures, with extra
+    arguments handling the "physics-informed" aspect.
 
-    We use the `eqx.partition` and `eqx.combine` strategy of Equinox: a
-    `filter_spec` is applied on the PyTree and splits it into two PyTree with
-    the same structure: a static one (invisible to JAX transform such as JIT,
-    grad, etc.) and dynamic one. By convention, anything not static is
-    considered a parameter in Jinns.
+    !!! Note
+        We use the `eqx.partition` and `eqx.combine` strategy of Equinox: a
+        `filter_spec` is applied on the PyTree and splits it into two PyTree with
+        the same structure: a static one (invisible to JAX transform such as JIT,
+        grad, etc.) and dynamic one. By convention, anything not static is
+        considered a parameter in Jinns.
 
-    For compatibility with jinns, we require that a PINN architecture:
+    For compatibility with jinns, we require that a `PINN` architecture:
 
         1) has an eqx.Module (`eqx_network`) InitVar passed to __post_init__
         representing the network architecture.

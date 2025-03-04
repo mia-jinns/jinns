@@ -63,7 +63,7 @@ def test_ode_pinn_struct(create_SPINN_ode):
 
     u_ode = create_SPINN_ode
     assert u_ode.eq_type == "ODE"
-    assert isinstance(u_ode, jinns.nn.SPINNAbstract)
+    assert isinstance(u_ode, jinns.nn.SPINN)
     assert u_ode.d == 1
     _assert_attr_equal(u_ode)
 
@@ -72,7 +72,7 @@ def test_statio_pinn_struct(create_SPINN_statio):
 
     u_statio = create_SPINN_statio
     assert u_statio.eq_type == "statio_PDE"
-    assert isinstance(u_statio, jinns.nn.SPINNAbstract)
+    assert isinstance(u_statio, jinns.nn.SPINN)
 
     assert u_statio.d == d
     _assert_attr_equal(u_statio)
@@ -82,7 +82,7 @@ def test_nonstatio_pinn_struct(create_SPINN_nonstatio):
 
     u_nonstatio = create_SPINN_nonstatio
     assert u_nonstatio.eq_type == "nonstatio_PDE"
-    assert isinstance(u_nonstatio, jinns.nn.SPINNAbstract)
+    assert isinstance(u_nonstatio, jinns.nn.SPINN)
     assert u_nonstatio.d == d  # in non-statio SPINN user should include `t` in `d`
     _assert_attr_equal(u_nonstatio)
 

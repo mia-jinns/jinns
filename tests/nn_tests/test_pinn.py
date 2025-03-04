@@ -63,7 +63,7 @@ def test_ode_pinn_struct(create_pinn_ode):
 
     u_ode = create_pinn_ode
     assert u_ode.eq_type == "ODE"
-    assert isinstance(u_ode, jinns.nn.PINNAbstract)
+    assert isinstance(u_ode, jinns.nn.PINN)
     assert isinstance(u_ode.slice_solution, slice)
 
 
@@ -71,7 +71,7 @@ def test_statio_pinn_struct(create_pinn_statio):
 
     u_statio = create_pinn_statio
     assert u_statio.eq_type == "statio_PDE"
-    assert isinstance(u_statio, jinns.nn.PINNAbstract)
+    assert isinstance(u_statio, jinns.nn.PINN)
     print(u_statio.slice_solution)
     assert isinstance(u_statio.slice_solution, slice)
 
@@ -80,5 +80,5 @@ def test_nonstatio_pinn_struct(create_pinn_nonstatio):
 
     u_nonstatio = create_pinn_nonstatio
     assert u_nonstatio.eq_type == "nonstatio_PDE"
-    assert isinstance(u_nonstatio, jinns.nn.PINNAbstract)
+    assert isinstance(u_nonstatio, jinns.nn.PINN)
     assert isinstance(u_nonstatio.slice_solution, slice)
