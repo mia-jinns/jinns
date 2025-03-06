@@ -22,7 +22,7 @@ from jinns.parameters._params import Params, ParamsDict
 
 def _get_param_nb(
     params: Params,
-) -> tuple[Int[onp.ndarray, "1"], Int[onp.ndarray, "n_layers"]]:
+) -> tuple[int, list]:
     """Returns the number of parameters in a Params object and also
     the cumulative sum when parsing the object.
 
@@ -36,7 +36,10 @@ def _get_param_nb(
         prod(a.shape)
         for a in tree_leaves(params, is_leaf=lambda x: isinstance(x, jnp.ndarray))
     ]
-    return onp.asarray(sum(dim_prod_all_arrays)), onp.cumsum(dim_prod_all_arrays)
+    return (
+        sum(dim_prod_all_arrays),
+        onp.cumsum(dim_prod_all_arrays).tolist(),
+    )
 
 
 class HyperPINN(PINN):
@@ -91,10 +94,8 @@ class HyperPINN(PINN):
 
     eqx_hyper_network: InitVar[eqx.Module] = eqx.field(kw_only=True)
 
-    pinn_params_sum: Int[onp.ndarray, "1"] = eqx.field(init=False, static=True)
-    pinn_params_cumsum: Int[onp.ndarray, "n_layers"] = eqx.field(
-        init=False, static=True
-    )
+    pinn_params_sum: int = eqx.field(init=False, static=True)
+    pinn_params_cumsum: list = eqx.field(init=False, static=True)
 
     init_params_hyper: PyTree = eqx.field(init=False)
     static_hyper: PyTree = eqx.field(init=False, static=True)
