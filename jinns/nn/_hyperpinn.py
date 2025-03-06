@@ -10,7 +10,6 @@ import copy
 from math import prod
 import jax
 import jax.numpy as jnp
-from jax.tree_util import tree_leaves, tree_map
 from jaxtyping import Array, Float, PyTree, Int, Key
 import equinox as eqx
 import numpy as onp
@@ -34,7 +33,7 @@ def _get_param_nb(
     """
     dim_prod_all_arrays = [
         prod(a.shape)
-        for a in tree_leaves(params, is_leaf=lambda x: isinstance(x, jnp.ndarray))
+        for a in jax.tree.leaves(params, is_leaf=lambda x: isinstance(x, jnp.ndarray))
     ]
     return (
         sum(dim_prod_all_arrays),
@@ -104,24 +103,28 @@ class HyperPINN(PINN):
         super().__post_init__(
             eqx_network,
         )
-        # below we overwrite the store the init_params set in super().__post_init__()
+        # In addition, we store the PyTree structure of the hypernetwork as well
         self.init_params_hyper, self.static_hyper = eqx.partition(
-            eqx_hyper_network, eqx.is_inexact_array
+            eqx_hyper_network, self.filter_spec
         )
         self.pinn_params_sum, self.pinn_params_cumsum = _get_param_nb(self.init_params)
 
     def _hyper_to_pinn(self, hyper_output: Float[Array, "output_dim"]) -> PyTree:
         """
-        From the output of the hypernetwork we set the well formed
-        parameters of the pinn (`self.params`)
+        From the output of the hypernetwork, transform to a well formed
+        parameters for the pinn network (i.e. with the same PyTree structure as
+        `self.init_params`)
         """
+
         pinn_params_flat = eqx.tree_at(
-            lambda p: tree_leaves(p, is_leaf=eqx.is_array),
+            lambda p: jax.tree.leaves(
+                p, is_leaf=eqx.is_array
+            ),  # not sure is_leaf useful here ?
             self.init_params,
             jnp.split(hyper_output, self.pinn_params_cumsum[:-1]),
         )
 
-        return tree_map(
+        return jax.tree.map(
             lambda a, b: a.reshape(b.shape),
             pinn_params_flat,
             self.init_params,
