@@ -33,7 +33,7 @@ class SMLP(eqx.Module):
         that could be required (eg. the size of the layer).
         The `key` argument need not be given.
         Thus typical example is `eqx_list=
-        ((eqx.nn.Linear, 2, 20),
+        ((eqx.nn.Linear, 1, 20),
             jax.nn.tanh,
             (eqx.nn.Linear, 20, 20),
             jax.nn.tanh,
