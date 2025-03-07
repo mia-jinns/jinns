@@ -117,9 +117,14 @@ class HyperPINN(PINN):
         """
 
         pinn_params_flat = eqx.tree_at(
-            lambda p: jax.tree.leaves(
-                p, is_leaf=eqx.is_array
-            ),  # not sure is_leaf useful here ?
+            jax.tree.leaves,  # is_leaf=eqx.is_array argument for jax.tree.leaves
+            # is not needed in general when working
+            # with eqx.nn.Linear for examples: jax.tree.leaves
+            # already returns the array of weights and biases only, since the
+            # other stuff (that we do not want to be returned) is marked as
+            # static (in eqx.nn.Linear), hence is not part of the leaves.
+            # Note, that custom layers should then be properly designed to pass
+            # this jax.tree.leaves.
             self.init_params,
             jnp.split(hyper_output, self.pinn_params_cumsum[:-1]),
         )
