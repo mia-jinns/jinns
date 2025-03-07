@@ -117,6 +117,31 @@ class PINN(eqx.Module):
             # indexing
             self.slice_solution = jnp.s_[self.slice_solution : self.slice_solution + 1]
 
+    def eval(self, network, inputs, *args, **kwargs):
+        """How to call your Equinox module `network`. The purpose of this method
+        is to give more flexibility : user should re-implement `eval`
+        when inheriting from `PINN` if they desire more flexibility on how to
+        evaluate the network.
+
+        Defaults to using `network.__call__(inputs)` but it could be more refined *e.g.* `network.anymethod(inputs)`.
+
+        Parameters
+        ----------
+        network : eqx.Module
+            Your neural network with the parameters set, usually returned by
+            `eqx.combine(self.static, current_params)`.
+        inputs : Array
+            The inputs, evetually transformed by `self.input_transformed` if
+            specified by the user.
+
+        Returns
+        -------
+        Array
+            The output
+        """
+
+        return network(inputs)
+
     def __call__(
         self,
         inputs: Float[Array, "input_dim"],
@@ -141,9 +166,11 @@ class PINN(eqx.Module):
             model = eqx.combine(params.nn_params, self.static)
         except (KeyError, AttributeError, TypeError) as e:  # give more flexibility
             model = eqx.combine(params, self.static)
-        res = self.output_transform(
-            inputs, model(self.input_transform(inputs, params)).squeeze(), params
-        )
+
+        # evaluate the model
+        res = self.eval(model, self.input_transform(inputs, params), *args, **kwargs)
+
+        res = self.output_transform(inputs, res.squeeze(), params)
 
         # force (1,) output for non vectorial solution (consistency)
         if not res.shape:

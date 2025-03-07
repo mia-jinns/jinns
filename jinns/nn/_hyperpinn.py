@@ -135,6 +135,8 @@ class HyperPINN(PINN):
         self,
         inputs: Float[Array, "input_dim"],
         params: Params | ParamsDict | PyTree,
+        *args,
+        **kwargs,
     ) -> Float[Array, "output_dim"]:
         """
         Evaluate the HyperPINN on some inputs with some params.
@@ -159,9 +161,9 @@ class HyperPINN(PINN):
         pinn_params = self._hyper_to_pinn(hyper_output)
 
         pinn = eqx.combine(pinn_params, self.static)
-        res = self.output_transform(
-            inputs, pinn(self.input_transform(inputs, params)).squeeze(), params
-        )
+        res = self.eval(pinn, self.input_transform(inputs, params), *args, **kwargs)
+
+        res = self.output_transform(inputs, res.squeeze(), params)
 
         # force (1,) output for non vectorial solution (consistency)
         if not res.shape:

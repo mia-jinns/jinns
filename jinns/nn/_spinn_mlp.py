@@ -62,8 +62,8 @@ class SMLP(eqx.Module):
     ) -> Float[Array, "d embed_dim*output_dim"]:
         outputs = []
         for d in range(self.d):
-            t_ = inputs[d : d + 1]
-            outputs += [self.separated_mlp[d](t_)]
+            x_i = inputs[d : d + 1]
+            outputs += [self.separated_mlp[d](x_i)]
         return jnp.asarray(outputs)
 
 
