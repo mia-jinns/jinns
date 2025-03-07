@@ -68,6 +68,14 @@ class PINN(eqx.Module):
         Default is no operation.
     eqx_network : eqx.Module
         The actual neural network instanciated as an eqx.Module.
+    filter_spec : PyTree[Union[bool, Callable[[Any], bool]]]
+        Default is `eqx.is_inexact_array`. This tells Jinns what to consider as
+        a trainable parameter. Quoting from equinox documentation:
+        a PyTree whose structure should be a prefix of the structure of pytree.
+        Each of its leaves should either be 1) True, in which case the leaf or
+        subtree is kept; 2) False, in which case the leaf or subtree is
+        replaced with replace; 3) a callable Leaf -> bool, in which case this is evaluated on the leaf or mapped over the subtree, and the leaf kept or replaced as appropriate.
+
 
     Raises
     ------
@@ -97,9 +105,13 @@ class PINN(eqx.Module):
     static: PyTree = eqx.field(init=False, static=True)
 
     def __post_init__(self, eqx_network):
+
         if self.eq_type not in ["ODE", "statio_PDE", "nonstatio_PDE"]:
             raise RuntimeError("Wrong parameter value for eq_type")
         # saving the static part of the model and initial parameters
+
+        if self.filter_spec is None:
+            self.filter_spec = eqx.is_inexact_array
 
         self.init_params, self.static = eqx.partition(eqx_network, self.filter_spec)
 

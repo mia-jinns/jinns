@@ -5,12 +5,11 @@ https://arxiv.org/pdf/2111.01008.pdf
 
 import warnings
 from dataclasses import InitVar
-from typing import Callable, Literal, Self
-import copy
+from typing import Callable, Literal, Self, Union, Any
 from math import prod
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array, Float, PyTree, Int, Key
+from jaxtyping import Array, Float, PyTree, Key
 import equinox as eqx
 import numpy as onp
 
@@ -86,6 +85,13 @@ class HyperPINN(PINN):
         The actual neural network instanciated as an eqx.Module.
     hyper_mlp : eqx.Module
         The actual hyper neural network instanciated as an eqx.Module.
+    filter_spec : PyTree[Union[bool, Callable[[Any], bool]]]
+        Default is `eqx.is_inexact_array`. This tells Jinns what to consider as
+        a trainable parameter. Quoting from equinox documentation:
+        a PyTree whose structure should be a prefix of the structure of pytree.
+        Each of its leaves should either be 1) True, in which case the leaf or
+        subtree is kept; 2) False, in which case the leaf or subtree is
+        replaced with replace; 3) a callable Leaf -> bool, in which case this is evaluated on the leaf or mapped over the subtree, and the leaf kept or replaced as appropriate.
     """
 
     hyperparams: list[str] = eqx.field(static=True, kw_only=True)
@@ -194,6 +200,7 @@ class HyperPINN(PINN):
             Float[Array, "output_dim"],
         ] = None,
         slice_solution: slice = None,
+        filter_spec: PyTree[Union[bool, Callable[[Any], bool]]] = None,
     ) -> tuple[Self, PyTree]:
         r"""
         Utility function to create a standard PINN neural network with the equinox
@@ -292,6 +299,14 @@ class HyperPINN(PINN):
             designated by the `hyperparams` argument;
             and the number of outputs must be equal to the number
             of parameters in the pinn network
+        filter_spec : PyTree[Union[bool, Callable[[Any], bool]]]
+            Default is None which leads to `eqx.is_inexact_array` in the class
+            instanciation. This tells Jinns what to consider as
+            a trainable parameter. Quoting from equinox documentation:
+            a PyTree whose structure should be a prefix of the structure of pytree.
+            Each of its leaves should either be 1) True, in which case the leaf or
+            subtree is kept; 2) False, in which case the leaf or subtree is
+            replaced with replace; 3) a callable Leaf -> bool, in which case this is evaluated on the leaf or mapped over the subtree, and the leaf kept or replaced as appropriate.
 
         Returns
         -------
@@ -377,5 +392,6 @@ class HyperPINN(PINN):
                 output_transform=output_transform,
                 hyperparams=hyperparams,
                 hypernet_input_size=hypernet_input_size,
+                filter_spec=filter_spec,
             )
         return hyperpinn, hyperpinn.init_params_hyper

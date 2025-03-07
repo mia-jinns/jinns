@@ -11,13 +11,39 @@ from jinns.parameters._params import Params, ParamsDict
 class SPINN(eqx.Module):
     """
     A Separable PINN object compatible with the rest of jinns.
-    This is typically created with `create_SPINN`.
 
     Parameters
     ----------
     d : int
         The number of dimensions to treat separately, including time `t` if
         used for non-stationnary equations.
+    r : int
+        An integer. The dimension of the embedding.
+    eq_type : Literal["ODE", "statio_PDE", "nonstatio_PDE"]
+        A string with three possibilities.
+        "ODE": the PINN is called with one input `t`.
+        "statio_PDE": the PINN is called with one input `x`, `x`
+        can be high dimensional.
+        "nonstatio_PDE": the PINN is called with two inputs `t` and `x`, `x`
+        can be high dimensional.
+        **Note**: the input dimension as given in eqx_list has to match the sum
+        of the dimension of `t` + the dimension of `x`.
+    m : int
+        The output dimension of the neural network. According to
+        the SPINN article, a total embedding dimension of `r*m` is defined. We
+        then sum groups of `r` embedding dimensions to compute each output.
+        Default is 1.
+    filter_spec : PyTree[Union[bool, Callable[[Any], bool]]]
+        Default is `eqx.is_inexact_array`. This tells Jinns what to consider as
+        a trainable parameter. Quoting from equinox documentation:
+        a PyTree whose structure should be a prefix of the structure of pytree.
+        Each of its leaves should either be 1) True, in which case the leaf or
+        subtree is kept; 2) False, in which case the leaf or subtree is
+        replaced with replace; 3) a callable Leaf -> bool, in which case this is evaluated on the leaf or mapped over the subtree, and the leaf kept or replaced as appropriate.
+    eqx_spinn_network : eqx.Module
+        The actual neural network instanciated as an eqx.Module. It should be
+        an architecture taking `d` inputs and returning `d` times an embedding
+        of dimension `r`*`m`. See the Separable PINN paper for more details.
 
     """
 
@@ -27,7 +53,7 @@ class SPINN(eqx.Module):
     m: int = eqx.field(static=True, kw_only=True, default=1)
 
     filter_spec: PyTree[Union[bool, Callable[[Any], bool]]] = eqx.field(
-        static=True, kw_only=True, default=eqx.is_inexact_array
+        static=True, kw_only=True, default=None
     )
     eqx_spinn_network: InitVar[eqx.Module] = eqx.field(kw_only=True)
 
@@ -35,6 +61,10 @@ class SPINN(eqx.Module):
     static: PyTree = eqx.field(init=False, static=True)
 
     def __post_init__(self, eqx_spinn_network):
+
+        if self.filter_spec is None:
+            self.filter_spec = eqx.is_inexact_array
+
         self.init_params, self.static = eqx.partition(
             eqx_spinn_network, self.filter_spec
         )

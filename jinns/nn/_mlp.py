@@ -2,10 +2,9 @@
 Implements utility function to create PINNs
 """
 
-from typing import Callable, Literal, Self
+from typing import Callable, Literal, Self, Union, Any
 from dataclasses import InitVar
 import jax
-import jax.numpy as jnp
 import equinox as eqx
 
 from jaxtyping import Array, Key, PyTree, Float
@@ -93,6 +92,7 @@ class PINN_MLP(PINN):
             Float[Array, "output_dim"],
         ] = None,
         slice_solution: slice = None,
+        filter_spec: PyTree[Union[bool, Callable[[Any], bool]]] = None,
     ) -> tuple[Self, PyTree]:
         r"""
         Instanciate standard PINN MLP object. The actual NN is either passed as
@@ -154,6 +154,14 @@ class PINN_MLP(PINN):
             example Note that it must be a slice and not an integer (a
             preprocessing of the user provided argument takes care of it).
 
+        filter_spec : PyTree[Union[bool, Callable[[Any], bool]]]
+            Default is None which leads to `eqx.is_inexact_array` in the class
+            instanciation. This tells Jinns what to consider as
+            a trainable parameter. Quoting from equinox documentation:
+            a PyTree whose structure should be a prefix of the structure of pytree.
+            Each of its leaves should either be 1) True, in which case the leaf or
+            subtree is kept; 2) False, in which case the leaf or subtree is
+            replaced with replace; 3) a callable Leaf -> bool, in which case this is evaluated on the leaf or mapped over the subtree, and the leaf kept or replaced as appropriate.
 
         Returns
         -------
@@ -179,5 +187,6 @@ class PINN_MLP(PINN):
             eq_type=eq_type,
             input_transform=input_transform,
             output_transform=output_transform,
+            filter_spec=filter_spec,
         )
         return mlp, mlp.init_params

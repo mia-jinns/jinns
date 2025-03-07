@@ -49,6 +49,13 @@ class PPINN_MLP(PINN):
         output and the parameter. This function will be called after exiting
         the PPINN.
         Default is no operation.
+    filter_spec : PyTree[Union[bool, Callable[[Any], bool]]]
+        Default is `eqx.is_inexact_array`. This tells Jinns what to consider as
+        a trainable parameter. Quoting from equinox documentation:
+        a PyTree whose structure should be a prefix of the structure of pytree.
+        Each of its leaves should either be 1) True, in which case the leaf or
+        subtree is kept; 2) False, in which case the leaf or subtree is
+        replaced with replace; 3) a callable Leaf -> bool, in which case this is evaluated on the leaf or mapped over the subtree, and the leaf kept or replaced as appropriate.
     eqx_network_list
             A list of eqx.nn.MLP objects with same input
             dimensions. They represent the parallel subnetworks of the PPIN MLP.
@@ -64,7 +71,7 @@ class PPINN_MLP(PINN):
         )
         self.init_params, self.static = (), ()
         for eqx_network_ in eqx_network_list:
-            params, static = eqx.partition(eqx_network_, eqx.is_inexact_array)
+            params, static = eqx.partition(eqx_network_, self.filter_spec)
             self.init_params = self.init_params + (params,)
             self.static = self.static + (static,)
 

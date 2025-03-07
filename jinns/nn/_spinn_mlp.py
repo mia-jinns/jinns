@@ -4,7 +4,7 @@ https://arxiv.org/abs/2211.08761
 """
 
 from dataclasses import InitVar
-from typing import Callable, Literal, Self
+from typing import Callable, Literal, Self, Union, Any
 import jax
 import jax.numpy as jnp
 import equinox as eqx
@@ -39,7 +39,7 @@ class SMLP(eqx.Module):
             jax.nn.tanh,
             (eqx.nn.Linear, 20, 20),
             jax.nn.tanh,
-            (eqx.nn.Linear, 20, 1)
+            (eqx.nn.Linear, 20, r * m)
         )`.
     """
 
@@ -81,6 +81,7 @@ class SPINN_MLP(SPINN):
         eqx_list: tuple[tuple[Callable, int, int] | Callable, ...],
         eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"],
         m: int = 1,
+        filter_spec: PyTree[Union[bool, Callable[[Any], bool]]] = None,
     ) -> tuple[Self, PyTree]:
         """
         Utility function to create a SPINN neural network with the equinox
@@ -93,13 +94,13 @@ class SPINN_MLP(SPINN):
 
         Parameters
         ----------
-        key
+        key : Key
             A JAX random key that will be used to initialize the network parameters
-        d
+        d : int
             The number of dimensions to treat separately.
-        r
+        r : int
             An integer. The dimension of the embedding.
-        eqx_list
+        eqx_list : tuple[tuple[Callable, int, int] | Callable, ...],
             A tuple of tuples of successive equinox modules and activation functions to
             describe the PINN architecture. The inner tuples must have the eqx module or
             activation function as first item, other items represents arguments
@@ -112,7 +113,7 @@ class SPINN_MLP(SPINN):
                 jax.nn.tanh,
                 (eqx.nn.Linear, 20, 20),
                 jax.nn.tanh,
-                (eqx.nn.Linear, 20, 1)
+                (eqx.nn.Linear, 20, r * m)
             )`.
         eq_type : Literal["ODE", "statio_PDE", "nonstatio_PDE"]
             A string with three possibilities.
@@ -122,13 +123,21 @@ class SPINN_MLP(SPINN):
             "nonstatio_PDE": the PINN is called with two inputs `t` and `x`, `x`
             can be high dimensional.
             **Note**: the input dimension as given in eqx_list has to match the sum
-            of the dimension of `t` + the dimension of `x` or the output dimension
-            after the `input_transform` function.
-        m
+            of the dimension of `t` + the dimension of `x`.
+        m : int
             The output dimension of the neural network. According to
             the SPINN article, a total embedding dimension of `r*m` is defined. We
             then sum groups of `r` embedding dimensions to compute each output.
             Default is 1.
+        filter_spec : PyTree[Union[bool, Callable[[Any], bool]]]
+            Default is None which leads to `eqx.is_inexact_array` in the class
+            instanciation. This tells Jinns what to consider as
+            a trainable parameter. Quoting from equinox documentation:
+            a PyTree whose structure should be a prefix of the structure of pytree.
+            Each of its leaves should either be 1) True, in which case the leaf or
+            subtree is kept; 2) False, in which case the leaf or subtree is
+            replaced with replace; 3) a callable Leaf -> bool, in which case this is evaluated on the leaf or mapped over the subtree, and the leaf kept or replaced as appropriate.
+
 
 
 
@@ -175,6 +184,13 @@ class SPINN_MLP(SPINN):
             )
 
         smlp = SMLP(key=key, d=d, eqx_list=eqx_list)
-        spinn = cls(eqx_spinn_network=smlp, d=d, r=r, eq_type=eq_type, m=m)
+        spinn = cls(
+            eqx_spinn_network=smlp,
+            d=d,
+            r=r,
+            eq_type=eq_type,
+            m=m,
+            filter_spec=filter_spec,
+        )
 
         return spinn, spinn.init_params
