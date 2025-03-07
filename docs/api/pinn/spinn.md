@@ -1,6 +1,6 @@
 # Separable PINN
 
-::: jinns.nn.SPINNAbstract
+::: jinns.nn.SPINN
 
 ::: jinns.nn.SPINN_MLP
 

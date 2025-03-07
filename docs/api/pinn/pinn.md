@@ -1,6 +1,6 @@
 # PINN
 
-::: jinns.nn.PINNAbstract
+::: jinns.nn.PINN
 
 ::: jinns.nn.PINN_MLP
 

@@ -4,7 +4,7 @@
 
     - Improve PINN creation and implementation of new models, **this will break old code**. [!68](https://gitlab.com/mia_jinns/jinns/-/merge_requests/68)
     - Enhance importance sampling for MC integration [!66](https://gitlab.com/mia_jinns/jinns/-/merge_requests/66)
-    - Update tests for JAX 0.5.0. which introduces a breaking change in the PRNG algorithm [!67](https://gitlab.com/mia_jinns/jinns/-/merge_requests/67). ** This will break all your jinns code relying on a specific seed key**.
+    - Update tests for JAX 0.5.0. which introduces a breaking change in the PRNG algorithm [!67](https://gitlab.com/mia_jinns/jinns/-/merge_requests/67). **This will break all your jinns code relying on a specific seed key**.
     - Correct `normalization_loss_apply` in a specific use-case [!65](https://gitlab.com/mia_jinns/jinns/-/merge_requests/65)
     - Authorize AOT [!63](https://gitlab.com/mia_jinns/jinns/-/merge_requests/63)
 
