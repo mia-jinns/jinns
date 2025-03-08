@@ -13,8 +13,8 @@ from jax import grad
 import jax.numpy as jnp
 import equinox as eqx
 
-from jinns.utils._pinn import PINN
-from jinns.utils._spinn import SPINN
+from jinns.nn._pinn import PINN
+from jinns.nn._spinn_mlp import SPINN
 
 from jinns.utils._utils import get_grid
 from jinns.loss._DynamicLossAbstract import ODE, PDEStatio, PDENonStatio

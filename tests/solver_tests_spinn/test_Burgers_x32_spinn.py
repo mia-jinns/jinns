@@ -25,7 +25,7 @@ def train_Burgers_init():
     )
     key, subkey = random.split(key)
     key, subkey = random.split(key)
-    u, init_nn_params = jinns.utils.create_SPINN(
+    u, init_nn_params = jinns.nn.SPINN_MLP.create(
         subkey, d, r, eqx_list, "nonstatio_PDE"
     )
 
@@ -104,10 +104,10 @@ def test_initial_loss_Burgers(train_Burgers_init):
     init_params, loss, train_data = train_Burgers_init
 
     assert jnp.allclose(
-        loss.evaluate(init_params, train_data.get_batch()[1])[0], 4.442806, atol=1e-1
+        loss.evaluate(init_params, train_data.get_batch()[1])[0], 5.701347, atol=1e-1
     )
 
 
 def test_10it_Burgers(train_Burgers_10it):
     total_loss_val = train_Burgers_10it
-    assert jnp.allclose(total_loss_val, 3.220136, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 3.3629522, atol=1e-1)

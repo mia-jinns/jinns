@@ -208,7 +208,7 @@ def _plot_2D_statio(
     figsize :
         By default (7, 7)
     spinn :
-        True if a SPINN is to be plotted. False for PINNs and HYPERPINNs
+        True if a SPINN is to be plotted. False for PINNs and HyperPINNs
     vmin_vmax: list, optional
         The colorbar minimum and maximum value. Defaults None.
 
@@ -272,7 +272,7 @@ def plot1d_slice(
     figsize
         size of the figure, by default (10, 10)
     spinn
-        True if a SPINN is to be plotted. False for PINNs and HYPERPINNs
+        True if a SPINN is to be plotted. False for PINNs and HyperPINNs
     ax
         A pre-defined `matplotlib.Axes` where you want to plot.
 
@@ -341,7 +341,7 @@ def plot1d_image(
     cmap :
         the matplotlib color map used in the ImageGrid.
     spinn :
-        True if a SPINN is to be plotted. False for PINNs and HYPERPINNs
+        True if a SPINN is to be plotted. False for PINNs and HyperPINNs
     vmin_vmax:
         The colorbar minimum and maximum value. Defaults None.
 

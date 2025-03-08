@@ -24,7 +24,9 @@ def train_GLV_init():
         (jnp.exp,),
     )
     key, subkey = random.split(key)
-    u, init_nn_params = jinns.utils.create_PINN(subkey, eqx_list, "ODE")
+    u, init_nn_params = jinns.nn.PINN_MLP.create(
+        key=subkey, eqx_list=eqx_list, eq_type="ODE"
+    )
 
     n = 320
     batch_size = 32
@@ -46,7 +48,9 @@ def train_GLV_init():
     init_nn_params_list = []
     for _ in range(3):
         key, subkey = random.split(key)
-        nn, init_nn_params = jinns.utils.create_PINN(subkey, eqx_list, "ODE", 0)
+        nn, init_nn_params = jinns.nn.PINN_MLP.create(
+            key=subkey, eqx_list=eqx_list, eq_type="ODE"
+        )
         init_nn_params_list.append(init_nn_params)
 
     N_0 = jnp.array([10.0, 7.0, 4.0])

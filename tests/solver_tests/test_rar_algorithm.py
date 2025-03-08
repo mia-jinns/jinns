@@ -51,7 +51,9 @@ eqx_list = (
     (jnp.exp,),
 )
 key, subkey = random.split(key)
-u, init_nn_params = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 2)
+u, init_nn_params = jinns.nn.PINN_MLP.create(
+    key=subkey, eqx_list=eqx_list, eq_type="nonstatio_PDE"
+)
 
 # true solution N(0,1)
 sigma = 0.5 * jnp.ones((2))
@@ -186,7 +188,7 @@ def test_rar_error_with_SPINN(all_tests):
         ]
         key = jax.random.PRNGKey(12345)
         key, subkey = random.split(key)
-        u, init_nn_params = jinns.utils.create_SPINN(
+        u, init_nn_params = jinns.nn.create_SPINN(
             subkey, d, r, eqx_list, "nonstatio_PDE"
         )
 

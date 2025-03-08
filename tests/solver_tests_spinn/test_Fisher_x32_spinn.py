@@ -26,7 +26,7 @@ def train_Fisher_init():
     )
     key, subkey = random.split(key)
     key, subkey = random.split(key)
-    u, init_nn_params = jinns.utils.create_SPINN(
+    u, init_nn_params = jinns.nn.SPINN_MLP.create(
         subkey, d, r, eqx_list, "nonstatio_PDE"
     )
 
@@ -120,10 +120,10 @@ def train_Fisher_10it(train_Fisher_init):
 def test_initial_loss_Fisher(train_Fisher_init):
     init_params, loss, train_data = train_Fisher_init
     assert jnp.allclose(
-        loss.evaluate(init_params, train_data.get_batch()[1])[0], 2.0978775, atol=1e-1
+        loss.evaluate(init_params, train_data.get_batch()[1])[0], 9.163609, atol=1e-1
     )
 
 
 def test_10it_Fisher(train_Fisher_10it):
     total_loss_val = train_Fisher_10it
-    assert jnp.allclose(total_loss_val, 1.1894773, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 0.93934155, atol=1e-1)

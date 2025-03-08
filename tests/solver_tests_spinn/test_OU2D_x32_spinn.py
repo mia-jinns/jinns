@@ -25,7 +25,7 @@ def train_OU_init():
         (eqx.nn.Linear, 128, r),
     )
     key, subkey = random.split(key)
-    u, init_nn_params = jinns.utils.create_SPINN(
+    u, init_nn_params = jinns.nn.SPINN_MLP.create(
         subkey, d, r, eqx_list, "nonstatio_PDE"
     )
 
@@ -134,10 +134,10 @@ def train_OU_10it(train_OU_init):
 def test_initial_loss_OU(train_OU_init):
     init_params, loss, train_data = train_OU_init
     assert jnp.allclose(
-        loss.evaluate(init_params, train_data.get_batch()[1])[0], 18.380804, atol=1e-1
+        loss.evaluate(init_params, train_data.get_batch()[1])[0], 8.43018, atol=1e-1
     )
 
 
 def test_10it_OU(train_OU_10it):
     total_loss_val = train_OU_10it
-    assert jnp.allclose(total_loss_val, 2.3352058, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 0.20094508, atol=1e-1)

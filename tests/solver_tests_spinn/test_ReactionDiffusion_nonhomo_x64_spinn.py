@@ -28,7 +28,7 @@ def train_ReacDiff_init():
     key, subkey = random.split(key)
     key, subkey = random.split(key)
     key, subkey = random.split(key)
-    u_spinn, init_nn_params_spinn = jinns.utils.create_SPINN(
+    u_spinn, init_nn_params_spinn = jinns.nn.SPINN_MLP.create(
         subkey, d, r, eqx_list, "nonstatio_PDE"
     )
 

@@ -45,8 +45,9 @@ def train_OU_init():
         (jnp.exp,),  # force positivity of the PINN output
     )
     key, subkey = random.split(key)
-    u, init_nn_params = jinns.utils.create_PINN(subkey, eqx_list, "statio_PDE", 1)
-
+    u, init_nn_params = jinns.nn.PINN_MLP.create(
+        key=subkey, eqx_list=eqx_list, eq_type="statio_PDE"
+    )
     sigma = jnp.array(0.5)
     alpha = jnp.array(6.0)
     mu = jnp.array(2.0)

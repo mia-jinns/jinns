@@ -33,7 +33,9 @@ def train_OU_init():
         ],
     ]
     key, subkey = random.split(key)
-    u, init_nn_params = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 2)
+    u, init_nn_params = jinns.nn.PINN_MLP.create(
+        key=subkey, eqx_list=eqx_list, eq_type="nonstatio_PDE"
+    )
     rar_parameters = {
         "start_iter": 1000,  # the gradient step at which RAR algo starts (enables a burn in period)
         "update_every": 500,  # nb of gradient steps between two RAR procedures

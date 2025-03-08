@@ -66,17 +66,7 @@ plugins:
                 docstring_style: numpy
                 show_root_heading: true
                 show_source: false  # don't include source code
-            setup_commands:
-                - import pytkdocs_tweaks
-                - pytkdocs_tweaks.main()
-                - import jaxtyping
-                - jaxtyping.set_array_name_format("array")
-                - import jax
-                - jax.ShapeDtypeStruct.__module__ = "jax"
-                - jax.core.ClosedJaxpr.__module__ = "jax.core"
-            selection:
                 inherited_members: true  # Allow looking up inherited methods
-            rendering:
                 show_root_heading: true  # actually display anything at all...
                 show_root_full_path: true  # display "jinns.abcd" not just "abcd"
                 show_if_no_docstring: true
@@ -134,6 +124,7 @@ nav:
         - 'api/pinn/pinn.md'
         - 'api/pinn/spinn.md'
         - 'api/pinn/hyperpinn.md'
+        - 'api/pinn/ppinn.md'
         - 'api/pinn/save_load.md'
       - Plot: 'api/plot.md'
       - Solve: 'api/solver.md'
