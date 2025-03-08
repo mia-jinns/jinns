@@ -5,7 +5,7 @@ import jax.numpy as jnp
 from jax import random
 import equinox as eqx
 import jinns
-from jinns.utils import save_pinn, load_pinn
+from jinns.nn import save_pinn, load_pinn
 from jinns.parameters._params import _get_vmap_in_axes_params
 
 
@@ -55,17 +55,16 @@ def save_reload(tmpdir):
     hyperparams = ["D", "r"]
     hypernet_input_size = 2
 
-    dim_x = 2
+    kwargs_creation = {
+        "key": subkey,
+        "eqx_list": eqx_list,
+        "eq_type": "nonstatio_PDE",
+        "hyperparams": hyperparams,
+        "hypernet_input_size": hypernet_input_size,
+        "eqx_list_hyper": eqx_list_hyper,
+    }
 
-    u, params = jinns.utils.create_HYPERPINN(
-        subkey,
-        eqx_list,
-        "nonstatio_PDE",
-        hyperparams,
-        hypernet_input_size,
-        dim_x,
-        eqx_list_hyper=eqx_list_hyper,
-    )
+    u, params = jinns.nn.HyperPINN.create(**kwargs_creation)
 
     params = jinns.parameters.Params(
         nn_params=params,
@@ -73,15 +72,6 @@ def save_reload(tmpdir):
     )
     # Save
     filename = str(tmpdir.join("test"))
-    kwargs_creation = {
-        "key": subkey,
-        "eqx_list": eqx_list,
-        "eq_type": "nonstatio_PDE",
-        "hyperparams": hyperparams,
-        "hypernet_input_size": hypernet_input_size,
-        "dim_x": dim_x,
-        "eqx_list_hyper": eqx_list_hyper,
-    }
     save_pinn(filename, u, params, kwargs_creation)
 
     # Reload

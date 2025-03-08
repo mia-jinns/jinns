@@ -9,8 +9,6 @@ import jax.numpy as jnp
 from jax import grad
 import equinox as eqx
 from jaxtyping import Float, Array
-from jinns.utils._pinn import PINN
-from jinns.utils._spinn import SPINN
 from jinns.parameters._params import Params
 
 

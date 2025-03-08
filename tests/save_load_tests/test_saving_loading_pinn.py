@@ -5,7 +5,7 @@ import jax.numpy as jnp
 from jax import random
 import equinox as eqx
 import jinns
-from jinns.utils import save_pinn, load_pinn
+from jinns.nn import save_pinn, load_pinn
 
 
 @pytest.fixture
@@ -22,21 +22,20 @@ def save_reload_with_params(tmpdir):
         (eqx.nn.Linear, 128, 1),
     )
     key, subkey = random.split(key)
-    u, params = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
-
-    params = jinns.parameters.Params(nn_params=params, eq_params={})
-    # Save
-    filename = str(tmpdir.join("test"))
     kwargs_creation = {
         "key": subkey,
         "eqx_list": eqx_list,
         "eq_type": "nonstatio_PDE",
-        "dim_x": 1,
     }
+    u, params = jinns.nn.PINN_MLP.create(**kwargs_creation)
+
+    params = jinns.parameters.Params(nn_params=params, eq_params={})
+    # Save
+    filename = str(tmpdir.join("test"))
     save_pinn(filename, u, params, kwargs_creation)
 
     # Reload
-    u_reloaded, params_reloaded = load_pinn(filename, type_="pinn")
+    u_reloaded, params_reloaded = load_pinn(filename, type_="pinn_mlp")
     return key, params, u, params_reloaded, u_reloaded
 
 
@@ -92,12 +91,16 @@ def save_reload_with_paramsdict(tmpdir):
         [jnp.exp],
     ]
     key, subkey = random.split(key)
-    u, init_nn_params = jinns.utils.create_PINN(subkey, eqx_list, "ODE")
+    u, init_nn_params = jinns.nn.PINN_MLP.create(
+        key=subkey, eqx_list=eqx_list, eq_type="ODE"
+    )
 
     init_nn_params_list = []
     for _ in range(3):
         key, subkey = random.split(key)
-        nn, init_nn_params = jinns.utils.create_PINN(subkey, eqx_list, "ODE", 0)
+        _, init_nn_params = jinns.nn.PINN_MLP.create(
+            key=subkey, eqx_list=eqx_list, eq_type="ODE"
+        )
         init_nn_params_list.append(init_nn_params)
 
     growth_rates = jnp.array([0.1, 0.5, 0.8])
@@ -122,13 +125,12 @@ def save_reload_with_paramsdict(tmpdir):
         "key": subkey,
         "eqx_list": eqx_list,
         "eq_type": "ODE",
-        "dim_x": 0,
     }
     save_pinn(filename, u, params, kwargs_creation)
 
     # Reload
     u_reloaded, params_reloaded = load_pinn(
-        filename, type_="pinn", key_list_for_paramsdict=["0", "1", "2"]
+        filename, type_="pinn_mlp", key_list_for_paramsdict=["0", "1", "2"]
     )
 
     return key, params, u, params_reloaded, u_reloaded

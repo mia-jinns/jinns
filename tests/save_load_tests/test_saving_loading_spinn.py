@@ -5,7 +5,7 @@ import jax.numpy as jnp
 from jax import random
 import equinox as eqx
 import jinns
-from jinns.utils import save_pinn, load_pinn
+from jinns.nn import save_pinn, load_pinn
 
 
 @pytest.fixture
@@ -24,7 +24,7 @@ def save_reload(tmpdir):
         (eqx.nn.Linear, 128, r),
     )
     key, subkey = random.split(key)
-    u, params = jinns.utils.create_SPINN(subkey, d, r, eqx_list, "nonstatio_PDE")
+    u, params = jinns.nn.SPINN_MLP.create(subkey, d, r, eqx_list, "nonstatio_PDE")
 
     params = jinns.parameters.Params(nn_params=params, eq_params={})
 
@@ -40,7 +40,7 @@ def save_reload(tmpdir):
     save_pinn(filename, u, params, kwargs_creation)
 
     # Reload
-    u_reloaded, params_reloaded = load_pinn(filename, type_="spinn")
+    u_reloaded, params_reloaded = load_pinn(filename, type_="spinn_mlp")
     return key, params, u, params_reloaded, u_reloaded
 
 

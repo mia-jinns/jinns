@@ -19,9 +19,9 @@ from jinns.loss._boundary_conditions import (
 from jinns.utils._utils import _subtract_with_check, get_grid
 from jinns.data._DataGenerators import append_obs_batch, make_cartesian_product
 from jinns.parameters._params import _get_vmap_in_axes_params
-from jinns.utils._pinn import PINN
-from jinns.utils._spinn import SPINN
-from jinns.utils._hyperpinn import HYPERPINN
+from jinns.nn._pinn import PINN
+from jinns.nn._spinn import SPINN
+from jinns.nn._hyperpinn import HyperPINN
 from jinns.data._Batchs import *
 from jinns.parameters._params import Params, ParamsDict
 
@@ -40,13 +40,13 @@ def dynamic_loss_apply(
     params: Params | ParamsDict,
     vmap_axes: tuple[int | None, ...],
     loss_weight: float | Float[Array, "dyn_loss_dimension"],
-    u_type: PINN | HYPERPINN | None = None,
+    u_type: PINN | HyperPINN | None = None,
 ) -> float:
     """
     Sometimes when u is a lambda function a or dict we do not have access to
     its type here, hence the last argument
     """
-    if u_type == PINN or u_type == HYPERPINN or isinstance(u, (PINN, HYPERPINN)):
+    if u_type == PINN or u_type == HyperPINN or isinstance(u, (PINN, HyperPINN)):
         v_dyn_loss = vmap(
             lambda batch, params: dyn_loss(
                 batch, u, params  # we must place the params at the end
@@ -82,7 +82,7 @@ def normalization_loss_apply(
     Note the squeezing on each result. We expect unidimensional *PINN since
     they represent probability distributions
     """
-    if isinstance(u, (PINN, HYPERPINN)):
+    if isinstance(u, (PINN, HyperPINN)):
         if len(batches) == 1:
             v_u = vmap(
                 lambda *b: u(*b)[u.slice_solution],
@@ -118,7 +118,7 @@ def normalization_loss_apply(
     elif isinstance(u, SPINN):
         if len(batches) == 1:
             res = u(*batches, params)
-            assert res.shape[-1] == 1, "norm loss expects unidimensional *PINN"
+            assert res.shape[-1] == 1, "norm loss expects unidimensional *SPINN"
             mse_norm_loss = (
                 loss_weight
                 * jnp.abs(
@@ -139,7 +139,7 @@ def normalization_loss_apply(
                 ),
                 params,
             )
-            assert res.shape[-1] == 1, "norm loss expects unidimensional *PINN"
+            assert res.shape[-1] == 1, "norm loss expects unidimensional *SPINN"
             # the outer mean() below is for the times stamps
             mse_norm_loss = loss_weight * jnp.mean(
                 jnp.abs(
@@ -236,7 +236,7 @@ def observations_loss_apply(
     obs_slice: slice,
 ) -> float:
     # TODO implement for SPINN
-    if isinstance(u, (PINN, HYPERPINN)):
+    if isinstance(u, (PINN, HyperPINN)):
         v_u = vmap(
             lambda *args: u(*args)[u.slice_solution],
             vmap_axes,
@@ -270,7 +270,7 @@ def initial_condition_apply(
 ) -> float:
     n = omega_batch.shape[0]
     t0_omega_batch = jnp.concatenate([jnp.zeros((n, 1)), omega_batch], axis=1)
-    if isinstance(u, (PINN, HYPERPINN)):
+    if isinstance(u, (PINN, HyperPINN)):
         v_u_t0 = vmap(
             lambda t0_x, params: _subtract_with_check(
                 initial_condition_fun(t0_x[1:]),

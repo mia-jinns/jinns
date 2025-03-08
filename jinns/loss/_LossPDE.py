@@ -38,8 +38,8 @@ from jinns.loss._loss_weights import (
     LossWeightsPDEDict,
 )
 from jinns.loss._DynamicLossAbstract import PDEStatio, PDENonStatio
-from jinns.utils._pinn import PINN
-from jinns.utils._spinn import SPINN
+from jinns.nn._pinn import PINN
+from jinns.nn._spinn import SPINN
 from jinns.data._Batchs import PDEStatioBatch, PDENonStatioBatch
 
 
@@ -1082,7 +1082,7 @@ class SystemLossPDE(eqx.Module):
                 _set_derivatives(params_dict, self.derivative_keys_dyn_loss.dyn_loss),
                 vmap_in_axes + vmap_in_axes_params,
                 loss_weight,
-                u_type=type(list(self.u_dict.values())[0]),
+                u_type=list(self.u_dict.values())[0].__class__.__base__,
             )
 
         dyn_loss_mse_dict = jax.tree_util.tree_map(

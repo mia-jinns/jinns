@@ -22,7 +22,9 @@ def train_Burgers_init():
         (eqx.nn.Linear, 32, 1),
     )
     key, subkey = random.split(key)
-    u, init_nn_params = jinns.utils.create_PINN(subkey, eqx_list, "nonstatio_PDE", 1)
+    u, init_nn_params = jinns.nn.PINN_MLP.create(
+        key=subkey, eqx_list=eqx_list, eq_type="nonstatio_PDE"
+    )
 
     n = 2500
     ni = 200

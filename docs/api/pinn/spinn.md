@@ -1,5 +1,7 @@
 # Separable PINN
 
-::: jinns.utils.SPINN
+::: jinns.nn.SPINN
 
-::: jinns.utils.create_SPINN
+::: jinns.nn.SPINN_MLP
+
+::: jinns.nn.SMLP

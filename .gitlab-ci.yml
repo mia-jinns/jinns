@@ -17,10 +17,11 @@ black:
 run_tests:
   stage: tests
   before_script:
-    - pip install --break-system-packages pytest coverage pytest-cov
-    - pwd
+    - virtualenv venv
+    - source venv/bin/activate
+    - pip install pytest coverage pytest-cov
+    - pip install -e .
   script:
-    - pip install --break-system-packages -e .
     - pytest --cov=jinns --ignore=tests/solver_tests/test_NSPipeFlow_x64.py
   coverage: '/TOTAL.*\s+(\d+%)$/'
 
@@ -28,10 +29,13 @@ build_doc:
   stage: build
   needs: [] # don't need to wait for other jobs
   before_script:
-
+    - virtualenv venv
+    - source venv/bin/activate
+    - pip install -e .
+    - pip install -r docs/doc_requirements.txt
   script:
-    - pip install --break-system-packages -e .
-    - pip install --break-system-packages -r docs/doc_requirements.txt
+    - pip list
+    - python -m mkdocstrings_handlers.python.debug
     - mkdocs build
     - mkdocs build  # twice, see https://github.com/patrick-kidger/pytkdocs_tweaks
 

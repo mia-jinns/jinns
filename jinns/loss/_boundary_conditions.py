@@ -13,8 +13,8 @@ from jax import vmap, grad
 import equinox as eqx
 from jinns.utils._utils import get_grid, _subtract_with_check
 from jinns.data._Batchs import *
-from jinns.utils._pinn import PINN
-from jinns.utils._spinn import SPINN
+from jinns.nn._pinn import PINN
+from jinns.nn._spinn import SPINN
 
 if TYPE_CHECKING:
     from jinns.utils._types import *

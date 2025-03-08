@@ -47,8 +47,11 @@ def train_NSPipeFlow_init():
     # u = lambda x, nn_params, eq_params: u_raw(x, nn_params, eq_params) * (
     #    R**2 - x(1) ** 2
     # )  # multiplies the 2 components
-    u, u_init_nn_params = jinns.utils.create_PINN(
-        subkey, eqx_list, "statio_PDE", 2, output_transform=u_output_transform
+    u, u_init_nn_params = jinns.nn.PINN_MLP.create(
+        key=subkey,
+        eqx_list=eqx_list,
+        eq_type="statio_PDE",
+        output_transform=u_output_transform,
     )
 
     eqx_list = (
@@ -67,8 +70,11 @@ def train_NSPipeFlow_init():
         + (xmin - pinn_in[0]) * (xmax - pinn_in[0]) * pinn_out
     )
     # This output transform is equivalent to defining afterwards:
-    p, p_init_nn_params = jinns.utils.create_PINN(
-        subkey, eqx_list, "statio_PDE", 2, output_transform=p_output_transform
+    p, p_init_nn_params = jinns.nn.PINN_MLP.create(
+        key=subkey,
+        eqx_list=eqx_list,
+        eq_type="statio_PDE",
+        output_transform=p_output_transform,
     )
 
     method = "uniform"
