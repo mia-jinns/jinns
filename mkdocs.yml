@@ -66,7 +66,6 @@ plugins:
                 docstring_style: numpy
                 show_root_heading: true
                 show_source: false  # don't include source code
-            selection:
                 inherited_members: true  # Allow looking up inherited methods
             rendering:
                 show_root_heading: true  # actually display anything at all...
