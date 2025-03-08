@@ -67,7 +67,6 @@ plugins:
                 show_root_heading: true
                 show_source: false  # don't include source code
                 inherited_members: true  # Allow looking up inherited methods
-            rendering:
                 show_root_heading: true  # actually display anything at all...
                 show_root_full_path: true  # display "jinns.abcd" not just "abcd"
                 show_if_no_docstring: true
