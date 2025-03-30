@@ -34,8 +34,6 @@ build_doc:
     - pip install -e .
     - pip install -r docs/doc_requirements.txt
   script:
-    - pip list
-    - python -m mkdocstrings_handlers.python.debug
     - mkdocs build
     - mkdocs build  # twice, see https://github.com/patrick-kidger/pytkdocs_tweaks
 
