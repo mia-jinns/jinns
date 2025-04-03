@@ -266,10 +266,13 @@ def initial_condition_apply(
     params: Params | ParamsDict,
     vmap_axes: tuple[int | None, ...],
     initial_condition_fun: Callable,
+    initial_condition_time: Float[Array, "1"],
     loss_weight: float | Float[Array, "initial_condition_dimension"],
 ) -> float:
     n = omega_batch.shape[0]
-    t0_omega_batch = jnp.concatenate([jnp.zeros((n, 1)), omega_batch], axis=1)
+    t0_omega_batch = jnp.concatenate(
+        [initial_condition_time * jnp.ones((n, 1)), omega_batch], axis=1
+    )
     if isinstance(u, (PINN, HyperPINN)):
         v_u_t0 = vmap(
             lambda t0_x, params: _subtract_with_check(
