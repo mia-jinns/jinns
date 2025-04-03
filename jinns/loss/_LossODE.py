@@ -100,6 +100,17 @@ class _LossODEAbstract(eqx.Module):
                     "Initial condition should be a tuple of len 2 with (t0, u0), "
                     f"{self.initial_condition} was passed."
                 )
+            # some checks for self.initial_condition[0] := t0
+            if isinstance(self.initial_condition[0], float):  # e.g. user input: 0.
+                self.initial_condition[0] = jnp.array([self.initial_condition[0]])
+            elif not self.initial_condition[0].shape:  # e.g. user input: jnp.array(0.)
+                self.initial_condition[0] = jnp.array([self.initial_condition[0]])
+            elif self.initial_condition[0].shape != (1,):
+                raise ValueError(
+                    "Bad t0 (self.initial_condition[0]) user "
+                    "input. It should be a float or an "
+                    "array of shape (1,)"
+                )
 
         if self.obs_slice is None:
             self.obs_slice = jnp.s_[...]
@@ -229,7 +240,6 @@ class LossODE(_LossODEAbstract):
             else:
                 v_u = vmap(self.u, (None,) + vmap_in_axes_params)
             t0, u0 = self.initial_condition  # pylint: disable=unpacking-non-sequence
-            t0 = jnp.array([t0])
             u0 = jnp.array(u0)
             mse_initial_condition = jnp.mean(
                 self.loss_weights.initial_condition
