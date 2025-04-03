@@ -49,7 +49,7 @@ class _LossODEAbstract(eqx.Module):
         Fields can be "nn_params", "eq_params" or "both". Those that should not
         be updated will have a `jax.lax.stop_gradient` called on them. Default
         is `"nn_params"` for each composant of the loss.
-    initial_condition : tuple, default=None
+    initial_condition : tuple[float | Float[Array, "1"]], default=None
         tuple of length 2 with initial condition $(t_0, u_0)$.
     obs_slice : Slice, default=None
         Slice object specifying the begininning/ending
@@ -66,7 +66,9 @@ class _LossODEAbstract(eqx.Module):
     # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
     derivative_keys: DerivativeKeysODE | None = eqx.field(kw_only=True, default=None)
     loss_weights: LossWeightsODE | None = eqx.field(kw_only=True, default=None)
-    initial_condition: tuple | None = eqx.field(kw_only=True, default=None)
+    initial_condition: tuple[float | Float[Array, "1"]] | None = eqx.field(
+        kw_only=True, default=None
+    )
     obs_slice: slice | None = eqx.field(kw_only=True, default=None, static=True)
 
     params: InitVar[Params] = eqx.field(default=None, kw_only=True)
@@ -135,7 +137,7 @@ class LossODE(_LossODEAbstract):
         Fields can be "nn_params", "eq_params" or "both". Those that should not
         be updated will have a `jax.lax.stop_gradient` called on them. Default
         is `"nn_params"` for each composant of the loss.
-    initial_condition : tuple, default=None
+    initial_condition : tuple[float | Float[Array, "1"]], default=None
         tuple of length 2 with initial condition $(t_0, u_0)$.
     obs_slice Slice, default=None
         Slice object specifying the begininning/ending
