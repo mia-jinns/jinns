@@ -49,7 +49,7 @@ class _LossODEAbstract(eqx.Module):
         Fields can be "nn_params", "eq_params" or "both". Those that should not
         be updated will have a `jax.lax.stop_gradient` called on them. Default
         is `"nn_params"` for each composant of the loss.
-    initial_condition : tuple, default=None
+    initial_condition : tuple[float | Float[Array, "1"]], default=None
         tuple of length 2 with initial condition $(t_0, u_0)$.
     obs_slice : Slice, default=None
         Slice object specifying the begininning/ending
@@ -66,7 +66,9 @@ class _LossODEAbstract(eqx.Module):
     # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
     derivative_keys: DerivativeKeysODE | None = eqx.field(kw_only=True, default=None)
     loss_weights: LossWeightsODE | None = eqx.field(kw_only=True, default=None)
-    initial_condition: tuple | None = eqx.field(kw_only=True, default=None)
+    initial_condition: tuple[float | Float[Array, "1"]] | None = eqx.field(
+        kw_only=True, default=None
+    )
     obs_slice: slice | None = eqx.field(kw_only=True, default=None, static=True)
 
     params: InitVar[Params] = eqx.field(default=None, kw_only=True)
@@ -98,6 +100,18 @@ class _LossODEAbstract(eqx.Module):
                     "Initial condition should be a tuple of len 2 with (t0, u0), "
                     f"{self.initial_condition} was passed."
                 )
+            # some checks/reshaping for t0
+            t0, u0 = self.initial_condition
+            if (
+                isinstance(t0, float) or not t0.shape
+            ):  # e.g. user input: 0. or jnp.array(0.)
+                t0 = jnp.array([t0])
+            elif t0.shape != (1,):
+                raise ValueError(
+                    f"Wrong t0 input (self.initial_condition[0]) It should be"
+                    f"a float or an array of shape (1,). Got shape: {t0.shape}"
+                )
+            self.initial_condition = (t0, u0)
 
         if self.obs_slice is None:
             self.obs_slice = jnp.s_[...]
@@ -135,7 +149,7 @@ class LossODE(_LossODEAbstract):
         Fields can be "nn_params", "eq_params" or "both". Those that should not
         be updated will have a `jax.lax.stop_gradient` called on them. Default
         is `"nn_params"` for each composant of the loss.
-    initial_condition : tuple, default=None
+    initial_condition : tuple[float | Float[Array, "1"]], default=None
         tuple of length 2 with initial condition $(t_0, u_0)$.
     obs_slice Slice, default=None
         Slice object specifying the begininning/ending
@@ -227,7 +241,6 @@ class LossODE(_LossODEAbstract):
             else:
                 v_u = vmap(self.u, (None,) + vmap_in_axes_params)
             t0, u0 = self.initial_condition  # pylint: disable=unpacking-non-sequence
-            t0 = jnp.array([t0])
             u0 = jnp.array(u0)
             mse_initial_condition = jnp.mean(
                 self.loss_weights.initial_condition

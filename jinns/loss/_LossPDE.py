@@ -589,12 +589,15 @@ class LossPDENonStatio(LossPDEStatio):
     obs_slice : slice, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
+    t0 : float | Float[Array, "1"], default=None
+        The time at which to apply the initial condition. If None, the time
+        is set to `0` by default.
     initial_condition_fun : Callable, default=None
-        A function representing the temporal initial condition. If None
-        (default) then no initial condition is applied
+        A function representing the initial condition at `t0`. If None
+        (default) then no initial condition is applied.
     params : InitVar[Params], default=None
-        The main Params object of the problem needed to instanciate the
-        DerivativeKeysODE if the latter is not specified.
+        The main `Params` object of the problem needed to instanciate the
+        `DerivativeKeysODE` if the latter is not specified.
 
     """
 
@@ -603,6 +606,7 @@ class LossPDENonStatio(LossPDEStatio):
     initial_condition_fun: Callable | None = eqx.field(
         kw_only=True, default=None, static=True
     )
+    t0: float | Float[Array, "1"] | None = eqx.field(kw_only=True, default=None)
 
     _max_norm_samples_omega: Int = eqx.field(init=False, static=True)
     _max_norm_time_slices: Int = eqx.field(init=False, static=True)
@@ -623,6 +627,18 @@ class LossPDENonStatio(LossPDEStatio):
             warnings.warn(
                 "Initial condition wasn't provided. Be sure to cover for that"
                 "case (e.g by. hardcoding it into the PINN output)."
+            )
+        # some checks for t0
+        if self.t0 is None:
+            self.t0 = jnp.array([0])
+        elif (
+            isinstance(self.t0, float) or not self.t0.shape
+        ):  # e.g. user input: 0. or jnp.array(0.)
+            self.t0 = jnp.array([self.t0])
+        elif self.t0.shape != (1,):
+            raise ValueError(
+                f"Wrong t0 input (self.initial_condition[0]) It should be"
+                f"a float or an array of shape (1,). Got shape: {self.t0.shape}"
             )
 
         # witht the variables below we avoid memory overflow since a cartesian
@@ -692,6 +708,7 @@ class LossPDENonStatio(LossPDEStatio):
                 _set_derivatives(params, self.derivative_keys.initial_condition),
                 (0,) + vmap_in_axes_params,
                 self.initial_condition_fun,
+                self.t0,
                 self.loss_weights.initial_condition,
             )
         else:
