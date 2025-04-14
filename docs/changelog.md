@@ -1,5 +1,9 @@
 # Changelog
 
+* on `main`
+
+    - Refactor initial conditions and minor corrections [!69](https://gitlab.com/mia_jinns/jinns/-/merge_requests/69)
+
 * v1.3.0
 
     - Improve PINN creation and implementation of new models, **this will break old code**. [!68](https://gitlab.com/mia_jinns/jinns/-/merge_requests/68)
