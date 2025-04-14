@@ -7,7 +7,7 @@ import jinns
 import jinns.data
 
 
-def test_initial_condition_time_checks():
+def test_t0_checks():
     key = jax.random.PRNGKey(2)
     eqx_network = eqx.nn.MLP(2, 1, 128, 3, jax.nn.tanh, key=key)
     u, params = jinns.nn.PINN_MLP.create(
@@ -20,33 +20,33 @@ def test_initial_condition_time_checks():
         _ = jinns.loss.LossPDENonStatio(
             u=u,
             dynamic_loss=None,
-            initial_condition_time=jnp.array([[1.0]]),
+            t0=jnp.array([[1.0]]),
             params=params,
         )
 
     loss = jinns.loss.LossPDENonStatio(
         u=u,
         dynamic_loss=None,
-        initial_condition_time=1.0,
+        t0=1.0,
         params=params,
     )
     # check that reshaping was done well in __post_init__ checks
-    assert loss.initial_condition_time.shape == (1,)
+    assert loss.t0.shape == (1,)
 
     loss = jinns.loss.LossPDENonStatio(
         u=u,
         dynamic_loss=None,
-        initial_condition_time=jnp.array(1.0),
+        t0=jnp.array(1.0),
         params=params,
     )
     # check that reshaping was done well in __post_init__ checks
-    assert loss.initial_condition_time.shape == (1,)
+    assert loss.t0.shape == (1,)
 
     loss = jinns.loss.LossPDENonStatio(
         u=u,
         dynamic_loss=None,
-        initial_condition_time=None,
+        t0=None,
         params=params,
     )
     # check that reshaping was done well in __post_init__ checks
-    assert jnp.array_equal(loss.initial_condition_time, jnp.array([0.0]))
+    assert jnp.array_equal(loss.t0, jnp.array([0.0]))

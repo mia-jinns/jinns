@@ -589,8 +589,8 @@ class LossPDENonStatio(LossPDEStatio):
     obs_slice : slice, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
-    initial_condition_time : float | Float[Array, "1"], default=None
-        The time at which to apply the initial condition. If None, the time
+    t0 : float | Float[Array, "1"], default=None
+        The time `t0` at which to apply the initial condition. If None, the time
         will be chosen to be 0 by default.
     initial_condition_fun : Callable, default=None
         A function representing the temporal initial condition. If None
@@ -606,9 +606,7 @@ class LossPDENonStatio(LossPDEStatio):
     initial_condition_fun: Callable | None = eqx.field(
         kw_only=True, default=None, static=True
     )
-    initial_condition_time: float | Float[Array, "1"] | None = eqx.field(
-        kw_only=True, default=None
-    )
+    t0: float | Float[Array, "1"] | None = eqx.field(kw_only=True, default=None)
 
     _max_norm_samples_omega: Int = eqx.field(init=False, static=True)
     _max_norm_time_slices: Int = eqx.field(init=False, static=True)
@@ -631,14 +629,13 @@ class LossPDENonStatio(LossPDEStatio):
                 "case (e.g by. hardcoding it into the PINN output)."
             )
         # some checks for t0
-        if self.initial_condition_time is None:
-            self.initial_condition_time = jnp.array([0])
+        if self.t0 is None:
+            self.t0 = jnp.array([0])
         elif (
-            isinstance(self.initial_condition_time, float)
-            or not self.initial_condition_time.shape
+            isinstance(self.t0, float) or not self.t0.shape
         ):  # e.g. user input: 0. or jnp.array(0.)
-            self.initial_condition_time = jnp.array([self.initial_condition_time])
-        elif self.initial_condition_time.shape != (1,):
+            self.t0 = jnp.array([self.t0])
+        elif self.t0.shape != (1,):
             raise ValueError(
                 "Bad t0 (self.initial_condition[0]) user "
                 "input. It should be a float or an "
@@ -712,7 +709,7 @@ class LossPDENonStatio(LossPDEStatio):
                 _set_derivatives(params, self.derivative_keys.initial_condition),
                 (0,) + vmap_in_axes_params,
                 self.initial_condition_fun,
-                self.initial_condition_time,
+                self.t0,
                 self.loss_weights.initial_condition,
             )
         else:
