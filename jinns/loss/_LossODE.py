@@ -100,7 +100,7 @@ class _LossODEAbstract(eqx.Module):
                     "Initial condition should be a tuple of len 2 with (t0, u0), "
                     f"{self.initial_condition} was passed."
                 )
-            # some checks for t0
+            # some checks/reshaping for t0
             t0, u0 = self.initial_condition
             if (
                 isinstance(t0, float) or not t0.shape
@@ -108,9 +108,8 @@ class _LossODEAbstract(eqx.Module):
                 t0 = jnp.array([t0])
             elif t0.shape != (1,):
                 raise ValueError(
-                    "Bad t0 (self.initial_condition[0]) user "
-                    "input. It should be a float or an "
-                    "array of shape (1,)"
+                    f"Wrong t0 input (self.initial_condition[0]) It should be"
+                    f"a float or an array of shape (1,). Got shape: {t0.shape}"
                 )
             self.initial_condition = (t0, u0)
 

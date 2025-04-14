@@ -590,14 +590,14 @@ class LossPDENonStatio(LossPDEStatio):
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
     t0 : float | Float[Array, "1"], default=None
-        The time `t0` at which to apply the initial condition. If None, the time
-        will be chosen to be 0 by default.
+        The time at which to apply the initial condition. If None, the time
+        is set to `0` by default.
     initial_condition_fun : Callable, default=None
-        A function representing the temporal initial condition. If None
-        (default) then no initial condition is applied
+        A function representing the initial condition at `t0`. If None
+        (default) then no initial condition is applied.
     params : InitVar[Params], default=None
-        The main Params object of the problem needed to instanciate the
-        DerivativeKeysODE if the latter is not specified.
+        The main `Params` object of the problem needed to instanciate the
+        `DerivativeKeysODE` if the latter is not specified.
 
     """
 
@@ -637,9 +637,8 @@ class LossPDENonStatio(LossPDEStatio):
             self.t0 = jnp.array([self.t0])
         elif self.t0.shape != (1,):
             raise ValueError(
-                "Bad t0 (self.initial_condition[0]) user "
-                "input. It should be a float or an "
-                "array of shape (1,)"
+                f"Wrong t0 input (self.initial_condition[0]) It should be"
+                f"a float or an array of shape (1,). Got shape: {self.t0.shape}"
             )
 
         # witht the variables below we avoid memory overflow since a cartesian
