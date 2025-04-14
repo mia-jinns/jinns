@@ -15,8 +15,8 @@ def test_t0_checks():
     )
     params = jinns.parameters.Params(nn_params=params)
 
-    # Catching an expected Error because t0 has a bad shape
-    with pytest.raises(ValueError):
+    # Catching an expected ValueError because t0 has a bad shape
+    with pytest.warns(UserWarning), pytest.raises(ValueError):
         _ = jinns.loss.LossPDENonStatio(
             u=u,
             dynamic_loss=None,
@@ -24,29 +24,35 @@ def test_t0_checks():
             params=params,
         )
 
-    loss = jinns.loss.LossPDENonStatio(
-        u=u,
-        dynamic_loss=None,
-        t0=1.0,
-        params=params,
-    )
+    # Catching an expected warning because no BC
+    with pytest.warns(UserWarning):
+        loss = jinns.loss.LossPDENonStatio(
+            u=u,
+            dynamic_loss=None,
+            t0=1.0,
+            params=params,
+        )
     # check that reshaping was done well in __post_init__ checks
     assert loss.t0.shape == (1,)
 
-    loss = jinns.loss.LossPDENonStatio(
-        u=u,
-        dynamic_loss=None,
-        t0=jnp.array(1.0),
-        params=params,
-    )
+    # Catching an expected warning because no BC
+    with pytest.warns(UserWarning):
+        loss = jinns.loss.LossPDENonStatio(
+            u=u,
+            dynamic_loss=None,
+            t0=jnp.array(1.0),
+            params=params,
+        )
     # check that reshaping was done well in __post_init__ checks
     assert loss.t0.shape == (1,)
 
-    loss = jinns.loss.LossPDENonStatio(
-        u=u,
-        dynamic_loss=None,
-        t0=None,
-        params=params,
-    )
+    # Catching an expected warning because no BC
+    with pytest.warns(UserWarning):
+        loss = jinns.loss.LossPDENonStatio(
+            u=u,
+            dynamic_loss=None,
+            t0=None,
+            params=params,
+        )
     # check that reshaping was done well in __post_init__ checks
     assert jnp.array_equal(loss.t0, jnp.array([0.0]))
