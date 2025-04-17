@@ -7,8 +7,7 @@ from ._DynamicLoss import (
     FPENonStatioLoss2D,
     OU_FPENonStatioLoss2D,
     FisherKPP,
-    MassConservation2DStatio,
-    NavierStokes2DStatio,
+    NavierStokesMassConservation2DStatio,
 )
 from ._loss_weights import (
     LossWeightsODE,

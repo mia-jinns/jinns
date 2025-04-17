@@ -189,7 +189,6 @@ class PPINN_MLP(PINN):
             eqx_network_list = []
             for eqx_list in eqx_list_list:
                 key, subkey = jax.random.split(key, 2)
-                print(subkey)
                 eqx_network_list.append(MLP(key=subkey, eqx_list=eqx_list))
 
         ppinn = cls(

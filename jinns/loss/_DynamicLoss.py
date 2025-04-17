@@ -565,7 +565,7 @@ class MassConservation2DStatio(PDEStatio):
         raise ValueError("u is not among the recognized types (PINN or SPINN)")
 
 
-class NavierStokes2DStatio(PDEStatio):
+class NavierStokesMassConservation2DStatio(PDEStatio):
     r"""
     Return the dynamic loss for all the components of the stationary Navier Stokes
     equation which is a 2D vectorial PDE.
@@ -594,18 +594,6 @@ class NavierStokes2DStatio(PDEStatio):
 
     Parameters
     ----------
-    u_key
-        A dictionary key which indices the NN u in `u_dict`
-        the PINN with the role of the velocity in the equation.
-        Its input is bimensional (points in $\Omega\subset\mathbb{R}^2$).
-        Its output is bimensional as it represents a velocity vector
-        field
-    p_key
-        A dictionary key which indices the NN p in `u_dict`
-        the PINN with the role of the pressure in the equation.
-        Its input is bimensional (points in $\Omega\subset\mathbb{R}^2).
-        Its output is unidimensional as it represents a pressure scalar
-        field
     eq_params_heterogeneity
         Default None. A dict with the keys being the same as in eq_params
         and the value being `time`, `space`, `both` or None which corresponds to
@@ -615,15 +603,12 @@ class NavierStokes2DStatio(PDEStatio):
         heterogeneity for no parameters.
     """
 
-    u_key: str = eqx.field(static=True)
-    p_key: str = eqx.field(static=True)
-
     def equation(
         self,
         x: Float[Array, "dim"],
-        u_dict: Dict[str, eqx.Module],
-        params_dict: ParamsDict,
-    ) -> Float[Array, "1"]:
+        u_p: eqx.Module,
+        params: Params,
+    ) -> Float[Array, "3"]:
         r"""
         Evaluate the dynamic loss at `x`.
         For stability we implement the dynamic loss in log space.
@@ -632,44 +617,46 @@ class NavierStokes2DStatio(PDEStatio):
         ---------
         x
             A point in $\Omega\subset\mathbb{R}^2$
-        u_dict
-            A dictionary of PINNs. Must have the same keys as `params_dict`
-        params_dict
-            The dictionary of dictionaries of parameters of the model.
-            Typically, each sub-dictionary is a dictionary
-            with keys: `eq_params` and `nn_params`, respectively the
-            differential equation parameters and the neural network parameter.
-            Must have the same keys as `u_dict`
+        u_p
+            A PINN with 3 outputs of the 2D velocity field and the 1D pressure
+            field
+        params
+            The parameters in a Params object
         """
-        u_params = params_dict.extract_params(self.u_key)
-        p_params = params_dict.extract_params(self.p_key)
 
-        if isinstance(u_dict[self.u_key], PINN):
-            u = u_dict[self.u_key]
+        if isinstance(u_p, PINN):
+            u = lambda x, params: u_p(x, params)[0:2]
+            p = lambda x, params: u_p(x, params)[2:3]
 
-            u_dot_nabla_x_u = _u_dot_nabla_times_u_rev(x, u, u_params)
+            # NAVIER STOKES
+            u_dot_nabla_x_u = _u_dot_nabla_times_u_rev(x, u, params)
 
-            p = lambda x: u_dict[self.p_key](x, p_params)
-            jac_p = jax.jacrev(p, 0)(x)  # compute the gradient
+            jac_p = jax.jacrev(p, 0)(x, params)  # compute the gradient
 
-            vec_laplacian_u = vectorial_laplacian_rev(x, u, u_params, dim_out=2)
+            vec_laplacian_u = vectorial_laplacian_rev(
+                x, u, params, dim_out=2, eq_type=u_p.eq_type
+            )
 
             # dynamic loss on x axis
             result_x = (
                 u_dot_nabla_x_u[0]
-                + 1 / params_dict.eq_params["rho"] * jac_p[0, 0]
-                - params_dict.eq_params["nu"] * vec_laplacian_u[0]
+                + 1 / params.eq_params["rho"] * jac_p[0, 0]
+                - params.eq_params["nu"] * vec_laplacian_u[0]
             )
 
             # dynamic loss on y axis
             result_y = (
                 u_dot_nabla_x_u[1]
-                + 1 / params_dict.eq_params["rho"] * jac_p[0, 1]
-                - params_dict.eq_params["nu"] * vec_laplacian_u[1]
+                + 1 / params.eq_params["rho"] * jac_p[0, 1]
+                - params.eq_params["nu"] * vec_laplacian_u[1]
             )
 
+            # MASS CONVERVATION
+
+            mc = divergence_rev(x, u, params, eq_type=u_p.eq_type)
+
             # output is 2D
-            return jnp.stack([result_x, result_y], axis=-1)
+            return jnp.stack([result_x, result_y, mc], axis=-1)
 
         if isinstance(u_dict[self.u_key], SPINN):
             u = u_dict[self.u_key]
