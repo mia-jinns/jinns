@@ -41,9 +41,7 @@ def solve(
     opt_state: Union[NamedTuple, None] = None,
     tracked_params: Params | None = None,
     param_data: DataGeneratorParameter | None = None,
-    obs_data: (
-        DataGeneratorObservations | DataGeneratorObservationsMultiPINNs | None
-    ) = None,
+    obs_data: DataGeneratorObservations | None = None,
     validation: AbstractValidationModule | None = None,
     obs_batch_sharding: jax.sharding.Sharding | None = None,
     verbose: Bool = True,
@@ -94,8 +92,7 @@ def solve(
         Default None. A DataGeneratorParameter object which can be used to
         sample equation parameters.
     obs_data
-        Default None. A DataGeneratorObservations or
-        DataGeneratorObservationsMultiPINNs
+        Default None. A DataGeneratorObservations
         object which can be used to sample minibatches of observations.
     validation
         Default None. Otherwise, a callable ``eqx.Module`` which implements a
@@ -625,13 +622,13 @@ def _get_get_batch(
     [
         AnyDataGenerator,
         DataGeneratorParameter | None,
-        DataGeneratorObservations | DataGeneratorObservationsMultiPINNs | None,
+        DataGeneratorObservations | None,
     ],
     tuple[
         AnyBatch,
         AnyDataGenerator,
         DataGeneratorParameter | None,
-        DataGeneratorObservations | DataGeneratorObservationsMultiPINNs | None,
+        DataGeneratorObservations | None,
     ],
 ]:
     """

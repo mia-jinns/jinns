@@ -20,7 +20,6 @@ if TYPE_CHECKING:
         CubicMeshPDENonStatio,
         DataGeneratorObservations,
         DataGeneratorParameter,
-        DataGeneratorObservationsMultiPINNs,
     )
 
     from jinns.loss import DynamicLoss
