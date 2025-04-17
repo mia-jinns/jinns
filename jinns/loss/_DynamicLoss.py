@@ -111,11 +111,11 @@ class GeneralizedLotkaVolterra(ODE):
     system. Say we implement the system of equations, for several populations $i$
 
     $$
-        \frac{\partial}{\partial t}u_i(t) = r_iu_i(t) - \sum_{j\neq i}\alpha_{ij}u_j(t)
-        -\alpha_{i,i}u_i(t) + c_iu_i(t) + \sum_{j \neq i} c_ju_j(t)
+    \frac{\partial}{\partial t}u_i(t) = \alpha_iu_i(t)
+    -\sum_j\gamma_{j,i}u_j(t) - \beta_i\sum_{i'}u_{i'}(t), i\in\{1, 2, 3\}
     $$
-    with $r_i$ the growth rate parameter, $c_i$ the carrying
-    capacities and $\alpha_{ij}$ the interaction terms.
+
+    where $\alpha$ are the growth rates, $\gamma$ are the interactions terms and $\beta$ and the capacity terms.
 
     Parameters
     ----------
