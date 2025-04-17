@@ -10,7 +10,7 @@ import equinox as eqx
 
 from jaxtyping import Array, Key, PyTree, Float
 
-from jinns.parameters._params import Params, ParamsDict
+from jinns.parameters._params import Params
 from jinns.nn._pinn import PINN
 from jinns.nn._mlp import MLP
 

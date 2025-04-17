@@ -67,7 +67,7 @@ def _compute_boundary_loss(
     u
         a PINN
     params
-        Params or ParamsDict
+        Params
     facet
         An integer which represents the id of the facet which is currently
         considered (in the order provided by the DataGenerator which is fixed)
@@ -100,7 +100,7 @@ def boundary_dirichlet(
     ],
     batch: PDEStatioBatch | PDENonStatioBatch,
     u: eqx.Module,
-    params: Params | ParamsDict,
+    params: Params,
     facet: int,
     dim_to_apply: slice,
     vmap_in_axes: tuple,
@@ -172,7 +172,7 @@ def boundary_neumann(
     ],
     batch: PDEStatioBatch | PDENonStatioBatch,
     u: eqx.Module,
-    params: Params | ParamsDict,
+    params: Params,
     facet: int,
     dim_to_apply: slice,
     vmap_in_axes: tuple,

@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     )
 
     from jinns.loss._LossODE import LossODE
-    from jinns.parameters._params import Params, ParamsDict
+    from jinns.parameters._params import Params
     from jinns.data._DataGenerators import (
         DataGeneratorODE,
         CubicMeshPDEStatio,
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 
     AnyLoss: TypeAlias = LossPDEStatio | LossPDENonStatio | LossODE
 
-    AnyParams: TypeAlias = Params | ParamsDict
+    AnyParams: TypeAlias = Params
 
     AnyDataGenerator: TypeAlias = (
         DataGeneratorODE | CubicMeshPDEStatio | CubicMeshPDENonStatio

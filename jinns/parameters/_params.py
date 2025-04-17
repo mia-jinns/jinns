@@ -2,9 +2,9 @@
 Formalize the data structure for the parameters
 """
 
+from typing import Dict
 import jax
 import equinox as eqx
-from typing import Dict
 from jaxtyping import Array, PyTree
 
 
@@ -24,41 +24,6 @@ class Params(eqx.Module):
 
     nn_params: PyTree = eqx.field(kw_only=True, default=None)
     eq_params: Dict[str, Array] = eqx.field(kw_only=True, default=None)
-
-
-class ParamsDict(eqx.Module):
-    """
-    The equinox module for a dictionnary of parameters with different keys
-    corresponding to different equations.
-
-    Parameters
-    ----------
-    nn_params : Dict[str, PyTree]
-        The neural network's parameters. Most of the time, it will be the
-        Array part of an `eqx.Module` obtained by
-        `eqx.partition(module, eqx.is_inexact_array)`.
-    eq_params : Dict[str, Array]
-        A dictionary of the equation parameters. Dict keys are the parameter name as defined your custom loss.
-    """
-
-    nn_params: Dict[str, PyTree] = eqx.field(kw_only=True, default=None)
-    eq_params: Dict[str, Array] = eqx.field(kw_only=True, default=None)
-
-    def extract_params(self, nn_key: str) -> Params:
-        """
-        Extract the corresponding `nn_params` and `eq_params` for `nn_key` and
-        return them in the form of a `Params` object.
-        """
-        try:
-            return Params(
-                nn_params=self.nn_params[nn_key],
-                eq_params=self.eq_params[nn_key],
-            )
-        except (KeyError, IndexError) as e:
-            return Params(
-                nn_params=self.nn_params[nn_key],
-                eq_params=self.eq_params,
-            )
 
 
 def _update_eq_params_dict(
@@ -89,7 +54,7 @@ def _update_eq_params_dict(
 
 
 def _get_vmap_in_axes_params(
-    eq_params_batch_dict: Dict[str, Array], params: Params | ParamsDict
+    eq_params_batch_dict: Dict[str, Array], params: Params
 ) -> tuple[Params]:
     """
     Return the input vmap axes when there is batch(es) of parameters to vmap

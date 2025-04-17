@@ -5,7 +5,7 @@ import jax
 import jax.numpy as jnp
 import equinox as eqx
 
-from jinns.parameters._params import Params, ParamsDict
+from jinns.parameters._params import Params
 
 
 class SPINN(eqx.Module):
@@ -72,7 +72,7 @@ class SPINN(eqx.Module):
     def __call__(
         self,
         t_x: Float[Array, "batch_size 1+dim"],
-        params: Params | ParamsDict | PyTree,
+        params: Params | PyTree,
     ) -> Float[Array, "output_dim"]:
         """
         Evaluate the SPINN on some inputs with some params.

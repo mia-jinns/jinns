@@ -1,4 +1,4 @@
-from ._params import Params, ParamsDict
+from ._params import Params
 from ._derivative_keys import (
     DerivativeKeysODE,
     DerivativeKeysPDEStatio,

@@ -7,7 +7,7 @@ from dataclasses import InitVar
 import equinox as eqx
 from jaxtyping import Float, Array, PyTree
 import jax.numpy as jnp
-from jinns.parameters._params import Params, ParamsDict
+from jinns.parameters._params import Params
 
 
 class PINN(eqx.Module):
@@ -157,7 +157,7 @@ class PINN(eqx.Module):
     def __call__(
         self,
         inputs: Float[Array, "input_dim"],
-        params: Params | ParamsDict | PyTree,
+        params: Params | PyTree,
         *args,
         **kwargs,
     ) -> Float[Array, "output_dim"]:

@@ -40,7 +40,7 @@ class AbstractValidationModule(eqx.Module):
 
     @abc.abstractmethod
     def __call__(
-        self, params: Params | ParamsDict
+        self, params: Params
     ) -> tuple["AbstractValidationModule", bool, Array, bool]:
         raise NotImplementedError
 

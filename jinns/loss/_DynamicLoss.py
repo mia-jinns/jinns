@@ -32,7 +32,7 @@ from jinns.loss._operators import (
 from jaxtyping import Array, Float
 
 if TYPE_CHECKING:
-    from jinns.parameters import Params, ParamsDict
+    from jinns.parameters import Params
 
 
 class FisherKPP(PDENonStatio):
