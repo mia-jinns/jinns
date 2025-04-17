@@ -20,7 +20,6 @@ from jinns.loss._loss_utils import (
     normalization_loss_apply,
     observations_loss_apply,
     initial_condition_apply,
-    constraints_system_loss_apply,
 )
 from jinns.data._DataGenerators import append_obs_batch
 from jinns.parameters._params import (
@@ -35,7 +34,6 @@ from jinns.parameters._derivative_keys import (
 from jinns.loss._loss_weights import (
     LossWeightsPDEStatio,
     LossWeightsPDENonStatio,
-    LossWeightsPDEDict,
 )
 from jinns.loss._DynamicLossAbstract import PDEStatio, PDENonStatio
 from jinns.nn._pinn import PINN

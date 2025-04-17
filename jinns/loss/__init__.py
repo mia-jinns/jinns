@@ -12,10 +12,8 @@ from ._DynamicLoss import (
 )
 from ._loss_weights import (
     LossWeightsODE,
-    LossWeightsODEDict,
     LossWeightsPDENonStatio,
     LossWeightsPDEStatio,
-    LossWeightsPDEDict,
 )
 
 from ._operators import (

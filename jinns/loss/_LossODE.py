@@ -18,7 +18,6 @@ from jaxtyping import Float, Array, Int
 from jinns.data._DataGenerators import append_obs_batch
 from jinns.loss._loss_utils import (
     dynamic_loss_apply,
-    constraints_system_loss_apply,
     observations_loss_apply,
 )
 from jinns.parameters._params import (
@@ -26,7 +25,7 @@ from jinns.parameters._params import (
     _update_eq_params_dict,
 )
 from jinns.parameters._derivative_keys import _set_derivatives, DerivativeKeysODE
-from jinns.loss._loss_weights import LossWeightsODE, LossWeightsODEDict
+from jinns.loss._loss_weights import LossWeightsODE
 from jinns.loss._DynamicLossAbstract import ODE
 from jinns.nn._pinn import PINN
 
