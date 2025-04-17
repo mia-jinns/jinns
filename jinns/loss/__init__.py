@@ -1,6 +1,6 @@
 from ._DynamicLossAbstract import DynamicLoss, ODE, PDEStatio, PDENonStatio
-from ._LossODE import LossODE, SystemLossODE
-from ._LossPDE import LossPDEStatio, LossPDENonStatio, SystemLossPDE
+from ._LossODE import LossODE
+from ._LossPDE import LossPDEStatio, LossPDENonStatio
 from ._DynamicLoss import (
     GeneralizedLotkaVolterra,
     BurgersEquation,

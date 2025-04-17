@@ -10,10 +10,9 @@ if TYPE_CHECKING:
     from jinns.loss._LossPDE import (
         LossPDEStatio,
         LossPDENonStatio,
-        SystemLossPDE,
     )
 
-    from jinns.loss._LossODE import LossODE, SystemLossODE
+    from jinns.loss._LossODE import LossODE
     from jinns.parameters._params import Params, ParamsDict
     from jinns.data._DataGenerators import (
         DataGeneratorODE,
@@ -32,9 +31,7 @@ if TYPE_CHECKING:
     from jinns.utils._containers import *
     from jinns.validation._validation import AbstractValidationModule
 
-    AnyLoss: TypeAlias = (
-        LossPDEStatio | LossPDENonStatio | SystemLossPDE | LossODE | SystemLossODE
-    )
+    AnyLoss: TypeAlias = LossPDEStatio | LossPDENonStatio | LossODE
 
     AnyParams: TypeAlias = Params | ParamsDict
 
