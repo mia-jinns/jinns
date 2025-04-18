@@ -6,8 +6,9 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-from dataclasses import InitVar, fields
-from typing import TYPE_CHECKING, Dict
+from dataclasses import InitVar
+from typing import TYPE_CHECKING
+from types import EllipsisType
 import abc
 import warnings
 import jax
@@ -15,7 +16,6 @@ import jax.numpy as jnp
 from jax import vmap
 import equinox as eqx
 from jaxtyping import Float, Array, Int
-from jinns.data._DataGenerators import append_obs_batch
 from jinns.loss._loss_utils import (
     dynamic_loss_apply,
     observations_loss_apply,
@@ -26,8 +26,6 @@ from jinns.parameters._params import (
 )
 from jinns.parameters._derivative_keys import _set_derivatives, DerivativeKeysODE
 from jinns.loss._loss_weights import LossWeightsODE
-from jinns.loss._DynamicLossAbstract import ODE
-from jinns.nn._pinn import PINN
 
 if TYPE_CHECKING:
     from jinns.utils._types import *
@@ -48,7 +46,7 @@ class _LossODEAbstract(eqx.Module):
         Fields can be "nn_params", "eq_params" or "both". Those that should not
         be updated will have a `jax.lax.stop_gradient` called on them. Default
         is `"nn_params"` for each composant of the loss.
-    initial_condition : tuple[float | Float[Array, "1"]], default=None
+    initial_condition : tuple[float | Float[Array, "1"], Float[Array, "dim"]], default=None
         tuple of length 2 with initial condition $(t_0, u_0)$.
     obs_slice : Slice, default=None
         Slice object specifying the begininning/ending
@@ -65,26 +63,27 @@ class _LossODEAbstract(eqx.Module):
     # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
     derivative_keys: DerivativeKeysODE | None = eqx.field(kw_only=True, default=None)
     loss_weights: LossWeightsODE | None = eqx.field(kw_only=True, default=None)
-    initial_condition: tuple[float | Float[Array, "1"]] | None = eqx.field(
-        kw_only=True, default=None
+    initial_condition: tuple[float | Float[Array, "1"], Float[Array, "dim"]] | None = (
+        eqx.field(kw_only=True, default=None)
     )
-    obs_slice: slice | None = eqx.field(kw_only=True, default=None, static=True)
+    obs_slice: EllipsisType | slice | None = eqx.field(
+        kw_only=True, default=None, static=True
+    )
 
     params: InitVar[Params] = eqx.field(default=None, kw_only=True)
 
-    def __post_init__(self, params=None):
+    def __post_init__(self, params: Params | None = None):
         if self.loss_weights is None:
             self.loss_weights = LossWeightsODE()
 
         if self.derivative_keys is None:
-            try:
-                # be default we only take gradient wrt nn_params
-                self.derivative_keys = DerivativeKeysODE(params=params)
-            except ValueError as exc:
+            # by default we only take gradient wrt nn_params
+            if params is None:
                 raise ValueError(
                     "Problem at self.derivative_keys initialization "
                     f"received {self.derivative_keys=} and {params=}"
-                ) from exc
+                )
+            self.derivative_keys = DerivativeKeysODE(params=params)
         if self.initial_condition is None:
             warnings.warn(
                 "Initial condition wasn't provided. Be sure to cover for that"
@@ -101,15 +100,16 @@ class _LossODEAbstract(eqx.Module):
                 )
             # some checks/reshaping for t0
             t0, u0 = self.initial_condition
-            if (
-                isinstance(t0, float) or not t0.shape
-            ):  # e.g. user input: 0. or jnp.array(0.)
+            if isinstance(t0, Array):
+                if not t0.shape:  # e.g. user input: jnp.array(0.)
+                    t0 = jnp.array([t0])
+                elif t0.shape != (1,):
+                    raise ValueError(
+                        f"Wrong t0 input (self.initial_condition[0]) It should be"
+                        f"a float or an array of shape (1,). Got shape: {t0.shape}"
+                    )
+            if isinstance(t0, float):  # e.g. user input: 0
                 t0 = jnp.array([t0])
-            elif t0.shape != (1,):
-                raise ValueError(
-                    f"Wrong t0 input (self.initial_condition[0]) It should be"
-                    f"a float or an array of shape (1,). Got shape: {t0.shape}"
-                )
             self.initial_condition = (t0, u0)
 
         if self.obs_slice is None:
