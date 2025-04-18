@@ -39,17 +39,15 @@ def solve(
     optimizer: optax.GradientTransformation,
     print_loss_every: Int = 1000,
     opt_state: Union[NamedTuple, None] = None,
-    tracked_params: Params | ParamsDict | None = None,
+    tracked_params: Params | None = None,
     param_data: DataGeneratorParameter | None = None,
-    obs_data: (
-        DataGeneratorObservations | DataGeneratorObservationsMultiPINNs | None
-    ) = None,
+    obs_data: DataGeneratorObservations | None = None,
     validation: AbstractValidationModule | None = None,
     obs_batch_sharding: jax.sharding.Sharding | None = None,
     verbose: Bool = True,
     ahead_of_time: Bool = True,
 ) -> tuple[
-    Params | ParamsDict,
+    Params,
     Float[Array, "n_iter"],
     Dict[str, Float[Array, "n_iter"]],
     AnyDataGenerator,
@@ -94,8 +92,7 @@ def solve(
         Default None. A DataGeneratorParameter object which can be used to
         sample equation parameters.
     obs_data
-        Default None. A DataGeneratorObservations or
-        DataGeneratorObservationsMultiPINNs
+        Default None. A DataGeneratorObservations
         object which can be used to sample minibatches of observations.
     validation
         Default None. Otherwise, a callable ``eqx.Module`` which implements a
@@ -529,9 +526,7 @@ def _store_loss_and_params(
     train_loss_val: float,
     loss_terms: Dict[str, float],
     tracked_params: AnyParams,
-) -> tuple[
-    Params | ParamsDict, Dict[str, Float[Array, "n_iter"]], Float[Array, "n_iter"]
-]:
+) -> tuple[Params, Dict[str, Float[Array, "n_iter"]], Float[Array, "n_iter"]]:
     stored_params = jax.tree_util.tree_map(
         lambda stored_value, param, tracked_param: (
             None
@@ -627,13 +622,13 @@ def _get_get_batch(
     [
         AnyDataGenerator,
         DataGeneratorParameter | None,
-        DataGeneratorObservations | DataGeneratorObservationsMultiPINNs | None,
+        DataGeneratorObservations | None,
     ],
     tuple[
         AnyBatch,
         AnyDataGenerator,
         DataGeneratorParameter | None,
-        DataGeneratorObservations | DataGeneratorObservationsMultiPINNs | None,
+        DataGeneratorObservations | None,
     ],
 ]:
     """

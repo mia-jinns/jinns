@@ -10,7 +10,7 @@ import equinox as eqx
 
 from jaxtyping import Array, Key, PyTree, Float
 
-from jinns.parameters._params import Params, ParamsDict
+from jinns.parameters._params import Params
 from jinns.nn._pinn import PINN
 from jinns.nn._mlp import MLP
 
@@ -189,7 +189,6 @@ class PPINN_MLP(PINN):
             eqx_network_list = []
             for eqx_list in eqx_list_list:
                 key, subkey = jax.random.split(key, 2)
-                print(subkey)
                 eqx_network_list.append(MLP(key=subkey, eqx_list=eqx_list))
 
         ppinn = cls(

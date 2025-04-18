@@ -11,8 +11,8 @@ import equinox as eqx
 from jaxtyping import Int, Bool
 
 from jinns.data._Batchs import *
-from jinns.loss._LossODE import LossODE, SystemLossODE
-from jinns.loss._LossPDE import LossPDEStatio, LossPDENonStatio, SystemLossPDE
+from jinns.loss._LossODE import LossODE
+from jinns.loss._LossPDE import LossPDEStatio, LossPDENonStatio
 from jinns.loss._loss_utils import dynamic_loss_apply
 from jinns.data._DataGenerators import (
     DataGeneratorODE,
@@ -145,33 +145,15 @@ def _rar_step_init(sample_size: Int, selected_sample_size: Int) -> tuple[
 
             data = eqx.tree_at(lambda m: m.key, data, new_key)
 
-        # We can have different types of Loss
-        if isinstance(loss, (LossODE, LossPDEStatio, LossPDENonStatio)):
-            v_dyn_loss = vmap(
-                lambda inputs: loss.dynamic_loss.evaluate(inputs, loss.u, params),
-            )
-            dyn_on_s = v_dyn_loss(new_samples)
+        v_dyn_loss = vmap(
+            lambda inputs: loss.dynamic_loss.evaluate(inputs, loss.u, params),
+        )
+        dyn_on_s = v_dyn_loss(new_samples)
 
-            if dyn_on_s.ndim > 1:
-                mse_on_s = (jnp.linalg.norm(dyn_on_s, axis=-1) ** 2).flatten()
-            else:
-                mse_on_s = dyn_on_s**2
-        elif isinstance(loss, SystemLossODE, SystemLossPDE):
-            mse_on_s = 0
-
-            for i in loss.dynamic_loss_dict.keys():
-                v_dyn_loss = vmap(
-                    lambda inputs: loss.dynamic_loss_dict[i].evaluate(
-                        inputs, loss.u_dict, params
-                    ),
-                    (0),
-                    0,
-                )
-                dyn_on_s = v_dyn_loss(new_samples)
-                if dyn_on_s.ndim > 1:
-                    mse_on_s += (jnp.linalg.norm(dyn_on_s, axis=-1) ** 2).flatten()
-                else:
-                    mse_on_s += dyn_on_s**2
+        if dyn_on_s.ndim > 1:
+            mse_on_s = (jnp.linalg.norm(dyn_on_s, axis=-1) ** 2).flatten()
+        else:
+            mse_on_s = dyn_on_s**2
 
         ## Select the m points with higher dynamic loss
         higher_residual_idx = jax.lax.dynamic_slice(

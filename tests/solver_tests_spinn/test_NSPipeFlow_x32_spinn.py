@@ -13,40 +13,27 @@ def train_NSPipeFlow_init():
     jax.config.update("jax_enable_x64", False)
 
     key = random.PRNGKey(2)
-
+    key, subkey = random.split(key)
     d_ = 2
-    r = 32
-    m = 2
+    r = 128
+    m = 2 + 1
     eqx_list = (
-        (eqx.nn.Linear, 1, 25),
+        (eqx.nn.Linear, 1, 50),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 25, 25),
+        (eqx.nn.Linear, 50, 50),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 25, 25),
+        (eqx.nn.Linear, 50, 50),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 25, r * m),
+        (eqx.nn.Linear, 50, 50),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 50, 50),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 50, r * m),
     )
     key, subkey = random.split(key)
-    u, u_init_nn_params = jinns.nn.SPINN_MLP.create(
+    u_p, u_p_init_nn_params = jinns.nn.SPINN_MLP.create(
         subkey, d_, r, eqx_list, "statio_PDE", m
     )
-
-    d_ = 2
-    r = 32
-    eqx_list = (
-        (eqx.nn.Linear, 1, 25),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 25, 25),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 25, 25),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 25, r),
-    )
-    key, subkey = random.split(key)
-    p, p_init_nn_params = jinns.nn.SPINN_MLP.create(
-        subkey, d_, r, eqx_list, "statio_PDE"
-    )
-
     L = 1
     R = 0.05
 
@@ -84,52 +71,39 @@ def train_NSPipeFlow_init():
     d = 2 * R
 
     # initiate parameters dictionary
-    init_params = jinns.parameters.ParamsDict(
-        nn_params={"u": u_init_nn_params, "p": p_init_nn_params},
+    init_params = jinns.parameters.Params(
+        nn_params=u_p_init_nn_params,
         eq_params={"rho": rho, "nu": nu},
     )
-
-    p_omega_boundary_fun = {
+    u_p_omega_boundary_fun = {
         "xmin": lambda x: p_in,
         "xmax": lambda x: p_out,
-        "ymin": None,
-        "ymax": None,
-    }
-    p_omega_boundary_condition = {
-        "xmin": "dirichlet",
-        "xmax": "dirichlet",
-        "ymin": None,
-        "ymax": None,
-    }
-
-    u_omega_boundary_fun = {
-        "xmin": None,
-        "xmax": None,
         "ymin": lambda x: jnp.array([0.0, 0.0]),
         "ymax": lambda x: jnp.array([0.0, 0.0]),
     }
-    u_omega_boundary_condition = {
-        "xmin": None,
-        "xmax": None,
+    u_p_omega_boundary_condition = {
+        "xmin": "dirichlet",
+        "xmax": "dirichlet",
         "ymin": "dirichlet",
         "ymax": "dirichlet",
     }
-    mc_loss = jinns.loss.MassConservation2DStatio(nn_key="u")
-    ns_loss = jinns.loss.NavierStokes2DStatio(u_key="u", p_key="p")
-    loss_weights = jinns.loss.LossWeightsPDEDict(dyn_loss=1, boundary_loss=1)
-
-    loss = jinns.loss.SystemLossPDE(
-        u_dict={"u": u, "p": p},
+    u_p_omega_boundary_dim = {
+        "xmin": jnp.s_[2:3],
+        "xmax": jnp.s_[2:3],
+        "ymin": jnp.s_[0:2],
+        "ymax": jnp.s_[0:2],
+    }
+    dyn_loss = jinns.loss.NavierStokesMassConservation2DStatio()
+    loss_weights = jinns.loss.LossWeightsPDEStatio(dyn_loss=1.0, boundary_loss=1.0)
+    loss = jinns.loss.LossPDEStatio(
+        u=u_p,
         loss_weights=loss_weights,
-        dynamic_loss_dict={"mass_conservation": mc_loss, "navier_stokes": ns_loss},
-        omega_boundary_fun_dict={"u": u_omega_boundary_fun, "p": p_omega_boundary_fun},
-        omega_boundary_condition_dict={
-            "u": u_omega_boundary_condition,
-            "p": p_omega_boundary_condition,
-        },
-        params_dict=init_params,
+        dynamic_loss=dyn_loss,
+        omega_boundary_fun=u_p_omega_boundary_fun,
+        omega_boundary_condition=u_p_omega_boundary_condition,
+        omega_boundary_dim=u_p_omega_boundary_dim,
+        params=init_params,
     )
-
     return init_params, loss, train_data
 
 

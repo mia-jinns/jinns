@@ -402,6 +402,7 @@ def vectorial_laplacian_rev(
     u: eqx.Module,
     params: Params,
     dim_out: int = None,
+    eq_type: Literal["nonstatio_PDE", "statio_PDE"] = None,
 ) -> Float[Array, "dim_out"]:
     r"""
     Compute the vectorial Laplacian of a vector field $\mathbf{u}$ from
@@ -426,16 +427,27 @@ def vectorial_laplacian_rev(
     dim_out
         Dimension of the vector $\mathbf{u}(\mathrm{inputs})$. This needs to be
         provided if it is different than that of $\mathrm{inputs}$.
+    eq_type
+        whether we consider a stationary or non stationary PINN. Most often we
+        can know that by inspecting the `u` argument (PINN object). But if `u` is
+        a function, we must set this attribute.
     """
     if dim_out is None:
         dim_out = inputs.shape[0]
+
+    try:
+        eq_type = u.eq_type
+    except AttributeError:
+        pass  # use the value passed as argument
+    if eq_type is None:
+        raise ValueError("eq_type could not be set!")
 
     def scan_fun(_, j):
         # The loop over the components of u(x). We compute one Laplacian for
         # each of these components
         # Note the jnp.expand_dims call
         uj = lambda inputs, params: jnp.expand_dims(u(inputs, params)[j], axis=-1)
-        lap_on_j = laplacian_rev(inputs, uj, params, eq_type=u.eq_type)
+        lap_on_j = laplacian_rev(inputs, uj, params, eq_type=eq_type)
 
         return _, lap_on_j
 
@@ -448,6 +460,7 @@ def vectorial_laplacian_fwd(
     u: eqx.Module,
     params: Params,
     dim_out: int = None,
+    eq_type: Literal["nonstatio_PDE", "statio_PDE"] = None,
 ) -> Float[Array, "batch_size * (1+dim) n"] | Float[Array, "batch_size * (dim) n"]:
     r"""
     Compute the vectorial Laplacian of a vector field $\mathbf{u}$ when
@@ -474,16 +487,27 @@ def vectorial_laplacian_fwd(
     dim_out
         the value of the output dimension ($n$ in the formula above). Must be
         set if different from $d$.
+    eq_type
+        whether we consider a stationary or non stationary PINN. Most often we
+        can know that by inspecting the `u` argument (PINN object). But if `u` is
+        a function, we must set this attribute.
     """
     if dim_out is None:
         dim_out = inputs.shape[0]
+
+    try:
+        eq_type = u.eq_type
+    except AttributeError:
+        pass  # use the value passed as argument
+    if eq_type is None:
+        raise ValueError("eq_type could not be set!")
 
     def scan_fun(_, j):
         # The loop over the components of u(x). We compute one Laplacian for
         # each of these components
         # Note the expand_dims
         uj = lambda inputs, params: jnp.expand_dims(u(inputs, params)[..., j], axis=-1)
-        lap_on_j = laplacian_fwd(inputs, uj, params, eq_type=u.eq_type)
+        lap_on_j = laplacian_fwd(inputs, uj, params, eq_type=eq_type)
 
         return _, lap_on_j
 

@@ -2,7 +2,9 @@
 
 * on `main`
 
-    - Refactor initial conditions and minor corrections [!69](https://gitlab.com/mia_jinns/jinns/-/merge_requests/69)
+    - Delete `SystemLossODE` and `SystemLossPDE` and associated classes [!71](https://gitlab.com/mia_jinns/jinns/-/merge_requests/71)
+    - Refactor initial conditions [!69](https://gitlab.com/mia_jinns/jinns/-/merge_requests/69)
+    - Minor code corrections
 
 * v1.3.0
 

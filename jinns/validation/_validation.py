@@ -40,7 +40,7 @@ class AbstractValidationModule(eqx.Module):
 
     @abc.abstractmethod
     def __call__(
-        self, params: Params | ParamsDict
+        self, params: Params
     ) -> tuple["AbstractValidationModule", bool, Array, bool]:
         raise NotImplementedError
 
@@ -61,9 +61,9 @@ class ValidationLoss(AbstractValidationModule):
     validation_param_data: Union[DataGeneratorParameter, None] = eqx.field(
         kw_only=True, default=None
     )
-    validation_obs_data: Union[
-        DataGeneratorObservations, DataGeneratorObservationsMultiPINNs, None
-    ] = eqx.field(kw_only=True, default=None)
+    validation_obs_data: Union[DataGeneratorObservations, None] = eqx.field(
+        kw_only=True, default=None
+    )
     call_every: int = eqx.field(kw_only=True, default=250)  # concrete typing
     early_stopping: bool = eqx.field(
         kw_only=True, default=True

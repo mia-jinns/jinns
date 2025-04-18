@@ -30,51 +30,43 @@ def train_NSPipeFlow_init():
 
     key = random.PRNGKey(2)
 
-    eqx_list = (
-        (eqx.nn.Linear, 2, 50),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 50, 50),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 50, 50),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 50, 2),
-    )
     key, subkey = random.split(key)
-    u_output_transform = lambda pinn_in, pinn_out, params: pinn_out * (
-        R**2 - pinn_in[1] ** 2
-    )
-    # This output transform is equivalent to defining afterwards:
-    # u = lambda x, nn_params, eq_params: u_raw(x, nn_params, eq_params) * (
-    #    R**2 - x(1) ** 2
-    # )  # multiplies the 2 components
-    u, u_init_nn_params = jinns.nn.PINN_MLP.create(
-        key=subkey,
-        eqx_list=eqx_list,
-        eq_type="statio_PDE",
-        output_transform=u_output_transform,
-    )
 
-    eqx_list = (
-        (eqx.nn.Linear, 2, 50),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 50, 50),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 50, 50),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 50, 1),
-    )
-    key, subkey = random.split(key)
-    p_output_transform = lambda pinn_in, pinn_out, params: (
-        (pinn_in[0] - xmin) / (xmax - xmin) * p_out
-        + (xmax - pinn_in[0]) / (xmax - xmin) * p_in
-        + (xmin - pinn_in[0]) * (xmax - pinn_in[0]) * pinn_out
-    )
-    # This output transform is equivalent to defining afterwards:
-    p, p_init_nn_params = jinns.nn.PINN_MLP.create(
+    def u_p_output_transform(pinn_in, pinn_out, params):
+        return jnp.concatenate(
+            [
+                pinn_out[0:2] * (R**2 - pinn_in[1] ** 2),
+                (pinn_in[0] - xmin) / (xmax - xmin) * p_out
+                + (xmax - pinn_in[0]) / (xmax - xmin) * p_in
+                + (xmin - pinn_in[0]) * (xmax - pinn_in[0]) * pinn_out[2:3],
+            ],
+            axis=-1,
+        )
+
+    u_p, u_p_init_nn_params = jinns.nn.PPINN_MLP.create(
         key=subkey,
-        eqx_list=eqx_list,
+        eqx_list_list=[
+            (
+                (eqx.nn.Linear, 2, 50),
+                (jax.nn.tanh,),
+                (eqx.nn.Linear, 50, 50),
+                (jax.nn.tanh,),
+                (eqx.nn.Linear, 50, 50),
+                (jax.nn.tanh,),
+                (eqx.nn.Linear, 50, 2),
+            ),
+            (
+                (eqx.nn.Linear, 2, 50),
+                (jax.nn.tanh,),
+                (eqx.nn.Linear, 50, 50),
+                (jax.nn.tanh,),
+                (eqx.nn.Linear, 50, 50),
+                (jax.nn.tanh,),
+                (eqx.nn.Linear, 50, 1),
+            ),
+        ],
         eq_type="statio_PDE",
-        output_transform=p_output_transform,
+        output_transform=u_p_output_transform,
     )
 
     method = "uniform"
@@ -98,26 +90,24 @@ def train_NSPipeFlow_init():
     d = 2 * R
 
     # initiate parameters dictionary
-    init_params = jinns.parameters.ParamsDict(
-        nn_params={"u": u_init_nn_params, "p": p_init_nn_params},
+    init_params = jinns.parameters.Params(
+        nn_params=u_p_init_nn_params,
         eq_params={"rho": rho, "nu": nu},
     )
 
-    mc_loss = jinns.loss.MassConservation2DStatio(nn_key="u")
-    ns_loss = jinns.loss.NavierStokes2DStatio(u_key="u", p_key="p")
-
-    loss_weights = jinns.loss.LossWeightsPDEDict(dyn_loss=1.0)
+    dyn_loss = jinns.loss.NavierStokesMassConservation2DStatio()
+    loss_weights = jinns.loss.LossWeightsPDEStatio(dyn_loss=1.0)
 
     # Catching an expected UserWarning since no border condition is given
     # for this specific PDE (Fokker-Planck).
     with pytest.warns(UserWarning):
-        loss = jinns.loss.SystemLossPDE(
-            u_dict={"u": u, "p": p},
+        loss = jinns.loss.LossPDEStatio(
+            u=u_p,
             loss_weights=loss_weights,
-            dynamic_loss_dict={"mass_conservation": mc_loss, "navier_stokes": ns_loss},
-            params_dict=init_params,
+            dynamic_loss=dyn_loss,
+            obs_slice=jnp.s_[0:1],  # we only observe the first slice
+            params=init_params,
         )
-
     return init_params, loss, train_data
 
 
