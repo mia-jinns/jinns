@@ -7,7 +7,7 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 import equinox as eqx
-from typing import Callable, Dict, TYPE_CHECKING, ClassVar
+from typing import Callable, Dict, TYPE_CHECKING, ClassVar, Generic, TypeVar
 from jaxtyping import Float, Array
 from functools import partial
 import abc
@@ -19,6 +19,8 @@ if TYPE_CHECKING:
     from jinns.parameters import Params
 else:
     from equinox import AbstractClassVar
+
+InputDim = TypeVar("InputDim")
 
 
 def _decorator_heteregeneous_params(evaluate):
@@ -39,7 +41,7 @@ def _decorator_heteregeneous_params(evaluate):
     return wrapper
 
 
-class DynamicLoss(eqx.Module):
+class DynamicLoss(eqx.Module, Generic[InputDim]):
     r"""
     Abstract base class for dynamic losses. Implements the physical term:
 
@@ -79,7 +81,7 @@ class DynamicLoss(eqx.Module):
 
     def _eval_heterogeneous_parameters(
         self,
-        inputs: Float[Array, "1"] | Float[Array, "dim"] | Float[Array, "1+dim"],
+        inputs: InputDim,
         u: eqx.Module,
         params: Params,
         eq_params_heterogeneity: Dict[str, Callable | None] = None,
@@ -99,9 +101,10 @@ class DynamicLoss(eqx.Module):
                 eq_params_[k] = p
         return eq_params_
 
-    def _evaluate(
+    @partial(_decorator_heteregeneous_params)
+    def evaluate(
         self,
-        inputs: Float[Array, "1"] | Float[Array, "dim"] | Float[Array, "1+dim"],
+        inputs: InputDim,
         u: eqx.Module,
         params: Params,
     ) -> float:
@@ -120,7 +123,7 @@ class DynamicLoss(eqx.Module):
         raise NotImplementedError("You should implement your equation.")
 
 
-class ODE(DynamicLoss):
+class ODE(DynamicLoss[Float[Array, "1"]]):
     r"""
     Abstract base class for ODE dynamic losses. All dynamic loss must subclass
     this class and override the abstract method `equation`.
@@ -146,16 +149,6 @@ class ODE(DynamicLoss):
     """
 
     _eq_type: ClassVar[str] = "ODE"
-
-    @partial(_decorator_heteregeneous_params)
-    def evaluate(
-        self,
-        t: Float[Array, "1"],
-        u: eqx.Module | Dict[str, eqx.Module],
-        params: Params,
-    ) -> float:
-        """Here we call DynamicLoss._evaluate with x=None"""
-        return self._evaluate(t, u, params)
 
     @abc.abstractmethod
     def equation(self, t: Float[Array, "1"], u: eqx.Module, params: Params) -> float:
@@ -188,7 +181,7 @@ class ODE(DynamicLoss):
         raise NotImplementedError
 
 
-class PDEStatio(DynamicLoss):
+class PDEStatio(DynamicLoss[Float[Array, "dim"]]):
     r"""
     Abstract base class for stationnary PDE dynamic losses. All dynamic loss must subclass this class and override the abstract method `equation`.
 
@@ -214,15 +207,8 @@ class PDEStatio(DynamicLoss):
 
     _eq_type: ClassVar[str] = "Statio PDE"
 
-    @partial(_decorator_heteregeneous_params)
-    def evaluate(
-        self, x: Float[Array, "dimension"], u: eqx.Module, params: Params
-    ) -> float:
-        """Here we call the DynamicLoss._evaluate with t=None"""
-        return self._evaluate(x, u, params)
-
     @abc.abstractmethod
-    def equation(self, x: Float[Array, "d"], u: eqx.Module, params: Params) -> float:
+    def equation(self, x: Float[Array, "dim"], u: eqx.Module, params: Params) -> float:
         r"""The differential operator defining the stationnary PDE.
 
         !!! warning
@@ -231,7 +217,7 @@ class PDEStatio(DynamicLoss):
 
         Parameters
         ----------
-        x : Float[Array, "d"]
+        x : Float[Array, "dim"]
             A `d` dimensional jnp.array representing a point in the spatial domain $\Omega$.
         u : eqx.Module
             The neural network.
@@ -251,7 +237,7 @@ class PDEStatio(DynamicLoss):
         raise NotImplementedError
 
 
-class PDENonStatio(DynamicLoss):
+class PDENonStatio(DynamicLoss[Float[Array, "1 + dim"]]):
     """
     Abstract base class for non-stationnary PDE dynamic losses. All dynamic loss must subclass this class and override the abstract method `equation`.
 
@@ -276,17 +262,6 @@ class PDENonStatio(DynamicLoss):
     """
 
     _eq_type: ClassVar[str] = "Non-statio PDE"
-
-    @partial(_decorator_heteregeneous_params)
-    def evaluate(
-        self,
-        t_x: Float[Array, "1 + dim"],
-        u: eqx.Module,
-        params: Params,
-    ) -> float:
-        """Here we call the DynamicLoss._evaluate with full arguments"""
-        ans = self._evaluate(t_x, u, params)
-        return ans
 
     @abc.abstractmethod
     def equation(
