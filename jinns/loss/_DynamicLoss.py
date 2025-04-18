@@ -598,6 +598,8 @@ class NavierStokesMassConservation2DStatio(PDEStatio):
             mc = divergence_rev(x, u, params, eq_type=u_p.eq_type)
 
             # output is 3D
+            if mc.ndim == 0:
+                mc = mc[None]
             return jnp.stack([result_x, result_y, mc], axis=-1)
 
         if isinstance(u_p, SPINN):
