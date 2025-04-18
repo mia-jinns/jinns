@@ -93,6 +93,7 @@ nav:
         - ODE:
           - Linear first-order equation: 'Notebooks/ODE/linear_fo_equation.ipynb'
           - Generalized Lotka-Volterra: 'Notebooks/ODE/1D_Generalized_Lotka_Volterra.ipynb'
+          - SBINNs: 'Notebooks/ODE/systems_biology_informed_neural_network.ipynb'
         - PDE:
           - Navier-Stokes in pipe flow:
             - Hard-constraints: 'Notebooks/PDE/2D_Navier_Stokes_PipeFlow.ipynb'
@@ -102,8 +103,6 @@ nav:
           - 2D Fisher-KPP  with covariates: 'Notebooks/PDE/Reaction_Diffusion_2D_heterogenous_model.ipynb'
           - 2D learning Ornstein Uhlenbeck pdf (RAR sampling): 'Notebooks/PDE/2D_non_stationary_OU.ipynb'
       - Inverse problems:
-        - ODE:
-          - SBINNs: 'Notebooks/ODE/systems_biology_informed_neural_network.ipynb'
         - PDE:
           - Heat equation 2D and estimation of the diffusion coefficient: 'Notebooks/PDE/2D_Heat_inverse_problem.ipynb'
           - Poisson in 2D: 'Notebooks/PDE/2D_Poisson_inverse_problem.ipynb'
@@ -119,7 +118,6 @@ nav:
       - Loss:
         - Dynamic loss: 'api/loss/dynamic_loss.md'
         - Total loss: 'api/loss/loss_xde.md'
-        - Systems: 'api/loss/systems_of_xde.md'
         - Loss weights: 'api/loss/loss_weights.md'
       - Neural Networks:
         - 'api/pinn/pinn.md'

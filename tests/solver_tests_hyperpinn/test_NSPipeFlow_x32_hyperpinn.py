@@ -58,22 +58,27 @@ def train_NSPipeFlow_init():
         method,
     )
 
+    def u_p_output_transform(pinn_in, pinn_out, params):
+        return jnp.concatenate(
+            [
+                pinn_out[0:2] * (R**2 - pinn_in[1] ** 2),
+                (pinn_in[0] - xmin) / (xmax - xmin) * p_out
+                + (xmax - pinn_in[0]) / (xmax - xmin) * p_in
+                + (xmin - pinn_in[0]) * (xmax - pinn_in[0]) * pinn_out[2:3],
+            ],
+            axis=-1,
+        )
+
     eqx_list = (
-        (eqx.nn.Linear, 2, 16),
+        (eqx.nn.Linear, 2, 50),
         (jax.nn.swish,),
-        (eqx.nn.Linear, 16, 16),
+        (eqx.nn.Linear, 50, 50),
         (jax.nn.swish,),
-        (eqx.nn.Linear, 16, 16),
+        (eqx.nn.Linear, 50, 50),
         (jax.nn.swish,),
-        (eqx.nn.Linear, 16, 16),
+        (eqx.nn.Linear, 50, 50),
         (jax.nn.swish,),
-        (eqx.nn.Linear, 16, 16),
-        (jax.nn.swish,),
-        (eqx.nn.Linear, 16, 16),
-        (jax.nn.swish,),
-        (eqx.nn.Linear, 16, 16),
-        (jax.nn.swish,),
-        (eqx.nn.Linear, 16, 3),
+        (eqx.nn.Linear, 50, 3),
     )
 
     eqx_list_hyper = (
@@ -92,61 +97,36 @@ def train_NSPipeFlow_init():
         ),  # 1000 is a random guess, it will automatically be filled with the correct value
     )
 
-    def u_output_transform(pinn_in, pinn_out, _):
-        u = pinn_out[:2] * (R**2 - pinn_in[1] ** 2)
-        return u
-
-    def p_output_transform(pinn_in, pinn_out, _):
-        p = (
-            (pinn_in[0] - xmin) / (xmax - xmin) * p_out
-            + (xmax - pinn_in[0]) / (xmax - xmin) * p_in
-            + (xmin - pinn_in[0]) * (xmax - pinn_in[0]) * pinn_out[2:3]
-        )
-        return p
-
     key, subkey = random.split(key)
     hyperparams = ["nu"]
     hypernet_input_size = 1
-    u_hyper, u_init_nn_params = jinns.nn.HyperPINN.create(
+    u_p_hyper, u_p_init_nn_params = jinns.nn.HyperPINN.create(
+        key=subkey,
+        eqx_list=eqx_list,
         eq_type="statio_PDE",
         hyperparams=hyperparams,
         hypernet_input_size=hypernet_input_size,
-        key=subkey,
-        eqx_list=eqx_list,
         eqx_list_hyper=eqx_list_hyper,
-        output_transform=u_output_transform,
-        slice_solution=jnp.s_[:2],
+        output_transform=u_p_output_transform,
     )
-    p_hyper, _ = jinns.nn.HyperPINN.create(
-        eq_type="statio_PDE",
-        hyperparams=hyperparams,
-        hypernet_input_size=hypernet_input_size,
-        key=subkey,
-        eqx_list=eqx_list,
-        eqx_list_hyper=eqx_list_hyper,
-        output_transform=p_output_transform,
-        slice_solution=jnp.s_[2],
-    )
-    p_init_nn_params = u_init_nn_params
     param_train_data, param_batch = param_train_data.get_batch()
-    init_params_hyper = jinns.parameters.ParamsDict(
-        nn_params={"u": u_init_nn_params, "p": p_init_nn_params},
+    init_params_hyper = jinns.parameters.Params(
+        nn_params=u_p_init_nn_params,
         eq_params={"rho": rho, **param_batch},
     )
 
-    mc_loss = jinns.loss.MassConservation2DStatio(nn_key="u")
-    ns_loss = jinns.loss.NavierStokes2DStatio(u_key="u", p_key="p")
+    dyn_loss = jinns.loss.NavierStokesMassConservation2DStatio()
 
-    loss_weights = jinns.loss.LossWeightsPDEDict(dyn_loss=1.0)
+    loss_weights = jinns.loss.LossWeightsPDEStatio(dyn_loss=1.0)
 
     # Catching an expected UserWarning since no border condition is given
     # for this specific PDE (Fokker-Planck).
     with pytest.warns(UserWarning):
-        loss_hyper = jinns.loss.SystemLossPDE(
-            u_dict={"u": u_hyper, "p": p_hyper},
+        loss_hyper = jinns.loss.LossPDEStatio(
+            u=u_p_hyper,
             loss_weights=loss_weights,
-            dynamic_loss_dict={"mass_conservation": mc_loss, "navier_stokes": ns_loss},
-            params_dict=init_params_hyper,
+            dynamic_loss=dyn_loss,
+            params=init_params_hyper,
         )
 
     return init_params_hyper, loss_hyper, train_data, param_train_data

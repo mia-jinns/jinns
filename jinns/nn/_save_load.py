@@ -12,7 +12,7 @@ from jinns.nn._spinn import SPINN
 from jinns.nn._mlp import PINN_MLP
 from jinns.nn._spinn_mlp import SPINN_MLP
 from jinns.nn._hyperpinn import HyperPINN
-from jinns.parameters._params import Params, ParamsDict
+from jinns.parameters._params import Params
 
 
 def function_to_string(
@@ -87,7 +87,7 @@ def string_to_function(
 def save_pinn(
     filename: str,
     u: PINN | HyperPINN | SPINN,
-    params: Params | ParamsDict,
+    params: Params,
     kwargs_creation,
 ):
     """
@@ -105,15 +105,12 @@ def save_pinn(
     tree_serialise_leaves`).
 
     Equation parameters are saved apart because the initial type of attribute
-    `params` in PINN / HyperPINN / SPINN is not `Params` nor `ParamsDict`
+    `params` in PINN / HyperPINN / SPINN is not `Params`
     but `PyTree` as inherited from `eqx.partition`.
     Therefore, if we want to ensure a proper serialization/deserialization:
     - we cannot save a `Params` object at this
       attribute field ; the `Params` object must be split into `Params.nn_params`
       (type `PyTree`) and `Params.eq_params` (type `dict`).
-    - in the case of a `ParamsDict` we cannot save `ParamsDict.nn_params` at
-      the attribute field `params` because it is not a `PyTree` (as expected in
-      the PINN / HyperPINN / SPINN signature) but it is still a dictionary.
 
     Parameters
     ----------
@@ -122,28 +119,16 @@ def save_pinn(
     u
         The PINN
     params
-        Params or ParamsDict to be save
+        Params to be saved
     kwargs_creation
         The dictionary of arguments that were used to create the PINN, e.g.
         the layers list, O/PDE type, etc.
     """
-    if isinstance(params, Params):
-        if isinstance(u, HyperPINN):
-            u = eqx.tree_at(lambda m: m.init_params_hyper, u, params)
-        elif isinstance(u, (PINN, SPINN)):
-            u = eqx.tree_at(lambda m: m.init_params, u, params)
-        eqx.tree_serialise_leaves(filename + "-module.eqx", u)
-
-    elif isinstance(params, ParamsDict):
-        for key, params_ in params.nn_params.items():
-            if isinstance(u, HyperPINN):
-                u = eqx.tree_at(lambda m: m.init_params_hyper, u, params_)
-            elif isinstance(u, (PINN, SPINN)):
-                u = eqx.tree_at(lambda m: m.init_params, u, params_)
-            eqx.tree_serialise_leaves(filename + f"-module_{key}.eqx", u)
-
-    else:
-        raise ValueError("The parameters to be saved must be a Params or a ParamsDict")
+    if isinstance(u, HyperPINN):
+        u = eqx.tree_at(lambda m: m.init_params_hyper, u, params)
+    elif isinstance(u, (PINN, SPINN)):
+        u = eqx.tree_at(lambda m: m.init_params, u, params)
+    eqx.tree_serialise_leaves(filename + "-module.eqx", u)
 
     with open(filename + "-eq_params.pkl", "wb") as f:
         pickle.dump(params.eq_params, f)
@@ -170,8 +155,7 @@ def save_pinn(
 def load_pinn(
     filename: str,
     type_: Literal["pinn_mlp", "hyperpinn", "spinn_mlp"],
-    key_list_for_paramsdict: list[str] = None,
-) -> tuple[eqx.Module, Params | ParamsDict]:
+) -> tuple[eqx.Module, Params]:
     """
     Load a PINN model. This function needs to access 3 files :
     `{filename}-module.eqx`, `{filename}-parameters.pkl` and
@@ -190,8 +174,6 @@ def load_pinn(
         Filename (prefix) without extension.
     type_
         Type of model to load. Must be in ["pinn_mlp", "hyperpinn", "spinn"].
-    key_list_for_paramsdict
-        Pass the name of the keys of the dictionnary `ParamsDict.nn_params`. Default is None. In this case, we expect to retrieve a ParamsDict.
 
     Returns
     -------
@@ -228,29 +210,17 @@ def load_pinn(
         )
     else:
         raise ValueError(f"{type_} is not valid")
-    if key_list_for_paramsdict is None:
-        # now the empty structure is populated with the actual saved array values
-        # stored in the eqx file
-        u_reloaded = eqx.tree_deserialise_leaves(
-            filename + "-module.eqx", u_reloaded_shallow
+    # now the empty structure is populated with the actual saved array values
+    # stored in the eqx file
+    u_reloaded = eqx.tree_deserialise_leaves(
+        filename + "-module.eqx", u_reloaded_shallow
+    )
+    if isinstance(u_reloaded, HyperPINN):
+        params = Params(
+            nn_params=u_reloaded.init_params_hyper, eq_params=eq_params_reloaded
         )
-        if isinstance(u_reloaded, HyperPINN):
-            params = Params(
-                nn_params=u_reloaded.init_params_hyper, eq_params=eq_params_reloaded
-            )
-        elif isinstance(u_reloaded, (PINN, SPINN)):
-            params = Params(
-                nn_params=u_reloaded.init_params, eq_params=eq_params_reloaded
-            )
+    elif isinstance(u_reloaded, (PINN, SPINN)):
+        params = Params(nn_params=u_reloaded.init_params, eq_params=eq_params_reloaded)
     else:
-        nn_params_dict = {}
-        for key in key_list_for_paramsdict:
-            u_reloaded = eqx.tree_deserialise_leaves(
-                filename + f"-module_{key}.eqx", u_reloaded_shallow
-            )
-            if isinstance(u_reloaded, HyperPINN):
-                nn_params_dict[key] = u_reloaded.init_params_hyper
-            elif isinstance(u_reloaded, (PINN, SPINN)):
-                nn_params_dict[key] = u_reloaded.init_params
-        params = ParamsDict(nn_params=nn_params_dict, eq_params=eq_params_reloaded)
+        raise ValueError("Wrong type for u_reloaded")
     return u_reloaded, params

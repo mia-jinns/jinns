@@ -18,9 +18,7 @@ if TYPE_CHECKING:
 class DataGeneratorContainer(eqx.Module):
     data: AnyDataGenerator
     param_data: DataGeneratorParameter | None = None
-    obs_data: DataGeneratorObservations | DataGeneratorObservationsMultiPINNs | None = (
-        None
-    )
+    obs_data: DataGeneratorObservations | None = None
 
 
 class ValidationContainer(eqx.Module):

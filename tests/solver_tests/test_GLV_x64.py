@@ -45,57 +45,36 @@ def train_GLV_init():
         method=method,
     )
 
-    init_nn_params_list = []
-    for _ in range(3):
-        key, subkey = random.split(key)
-        nn, init_nn_params = jinns.nn.PINN_MLP.create(
-            key=subkey, eqx_list=eqx_list, eq_type="ODE"
-        )
-        init_nn_params_list.append(init_nn_params)
+    key, subkey = random.split(key)
+    u, init_nn_params = jinns.nn.PINN_MLP.create(
+        key=subkey, eqx_list=eqx_list, eq_type="ODE"
+    )
 
     N_0 = jnp.array([10.0, 7.0, 4.0])
     growth_rates = jnp.array([0.1, 0.5, 0.8])
     carrying_capacities = jnp.array([0.04, 0.02, 0.02])
-    interactions = -jnp.array([[0, 0.001, 0.001], [0, 0.001, 0.001], [0, 0.001, 0.001]])
-
-    init_params = jinns.parameters.ParamsDict(
-        nn_params={str(i): init_nn_params_list[i] for i in range(3)},
+    interactions = (
+        -jnp.array([0, 0.001, 0.001]),
+        -jnp.array([0.001, 0, 0.001]),
+        -jnp.array([0.001, 0.001, 0]),
+    )
+    init_params = jinns.parameters.Params(
+        nn_params=init_nn_params,
         eq_params={
-            str(i): {
-                "carrying_capacity": carrying_capacities[i],
-                "growth_rate": growth_rates[i],
-                "interactions": interactions[i, :],
-            }
-            for i in range(3)
+            "carrying_capacities": carrying_capacities,
+            "growth_rates": growth_rates,
+            "interactions": interactions,
         },
     )
+    dynamic_loss = jinns.loss.GeneralizedLotkaVolterra(Tmax=Tmax)
 
-    N1_dynamic_loss = jinns.loss.GeneralizedLotkaVolterra(
-        key_main="0", keys_other=["1", "2"], Tmax=Tmax
-    )
-    N2_dynamic_loss = jinns.loss.GeneralizedLotkaVolterra(
-        key_main="1", keys_other=["0", "2"], Tmax=Tmax
-    )
-    N3_dynamic_loss = jinns.loss.GeneralizedLotkaVolterra(
-        key_main="2", keys_other=["0", "1"], Tmax=Tmax
-    )
-
-    loss_weights = jinns.loss.LossWeightsODEDict(dyn_loss=1, initial_condition=1 * Tmax)
-
-    loss = jinns.loss.SystemLossODE(
-        u_dict={"0": u, "1": u, "2": u},
+    loss_weights = jinns.loss.LossWeightsODE(dyn_loss=1, initial_condition=1 * Tmax)
+    loss = jinns.loss.LossODE(
+        u=u,
         loss_weights=loss_weights,
-        dynamic_loss_dict={
-            "0": N1_dynamic_loss,
-            "1": N2_dynamic_loss,
-            "2": N3_dynamic_loss,
-        },
-        initial_condition_dict={
-            "0": (float(tmin), N_0[0]),
-            "1": (float(tmin), N_0[1]),
-            "2": (float(tmin), N_0[2]),
-        },
-        params_dict=init_params,
+        dynamic_loss=dynamic_loss,
+        initial_condition=(float(tmin), jnp.array([N_0[0], N_0[1], N_0[2]])),
+        params=init_params,
     )
 
     return init_params, loss, train_data
@@ -134,11 +113,11 @@ def test_initial_loss_GLV(train_GLV_init):
     init_params, loss, train_data = train_GLV_init
     assert jnp.allclose(
         loss.evaluate(init_params, train_data.get_batch()[1])[0],
-        4534.86397038,
+        4770.75105231,
         atol=1e-1,
     )
 
 
 def test_10it_GLV(train_GLV_10it):
     total_loss_val = train_GLV_10it
-    assert jnp.allclose(total_loss_val, 4280.41297309, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 4571.6202204, atol=1e-1)

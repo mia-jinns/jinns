@@ -4,7 +4,6 @@ from ._DataGenerators import (
     CubicMeshPDENonStatio,
     DataGeneratorObservations,
     DataGeneratorParameter,
-    DataGeneratorObservationsMultiPINNs,
 )
 from ._Batchs import ODEBatch, PDEStatioBatch, PDENonStatioBatch
 

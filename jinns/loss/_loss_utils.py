@@ -23,7 +23,7 @@ from jinns.nn._pinn import PINN
 from jinns.nn._spinn import SPINN
 from jinns.nn._hyperpinn import HyperPINN
 from jinns.data._Batchs import *
-from jinns.parameters._params import Params, ParamsDict
+from jinns.parameters._params import Params
 
 if TYPE_CHECKING:
     from jinns.utils._types import *
@@ -37,7 +37,7 @@ def dynamic_loss_apply(
         | Float[Array, "batch_size dim"]
         | Float[Array, "batch_size 1+dim"]
     ),
-    params: Params | ParamsDict,
+    params: Params,
     vmap_axes: tuple[int | None, ...],
     loss_weight: float | Float[Array, "dyn_loss_dimension"],
     u_type: PINN | HyperPINN | None = None,
@@ -73,7 +73,7 @@ def normalization_loss_apply(
             Float[Array, "nb_norm_time_slices 1"], Float[Array, "nb_norm_samples dim"]
         ]
     ),
-    params: Params | ParamsDict,
+    params: Params,
     vmap_axes_params: tuple[int | None, ...],
     norm_weights: Float[Array, "nb_norm_samples"],
     loss_weight: float,
@@ -161,7 +161,7 @@ def normalization_loss_apply(
 def boundary_condition_apply(
     u: eqx.Module,
     batch: PDEStatioBatch | PDENonStatioBatch,
-    params: Params | ParamsDict,
+    params: Params,
     omega_boundary_fun: Callable,
     omega_boundary_condition: str,
     omega_boundary_dim: int,
@@ -229,7 +229,7 @@ def boundary_condition_apply(
 def observations_loss_apply(
     u: eqx.Module,
     batches: ODEBatch | PDEStatioBatch | PDENonStatioBatch,
-    params: Params | ParamsDict,
+    params: Params,
     vmap_axes: tuple[int | None, ...],
     observed_values: Float[Array, "batch_size observation_dim"],
     loss_weight: float | Float[Array, "observation_dim"],
@@ -263,7 +263,7 @@ def observations_loss_apply(
 def initial_condition_apply(
     u: eqx.Module,
     omega_batch: Float[Array, "dimension"],
-    params: Params | ParamsDict,
+    params: Params,
     vmap_axes: tuple[int | None, ...],
     initial_condition_fun: Callable,
     t0: Float[Array, "1"],
@@ -303,103 +303,3 @@ def initial_condition_apply(
     else:
         raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
     return mse_initial_condition
-
-
-def constraints_system_loss_apply(
-    u_constraints_dict: Dict,
-    batch: ODEBatch | PDEStatioBatch | PDENonStatioBatch,
-    params_dict: ParamsDict,
-    loss_weights: Dict[str, float | Array],
-    loss_weight_struct: PyTree,
-):
-    """
-    Same function for systemlossODE and systemlossPDE!
-    """
-    # Transpose so we have each u_dict as outer structure and the
-    # associated loss_weight as inner structure
-    loss_weights_T = jax.tree_util.tree_transpose(
-        jax.tree_util.tree_structure(loss_weight_struct),
-        jax.tree_util.tree_structure(loss_weights["initial_condition"]),
-        loss_weights,
-    )
-
-    if isinstance(params_dict.nn_params, dict):
-
-        def apply_u_constraint(
-            u_constraint, nn_params, eq_params, loss_weights_for_u, obs_batch_u
-        ):
-            res_dict_for_u = u_constraint.evaluate(
-                Params(
-                    nn_params=nn_params,
-                    eq_params=eq_params,
-                ),
-                append_obs_batch(batch, obs_batch_u),
-            )[1]
-            res_dict_ponderated = jax.tree_util.tree_map(
-                lambda w, l: w * l, res_dict_for_u, loss_weights_for_u
-            )
-            return res_dict_ponderated
-
-        # Note in the case of multiple PINNs, batch.obs_batch_dict is a dict
-        # with keys corresponding to the PINN and value correspondinf to an
-        # original obs_batch_dict. Hence the tree mapping also interates over
-        # batch.obs_batch_dict
-        res_dict = jax.tree_util.tree_map(
-            apply_u_constraint,
-            u_constraints_dict,
-            params_dict.nn_params,
-            (
-                params_dict.eq_params
-                if params_dict.eq_params.keys() == params_dict.nn_params.keys()
-                else {k: params_dict.eq_params for k in params_dict.nn_params.keys()}
-            ),  # this manipulation is needed since we authorize eq_params not to have the same structure as nn_params in ParamsDict
-            loss_weights_T,
-            batch.obs_batch_dict,
-            is_leaf=lambda x: (
-                not isinstance(x, dict)  # to not traverse more than the first
-                # outer dict of the pytrees passed to the function. This will
-                # work because u_constraints_dict is a dict of Losses, and it
-                # thus stops the traversing of other dict too
-            ),
-        )
-    # TODO try to get rid of this condition?
-    else:
-
-        def apply_u_constraint(u_constraint, loss_weights_for_u, obs_batch_u):
-            res_dict_for_u = u_constraint.evaluate(
-                params_dict,
-                append_obs_batch(batch, obs_batch_u),
-            )[1]
-            res_dict_ponderated = jax.tree_util.tree_map(
-                lambda w, l: w * l, res_dict_for_u, loss_weights_for_u
-            )
-            return res_dict_ponderated
-
-        res_dict = jax.tree_util.tree_map(
-            apply_u_constraint, u_constraints_dict, loss_weights_T, batch.obs_batch_dict
-        )
-
-    # Transpose back so we have mses as outer structures and their values
-    # for each u_dict as inner structures. The tree_leaves transforms the
-    # inner structure into a list so we can catch is as leaf it the
-    # tree_map below
-    res_dict = jax.tree_util.tree_transpose(
-        jax.tree_util.tree_structure(
-            jax.tree_util.tree_leaves(loss_weights["initial_condition"])
-        ),
-        jax.tree_util.tree_structure(loss_weight_struct),
-        res_dict,
-    )
-    # For each mse, sum their values on each u_dict
-    res_dict = jax.tree_util.tree_map(
-        lambda mse: jax.tree_util.tree_reduce(
-            lambda x, y: x + y, jax.tree_util.tree_leaves(mse)
-        ),
-        res_dict,
-        is_leaf=lambda x: isinstance(x, list),
-    )
-    # Total loss
-    total_loss = jax.tree_util.tree_reduce(
-        lambda x, y: x + y, jax.tree_util.tree_leaves(res_dict)
-    )
-    return total_loss, res_dict

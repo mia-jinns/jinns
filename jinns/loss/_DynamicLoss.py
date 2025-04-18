@@ -32,7 +32,7 @@ from jinns.loss._operators import (
 from jaxtyping import Array, Float
 
 if TYPE_CHECKING:
-    from jinns.parameters import Params, ParamsDict
+    from jinns.parameters import Params
 
 
 class FisherKPP(PDENonStatio):
@@ -108,14 +108,14 @@ class FisherKPP(PDENonStatio):
 class GeneralizedLotkaVolterra(ODE):
     r"""
     Return a dynamic loss from an equation of a Generalized Lotka Volterra
-    system. Say we implement the equation for population $i$
+    system. Say we implement the system of equations, for several populations $i$
 
     $$
-        \frac{\partial}{\partial t}u_i(t) = r_iu_i(t) - \sum_{j\neq i}\alpha_{ij}u_j(t)
-        -\alpha_{i,i}u_i(t) + c_iu_i(t) + \sum_{j \neq i} c_ju_j(t)
+    \frac{\partial}{\partial t}u_i(t) = \alpha_iu_i(t)
+    -\sum_j\gamma_{j,i}u_j(t) - \beta_i\sum_{i'}u_{i'}(t), i\in\{1, 2, 3\}
     $$
-    with $r_i$ the growth rate parameter, $c_i$ the carrying
-    capacities and $\alpha_{ij}$ the interaction terms.
+
+    where $\alpha$ are the growth rates, $\gamma$ are the interactions terms and $\beta$ and the capacity terms.
 
     Parameters
     ----------
@@ -142,15 +142,11 @@ class GeneralizedLotkaVolterra(ODE):
         heterogeneity for no parameters.
     """
 
-    # they should be static because they are list of strings
-    key_main: list[str] = eqx.field(static=True)
-    keys_other: list[str] = eqx.field(static=True)
-
     def equation(
         self,
         t: Float[Array, "1"],
-        u_dict: Dict[str, eqx.Module],
-        params_dict: ParamsDict,
+        u: eqx.Module,
+        params: Params,
     ) -> Float[Array, "1"]:
         """
         Evaluate the dynamic loss at `t`.
@@ -160,33 +156,23 @@ class GeneralizedLotkaVolterra(ODE):
         ---------
         t
             A time point
-        u_dict
-            A dictionary of PINNS. Must have the same keys as `params_dict`
-        params_dict
-            The dictionary of dictionaries of parameters of the model. Keys at
-            top level are "nn_params" and "eq_params"
+        u
+            A vectorial PINN with as many outputs as there are populations
+        params
+            The parameters in a Params object
         """
-        params_main = params_dict.extract_params(self.key_main)
-
-        u = u_dict[self.key_main]
-        # need to index with [0] since u output is nec (1,)
-        du_dt = grad(lambda t: jnp.log(u(t, params_main)[0]), 0)(t)
-        carrying_term = params_main.eq_params["carrying_capacity"] * u(t, params_main)
-        # NOTE the following assumes interaction term with oneself is at idx 0
-        interaction_terms = params_main.eq_params["interactions"][0] * u(t, params_main)
-
-        # TODO write this for loop with tree_util functions?
-        for i, k in enumerate(self.keys_other):
-            params_k = params_dict.extract_params(k)
-            carrying_term += params_main.eq_params["carrying_capacity"] * u_dict[k](
-                t, params_k
-            )
-            interaction_terms += params_main.eq_params["interactions"][i + 1] * u_dict[
-                k
-            ](t, params_k)
-
-        return du_dt + self.Tmax * (
-            -params_main.eq_params["growth_rate"] - interaction_terms + carrying_term
+        du_dt = jax.jacrev(lambda t: jnp.log(u(t, params)))(t)
+        carrying_term = params.eq_params["carrying_capacities"] * jnp.sum(u(t, params))
+        interactions_terms = jax.tree.map(
+            lambda interactions_for_i: jnp.sum(
+                interactions_for_i * u(t, params).squeeze()
+            ),
+            params.eq_params["interactions"],
+            is_leaf=eqx.is_array,
+        )
+        interactions_terms = jnp.array([*(interactions_terms)])
+        return du_dt.squeeze() + self.Tmax * (
+            -params.eq_params["growth_rates"] + interactions_terms + carrying_term
         )
 
 
@@ -514,86 +500,25 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
         )
 
 
-class MassConservation2DStatio(PDEStatio):
+class NavierStokesMassConservation2DStatio(PDEStatio):
     r"""
-    Returns the so-called mass conservation equation.
+    Dynamic loss for the system of equations (stationary Navier Stokes in 2D,
+    mass conservation). For a 2D velocity field $\mathbf{u}$ and a 1D pressure
+    field $p$, this reads:
 
     $$
-        \nabla \cdot \mathbf{u} = \frac{\partial}{\partial x}u(x,y) +
-        \frac{\partial}{\partial y}u(x,y) = 0,
-    $$
-    where $u$ is a stationary function, i.e., it does not depend on
-    $t$.
-
-    Parameters
-    ----------
-    nn_key
-        A dictionary key which identifies, in `u_dict` the PINN that
-        appears in the mass conservation equation.
-    eq_params_heterogeneity
-        Default None. A dict with the keys being the same as in eq_params
-        and the value being `time`, `space`, `both` or None which corresponds to
-        the heterogeneity of a given parameter. A value can be missing, in
-        this case there is no heterogeneity (=None). If
-        eq_params_heterogeneity is None this means there is no
-        heterogeneity for no parameters.
-    """
-
-    # an str field should be static (not a valid JAX type)
-    nn_key: str = eqx.field(static=True)
-
-    def equation(
-        self,
-        x: Float[Array, "dim"],
-        u_dict: Dict[str, eqx.Module],
-        params_dict: ParamsDict,
-    ) -> Float[Array, "1"]:
-        r"""
-        Evaluate the dynamic loss at `\mathbf{x}`.
-        For stability we implement the dynamic loss in log space.
-
-        Parameters
-        ---------
-        x
-            A point in $\Omega\subset\mathbb{R}^2$
-        u_dict
-            A dictionary of PINNs. Must have the same keys as `params_dict`
-        params_dict
-            The dictionary of dictionaries of parameters of the model.
-            Typically, each sub-dictionary is a dictionary
-            with keys: `eq_params` and `nn_params`, respectively the
-            differential equation parameters and the neural network parameter.
-            Must have the same keys as `u_dict`
-        """
-        params = params_dict.extract_params(self.nn_key)
-
-        if isinstance(u_dict[self.nn_key], PINN):
-            u = u_dict[self.nn_key]
-
-            return divergence_rev(x, u, params)[..., None]
-
-        if isinstance(u_dict[self.nn_key], SPINN):
-            u = u_dict[self.nn_key]
-
-            return divergence_fwd(x, u, params)[..., None]
-        raise ValueError("u is not among the recognized types (PINN or SPINN)")
-
-
-class NavierStokes2DStatio(PDEStatio):
-    r"""
-    Return the dynamic loss for all the components of the stationary Navier Stokes
-    equation which is a 2D vectorial PDE.
-
-    $$
-       (\mathbf{u}\cdot\nabla)\mathbf{u} + \frac{1}{\rho}\nabla p - \theta
-       \nabla^2\mathbf{u}=0,
+    \begin{cases}
+       &(\mathbf{u}\cdot\nabla)\mathbf{u} + \frac{1}{\rho}\nabla p - \theta
+       \nabla^2\mathbf{u}=0,\\
+       &\nabla\cdot\mathbf{u}=0,
+    \end{cases}
     $$
 
     or, in 2D,
 
-
     $$
-        \begin{pmatrix}u_x\frac{\partial}{\partial x} u_x +
+    \begin{cases}
+        &\begin{pmatrix}u_x\frac{\partial}{\partial x} u_x +
         u_y\frac{\partial}{\partial y} u_x, \\
         u_x\frac{\partial}{\partial x} u_y + u_y\frac{\partial}{\partial y} u_y  \end{pmatrix} +
         \frac{1}{\rho} \begin{pmatrix} \frac{\partial}{\partial x} p, \\ \frac{\partial}{\partial y} p \end{pmatrix}
@@ -602,24 +527,15 @@ class NavierStokes2DStatio(PDEStatio):
         \frac{\partial^2}{\partial x^2} u_x + \frac{\partial^2}{\partial y^2}
         u_x, \\
         \frac{\partial^2}{\partial x^2} u_y + \frac{\partial^2}{\partial y^2} u_y
-        \end{pmatrix} = 0,
+        \end{pmatrix} = 0,\\
+        &\frac{\partial}{\partial x}u(x,y) +
+        \frac{\partial}{\partial y}u(x,y) = 0,
+    \end{cases}
     $$
     with $\theta$ the viscosity coefficient and $\rho$ the density coefficient.
 
     Parameters
     ----------
-    u_key
-        A dictionary key which indices the NN u in `u_dict`
-        the PINN with the role of the velocity in the equation.
-        Its input is bimensional (points in $\Omega\subset\mathbb{R}^2$).
-        Its output is bimensional as it represents a velocity vector
-        field
-    p_key
-        A dictionary key which indices the NN p in `u_dict`
-        the PINN with the role of the pressure in the equation.
-        Its input is bimensional (points in $\Omega\subset\mathbb{R}^2).
-        Its output is unidimensional as it represents a pressure scalar
-        field
     eq_params_heterogeneity
         Default None. A dict with the keys being the same as in eq_params
         and the value being `time`, `space`, `both` or None which corresponds to
@@ -629,15 +545,12 @@ class NavierStokes2DStatio(PDEStatio):
         heterogeneity for no parameters.
     """
 
-    u_key: str = eqx.field(static=True)
-    p_key: str = eqx.field(static=True)
-
     def equation(
         self,
         x: Float[Array, "dim"],
-        u_dict: Dict[str, eqx.Module],
-        params_dict: ParamsDict,
-    ) -> Float[Array, "1"]:
+        u_p: eqx.Module,
+        params: Params,
+    ) -> Float[Array, "3"]:
         r"""
         Evaluate the dynamic loss at `x`.
         For stability we implement the dynamic loss in log space.
@@ -646,72 +559,83 @@ class NavierStokes2DStatio(PDEStatio):
         ---------
         x
             A point in $\Omega\subset\mathbb{R}^2$
-        u_dict
-            A dictionary of PINNs. Must have the same keys as `params_dict`
-        params_dict
-            The dictionary of dictionaries of parameters of the model.
-            Typically, each sub-dictionary is a dictionary
-            with keys: `eq_params` and `nn_params`, respectively the
-            differential equation parameters and the neural network parameter.
-            Must have the same keys as `u_dict`
+        u_p
+            A PINN with 3 outputs of the 2D velocity field and the 1D pressure
+            field
+        params
+            The parameters in a Params object
         """
-        u_params = params_dict.extract_params(self.u_key)
-        p_params = params_dict.extract_params(self.p_key)
 
-        if isinstance(u_dict[self.u_key], PINN):
-            u = u_dict[self.u_key]
+        if isinstance(u_p, PINN):
+            u = lambda x, params: u_p(x, params)[0:2]
+            p = lambda x, params: u_p(x, params)[2:3]
 
-            u_dot_nabla_x_u = _u_dot_nabla_times_u_rev(x, u, u_params)
+            # NAVIER STOKES
+            u_dot_nabla_x_u = _u_dot_nabla_times_u_rev(x, u, params)
 
-            p = lambda x: u_dict[self.p_key](x, p_params)
-            jac_p = jax.jacrev(p, 0)(x)  # compute the gradient
+            jac_p = jax.jacrev(p, 0)(x, params)  # compute the gradient
 
-            vec_laplacian_u = vectorial_laplacian_rev(x, u, u_params, dim_out=2)
+            vec_laplacian_u = vectorial_laplacian_rev(
+                x, u, params, dim_out=2, eq_type=u_p.eq_type
+            )
 
             # dynamic loss on x axis
             result_x = (
                 u_dot_nabla_x_u[0]
-                + 1 / params_dict.eq_params["rho"] * jac_p[0, 0]
-                - params_dict.eq_params["nu"] * vec_laplacian_u[0]
+                + 1 / params.eq_params["rho"] * jac_p[0, 0]
+                - params.eq_params["nu"] * vec_laplacian_u[0]
             )
 
             # dynamic loss on y axis
             result_y = (
                 u_dot_nabla_x_u[1]
-                + 1 / params_dict.eq_params["rho"] * jac_p[0, 1]
-                - params_dict.eq_params["nu"] * vec_laplacian_u[1]
+                + 1 / params.eq_params["rho"] * jac_p[0, 1]
+                - params.eq_params["nu"] * vec_laplacian_u[1]
             )
 
-            # output is 2D
-            return jnp.stack([result_x, result_y], axis=-1)
+            # MASS CONVERVATION
 
-        if isinstance(u_dict[self.u_key], SPINN):
-            u = u_dict[self.u_key]
+            mc = divergence_rev(x, u, params, eq_type=u_p.eq_type)
 
-            u_dot_nabla_x_u = _u_dot_nabla_times_u_fwd(x, u, u_params)
+            # output is 3D
+            print(mc.shape)
+            if mc.ndim == 0 and not result_x.ndim == 0:
+                mc = mc[None]
+            print(result_x.shape, result_y.shape, mc.shape)
+            return jnp.stack([result_x, result_y, mc], axis=-1)
 
-            p = lambda x: u_dict[self.p_key](x, p_params)
+        if isinstance(u_p, SPINN):
+            u = lambda x, params: u_p(x, params)[..., 0:2]
+            p = lambda x: u_p(x, params)[..., 2:3]
+
+            # NAVIER STOKES
+            u_dot_nabla_x_u = _u_dot_nabla_times_u_fwd(x, u, params)
 
             tangent_vec_0 = jnp.repeat(jnp.array([1.0, 0.0])[None], x.shape[0], axis=0)
             _, dp_dx = jax.jvp(p, (x,), (tangent_vec_0,))
             tangent_vec_1 = jnp.repeat(jnp.array([0.0, 1.0])[None], x.shape[0], axis=0)
             _, dp_dy = jax.jvp(p, (x,), (tangent_vec_1,))
 
-            vec_laplacian_u = vectorial_laplacian_fwd(x, u, u_params, dim_out=2)
+            vec_laplacian_u = vectorial_laplacian_fwd(
+                x, u, params, dim_out=2, eq_type=u_p.eq_type
+            )
 
             # dynamic loss on x axis
             result_x = (
                 u_dot_nabla_x_u[..., 0]
-                + 1 / params_dict.eq_params["rho"] * dp_dx.squeeze()
-                - params_dict.eq_params["nu"] * vec_laplacian_u[..., 0]
+                + 1 / params.eq_params["rho"] * dp_dx.squeeze()
+                - params.eq_params["nu"] * vec_laplacian_u[..., 0]
             )
             # dynamic loss on y axis
             result_y = (
                 u_dot_nabla_x_u[..., 1]
-                + 1 / params_dict.eq_params["rho"] * dp_dy.squeeze()
-                - params_dict.eq_params["nu"] * vec_laplacian_u[..., 1]
+                + 1 / params.eq_params["rho"] * dp_dy.squeeze()
+                - params.eq_params["nu"] * vec_laplacian_u[..., 1]
             )
 
-            # output is 2D
-            return jnp.stack([result_x, result_y], axis=-1)
+            # MASS CONVERVATION
+            mc = divergence_fwd(x, u, params, eq_type=u_p.eq_type)[..., None]
+
+            # output is (..., 3)
+            return jnp.stack([result_x[..., None], result_y[..., None], mc], axis=-1)
         raise ValueError("u is not among the recognized types (PINN or SPINN)")

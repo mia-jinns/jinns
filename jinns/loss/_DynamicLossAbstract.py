@@ -16,7 +16,7 @@ import abc
 # See : https://docs.kidger.site/equinox/api/module/advanced_fields/#equinox.AbstractClassVar--known-issues
 if TYPE_CHECKING:
     from typing import ClassVar as AbstractClassVar
-    from jinns.parameters import Params, ParamsDict
+    from jinns.parameters import Params
 else:
     from equinox import AbstractClassVar
 
@@ -81,7 +81,7 @@ class DynamicLoss(eqx.Module):
         self,
         inputs: Float[Array, "1"] | Float[Array, "dim"] | Float[Array, "1+dim"],
         u: eqx.Module,
-        params: Params | ParamsDict,
+        params: Params,
         eq_params_heterogeneity: Dict[str, Callable | None] = None,
     ) -> Dict[str, float | Float[Array, "parameter_dimension"]]:
         eq_params_ = {}
@@ -103,7 +103,7 @@ class DynamicLoss(eqx.Module):
         self,
         inputs: Float[Array, "1"] | Float[Array, "dim"] | Float[Array, "1+dim"],
         u: eqx.Module,
-        params: Params | ParamsDict,
+        params: Params,
     ) -> float:
         evaluation = self.equation(inputs, u, params)
         if len(evaluation.shape) == 0:
@@ -152,15 +152,13 @@ class ODE(DynamicLoss):
         self,
         t: Float[Array, "1"],
         u: eqx.Module | Dict[str, eqx.Module],
-        params: Params | ParamsDict,
+        params: Params,
     ) -> float:
         """Here we call DynamicLoss._evaluate with x=None"""
         return self._evaluate(t, u, params)
 
     @abc.abstractmethod
-    def equation(
-        self, t: Float[Array, "1"], u: eqx.Module, params: Params | ParamsDict
-    ) -> float:
+    def equation(self, t: Float[Array, "1"], u: eqx.Module, params: Params) -> float:
         r"""
         The differential operator defining the ODE.
 
@@ -174,7 +172,7 @@ class ODE(DynamicLoss):
             A 1-dimensional jnp.array representing the time point.
         u : eqx.Module
             The network with a call signature `u(t, params)`.
-        params : Params | ParamsDict
+        params : Params
             The equation and neural network parameters $\theta$ and $\nu$.
 
         Returns
@@ -218,15 +216,13 @@ class PDEStatio(DynamicLoss):
 
     @partial(_decorator_heteregeneous_params)
     def evaluate(
-        self, x: Float[Array, "dimension"], u: eqx.Module, params: Params | ParamsDict
+        self, x: Float[Array, "dimension"], u: eqx.Module, params: Params
     ) -> float:
         """Here we call the DynamicLoss._evaluate with t=None"""
         return self._evaluate(x, u, params)
 
     @abc.abstractmethod
-    def equation(
-        self, x: Float[Array, "d"], u: eqx.Module, params: Params | ParamsDict
-    ) -> float:
+    def equation(self, x: Float[Array, "d"], u: eqx.Module, params: Params) -> float:
         r"""The differential operator defining the stationnary PDE.
 
         !!! warning
@@ -239,7 +235,7 @@ class PDEStatio(DynamicLoss):
             A `d` dimensional jnp.array representing a point in the spatial domain $\Omega$.
         u : eqx.Module
             The neural network.
-        params : Params | ParamsDict
+        params : Params
             The parameters of the equation and the networks, $\theta$ and $\nu$ respectively.
 
         Returns
@@ -286,7 +282,7 @@ class PDENonStatio(DynamicLoss):
         self,
         t_x: Float[Array, "1 + dim"],
         u: eqx.Module,
-        params: Params | ParamsDict,
+        params: Params,
     ) -> float:
         """Here we call the DynamicLoss._evaluate with full arguments"""
         ans = self._evaluate(t_x, u, params)
@@ -297,7 +293,7 @@ class PDENonStatio(DynamicLoss):
         self,
         t_x: Float[Array, "1 + dim"],
         u: eqx.Module,
-        params: Params | ParamsDict,
+        params: Params,
     ) -> float:
         r"""The differential operator defining the non-stationnary PDE.
 
@@ -311,7 +307,7 @@ class PDENonStatio(DynamicLoss):
             A jnp array containing the concatenation of a time point and a point in $\Omega$
         u : eqx.Module
             The neural network.
-        params : Params | ParamsDict
+        params : Params
             The parameters of the equation and the networks, $\theta$ and $\nu$ respectively.
         Returns
         -------

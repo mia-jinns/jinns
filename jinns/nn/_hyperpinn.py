@@ -15,7 +15,7 @@ import numpy as onp
 
 from jinns.nn._pinn import PINN
 from jinns.nn._mlp import MLP
-from jinns.parameters._params import Params, ParamsDict
+from jinns.parameters._params import Params
 
 
 def _get_param_nb(
@@ -145,7 +145,7 @@ class HyperPINN(PINN):
     def __call__(
         self,
         inputs: Float[Array, "input_dim"],
-        params: Params | ParamsDict | PyTree,
+        params: Params | PyTree,
         *args,
         **kwargs,
     ) -> Float[Array, "output_dim"]:
