@@ -500,86 +500,25 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
         )
 
 
-class MassConservation2DStatio(PDEStatio):
-    r"""
-    Returns the so-called mass conservation equation.
-
-    $$
-        \nabla \cdot \mathbf{u} = \frac{\partial}{\partial x}u(x,y) +
-        \frac{\partial}{\partial y}u(x,y) = 0,
-    $$
-    where $u$ is a stationary function, i.e., it does not depend on
-    $t$.
-
-    Parameters
-    ----------
-    nn_key
-        A dictionary key which identifies, in `u_dict` the PINN that
-        appears in the mass conservation equation.
-    eq_params_heterogeneity
-        Default None. A dict with the keys being the same as in eq_params
-        and the value being `time`, `space`, `both` or None which corresponds to
-        the heterogeneity of a given parameter. A value can be missing, in
-        this case there is no heterogeneity (=None). If
-        eq_params_heterogeneity is None this means there is no
-        heterogeneity for no parameters.
-    """
-
-    # an str field should be static (not a valid JAX type)
-    nn_key: str = eqx.field(static=True)
-
-    def equation(
-        self,
-        x: Float[Array, "dim"],
-        u_dict: Dict[str, eqx.Module],
-        params_dict: ParamsDict,
-    ) -> Float[Array, "1"]:
-        r"""
-        Evaluate the dynamic loss at `\mathbf{x}`.
-        For stability we implement the dynamic loss in log space.
-
-        Parameters
-        ---------
-        x
-            A point in $\Omega\subset\mathbb{R}^2$
-        u_dict
-            A dictionary of PINNs. Must have the same keys as `params_dict`
-        params_dict
-            The dictionary of dictionaries of parameters of the model.
-            Typically, each sub-dictionary is a dictionary
-            with keys: `eq_params` and `nn_params`, respectively the
-            differential equation parameters and the neural network parameter.
-            Must have the same keys as `u_dict`
-        """
-        params = params_dict.extract_params(self.nn_key)
-
-        if isinstance(u_dict[self.nn_key], PINN):
-            u = u_dict[self.nn_key]
-
-            return divergence_rev(x, u, params)[..., None]
-
-        if isinstance(u_dict[self.nn_key], SPINN):
-            u = u_dict[self.nn_key]
-
-            return divergence_fwd(x, u, params)[..., None]
-        raise ValueError("u is not among the recognized types (PINN or SPINN)")
-
-
 class NavierStokesMassConservation2DStatio(PDEStatio):
     r"""
-    Return the dynamic loss for all the components of the stationary Navier Stokes
-    equation which is a 2D vectorial PDE.
+    Dynamic loss for the system of equations (stationary Navier Stokes in 2D,
+    mass conservation). For a 2D velocity field $\mathbf{u}$ and a 1D pressure
+    field $p$, this reads:
 
     $$
-       (\mathbf{u}\cdot\nabla)\mathbf{u} + \frac{1}{\rho}\nabla p - \theta
-       \nabla^2\mathbf{u}=0,
+    \begin{cases}
+       &(\mathbf{u}\cdot\nabla)\mathbf{u} + \frac{1}{\rho}\nabla p - \theta
+       \nabla^2\mathbf{u}=0,\\
+       &\nabla\cdot\mathbf{u}=0,
+    \end{cases}
     $$
 
     or, in 2D,
 
-
     $$
-        \begin{pmatrix}u_x\frac{\partial}{\partial x} u_x +
+    \begin{cases}
+        &\begin{pmatrix}u_x\frac{\partial}{\partial x} u_x +
         u_y\frac{\partial}{\partial y} u_x, \\
         u_x\frac{\partial}{\partial x} u_y + u_y\frac{\partial}{\partial y} u_y  \end{pmatrix} +
         \frac{1}{\rho} \begin{pmatrix} \frac{\partial}{\partial x} p, \\ \frac{\partial}{\partial y} p \end{pmatrix}
@@ -588,7 +527,10 @@ class NavierStokesMassConservation2DStatio(PDEStatio):
         \frac{\partial^2}{\partial x^2} u_x + \frac{\partial^2}{\partial y^2}
         u_x, \\
         \frac{\partial^2}{\partial x^2} u_y + \frac{\partial^2}{\partial y^2} u_y
-        \end{pmatrix} = 0,
+        \end{pmatrix} = 0,\\
+        &\frac{\partial}{\partial x}u(x,y) +
+        \frac{\partial}{\partial y}u(x,y) = 0,
+    \end{cases}
     $$
     with $\theta$ the viscosity coefficient and $\rho$ the density coefficient.
 
@@ -655,36 +597,41 @@ class NavierStokesMassConservation2DStatio(PDEStatio):
 
             mc = divergence_rev(x, u, params, eq_type=u_p.eq_type)
 
-            # output is 2D
+            # output is 3D
             return jnp.stack([result_x, result_y, mc], axis=-1)
 
-        if isinstance(u_dict[self.u_key], SPINN):
-            u = u_dict[self.u_key]
+        if isinstance(u_p, SPINN):
+            u = lambda x, params: u_p(x, params)[..., 0:2]
+            p = lambda x: u_p(x, params)[..., 2:3]
 
-            u_dot_nabla_x_u = _u_dot_nabla_times_u_fwd(x, u, u_params)
-
-            p = lambda x: u_dict[self.p_key](x, p_params)
+            # NAVIER STOKES
+            u_dot_nabla_x_u = _u_dot_nabla_times_u_fwd(x, u, params)
 
             tangent_vec_0 = jnp.repeat(jnp.array([1.0, 0.0])[None], x.shape[0], axis=0)
             _, dp_dx = jax.jvp(p, (x,), (tangent_vec_0,))
             tangent_vec_1 = jnp.repeat(jnp.array([0.0, 1.0])[None], x.shape[0], axis=0)
             _, dp_dy = jax.jvp(p, (x,), (tangent_vec_1,))
 
-            vec_laplacian_u = vectorial_laplacian_fwd(x, u, u_params, dim_out=2)
+            vec_laplacian_u = vectorial_laplacian_fwd(
+                x, u, params, dim_out=2, eq_type=u_p.eq_type
+            )
 
             # dynamic loss on x axis
             result_x = (
                 u_dot_nabla_x_u[..., 0]
-                + 1 / params_dict.eq_params["rho"] * dp_dx.squeeze()
-                - params_dict.eq_params["nu"] * vec_laplacian_u[..., 0]
+                + 1 / params.eq_params["rho"] * dp_dx.squeeze()
+                - params.eq_params["nu"] * vec_laplacian_u[..., 0]
             )
             # dynamic loss on y axis
             result_y = (
                 u_dot_nabla_x_u[..., 1]
-                + 1 / params_dict.eq_params["rho"] * dp_dy.squeeze()
-                - params_dict.eq_params["nu"] * vec_laplacian_u[..., 1]
+                + 1 / params.eq_params["rho"] * dp_dy.squeeze()
+                - params.eq_params["nu"] * vec_laplacian_u[..., 1]
             )
 
-            # output is 2D
-            return jnp.stack([result_x, result_y], axis=-1)
+            # MASS CONVERVATION
+            mc = divergence_fwd(x, u, params, eq_type=u_p.eq_type)[..., None]
+
+            # output is (..., 3)
+            return jnp.stack([result_x[..., None], result_y[..., None], mc], axis=-1)
         raise ValueError("u is not among the recognized types (PINN or SPINN)")
