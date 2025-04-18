@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
 
 def dynamic_loss_apply(
-    dyn_loss: DynamicLoss,
+    dyn_loss: Callable,
     u: eqx.Module,
     batch: (
         Float[Array, "batch_size 1"]
