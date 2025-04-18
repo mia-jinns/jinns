@@ -27,11 +27,7 @@
             - equation
         heading_level: 3
 
-::: jinns.loss.MassConservation2DStatio
-    options:
-      heading_level: 3
-
-::: jinns.loss.NavierStokes2DStatio
+::: jinns.loss.NavierStokesMassConservation2DStatio
     options:
       heading_level: 3
 
