@@ -12,7 +12,6 @@ if TYPE_CHECKING:
         LossPDENonStatio,
     )
 
-    from jinns.loss._LossODE import LossODE
     from jinns.parameters._params import Params
     from jinns.data._DataGenerators import (
         DataGeneratorODE,
@@ -31,8 +30,6 @@ if TYPE_CHECKING:
     from jinns.utils._containers import *
     from jinns.validation._validation import AbstractValidationModule
 
-    AnyLoss: TypeAlias = LossPDEStatio | LossPDENonStatio | LossODE
-
     AnyParams: TypeAlias = Params
 
     AnyDataGenerator: TypeAlias = (
@@ -42,15 +39,13 @@ if TYPE_CHECKING:
     AnyPINN: TypeAlias = PINN | HyperPINN | SPINN
 
     AnyBatch: TypeAlias = ODEBatch | PDEStatioBatch | PDENonStatioBatch
-    rar_operands = NewType(
-        "rar_operands", tuple[AnyLoss, AnyParams, AnyDataGenerator, Int]
-    )
+    rar_operands = NewType("rar_operands", tuple[Any, AnyParams, AnyDataGenerator, Int])
 
     main_carry = NewType(
         "main_carry",
         tuple[
             Int,
-            AnyLoss,
+            Any,
             OptimizationContainer,
             OptimizationExtraContainer,
             DataGeneratorContainer,
