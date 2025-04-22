@@ -6,9 +6,10 @@ import jax.numpy as jnp
 import equinox as eqx
 
 from jinns.parameters._params import Params
+from jinns.nn._abstract_pinn import AbstractPINN
 
 
-class SPINN(eqx.Module):
+class SPINN(AbstractPINN):
     """
     A Separable PINN object compatible with the rest of jinns.
 

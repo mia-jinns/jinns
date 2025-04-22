@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 
     from jinns.loss import DynamicLoss
     from jinns.data._Batchs import *
+    from jinns.nn._abstract_pinn import AbstractPINN
     from jinns.nn._pinn import PINN
     from jinns.nn._hyperpinn import HyperPINN
     from jinns.nn._spinn_mlp import SPINN

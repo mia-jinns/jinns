@@ -8,9 +8,10 @@ import equinox as eqx
 from jaxtyping import Float, Array, PyTree
 import jax.numpy as jnp
 from jinns.parameters._params import Params
+from jinns.nn._abstract_pinn import AbstractPINN
 
 
-class PINN(eqx.Module):
+class PINN(AbstractPINN):
     r"""
     Base class for PINN objects. It can be seen as a wrapper on
     an `eqx.Module` which actually implement the NN architectures, with extra

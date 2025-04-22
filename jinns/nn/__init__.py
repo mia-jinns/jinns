@@ -1,4 +1,5 @@
 from ._save_load import save_pinn, load_pinn
+from ._abstract_pinn import AbstractPINN
 from ._pinn import PINN
 from ._spinn import SPINN
 from ._mlp import PINN_MLP, MLP
