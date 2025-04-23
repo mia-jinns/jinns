@@ -7,8 +7,9 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 import abc
-from dataclasses import InitVar, fields
+from dataclasses import InitVar
 from typing import TYPE_CHECKING, Dict, Callable
+from types import EllipsisType
 import warnings
 import jax
 import jax.numpy as jnp
@@ -21,7 +22,6 @@ from jinns.loss._loss_utils import (
     observations_loss_apply,
     initial_condition_apply,
 )
-from jinns.data._DataGenerators import append_obs_batch
 from jinns.parameters._params import (
     _get_vmap_in_axes_params,
     _update_eq_params_dict,
@@ -35,9 +35,6 @@ from jinns.loss._loss_weights import (
     LossWeightsPDEStatio,
     LossWeightsPDENonStatio,
 )
-from jinns.loss._DynamicLossAbstract import PDEStatio, PDENonStatio
-from jinns.nn._pinn import PINN
-from jinns.nn._spinn import SPINN
 from jinns.data._Batchs import PDEStatioBatch, PDENonStatioBatch
 
 
@@ -52,7 +49,7 @@ _IMPLEMENTED_BOUNDARY_CONDITIONS = [
 
 
 class _LossPDEAbstract(eqx.Module):
-    """
+    r"""
     Parameters
     ----------
 
@@ -100,10 +97,10 @@ class _LossPDEAbstract(eqx.Module):
         Alternatively, the user can pass a float or an integer.
         These corresponds to the weights $w_k = \frac{1}{q(x_k)}$ where
         $q(\cdot)$ is the proposal p.d.f. and $x_k$ are the Monte-Carlo samples.
-    obs_slice : slice, default=None
+    obs_slice : EllipsisType | slice, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
-    params : InitVar[Params], default=None
+    params : InitVar[Params[Array | int]], default=None
         The main Params object of the problem needed to instanciate the
         DerivativeKeysODE if the latter is not specified.
     """
@@ -132,11 +129,13 @@ class _LossPDEAbstract(eqx.Module):
     norm_weights: Float[Array, "nb_norm_samples"] | float | int | None = eqx.field(
         kw_only=True, default=None
     )
-    obs_slice: slice | None = eqx.field(kw_only=True, default=None, static=True)
+    obs_slice: EllipsisType | slice | None = eqx.field(
+        kw_only=True, default=None, static=True
+    )
 
-    params: InitVar[Params] = eqx.field(kw_only=True, default=None)
+    params: InitVar[Params[Array | int]] = eqx.field(kw_only=True, default=None)
 
-    def __post_init__(self, params=None):
+    def __post_init__(self, params: Params[Array | int] | None = None):
         """
         Note that neither __init__ or __post_init__ are called when udating a
         Module with eqx.tree_at
@@ -226,6 +225,11 @@ class _LossPDEAbstract(eqx.Module):
                         )
 
         if isinstance(self.omega_boundary_fun, dict):
+            if not isinstance(self.omega_boundary_dim, dict):
+                raise ValueError(
+                    "If omega_boundary_fun is a dict then"
+                    " omega_boundary_dim should also be a dict"
+                )
             if self.omega_boundary_dim is None:
                 self.omega_boundary_dim = {
                     k: jnp.s_[::] for k in self.omega_boundary_fun.keys()
@@ -260,20 +264,19 @@ class _LossPDEAbstract(eqx.Module):
                 raise ValueError(
                     "`norm_weights` must be provided when `norm_samples` is used!"
                 )
-            try:
-                assert self.norm_weights.shape[0] == self.norm_samples.shape[0]
-            except (AssertionError, AttributeError):
-                if isinstance(self.norm_weights, (int, float)):
-                    self.norm_weights = jnp.array(
-                        [self.norm_weights], dtype=jax.dtypes.canonicalize_dtype(float)
-                    )
-                else:
-                    raise ValueError(
-                        "`norm_weights` should have the same leading dimension"
-                        " as `norm_samples`,"
-                        f" got shape {self.norm_weights.shape} and"
-                        f" shape {self.norm_samples.shape}."
-                    )
+            if isinstance(self.norm_weights, Array):
+                assert self.norm_weights.shape[0] == self.norm_samples.shape[0], (
+                    "`norm_weights` should have the same leading dimension"
+                    " as `norm_samples`,"
+                    f" got shape {self.norm_weights.shape} and"
+                    f" shape {self.norm_samples.shape}."
+                )
+            elif isinstance(self.norm_weights, (int, float)):
+                self.norm_weights = jnp.array(
+                    [self.norm_weights], dtype=jax.dtypes.canonicalize_dtype(float)
+                )
+            else:
+                raise ValueError("Wrong type for self.norm_weights")
 
     @abc.abstractmethod
     def evaluate(
@@ -358,7 +361,7 @@ class LossPDEStatio(_LossPDEAbstract):
     obs_slice : slice, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
-    params : InitVar[Params], default=None
+    params : InitVar[Params[Array | int]], default=None
         The main Params object of the problem needed to instanciate the
         DerivativeKeysODE if the latter is not specified.
 
@@ -373,13 +376,13 @@ class LossPDEStatio(_LossPDEAbstract):
     # NOTE static=True only for leaf attributes that are not valid JAX types
     # (ie. jax.Array cannot be static) and that we do not expect to change
 
-    u: eqx.Module
+    u: AbstractPINN
     dynamic_loss: DynamicLoss | None
     key: Key | None = eqx.field(kw_only=True, default=None)
 
     vmap_in_axes: tuple[Int] = eqx.field(init=False, static=True)
 
-    def __post_init__(self, params=None):
+    def __post_init__(self, params: Params[Array | int] | None = None):
         """
         Note that neither __init__ or __post_init__ are called when udating a
         Module with eqx.tree_at!
@@ -398,13 +401,13 @@ class LossPDEStatio(_LossPDEAbstract):
 
     def _get_normalization_loss_batch(
         self, _
-    ) -> Float[Array, "nb_norm_samples dimension"]:
+    ) -> tuple[Float[Array, "nb_norm_samples dimension"]]:
         return (self.norm_samples,)
 
     def _get_observations_loss_batch(
         self, batch: PDEStatioBatch
     ) -> Float[Array, "batch_size obs_dim"]:
-        return (batch.obs_batch_dict["pinn_in"],)
+        return batch.obs_batch_dict["pinn_in"]
 
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)

@@ -53,7 +53,7 @@ class _LossODEAbstract(eqx.Module):
         slice of u output(s) that is observed. This is useful for
         multidimensional PINN, with partially observed outputs.
         Default is None (whole output is observed).
-    params : InitVar[Params], default=None
+    params : InitVar[Params[Array | int]], default=None
         The main Params object of the problem needed to instanciate the
         DerivativeKeysODE if the latter is not specified.
     """
@@ -70,9 +70,9 @@ class _LossODEAbstract(eqx.Module):
         kw_only=True, default=None, static=True
     )
 
-    params: InitVar[Params[Any]] = eqx.field(default=None, kw_only=True)
+    params: InitVar[Params[Array | int]] = eqx.field(default=None, kw_only=True)
 
-    def __post_init__(self, params: Params[Any] | None = None):
+    def __post_init__(self, params: Params[Array | int] | None = None):
         if self.loss_weights is None:
             self.loss_weights = LossWeightsODE()
 
@@ -155,7 +155,7 @@ class LossODE(_LossODEAbstract):
         slice of u output(s) that is observed. This is useful for
         multidimensional PINN, with partially observed outputs.
         Default is None (whole output is observed).
-    params : InitVar[Params[Any]], default=None
+    params : InitVar[Params[Array | int]], default=None
         The main Params object of the problem needed to instanciate the
         DerivativeKeysODE if the latter is not specified.
     u : eqx.Module
@@ -179,7 +179,7 @@ class LossODE(_LossODEAbstract):
 
     vmap_in_axes: tuple[int] = eqx.field(init=False, static=True)
 
-    def __post_init__(self, params: Params[Any] | None = None):
+    def __post_init__(self, params: Params[Array | int] | None = None):
         super().__post_init__(
             params=params
         )  # because __init__ or __post_init__ of Base

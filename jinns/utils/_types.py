@@ -7,11 +7,6 @@ from typing import TypeAlias, TYPE_CHECKING, NewType
 from jaxtyping import Int
 
 if TYPE_CHECKING:
-    from jinns.loss._LossPDE import (
-        LossPDEStatio,
-        LossPDENonStatio,
-    )
-
     from jinns.parameters._params import Params
     from jinns.data._DataGenerators import (
         DataGeneratorODE,

@@ -5,7 +5,7 @@ Formalize the data structure for the parameters
 from typing import Dict, Generic, TypeVar
 import jax
 import equinox as eqx
-from jaxtyping import Array, PyTree
+from jaxtyping import Array, PyTree, Float
 
 T = TypeVar("T")  # the generic type for what is in the Params PyTree because we
 # have possibly Params of Arrays, boolean, ...
@@ -30,7 +30,7 @@ class Params(eqx.Module, Generic[T]):
 
 
 def _update_eq_params_dict(
-    params: Params[Array | int], param_batch_dict: Dict[str, Array]
+    params: Params[Array | int], param_batch_dict: Float[Array, "obs_batch_size dim"]
 ) -> Params:
     """
     Update params.eq_params with a batch of eq_params for given key(s)

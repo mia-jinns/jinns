@@ -229,10 +229,10 @@ def boundary_condition_apply(
 
 def observations_loss_apply(
     u: eqx.Module,
-    batches: ODEBatch | PDEStatioBatch | PDENonStatioBatch,
+    batch: Float[Array, "obs_batch_size input_dim"],
     params: Params,
     vmap_axes: tuple[int, Params[int | None] | None],
-    observed_values: Float[Array, "batch_size observation_dim"],
+    observed_values: Float[Array, "obs_batch_size observation_dim"],
     loss_weight: float | Float[Array, "observation_dim"],
     obs_slice: EllipsisType | slice | None,
 ) -> Float[Array, "0"]:
@@ -242,7 +242,7 @@ def observations_loss_apply(
             vmap_axes,
             0,
         )
-        val = v_u(batches, params)[:, obs_slice]
+        val = v_u(batch, params)[:, obs_slice]
         mse_observation_loss = jnp.mean(
             jnp.sum(
                 loss_weight
