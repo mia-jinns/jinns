@@ -6,19 +6,19 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-from typing import TYPE_CHECKING, Callable, Dict
+from typing import TYPE_CHECKING, Callable, TypeGuard
 from types import EllipsisType
 import jax
 import jax.numpy as jnp
 from jax import vmap
 import equinox as eqx
-from jaxtyping import Float, Array, PyTree
+from jaxtyping import Float, Array
 
 from jinns.loss._boundary_conditions import (
     _compute_boundary_loss,
 )
 from jinns.utils._utils import _subtract_with_check, get_grid
-from jinns.data._DataGenerators import append_obs_batch, make_cartesian_product
+from jinns.data._DataGenerators import make_cartesian_product
 from jinns.parameters._params import _get_vmap_in_axes_params
 from jinns.nn._pinn import PINN
 from jinns.nn._spinn import SPINN
@@ -27,7 +27,7 @@ from jinns.data._Batchs import *
 from jinns.parameters._params import Params
 
 if TYPE_CHECKING:
-    from jinns.utils._types import *
+    from jinns.utils._types import BoundaryConditionFun
 
 
 def dynamic_loss_apply(
@@ -38,7 +38,7 @@ def dynamic_loss_apply(
         | Float[Array, "batch_size dim"]
         | Float[Array, "batch_size 1+dim"]
     ),
-    params: Params,
+    params: Params[Array | int],
     vmap_axes: tuple[int, Params[int | None] | None],
     loss_weight: float | Float[Array, "dyn_loss_dimension"],
     u_type: PINN | HyperPINN | None = None,
@@ -74,8 +74,8 @@ def normalization_loss_apply(
             Float[Array, "nb_norm_time_slices 1"], Float[Array, "nb_norm_samples dim"]
         ]
     ),
-    params: Params,
-    vmap_axes_params: tuple[int | None, ...],
+    params: Params[Array | int],
+    vmap_axes_params: tuple[Params[int | None] | None],
     norm_weights: Float[Array, "nb_norm_samples"],
     loss_weight: float,
 ) -> Float[Array, "0"]:
@@ -98,7 +98,7 @@ def normalization_loss_apply(
             )
         else:
             # NOTE this cartesian product is costly
-            batches = make_cartesian_product(
+            batch_cart_prod = make_cartesian_product(
                 batches[0],
                 batches[1],
             ).reshape(batches[0].shape[0], batches[1].shape[0], -1)
@@ -109,7 +109,7 @@ def normalization_loss_apply(
                 ),
                 in_axes=(0,) + vmap_axes_params,
             )
-            res = v_u(batches, params)
+            res = v_u(batch_cart_prod, params)
             assert res.shape[-1] == 1, "norm loss expects unidimensional *PINN"
             # For all times t, we perform an integration. Then we average the
             # losses over times.
@@ -146,7 +146,7 @@ def normalization_loss_apply(
                 jnp.abs(
                     jnp.mean(
                         res.squeeze(),
-                        axis=(d + 1 for d in range(res.ndim - 2)),
+                        axis=list(d + 1 for d in range(res.ndim - 2)),
                     )
                     * norm_weights
                     - 1
@@ -162,16 +162,32 @@ def normalization_loss_apply(
 def boundary_condition_apply(
     u: eqx.Module,
     batch: PDEStatioBatch | PDENonStatioBatch,
-    params: Params,
-    omega_boundary_fun: Callable,
-    omega_boundary_condition: str,
-    omega_boundary_dim: int,
+    params: Params[Array | int],
+    omega_boundary_fun: BoundaryConditionFun | dict[str, BoundaryConditionFun],
+    omega_boundary_condition: str | dict[str, str],
+    omega_boundary_dim: slice | dict[str, slice],
     loss_weight: float | Float[Array, "boundary_cond_dim"],
 ) -> Float[Array, "0"]:
 
     vmap_in_axes = (0,) + _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
-    if isinstance(omega_boundary_fun, dict):
+    def _check_tuple_of_dict(
+        val,
+    ) -> TypeGuard[
+        tuple[
+            dict[str, BoundaryConditionFun],
+            dict[str, BoundaryConditionFun],
+            dict[str, BoundaryConditionFun],
+        ]
+    ]:
+        return all(isinstance(x, dict) for x in val)
+
+    omega_boundary_dicts = (
+        omega_boundary_condition,
+        omega_boundary_fun,
+        omega_boundary_dim,
+    )
+    if _check_tuple_of_dict(omega_boundary_dicts):
         # We must create the facet tree dictionary as we do not have the
         # enumerate from the for loop to pass the id integer
         if batch.border_batch.shape[-1] == 2:
@@ -193,10 +209,10 @@ def boundary_condition_apply(
                     )
                 )
             ),
-            omega_boundary_condition,
-            omega_boundary_fun,
+            omega_boundary_dicts[0],  # omega_boundary_condition,
+            omega_boundary_dicts[1],  # omega_boundary_fun,
             facet_tree,
-            omega_boundary_dim,
+            omega_boundary_dicts[2],  # omega_boundary_dim,
             is_leaf=lambda x: x is None,
         )  # when exploring leaves with None value (no condition) the returned
         # mse is None and we get rid of the None leaves of b_losses_by_facet
@@ -209,13 +225,13 @@ def boundary_condition_apply(
             lambda fa: jnp.mean(
                 loss_weight
                 * _compute_boundary_loss(
-                    omega_boundary_condition,
-                    omega_boundary_fun,
+                    omega_boundary_dicts[0],  # type: ignore -> need TypeIs from 3.13
+                    omega_boundary_dicts[1],  # type: ignore -> need TypeIs from 3.13
                     batch,
                     u,
                     params,
                     fa,
-                    omega_boundary_dim,
+                    omega_boundary_dicts[2],  # type: ignore -> need TypeIs from 3.13
                     vmap_in_axes,
                 )
             ),
@@ -230,7 +246,7 @@ def boundary_condition_apply(
 def observations_loss_apply(
     u: eqx.Module,
     batch: Float[Array, "obs_batch_size input_dim"],
-    params: Params,
+    params: Params[Array | int],
     vmap_axes: tuple[int, Params[int | None] | None],
     observed_values: Float[Array, "obs_batch_size observation_dim"],
     loss_weight: float | Float[Array, "observation_dim"],
@@ -263,7 +279,7 @@ def observations_loss_apply(
 def initial_condition_apply(
     u: eqx.Module,
     omega_batch: Float[Array, "dimension"],
-    params: Params,
+    params: Params[Array | int],
     vmap_axes: tuple[int | None, ...],
     initial_condition_fun: Callable,
     t0: Float[Array, "1"],

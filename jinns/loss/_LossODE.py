@@ -7,7 +7,7 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 from dataclasses import InitVar
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 from types import EllipsisType
 import abc
 import warnings
@@ -28,7 +28,16 @@ from jinns.parameters._derivative_keys import _set_derivatives, DerivativeKeysOD
 from jinns.loss._loss_weights import LossWeightsODE
 
 if TYPE_CHECKING:
-    from jinns.utils._types import *
+    # imports only used in type hints
+    from jinns.parameters._params import Params
+    from jinns.data._Batchs import ODEBatch
+    from jinns.nn._abstract_pinn import AbstractPINN
+    from jinns.loss import DynamicLoss
+
+    class LossDictODE(TypedDict):
+        dyn_loss: Float[Array, "0"]
+        initial_condition: Float[Array, "0"]
+        observations: Float[Array, "0"]
 
 
 class _LossODEAbstract(eqx.Module):
@@ -121,7 +130,7 @@ class _LossODEAbstract(eqx.Module):
     @abc.abstractmethod
     def evaluate(
         self: eqx.Module, params: Params[Array | int], batch: ODEBatch
-    ) -> tuple[Float, dict]:
+    ) -> tuple[Float[Array, "0"], LossDictODE]:
         raise NotImplementedError
 
 
@@ -192,7 +201,7 @@ class LossODE(_LossODEAbstract):
 
     def evaluate(
         self, params: Params[Array | int], batch: ODEBatch
-    ) -> tuple[Float[Array, "1"], dict[str, Array]]:
+    ) -> tuple[Float[Array, "0"], LossDictODE]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 

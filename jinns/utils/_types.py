@@ -3,7 +3,7 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-from typing import TypeAlias, TYPE_CHECKING, NewType
+from typing import TypeAlias, TYPE_CHECKING, NewType, TypedDict, Callable
 from jaxtyping import Int
 
 if TYPE_CHECKING:
@@ -24,6 +24,10 @@ if TYPE_CHECKING:
     from jinns.nn._spinn_mlp import SPINN
     from jinns.utils._containers import *
     from jinns.validation._validation import AbstractValidationModule
+
+    BoundaryConditionFun: TypeAlias = Callable[
+        [Float[Array, "dim"] | Float[Array, "dim + 1"]], Float[Array, "dim_solution"]
+    ]
 
     AnyParams: TypeAlias = Params
 

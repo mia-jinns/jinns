@@ -17,17 +17,16 @@ from jinns.nn._pinn import PINN
 from jinns.nn._spinn import SPINN
 
 if TYPE_CHECKING:
-    from jinns.utils._types import *
+    from jinns.parameters._params import Params
+    from jinns.utils._types import BoundaryConditionFun
 
 
 def _compute_boundary_loss(
     boundary_condition_type: str,
-    f: Callable[
-        [Float[Array, "dim"] | Float[Array, "dim + 1"]], Float[Array, "dim_solution"]
-    ],
+    f: BoundaryConditionFun,
     batch: PDEStatioBatch | PDENonStatioBatch,
     u: eqx.Module,
-    params: AnyParams,
+    params: Params,
     facet: int,
     dim_to_apply: slice,
     vmap_in_axes: tuple,

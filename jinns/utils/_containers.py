@@ -11,6 +11,8 @@ from jaxtyping import PyTree, Array, Float, Bool
 from optax import OptState
 import equinox as eqx
 
+from jinns.parameters._params import Params
+
 if TYPE_CHECKING:
     from jinns.utils._types import *
 
