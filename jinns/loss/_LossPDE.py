@@ -419,6 +419,8 @@ class LossPDEStatio(_LossPDEAbstract):
     ) -> tuple[Float[Array, "nb_norm_samples dimension"]]:
         return (self.norm_samples,)  # type: ignore -> cannot narrow a class attr
 
+    # we could have used typing.cast though
+
     def _get_observations_loss_batch(
         self, batch: PDEStatioBatch
     ) -> Float[Array, "batch_size obs_dim"]:
@@ -647,17 +649,16 @@ class LossPDENonStatio(LossPDEStatio):
                 "case (e.g by. hardcoding it into the PINN output)."
             )
         # some checks for t0
-        if self.t0 is None:
-            self.t0 = jnp.array([0])
-        elif (
-            isinstance(self.t0, float) or not self.t0.shape
-        ):  # e.g. user input: 0. or jnp.array(0.)
+        if isinstance(self.t0, Array):
+            if not self.t0.shape:  # e.g. user input: jnp.array(0.)
+                self.t0 = jnp.array([self.t0])
+            elif self.t0.shape != (1,):
+                raise ValueError(
+                    f"Wrong self.t0 input. It should be"
+                    f"a float or an array of shape (1,). Got shape: {self.t0.shape}"
+                )
+        if isinstance(self.t0, float):  # e.g. user input: 0
             self.t0 = jnp.array([self.t0])
-        elif self.t0.shape != (1,):
-            raise ValueError(
-                f"Wrong t0 input (self.initial_condition[0]) It should be"
-                f"a float or an array of shape (1,). Got shape: {self.t0.shape}"
-            )
 
         # witht the variables below we avoid memory overflow since a cartesian
         # product is taken
@@ -681,8 +682,8 @@ class LossPDENonStatio(LossPDEStatio):
 
     def _get_observations_loss_batch(
         self, batch: PDENonStatioBatch
-    ) -> tuple[Float[Array, "batch_size 1"], Float[Array, "batch_size dimension"]]:
-        return (batch.obs_batch_dict["pinn_in"],)
+    ) -> Float[Array, "batch_size 1+dim"]:
+        return batch.obs_batch_dict["pinn_in"]
 
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
@@ -718,7 +719,8 @@ class LossPDENonStatio(LossPDEStatio):
 
         # For mse_dyn_loss, mse_norm_loss, mse_boundary_loss,
         # mse_observation_loss we use the evaluate from parent class
-        partial_mse, partial_mse_terms = super().evaluate(params, batch)
+        partial_mse, partial_mse_terms = super().evaluate(params, batch)  # type: ignore
+        # ignore because batch is not PDEStatioBatch. We could use typing.cast though
 
         # initial condition
         if self.initial_condition_fun is not None:
@@ -728,7 +730,7 @@ class LossPDENonStatio(LossPDEStatio):
                 _set_derivatives(params, self.derivative_keys.initial_condition),  # type: ignore
                 (0,) + vmap_in_axes_params,
                 self.initial_condition_fun,
-                self.t0,
+                self.t0,  # type: ignore can't get the narrowing in __post_init__
                 self.loss_weights.initial_condition,  # type: ignore
             )
         else:

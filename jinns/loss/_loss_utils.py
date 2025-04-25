@@ -280,7 +280,7 @@ def initial_condition_apply(
     u: eqx.Module,
     omega_batch: Float[Array, "dimension"],
     params: Params[Array | int],
-    vmap_axes: tuple[int | None, ...],
+    vmap_axes: tuple[int, Params[int | None] | None],
     initial_condition_fun: Callable,
     t0: Float[Array, "1"],
     loss_weight: float | Float[Array, "initial_condition_dimension"],
