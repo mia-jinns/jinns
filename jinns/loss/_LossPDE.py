@@ -315,7 +315,7 @@ class LossPDEStatio(_LossPDEAbstract):
 
     Parameters
     ----------
-    u : eqx.Module
+    u : AbstractPINN
         the PINN
     dynamic_loss : DynamicLoss
         the stationary PDE dynamic part of the loss, basically the differential
@@ -547,7 +547,7 @@ class LossPDENonStatio(LossPDEStatio):
 
     Parameters
     ----------
-    u : eqx.Module
+    u : AbstractPINN
         the PINN
     dynamic_loss : DynamicLoss
         the non stationary PDE dynamic part of the loss, basically the differential

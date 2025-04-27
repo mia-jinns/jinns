@@ -2,7 +2,11 @@
 Implements diverse operators for dynamic losses
 """
 
-from typing import Literal
+from __future__ import (
+    annotations,
+)
+
+from typing import Literal, TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
@@ -11,12 +15,16 @@ import equinox as eqx
 from jaxtyping import Float, Array
 from jinns.parameters._params import Params
 
+if TYPE_CHECKING:
+    # imports only used in type hints
+    from jinns.nn._abstract_pinn import AbstractPINN
+
 
 def divergence_rev(
     inputs: Float[Array, "dim"] | Float[Array, "1+dim"],
-    u: eqx.Module,
+    u: AbstractPINN,
     params: Params,
-    eq_type: Literal["nonstatio_PDE", "statio_PDE"] = None,
+    eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
 ) -> float:
     r"""
     Compute the divergence of a vector field $\mathbf{u}$, i.e.,

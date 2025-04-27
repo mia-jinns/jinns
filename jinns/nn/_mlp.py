@@ -2,15 +2,27 @@
 Implements utility function to create PINNs
 """
 
-from typing import Callable, Literal, Self, Union, Any
+from typing import Callable, Literal, Self, Union, Any, TYPE_CHECKING, cast
 from dataclasses import InitVar
 import jax
 import equinox as eqx
-
+from typing import Protocol
 from jaxtyping import Array, Key, PyTree, Float
 
 from jinns.parameters._params import Params
 from jinns.nn._pinn import PINN
+
+if TYPE_CHECKING:
+
+    class CallableMLPModule(Protocol):
+        """
+        Basically just a way to add a __call__ to an eqx.Module.
+        https://github.com/patrick-kidger/equinox/issues/1002
+        We chose the strutural subtyping of protocols instead of subclassing an
+        eqx.Module just to add a __call__ here
+        """
+
+        def __call__(self, *_, **__) -> Array: ...
 
 
 class MLP(eqx.Module):
@@ -21,7 +33,7 @@ class MLP(eqx.Module):
     ----------
     key : InitVar[Key]
         A jax random key for the layer initializations.
-    eqx_list : InitVar[tuple[tuple[Callable, int, int] | Callable, ...]]
+    eqx_list : InitVar[tuple[tuple[Callable, int, int] | tuple[Callable], ...]]
         A tuple of tuples of successive equinox modules and activation functions to
         describe the PINN architecture. The inner tuples must have the eqx module or
         activation function as first item, other items represents arguments
@@ -29,23 +41,23 @@ class MLP(eqx.Module):
         The `key` argument need not be given.
         Thus typical example is `eqx_list=
         ((eqx.nn.Linear, 2, 20),
-            jax.nn.tanh,
+            (jax.nn.tanh,),
             (eqx.nn.Linear, 20, 20),
-            jax.nn.tanh,
+            (jax.nn.tanh,),
             (eqx.nn.Linear, 20, 20),
-            jax.nn.tanh,
+            (jax.nn.tanh,),
             (eqx.nn.Linear, 20, 1)
         )`.
     """
 
     key: InitVar[Key] = eqx.field(kw_only=True)
-    eqx_list: InitVar[tuple[tuple[Callable, int, int] | Callable, ...]] = eqx.field(
-        kw_only=True
+    eqx_list: InitVar[tuple[tuple[Callable, int, int] | tuple[Callable], ...]] = (
+        eqx.field(kw_only=True)
     )
 
     # NOTE that the following should NOT be declared as static otherwise the
     # eqx.partition that we use in the PINN module will misbehave
-    layers: list[eqx.Module] = eqx.field(init=False)
+    layers: list[CallableMLPModule | Callable[[Array], Array]] = eqx.field(init=False)
 
     def __post_init__(self, key, eqx_list):
         self.layers = []
@@ -81,17 +93,21 @@ class PINN_MLP(PINN):
     def create(
         cls,
         eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"],
-        eqx_network: eqx.nn.MLP = None,
+        eqx_network: eqx.nn.MLP | MLP | None = None,
         key: Key = None,
-        eqx_list: tuple[tuple[Callable, int, int] | Callable, ...] = None,
-        input_transform: Callable[
-            [Float[Array, "input_dim"], Params], Float[Array, "output_dim"]
-        ] = None,
-        output_transform: Callable[
-            [Float[Array, "input_dim"], Float[Array, "output_dim"], Params],
-            Float[Array, "output_dim"],
-        ] = None,
-        slice_solution: slice = None,
+        eqx_list: tuple[tuple[Callable, int, int] | tuple[Callable], ...] | None = None,
+        input_transform: (
+            Callable[[Float[Array, "input_dim"], Params], Float[Array, "output_dim"]]
+            | None
+        ) = None,
+        output_transform: (
+            Callable[
+                [Float[Array, "input_dim"], Float[Array, "output_dim"], Params],
+                Float[Array, "output_dim"],
+            ]
+            | None
+        ) = None,
+        slice_solution: slice | None = None,
         filter_spec: PyTree[Union[bool, Callable[[Any], bool]]] = None,
     ) -> tuple[Self, PyTree]:
         r"""
@@ -179,14 +195,14 @@ class PINN_MLP(PINN):
                 raise ValueError(
                     "If eqx_network is None, then key and eqx_list must be provided"
                 )
-            eqx_network = MLP(key=key, eqx_list=eqx_list)
+            eqx_network = cast(MLP, MLP(key=key, eqx_list=eqx_list))
 
         mlp = cls(
             eqx_network=eqx_network,
-            slice_solution=slice_solution,
+            slice_solution=slice_solution,  # type: ignore
             eq_type=eq_type,
-            input_transform=input_transform,
-            output_transform=output_transform,
+            input_transform=input_transform,  # type: ignore
+            output_transform=output_transform,  # type: ignore
             filter_spec=filter_spec,
         )
         return mlp, mlp.init_params

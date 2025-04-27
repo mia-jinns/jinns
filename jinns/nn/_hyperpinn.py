@@ -5,7 +5,7 @@ https://arxiv.org/pdf/2111.01008.pdf
 
 import warnings
 from dataclasses import InitVar
-from typing import Callable, Literal, Self, Union, Any
+from typing import Callable, Literal, Self, Union, Any, cast
 from math import prod
 import jax
 import jax.numpy as jnp
@@ -20,7 +20,7 @@ from jinns.parameters._params import Params
 
 def _get_param_nb(
     params: Params,
-) -> tuple[int, list]:
+) -> tuple[int, list[int]]:
     """Returns the number of parameters in a Params object and also
     the cumulative sum when parsing the object.
 
@@ -48,7 +48,7 @@ class HyperPINN(PINN):
 
     Parameters
     ----------
-    hyperparams: list = eqx.field(static=True)
+    hyperparams: list[str] = eqx.field(static=True)
         A list of keys from Params.eq_params that will be considered as
         hyperparameters for metamodeling.
     hypernet_input_size: int
@@ -100,7 +100,7 @@ class HyperPINN(PINN):
     eqx_hyper_network: InitVar[eqx.Module] = eqx.field(kw_only=True)
 
     pinn_params_sum: int = eqx.field(init=False, static=True)
-    pinn_params_cumsum: list = eqx.field(init=False, static=True)
+    pinn_params_cumsum: list[int] = eqx.field(init=False, static=True)
 
     init_params_hyper: PyTree = eqx.field(init=False)
     static_hyper: PyTree = eqx.field(init=False, static=True)
@@ -164,7 +164,8 @@ class HyperPINN(PINN):
             hyper = eqx.combine(params, self.static_hyper)
 
         eq_params_batch = jnp.concatenate(
-            [params.eq_params[k].flatten() for k in self.hyperparams], axis=0
+            [params.eq_params[k].flatten() for k in self.hyperparams],
+            axis=0,  # pylint: disable=E1133, not sure why pylint says so
         )
 
         hyper_output = hyper(eq_params_batch)
@@ -187,19 +188,25 @@ class HyperPINN(PINN):
         eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"],
         hyperparams: list[str],
         hypernet_input_size: int,
-        eqx_network: eqx.nn.MLP = None,
-        eqx_hyper_network: eqx.nn.MLP = None,
+        eqx_network: eqx.nn.MLP | MLP | None = None,
+        eqx_hyper_network: eqx.nn.MLP | MLP | None = None,
         key: Key = None,
-        eqx_list: tuple[tuple[Callable, int, int] | Callable, ...] = None,
-        eqx_list_hyper: tuple[tuple[Callable, int, int] | Callable, ...] = None,
-        input_transform: Callable[
-            [Float[Array, "input_dim"], Params], Float[Array, "output_dim"]
-        ] = None,
-        output_transform: Callable[
-            [Float[Array, "input_dim"], Float[Array, "output_dim"], Params],
-            Float[Array, "output_dim"],
-        ] = None,
-        slice_solution: slice = None,
+        eqx_list: tuple[tuple[Callable, int, int] | tuple[Callable], ...] | None = None,
+        eqx_list_hyper: (
+            tuple[tuple[Callable, int, int] | tuple[Callable], ...] | None
+        ) = None,
+        input_transform: (
+            Callable[[Float[Array, "input_dim"], Params], Float[Array, "output_dim"]]
+            | None
+        ) = None,
+        output_transform: (
+            Callable[
+                [Float[Array, "input_dim"], Float[Array, "output_dim"], Params],
+                Float[Array, "output_dim"],
+            ]
+            | None
+        ) = None,
+        slice_solution: slice | None = None,
         filter_spec: PyTree[Union[bool, Callable[[Any], bool]]] = None,
     ) -> tuple[Self, PyTree]:
         r"""
@@ -250,11 +257,11 @@ class HyperPINN(PINN):
             The `key` argument need not be given.
             Thus typical example is `eqx_list=
             ((eqx.nn.Linear, 2, 20),
-                jax.nn.tanh,
+                (jax.nn.tanh,),
                 (eqx.nn.Linear, 20, 20),
-                jax.nn.tanh,
+                (jax.nn.tanh,),
                 (eqx.nn.Linear, 20, 20),
-                jax.nn.tanh,
+                (jax.nn.tanh,),
                 (eqx.nn.Linear, 20, 1)
             )`.
         eqx_list_hyper
@@ -268,11 +275,11 @@ class HyperPINN(PINN):
             The `key` argument need not be given.
             Thus typical example is `eqx_list=
             ((eqx.nn.Linear, 2, 20),
-                jax.nn.tanh,
+                (jax.nn.tanh,),
                 (eqx.nn.Linear, 20, 20),
-                jax.nn.tanh,
+                (jax.nn.tanh,),
                 (eqx.nn.Linear, 20, 20),
-                jax.nn.tanh,
+                (jax.nn.tanh,),
                 (eqx.nn.Linear, 20, 1)
             )`.
         input_transform
@@ -343,10 +350,13 @@ class HyperPINN(PINN):
                     (eqx_list_hyper[-1][:2] + (pinn_params_sum,)),
                 )
             else:
-                eqx_list_hyper = (
-                    eqx_list_hyper[:-2]
-                    + ((eqx_list_hyper[-2][:2] + (pinn_params_sum,)),)
-                    + eqx_list_hyper[-1]
+                eqx_list_hyper = cast(
+                    tuple[tuple[Callable, int, int] | tuple[Callable], ...],
+                    (
+                        eqx_list_hyper[:-2]
+                        + ((eqx_list_hyper[-2][:2] + (pinn_params_sum,)),)
+                        + eqx_list_hyper[-1]
+                    ),
                 )
             if len(eqx_list_hyper[0]) > 1:
                 eqx_list_hyper = (
@@ -357,21 +367,24 @@ class HyperPINN(PINN):
                     ),
                 ) + eqx_list_hyper[1:]
             else:
-                eqx_list_hyper = (
-                    eqx_list_hyper[0]
-                    + (
-                        (
-                            (eqx_list_hyper[1][0],)
-                            + (hypernet_input_size,)
-                            + (eqx_list_hyper[1][2],)
-                        ),
-                    )
-                    + eqx_list_hyper[2:]
+                eqx_list_hyper = cast(
+                    tuple[tuple[Callable, int, int] | tuple[Callable], ...],
+                    (
+                        eqx_list_hyper[0]
+                        + (
+                            (
+                                (eqx_list_hyper[1][0],)
+                                + (hypernet_input_size,)
+                                + (eqx_list_hyper[1][2],)  # type: ignore because we suppose that the second element of tuple is nec.of length > 1 since we expect smth like eqx.nn.Linear
+                            ),
+                        )
+                        + eqx_list_hyper[2:]
+                    ),
                 )
             key, subkey = jax.random.split(key, 2)
             # with warnings.catch_warnings():
             #    warnings.filterwarnings("ignore", message="A JAX array is being set as static!")
-            eqx_hyper_network = MLP(key=subkey, eqx_list=eqx_list_hyper)
+            eqx_hyper_network = cast(MLP, MLP(key=subkey, eqx_list=eqx_list_hyper))
 
             ### End of finetuning the hypernetwork architecture
 
@@ -386,10 +399,10 @@ class HyperPINN(PINN):
             hyperpinn = cls(
                 eqx_network=eqx_network,
                 eqx_hyper_network=eqx_hyper_network,
-                slice_solution=slice_solution,
+                slice_solution=slice_solution,  # type: ignore
                 eq_type=eq_type,
-                input_transform=input_transform,
-                output_transform=output_transform,
+                input_transform=input_transform,  # type: ignore
+                output_transform=output_transform,  # type: ignore
                 hyperparams=hyperparams,
                 hypernet_input_size=hypernet_input_size,
                 filter_spec=filter_spec,

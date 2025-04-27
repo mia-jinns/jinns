@@ -28,11 +28,12 @@ from jinns.parameters._params import Params
 
 if TYPE_CHECKING:
     from jinns.utils._types import BoundaryConditionFun
+    from jinns.nn._abstract_pinn import AbstractPINN
 
 
 def dynamic_loss_apply(
     dyn_loss: Callable,
-    u: eqx.Module,
+    u: AbstractPINN,
     batch: (
         Float[Array, "batch_size 1"]
         | Float[Array, "batch_size dim"]
@@ -67,7 +68,7 @@ def dynamic_loss_apply(
 
 
 def normalization_loss_apply(
-    u: eqx.Module,
+    u: AbstractPINN,
     batches: (
         tuple[Float[Array, "nb_norm_samples dim"]]
         | tuple[
@@ -160,7 +161,7 @@ def normalization_loss_apply(
 
 
 def boundary_condition_apply(
-    u: eqx.Module,
+    u: AbstractPINN,
     batch: PDEStatioBatch | PDENonStatioBatch,
     params: Params[Array | int],
     omega_boundary_fun: BoundaryConditionFun | dict[str, BoundaryConditionFun],
@@ -244,7 +245,7 @@ def boundary_condition_apply(
 
 
 def observations_loss_apply(
-    u: eqx.Module,
+    u: AbstractPINN,
     batch: Float[Array, "obs_batch_size input_dim"],
     params: Params[Array | int],
     vmap_axes: tuple[int, Params[int | None] | None],
@@ -277,7 +278,7 @@ def observations_loss_apply(
 
 
 def initial_condition_apply(
-    u: eqx.Module,
+    u: AbstractPINN,
     omega_batch: Float[Array, "dimension"],
     params: Params[Array | int],
     vmap_axes: tuple[int, Params[int | None] | None],

@@ -112,7 +112,7 @@ class PPINN_MLP(PINN):
     def create(
         cls,
         eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"],
-        eqx_network_list: list[eqx.nn.MLP] = None,
+        eqx_network_list: list[eqx.nn.MLP] | None = None,
         key: Key = None,
         eqx_list_list: list[tuple[tuple[Callable, int, int] | Callable, ...]] = None,
         input_transform: Callable[
