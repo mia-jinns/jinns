@@ -58,12 +58,12 @@ class PINN(AbstractPINN):
         **Note**: the input dimension as given in eqx_list has to match the sum
         of the dimension of `t` + the dimension of `x` or the output dimension
         after the `input_transform` function.
-    input_transform : Callable[[Float[Array, "input_dim"], Params], Float[Array, "output_dim"]]
+    input_transform : Callable[[Float[Array, "input_dim"], Params[Array | int]], Float[Array, "output_dim"]]
         A function that will be called before entering the PINN. Its output(s)
         must match the PINN inputs (except for the parameters).
         Its inputs are the PINN inputs (`t` and/or `x` concatenated together)
         and the parameters. Default is no operation.
-    output_transform : Callable[[Float[Array, "input_dim"], Float[Array, "output_dim"], Params], Float[Array, "output_dim"]]
+    output_transform : Callable[[Float[Array, "input_dim"], Float[Array, "output_dim"], Params[Array | int]], Float[Array, "output_dim"]]
         A function with arguments begin the same input as the PINN, the PINN
         output and the parameter. This function will be called after exiting the PINN.
         Default is no operation.
@@ -90,10 +90,10 @@ class PINN(AbstractPINN):
         static=True, kw_only=True
     )
     input_transform: Callable[
-        [Float[Array, "input_dim"], Params], Float[Array, "output_dim"]
+        [Float[Array, "input_dim"], Params[Array | int]], Float[Array, "output_dim"]
     ] = eqx.field(static=True, kw_only=True, default=None)
     output_transform: Callable[
-        [Float[Array, "input_dim"], Float[Array, "output_dim"], Params],
+        [Float[Array, "input_dim"], Float[Array, "output_dim"], Params[Array | int]],
         Float[Array, "output_dim"],
     ] = eqx.field(static=True, kw_only=True, default=None)
 
@@ -158,7 +158,7 @@ class PINN(AbstractPINN):
     def __call__(
         self,
         inputs: Float[Array, "input_dim"],
-        params: Params | PyTree,
+        params: Params[Array | int] | PyTree,
         *args,
         **kwargs,
     ) -> Float[Array, "output_dim"]:

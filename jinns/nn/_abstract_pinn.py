@@ -1,5 +1,6 @@
 import abc
 from typing import TypeVar, Generic
+from jaxtyping import Array
 import equinox as eqx
 
 EqType = TypeVar("EqType")
@@ -15,5 +16,5 @@ class AbstractPINN(eqx.Module, Generic[EqType]):
     eq_type: eqx.AbstractVar[EqType]
 
     @abc.abstractmethod
-    def __call__(self, *_, **__):
+    def __call__(self, *_, **__) -> Array:
         pass

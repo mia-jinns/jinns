@@ -6,7 +6,7 @@ from __future__ import (
     annotations,
 )
 
-from typing import Literal, TYPE_CHECKING
+from typing import Literal, TYPE_CHECKING, cast
 
 import jax
 import jax.numpy as jnp
@@ -14,18 +14,15 @@ from jax import grad
 import equinox as eqx
 from jaxtyping import Float, Array
 from jinns.parameters._params import Params
-
-if TYPE_CHECKING:
-    # imports only used in type hints
-    from jinns.nn._abstract_pinn import AbstractPINN
+from jinns.nn._abstract_pinn import AbstractPINN
 
 
 def divergence_rev(
     inputs: Float[Array, "dim"] | Float[Array, "1+dim"],
     u: AbstractPINN,
-    params: Params,
+    params: Params[Array | int],
     eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
-) -> float:
+) -> Float[Array, "0"]:
     r"""
     Compute the divergence of a vector field $\mathbf{u}$, i.e.,
     $\nabla_\mathbf{x} \cdot \mathbf{u}(\mathrm{inputs})$ with $\mathbf{u}$ a vector
@@ -79,9 +76,9 @@ def divergence_rev(
 
 def divergence_fwd(
     inputs: Float[Array, "batch_size dim"] | Float[Array, "batch_size 1+dim"],
-    u: eqx.Module,
-    params: Params,
-    eq_type: Literal["nonstatio_PDE", "statio_PDE"] = None,
+    u: AbstractPINN,
+    params: Params[Array | int],
+    eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
 ) -> Float[Array, "batch_size * (1+dim) 1"] | Float[Array, "batch_size * (dim) 1"]:
     r"""
     Compute the divergence of a **batched** vector field $\mathbf{u}$, i.e.,
@@ -151,11 +148,11 @@ def divergence_fwd(
 
 def laplacian_rev(
     inputs: Float[Array, "dim"] | Float[Array, "1+dim"],
-    u: eqx.Module,
-    params: Params,
+    u: AbstractPINN,
+    params: Params[Array | int],
     method: Literal["trace_hessian_x", "trace_hessian_t_x", "loop"] = "trace_hessian_x",
-    eq_type: Literal["nonstatio_PDE", "statio_PDE"] = None,
-) -> float:
+    eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
+) -> Float[Array, "0"]:
     r"""
     Compute the Laplacian of a scalar field $u$ from $\mathbb{R}^d$
     to $\mathbb{R}$ or from $\mathbb{R}^{1+d}$ to $\mathbb{R}$, i.e., this
@@ -260,10 +257,10 @@ def laplacian_rev(
 
 def laplacian_fwd(
     inputs: Float[Array, "batch_size 1+dim"] | Float[Array, "batch_size dim"],
-    u: eqx.Module,
-    params: Params,
+    u: AbstractPINN,
+    params: Params[Array | int],
     method: Literal["trace_hessian_t_x", "trace_hessian_x", "loop"] = "loop",
-    eq_type: Literal["nonstatio_PDE", "statio_PDE"] = None,
+    eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
 ) -> Float[Array, "batch_size * (1+dim) 1"] | Float[Array, "batch_size * (dim) 1"]:
     r"""
     Compute the Laplacian of a **batched** scalar field $u$
@@ -407,10 +404,10 @@ def laplacian_fwd(
 
 def vectorial_laplacian_rev(
     inputs: Float[Array, "dim"] | Float[Array, "1+dim"],
-    u: eqx.Module,
-    params: Params,
-    dim_out: int = None,
-    eq_type: Literal["nonstatio_PDE", "statio_PDE"] = None,
+    u: AbstractPINN,
+    params: Params[Array | int],
+    dim_out: int | None = None,
+    eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
 ) -> Float[Array, "dim_out"]:
     r"""
     Compute the vectorial Laplacian of a vector field $\mathbf{u}$ from
@@ -455,7 +452,9 @@ def vectorial_laplacian_rev(
         # each of these components
         # Note the jnp.expand_dims call
         uj = lambda inputs, params: jnp.expand_dims(u(inputs, params)[j], axis=-1)
-        lap_on_j = laplacian_rev(inputs, uj, params, eq_type=eq_type)
+        lap_on_j = laplacian_rev(
+            inputs, cast(AbstractPINN, uj), params, eq_type=eq_type
+        )
 
         return _, lap_on_j
 
@@ -465,10 +464,10 @@ def vectorial_laplacian_rev(
 
 def vectorial_laplacian_fwd(
     inputs: Float[Array, "batch_size dim"] | Float[Array, "batch_size 1+dim"],
-    u: eqx.Module,
-    params: Params,
-    dim_out: int = None,
-    eq_type: Literal["nonstatio_PDE", "statio_PDE"] = None,
+    u: AbstractPINN,
+    params: Params[Array | int],
+    dim_out: int | None = None,
+    eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
 ) -> Float[Array, "batch_size * (1+dim) n"] | Float[Array, "batch_size * (dim) n"]:
     r"""
     Compute the vectorial Laplacian of a vector field $\mathbf{u}$ when
@@ -515,7 +514,9 @@ def vectorial_laplacian_fwd(
         # each of these components
         # Note the expand_dims
         uj = lambda inputs, params: jnp.expand_dims(u(inputs, params)[..., j], axis=-1)
-        lap_on_j = laplacian_fwd(inputs, uj, params, eq_type=eq_type)
+        lap_on_j = laplacian_fwd(
+            inputs, cast(AbstractPINN, uj), params, eq_type=eq_type
+        )
 
         return _, lap_on_j
 
@@ -524,7 +525,7 @@ def vectorial_laplacian_fwd(
 
 
 def _u_dot_nabla_times_u_rev(
-    x: Float[Array, "2"], u: eqx.Module, params: Params
+    x: Float[Array, "2"], u: AbstractPINN, params: Params[Array | int]
 ) -> Float[Array, "2"]:
     r"""
     Implement $((\mathbf{u}\cdot\nabla)\mathbf{u})(\mathbf{x})$ for
@@ -555,8 +556,8 @@ def _u_dot_nabla_times_u_rev(
 
 def _u_dot_nabla_times_u_fwd(
     x: Float[Array, "batch_size 2"],
-    u: eqx.Module,
-    params: Params,
+    u: AbstractPINN,
+    params: Params[Array | int],
 ) -> Float[Array, "batch_size batch_size 2"]:
     r"""
     Implement :math:`((\mathbf{u}\cdot\nabla)\mathbf{u})(\mathbf{x})` for

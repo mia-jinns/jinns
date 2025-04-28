@@ -97,12 +97,19 @@ class PINN_MLP(PINN):
         key: Key = None,
         eqx_list: tuple[tuple[Callable, int, int] | tuple[Callable], ...] | None = None,
         input_transform: (
-            Callable[[Float[Array, "input_dim"], Params], Float[Array, "output_dim"]]
+            Callable[
+                [Float[Array, "input_dim"], Params[Array | int]],
+                Float[Array, "output_dim"],
+            ]
             | None
         ) = None,
         output_transform: (
             Callable[
-                [Float[Array, "input_dim"], Float[Array, "output_dim"], Params],
+                [
+                    Float[Array, "input_dim"],
+                    Float[Array, "output_dim"],
+                    Params[Array | int],
+                ],
                 Float[Array, "output_dim"],
             ]
             | None

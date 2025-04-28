@@ -39,12 +39,12 @@ class PPINN_MLP(PINN):
         **Note**: the input dimension as given in eqx_list has to match the sum
         of the dimension of `t` + the dimension of `x` or the output dimension
         after the `input_transform` function.
-    input_transform : Callable[[Float[Array, "input_dim"], Params], Float[Array, "output_dim"]]
+    input_transform : Callable[[Float[Array, "input_dim"], Params[Array | int]], Float[Array, "output_dim"]]
         A function that will be called before entering the PPINN. Its output(s)
         must match the PPINN inputs (except for the parameters).
         Its inputs are the PPINN inputs (`t` and/or `x` concatenated together)
         and the parameters. Default is no operation.
-    output_transform : Callable[[Float[Array, "input_dim"], Float[Array, "output_dim"], Params], Float[Array, "output_dim"]]
+    output_transform : Callable[[Float[Array, "input_dim"], Float[Array, "output_dim"], Params[Array | int]], Float[Array, "output_dim"]]
         A function with arguments begin the same input as the PPINN, the PPINN
         output and the parameter. This function will be called after exiting
         the PPINN.
@@ -114,15 +114,28 @@ class PPINN_MLP(PINN):
         eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"],
         eqx_network_list: list[eqx.nn.MLP] | None = None,
         key: Key = None,
-        eqx_list_list: list[tuple[tuple[Callable, int, int] | Callable, ...]] = None,
-        input_transform: Callable[
-            [Float[Array, "input_dim"], Params], Float[Array, "output_dim"]
-        ] = None,
-        output_transform: Callable[
-            [Float[Array, "input_dim"], Float[Array, "output_dim"], Params],
-            Float[Array, "output_dim"],
-        ] = None,
-        slice_solution: slice = None,
+        eqx_list_list: (
+            list[tuple[tuple[Callable, int, int] | Callable, ...]] | None
+        ) = None,
+        input_transform: (
+            Callable[
+                [Float[Array, "input_dim"], Params[Array | int]],
+                Float[Array, "output_dim"],
+            ]
+            | None
+        ) = None,
+        output_transform: (
+            Callable[
+                [
+                    Float[Array, "input_dim"],
+                    Float[Array, "output_dim"],
+                    Params[Array | int],
+                ],
+                Float[Array, "output_dim"],
+            ]
+            | None
+        ) = None,
+        slice_solution: slice | None = None,
     ) -> tuple[Self, PyTree]:
         r"""
         Utility function to create a Parrallel PINN neural network for Jinns.

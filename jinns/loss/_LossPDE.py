@@ -296,7 +296,7 @@ class _LossPDEAbstract(eqx.Module):
     @abc.abstractmethod
     def evaluate(
         self: eqx.Module,
-        params: Params,
+        params: Params[Array | int],
         batch: PDEStatioBatch | PDENonStatioBatch,
     ) -> tuple[Float[Array, "0"], LossDictPDEStatio | LossDictPDENonStatio]:
         raise NotImplementedError
@@ -430,7 +430,7 @@ class LossPDEStatio(_LossPDEAbstract):
         return self.evaluate(*args, **kwargs)
 
     def evaluate(
-        self, params: Params, batch: PDEStatioBatch
+        self, params: Params[Array | int], batch: PDEStatioBatch
     ) -> tuple[Float[Array, "0"], LossDictPDEStatio]:
         """
         Evaluate the loss function at a batch of points for given parameters.
@@ -615,7 +615,7 @@ class LossPDENonStatio(LossPDEStatio):
     initial_condition_fun : Callable, default=None
         A function representing the initial condition at `t0`. If None
         (default) then no initial condition is applied.
-    params : InitVar[Params], default=None
+    params : InitVar[Params[Array | int]], default=None
         The main `Params` object of the problem needed to instanciate the
         `DerivativeKeysODE` if the latter is not specified.
 
@@ -689,7 +689,7 @@ class LossPDENonStatio(LossPDEStatio):
         return self.evaluate(*args, **kwargs)
 
     def evaluate(
-        self, params: Params, batch: PDENonStatioBatch
+        self, params: Params[Array | int], batch: PDENonStatioBatch
     ) -> tuple[Float[Array, "0"], LossDictPDENonStatio]:
         """
         Evaluate the loss function at a batch of points for given parameters.
