@@ -115,7 +115,7 @@ class _LossPDEAbstract(eqx.Module):
     obs_slice : EllipsisType | slice, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
-    params : InitVar[Params[Array | int]], default=None
+    params : InitVar[Params[Array]], default=None
         The main Params object of the problem needed to instanciate the
         DerivativeKeysODE if the latter is not specified.
     """
@@ -148,9 +148,9 @@ class _LossPDEAbstract(eqx.Module):
         kw_only=True, default=None, static=True
     )
 
-    params: InitVar[Params[Array | int]] = eqx.field(kw_only=True, default=None)
+    params: InitVar[Params[Array]] = eqx.field(kw_only=True, default=None)
 
-    def __post_init__(self, params: Params[Array | int] | None = None):
+    def __post_init__(self, params: Params[Array] | None = None):
         """
         Note that neither __init__ or __post_init__ are called when udating a
         Module with eqx.tree_at
@@ -296,7 +296,7 @@ class _LossPDEAbstract(eqx.Module):
     @abc.abstractmethod
     def evaluate(
         self: eqx.Module,
-        params: Params[Array | int],
+        params: Params[Array],
         batch: PDEStatioBatch | PDENonStatioBatch,
     ) -> tuple[Float[Array, "0"], LossDictPDEStatio | LossDictPDENonStatio]:
         raise NotImplementedError
@@ -376,7 +376,7 @@ class LossPDEStatio(_LossPDEAbstract):
     obs_slice : slice, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
-    params : InitVar[Params[Array | int]], default=None
+    params : InitVar[Params[Array]], default=None
         The main Params object of the problem needed to instanciate the
         DerivativeKeysODE if the latter is not specified.
 
@@ -397,7 +397,7 @@ class LossPDEStatio(_LossPDEAbstract):
 
     vmap_in_axes: tuple[Int] = eqx.field(init=False, static=True)
 
-    def __post_init__(self, params: Params[Array | int] | None = None):
+    def __post_init__(self, params: Params[Array] | None = None):
         """
         Note that neither __init__ or __post_init__ are called when udating a
         Module with eqx.tree_at!
@@ -430,7 +430,7 @@ class LossPDEStatio(_LossPDEAbstract):
         return self.evaluate(*args, **kwargs)
 
     def evaluate(
-        self, params: Params[Array | int], batch: PDEStatioBatch
+        self, params: Params[Array], batch: PDEStatioBatch
     ) -> tuple[Float[Array, "0"], LossDictPDEStatio]:
         """
         Evaluate the loss function at a batch of points for given parameters.
@@ -615,7 +615,7 @@ class LossPDENonStatio(LossPDEStatio):
     initial_condition_fun : Callable, default=None
         A function representing the initial condition at `t0`. If None
         (default) then no initial condition is applied.
-    params : InitVar[Params[Array | int]], default=None
+    params : InitVar[Params[Array]], default=None
         The main `Params` object of the problem needed to instanciate the
         `DerivativeKeysODE` if the latter is not specified.
 
@@ -689,7 +689,7 @@ class LossPDENonStatio(LossPDEStatio):
         return self.evaluate(*args, **kwargs)
 
     def evaluate(
-        self, params: Params[Array | int], batch: PDENonStatioBatch
+        self, params: Params[Array], batch: PDENonStatioBatch
     ) -> tuple[Float[Array, "0"], LossDictPDENonStatio]:
         """
         Evaluate the loss function at a batch of points for given parameters.

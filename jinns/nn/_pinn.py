@@ -2,6 +2,8 @@
 Implement abstract class for PINN architectures
 """
 
+from __future__ import annotations
+
 from typing import Literal, Callable, Union, Any
 from dataclasses import InitVar
 import equinox as eqx
@@ -58,12 +60,12 @@ class PINN(AbstractPINN):
         **Note**: the input dimension as given in eqx_list has to match the sum
         of the dimension of `t` + the dimension of `x` or the output dimension
         after the `input_transform` function.
-    input_transform : Callable[[Float[Array, "input_dim"], Params[Array | int]], Float[Array, "output_dim"]]
+    input_transform : Callable[[Float[Array, "input_dim"], Params[Array]], Float[Array, "output_dim"]]
         A function that will be called before entering the PINN. Its output(s)
         must match the PINN inputs (except for the parameters).
         Its inputs are the PINN inputs (`t` and/or `x` concatenated together)
         and the parameters. Default is no operation.
-    output_transform : Callable[[Float[Array, "input_dim"], Float[Array, "output_dim"], Params[Array | int]], Float[Array, "output_dim"]]
+    output_transform : Callable[[Float[Array, "input_dim"], Float[Array, "output_dim"], Params[Array]], Float[Array, "output_dim"]]
         A function with arguments begin the same input as the PINN, the PINN
         output and the parameter. This function will be called after exiting the PINN.
         Default is no operation.
@@ -90,10 +92,10 @@ class PINN(AbstractPINN):
         static=True, kw_only=True
     )
     input_transform: Callable[
-        [Float[Array, "input_dim"], Params[Array | int]], Float[Array, "output_dim"]
+        [Float[Array, "input_dim"], Params[Array]], Float[Array, "output_dim"]
     ] = eqx.field(static=True, kw_only=True, default=None)
     output_transform: Callable[
-        [Float[Array, "input_dim"], Float[Array, "output_dim"], Params[Array | int]],
+        [Float[Array, "input_dim"], Float[Array, "output_dim"], Params[Array]],
         Float[Array, "output_dim"],
     ] = eqx.field(static=True, kw_only=True, default=None)
 
@@ -102,8 +104,8 @@ class PINN(AbstractPINN):
         static=True, kw_only=True, default=eqx.is_inexact_array
     )
 
-    init_params: PyTree = eqx.field(init=False)
-    static: PyTree = eqx.field(init=False, static=True)
+    init_params: PINN = eqx.field(init=False)
+    static: PINN = eqx.field(init=False, static=True)
 
     def __post_init__(self, eqx_network):
 
@@ -158,7 +160,7 @@ class PINN(AbstractPINN):
     def __call__(
         self,
         inputs: Float[Array, "input_dim"],
-        params: Params[Array | int] | PyTree,
+        params: Params[Array],
         *args,
         **kwargs,
     ) -> Float[Array, "output_dim"]:
@@ -175,10 +177,12 @@ class PINN(AbstractPINN):
             # DataGenerators)
             inputs = inputs[None]
 
-        try:
-            model = eqx.combine(params.nn_params, self.static)
-        except (KeyError, AttributeError, TypeError) as e:  # give more flexibility
-            model = eqx.combine(params, self.static)
+        # if isinstance(params, Params):
+        model = eqx.combine(params.nn_params, self.static)
+        # elif isinstance(params, PINN):
+        #    model = eqx.combine(params, self.static)
+        # else:
+        #    raise ValueError("Bad value for params")
 
         # evaluate the model
         res = self.eval(model, self.input_transform(inputs, params), *args, **kwargs)

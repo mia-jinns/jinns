@@ -82,7 +82,7 @@ class SPINN_MLP(SPINN):
         eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"],
         m: int = 1,
         filter_spec: PyTree[Union[bool, Callable[[Any], bool]]] = None,
-    ) -> tuple[Self, PyTree]:
+    ) -> tuple[Self, SPINN]:
         """
         Utility function to create a SPINN neural network with the equinox
         library.

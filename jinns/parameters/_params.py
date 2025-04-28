@@ -30,7 +30,7 @@ class Params(eqx.Module, Generic[T]):
 
 
 def _update_eq_params_dict(
-    params: Params[Array | int],
+    params: Params[Array],
     param_batch_dict: dict[str, Float[Array, "param_batch_size dim"]],
 ) -> Params:
     """
@@ -58,7 +58,7 @@ def _update_eq_params_dict(
 
 
 def _get_vmap_in_axes_params(
-    eq_params_batch_dict: Dict[str, Array], params: Params[Array | int]
+    eq_params_batch_dict: Dict[str, Array], params: Params[Array]
 ) -> tuple[Params[int | None] | None]:
     """
     Return the input vmap axes when there is batch(es) of parameters to vmap

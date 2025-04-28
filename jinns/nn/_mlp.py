@@ -2,6 +2,8 @@
 Implements utility function to create PINNs
 """
 
+from __future__ import annotations
+
 from typing import Callable, Literal, Self, Union, Any, TYPE_CHECKING, cast
 from dataclasses import InitVar
 import jax
@@ -98,7 +100,7 @@ class PINN_MLP(PINN):
         eqx_list: tuple[tuple[Callable, int, int] | tuple[Callable], ...] | None = None,
         input_transform: (
             Callable[
-                [Float[Array, "input_dim"], Params[Array | int]],
+                [Float[Array, "input_dim"], Params[Array]],
                 Float[Array, "output_dim"],
             ]
             | None
@@ -108,7 +110,7 @@ class PINN_MLP(PINN):
                 [
                     Float[Array, "input_dim"],
                     Float[Array, "output_dim"],
-                    Params[Array | int],
+                    Params[Array],
                 ],
                 Float[Array, "output_dim"],
             ]
@@ -116,7 +118,7 @@ class PINN_MLP(PINN):
         ) = None,
         slice_solution: slice | None = None,
         filter_spec: PyTree[Union[bool, Callable[[Any], bool]]] = None,
-    ) -> tuple[Self, PyTree]:
+    ) -> tuple[Self, PINN]:
         r"""
         Instanciate standard PINN MLP object. The actual NN is either passed as
         a eqx.nn.MLP (`eqx_network` argument) or constructed as a custom

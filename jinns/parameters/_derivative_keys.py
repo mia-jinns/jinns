@@ -12,7 +12,7 @@ from jinns.parameters._params import Params
 
 
 def _get_masked_parameters(
-    derivative_mask_str: str, params: Params[Array | int]
+    derivative_mask_str: str, params: Params[Array]
 ) -> Params[bool]:
     """
     Creates the Params object with True values where we want to differentiate
@@ -89,7 +89,7 @@ class DerivativeKeysODE(eqx.Module):
         Tell wrt which parameters among Params we will differentiate the
         initial condition loss. To do so, the fields of Params contain True (if
         differentiation) or False (if no differentiation).
-    params : InitVar[Params[Array | int]], default=None
+    params : InitVar[Params[Array]], default=None
         The main Params object of the problem. It is required
         if some terms are unspecified (None). This is because, jinns cannot
         infer the content of `Params.eq_params`.
@@ -99,9 +99,9 @@ class DerivativeKeysODE(eqx.Module):
     observations: Params[bool] | None = eqx.field(kw_only=True, default=None)
     initial_condition: Params[bool] | None = eqx.field(kw_only=True, default=None)
 
-    params: InitVar[Params[Array | int]] | None = eqx.field(kw_only=True, default=None)
+    params: InitVar[Params[Array]] | None = eqx.field(kw_only=True, default=None)
 
-    def __post_init__(self, params: Params[Array | int] | None = None):
+    def __post_init__(self, params: Params[Array] | None = None):
         if params is None and (
             self.dyn_loss is None
             or self.observations is None
@@ -131,7 +131,7 @@ class DerivativeKeysODE(eqx.Module):
     @classmethod
     def from_str(
         cls,
-        params: Params[Array | int],
+        params: Params[Array],
         dyn_loss: (
             Literal["nn_params", "eq_params", "both"] | Params[bool]
         ) = "nn_params",
@@ -210,7 +210,7 @@ class DerivativeKeysPDEStatio(eqx.Module):
         Tell wrt which parameters among Params we will differentiate the
         normalization loss. To do so, the fields of Params contain True (if
         differentiation) or False (if no differentiation).
-     params : InitVar[Params[Array | int]], default=None
+     params : InitVar[Params[Array]], default=None
         The main Params object of the problem. It is required
         if some terms are unspecified (None). This is because, jinns cannot infer the
         content of `Params.eq_params`.
@@ -221,9 +221,9 @@ class DerivativeKeysPDEStatio(eqx.Module):
     boundary_loss: Params[bool] | None = eqx.field(kw_only=True, default=None)
     norm_loss: Params[bool] | None = eqx.field(kw_only=True, default=None)
 
-    params: InitVar[Params[Array | int]] | None = eqx.field(kw_only=True, default=None)
+    params: InitVar[Params[Array]] | None = eqx.field(kw_only=True, default=None)
 
-    def __post_init__(self, params: Params[Array | int] | None = None):
+    def __post_init__(self, params: Params[Array] | None = None):
         if self.dyn_loss is None:
             if params is None:
                 raise ValueError("self.dyn_loss is None, hence params should be passed")
@@ -250,7 +250,7 @@ class DerivativeKeysPDEStatio(eqx.Module):
     @classmethod
     def from_str(
         cls,
-        params: Params[Array | int],
+        params: Params[Array],
         dyn_loss: (
             Literal["nn_params", "eq_params", "both"] | Params[bool]
         ) = "nn_params",
@@ -338,7 +338,7 @@ class DerivativeKeysPDENonStatio(DerivativeKeysPDEStatio):
         Tell wrt which parameters among Params we will differentiate the
         initial_condition loss. To do so, the fields of Params contain True (if
         differentiation) or False (if no differentiation).
-    params : InitVar[Params[Array | int]], default=None
+    params : InitVar[Params[Array]], default=None
         The main Params object of the problem. It is required
         if some terms are unspecified (None). This is because, jinns cannot infer the
         content of `Params.eq_params`.
@@ -346,7 +346,7 @@ class DerivativeKeysPDENonStatio(DerivativeKeysPDEStatio):
 
     initial_condition: Params[bool] | None = eqx.field(kw_only=True, default=None)
 
-    def __post_init__(self, params: Params[Array | int] | None = None):
+    def __post_init__(self, params: Params[Array] | None = None):
         super().__post_init__(params=params)
         if self.initial_condition is None:
             if params is None:
@@ -358,7 +358,7 @@ class DerivativeKeysPDENonStatio(DerivativeKeysPDEStatio):
     @classmethod
     def from_str(
         cls,
-        params: Params[Array | int],
+        params: Params[Array],
         dyn_loss: (
             Literal["nn_params", "eq_params", "both"] | Params[bool]
         ) = "nn_params",

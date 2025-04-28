@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import Union, Callable, Any
 from dataclasses import InitVar
 from jaxtyping import PyTree, Float, Array
@@ -58,8 +59,8 @@ class SPINN(AbstractPINN):
     )
     eqx_spinn_network: InitVar[eqx.Module] = eqx.field(kw_only=True)
 
-    init_params: PyTree = eqx.field(init=False)
-    static: PyTree = eqx.field(init=False, static=True)
+    init_params: SPINN = eqx.field(init=False)
+    static: SPINN = eqx.field(init=False, static=True)
 
     def __post_init__(self, eqx_spinn_network):
 
@@ -73,17 +74,17 @@ class SPINN(AbstractPINN):
     def __call__(
         self,
         t_x: Float[Array, "batch_size 1+dim"],
-        params: Params[Array | int] | PyTree,
+        params: Params[Array],
     ) -> Float[Array, "output_dim"]:
         """
         Evaluate the SPINN on some inputs with some params.
         """
-        try:
-            spinn = eqx.combine(params.nn_params, self.static)
-        except (KeyError, AttributeError, TypeError) as e:
-            spinn = eqx.combine(params, self.static)
+        # try:
+        spinn = eqx.combine(params.nn_params, self.static)
+        # except (KeyError, AttributeError, TypeError) as e:
+        #    spinn = eqx.combine(params, self.static)
         v_model = jax.vmap(spinn)
-        res = v_model(t_x)
+        res = v_model(t_x)  # type: ignore
 
         a = ", ".join([f"{chr(97 + d)}z" for d in range(res.shape[1])])
         b = "".join([f"{chr(97 + d)}" for d in range(res.shape[1])])

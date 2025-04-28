@@ -20,7 +20,7 @@ from jinns.nn._abstract_pinn import AbstractPINN
 def divergence_rev(
     inputs: Float[Array, "dim"] | Float[Array, "1+dim"],
     u: AbstractPINN,
-    params: Params[Array | int],
+    params: Params[Array],
     eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
 ) -> Float[Array, "0"]:
     r"""
@@ -77,7 +77,7 @@ def divergence_rev(
 def divergence_fwd(
     inputs: Float[Array, "batch_size dim"] | Float[Array, "batch_size 1+dim"],
     u: AbstractPINN,
-    params: Params[Array | int],
+    params: Params[Array],
     eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
 ) -> Float[Array, "batch_size * (1+dim) 1"] | Float[Array, "batch_size * (dim) 1"]:
     r"""
@@ -149,7 +149,7 @@ def divergence_fwd(
 def laplacian_rev(
     inputs: Float[Array, "dim"] | Float[Array, "1+dim"],
     u: AbstractPINN,
-    params: Params[Array | int],
+    params: Params[Array],
     method: Literal["trace_hessian_x", "trace_hessian_t_x", "loop"] = "trace_hessian_x",
     eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
 ) -> Float[Array, "0"]:
@@ -258,7 +258,7 @@ def laplacian_rev(
 def laplacian_fwd(
     inputs: Float[Array, "batch_size 1+dim"] | Float[Array, "batch_size dim"],
     u: AbstractPINN,
-    params: Params[Array | int],
+    params: Params[Array],
     method: Literal["trace_hessian_t_x", "trace_hessian_x", "loop"] = "loop",
     eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
 ) -> Float[Array, "batch_size * (1+dim) 1"] | Float[Array, "batch_size * (dim) 1"]:
@@ -405,7 +405,7 @@ def laplacian_fwd(
 def vectorial_laplacian_rev(
     inputs: Float[Array, "dim"] | Float[Array, "1+dim"],
     u: AbstractPINN,
-    params: Params[Array | int],
+    params: Params[Array],
     dim_out: int | None = None,
     eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
 ) -> Float[Array, "dim_out"]:
@@ -465,7 +465,7 @@ def vectorial_laplacian_rev(
 def vectorial_laplacian_fwd(
     inputs: Float[Array, "batch_size dim"] | Float[Array, "batch_size 1+dim"],
     u: AbstractPINN,
-    params: Params[Array | int],
+    params: Params[Array],
     dim_out: int | None = None,
     eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
 ) -> Float[Array, "batch_size * (1+dim) n"] | Float[Array, "batch_size * (dim) n"]:
@@ -525,7 +525,7 @@ def vectorial_laplacian_fwd(
 
 
 def _u_dot_nabla_times_u_rev(
-    x: Float[Array, "2"], u: AbstractPINN, params: Params[Array | int]
+    x: Float[Array, "2"], u: AbstractPINN, params: Params[Array]
 ) -> Float[Array, "2"]:
     r"""
     Implement $((\mathbf{u}\cdot\nabla)\mathbf{u})(\mathbf{x})$ for
@@ -557,7 +557,7 @@ def _u_dot_nabla_times_u_rev(
 def _u_dot_nabla_times_u_fwd(
     x: Float[Array, "batch_size 2"],
     u: AbstractPINN,
-    params: Params[Array | int],
+    params: Params[Array],
 ) -> Float[Array, "batch_size batch_size 2"]:
     r"""
     Implement :math:`((\mathbf{u}\cdot\nabla)\mathbf{u})(\mathbf{x})` for
