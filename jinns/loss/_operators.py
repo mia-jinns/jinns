@@ -22,7 +22,7 @@ def divergence_rev(
     u: AbstractPINN,
     params: Params[Array],
     eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
-) -> Float[Array, "0"]:
+) -> Float[Array, ""]:
     r"""
     Compute the divergence of a vector field $\mathbf{u}$, i.e.,
     $\nabla_\mathbf{x} \cdot \mathbf{u}(\mathrm{inputs})$ with $\mathbf{u}$ a vector
@@ -152,7 +152,7 @@ def laplacian_rev(
     params: Params[Array],
     method: Literal["trace_hessian_x", "trace_hessian_t_x", "loop"] = "trace_hessian_x",
     eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
-) -> Float[Array, "0"]:
+) -> Float[Array, ""]:
     r"""
     Compute the Laplacian of a scalar field $u$ from $\mathbb{R}^d$
     to $\mathbb{R}$ or from $\mathbb{R}^{1+d}$ to $\mathbb{R}$, i.e., this

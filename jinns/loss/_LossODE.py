@@ -35,9 +35,9 @@ if TYPE_CHECKING:
     from jinns.loss import DynamicLoss
 
     class LossDictODE(TypedDict):
-        dyn_loss: Float[Array, "0"]
-        initial_condition: Float[Array, "0"]
-        observations: Float[Array, "0"]
+        dyn_loss: Float[Array, ""]
+        initial_condition: Float[Array, ""]
+        observations: Float[Array, ""]
 
 
 class _LossODEAbstract(eqx.Module):
@@ -130,7 +130,7 @@ class _LossODEAbstract(eqx.Module):
     @abc.abstractmethod
     def evaluate(
         self: eqx.Module, params: Params[Array], batch: ODEBatch
-    ) -> tuple[Float[Array, "0"], LossDictODE]:
+    ) -> tuple[Float[Array, ""], LossDictODE]:
         raise NotImplementedError
 
 
@@ -201,7 +201,7 @@ class LossODE(_LossODEAbstract):
 
     def evaluate(
         self, params: Params[Array], batch: ODEBatch
-    ) -> tuple[Float[Array, "0"], LossDictODE]:
+    ) -> tuple[Float[Array, ""], LossDictODE]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 

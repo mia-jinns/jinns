@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     AnyPINN: TypeAlias = PINN | HyperPINN | SPINN
 
     AnyBatch: TypeAlias = ODEBatch | PDEStatioBatch | PDENonStatioBatch
+
     rar_operands = NewType("rar_operands", tuple[Any, AnyParams, AnyDataGenerator, Int])
 
     main_carry = NewType(

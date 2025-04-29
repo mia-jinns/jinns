@@ -43,7 +43,7 @@ def dynamic_loss_apply(
     vmap_axes: tuple[int, Params[int | None] | None],
     loss_weight: float | Float[Array, "dyn_loss_dimension"],
     u_type: PINN | HyperPINN | None = None,
-) -> Float[Array, "0"]:
+) -> Float[Array, ""]:
     """
     Sometimes when u is a lambda function a or dict we do not have access to
     its type here, hence the last argument
@@ -79,7 +79,7 @@ def normalization_loss_apply(
     vmap_axes_params: tuple[Params[int | None] | None],
     norm_weights: Float[Array, "nb_norm_samples"],
     loss_weight: float,
-) -> Float[Array, "0"]:
+) -> Float[Array, ""]:
     """
     Note the squeezing on each result. We expect unidimensional *PINN since
     they represent probability distributions
@@ -168,7 +168,7 @@ def boundary_condition_apply(
     omega_boundary_condition: str | dict[str, str],
     omega_boundary_dim: slice | dict[str, slice],
     loss_weight: float | Float[Array, "boundary_cond_dim"],
-) -> Float[Array, "0"]:
+) -> Float[Array, ""]:
 
     vmap_in_axes = (0,) + _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
@@ -252,7 +252,7 @@ def observations_loss_apply(
     observed_values: Float[Array, "obs_batch_size observation_dim"],
     loss_weight: float | Float[Array, "observation_dim"],
     obs_slice: EllipsisType | slice | None,
-) -> Float[Array, "0"]:
+) -> Float[Array, ""]:
     if isinstance(u, (PINN, HyperPINN)):
         v_u = vmap(
             lambda *args: u(*args)[u.slice_solution],
@@ -285,7 +285,7 @@ def initial_condition_apply(
     initial_condition_fun: Callable,
     t0: Float[Array, "1"],
     loss_weight: float | Float[Array, "initial_condition_dimension"],
-) -> Float[Array, "0"]:
+) -> Float[Array, ""]:
     n = omega_batch.shape[0]
     t0_omega_batch = jnp.concatenate([t0 * jnp.ones((n, 1)), omega_batch], axis=1)
     if isinstance(u, (PINN, HyperPINN)):

@@ -11,14 +11,14 @@ from dataclasses import InitVar
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jaxtyping import Key, Int, PyTree, Array, Float, Bool
+from jaxtyping import Key, PyTree, Array, Float
 from jinns.data._Batchs import *
 
 if TYPE_CHECKING:
-    from jinns.utils._types import *
+    from jinns.utils._types import AnyBatch
 
 
-def append_param_batch(batch: AnyBatch, param_batch_dict: dict) -> AnyBatch:
+def append_param_batch(batch: AnyBatch, param_batch_dict: dict[str, Array]) -> AnyBatch:
     """
     Utility function that fills the field `batch.param_batch_dict` of a batch object.
     """
@@ -30,7 +30,7 @@ def append_param_batch(batch: AnyBatch, param_batch_dict: dict) -> AnyBatch:
     )
 
 
-def append_obs_batch(batch: AnyBatch, obs_batch_dict: dict) -> AnyBatch:
+def append_obs_batch(batch: AnyBatch, obs_batch_dict: ObsBatchDict) -> AnyBatch:
     """
     Utility function that fills the field `batch.obs_batch_dict` of a batch object
     """
@@ -41,7 +41,9 @@ def append_obs_batch(batch: AnyBatch, obs_batch_dict: dict) -> AnyBatch:
 
 def make_cartesian_product(
     b1: Float[Array, "batch_size dim1"], b2: Float[Array, "batch_size dim2"]
-) -> Float[Array, "(batch_size*batch_size) (dim1+dim2)"]:
+) -> Float[Array, "rows=batch_size*batch_size (dim1+dim2)"]:
+    # rows= serves to disable jaxtyping wish for runtime check since it does not like the star
+    # operator, we wish use not as expected
     """
     Create the cartesian product of a time and a border omega batches
     by tiling and repeating
@@ -54,8 +56,8 @@ def make_cartesian_product(
 
 
 def _reset_batch_idx_and_permute(
-    operands: tuple[Key, Float[Array, "n dimension"], Int, None, Float[Array, "n"]],
-) -> tuple[Key, Float[Array, "n dimension"], Int]:
+    operands: tuple[Key, Float[Array, "n dimension"], int, None, Float[Array, "n"]],
+) -> tuple[Key, Float[Array, "n dimension"], int]:
     key, domain, curr_idx, _, p = operands
     # resetting counter
     curr_idx = 0
@@ -78,8 +80,8 @@ def _reset_batch_idx_and_permute(
 
 
 def _increment_batch_idx(
-    operands: tuple[Key, Float[Array, "n dimension"], Int, None, Float[Array, "n"]],
-) -> tuple[Key, Float[Array, "n dimension"], Int]:
+    operands: tuple[Key, Float[Array, "n dimension"], int, int, Float[Array, "n"]],
+) -> tuple[Key, Float[Array, "n dimension"], int]:
     key, domain, curr_idx, batch_size, _ = operands
     # simply increases counter and get the batch
     curr_idx += batch_size
@@ -87,10 +89,10 @@ def _increment_batch_idx(
 
 
 def _reset_or_increment(
-    bend: Int,
-    n_eff: Int,
-    operands: tuple[Key, Float[Array, "n dimension"], Int, None, Float[Array, "n"]],
-) -> tuple[Key, Float[Array, "n dimension"], Int]:
+    bend: int,
+    n_eff: int,
+    operands: tuple[Key, Float[Array, "n dimension"], int, int, Float[Array, "n"]],
+) -> tuple[Key, Float[Array, "n dimension"], int]:
     """
     Factorize the code of the jax.lax.cond which checks if we have seen all the
     batches in an epoch
@@ -120,8 +122,8 @@ def _reset_or_increment(
 
 
 def _check_and_set_rar_parameters(
-    rar_parameters: dict, n: Int, n_start: Int
-) -> tuple[Int, Float[Array, "n"], Int, Int]:
+    rar_parameters: dict, n: int, n_start: int
+) -> tuple[int, Float[Array, "n"], int, int]:
     if rar_parameters is not None and n_start is None:
         raise ValueError(
             "n_start must be provided in the context of RAR sampling scheme"
@@ -158,7 +160,7 @@ class DataGeneratorODE(eqx.Module):
     ----------
     key : Key
         Jax random key to sample new time points and to shuffle batches
-    nt : Int
+    nt : int
         The number of total time points that will be divided in
         batches. Batches are made so that each data point is seen only
         once during 1 epoch.
@@ -174,7 +176,7 @@ class DataGeneratorODE(eqx.Module):
         The method that generates the `nt` time points. `grid` means
         regularly spaced points over the domain. `uniform` means uniformly
         sampled points over the domain
-    rar_parameters : Dict[str, Int], default=None
+    rar_parameters : Dict[str, int], default=None
         Defaults to None: do not use Residual Adaptative Resampling.
         Otherwise a dictionary with keys
 
@@ -186,7 +188,7 @@ class DataGeneratorODE(eqx.Module):
         - `selected_sample_size`: the number of selected
         points from the sample to be added to the current collocation
         points.
-    n_start : Int, default=None
+    n_start : int, default=None
         Defaults to None. The effective size of nt used at start time.
         This value must be
         provided when rar_parameters is not None. Otherwise we set internally
@@ -196,21 +198,21 @@ class DataGeneratorODE(eqx.Module):
     """
 
     key: Key = eqx.field(kw_only=True)
-    nt: Int = eqx.field(kw_only=True, static=True)
+    nt: int = eqx.field(kw_only=True, static=True)
     tmin: Float = eqx.field(kw_only=True)
     tmax: Float = eqx.field(kw_only=True)
-    temporal_batch_size: Int | None = eqx.field(static=True, default=None, kw_only=True)
+    temporal_batch_size: int | None = eqx.field(static=True, default=None, kw_only=True)
     method: str = eqx.field(
         static=True, kw_only=True, default_factory=lambda: "uniform"
     )
-    rar_parameters: Dict[str, Int] = eqx.field(default=None, kw_only=True)
-    n_start: Int = eqx.field(static=True, default=None, kw_only=True)
+    rar_parameters: Dict[str, int] = eqx.field(default=None, kw_only=True)
+    n_start: int = eqx.field(static=True, default=None, kw_only=True)
 
     # all the init=False fields are set in __post_init__
     p: Float[Array, "nt 1"] = eqx.field(init=False)
-    rar_iter_from_last_sampling: Int = eqx.field(init=False)
-    rar_iter_nb: Int = eqx.field(init=False)
-    curr_time_idx: Int = eqx.field(init=False)
+    rar_iter_from_last_sampling: int = eqx.field(init=False)
+    rar_iter_nb: int = eqx.field(init=False)
+    curr_time_idx: int = eqx.field(init=False)
     times: Float[Array, "nt 1"] = eqx.field(init=False)
 
     def __post_init__(self):
@@ -238,7 +240,7 @@ class DataGeneratorODE(eqx.Module):
         # above way for the key.
 
     def sample_in_time_domain(
-        self, key: Key, sample_size: Int = None
+        self, key: Key, sample_size: int | None = None
     ) -> Float[Array, "nt 1"]:
         return jax.random.uniform(
             key,
@@ -265,7 +267,7 @@ class DataGeneratorODE(eqx.Module):
 
     def _get_time_operands(
         self,
-    ) -> tuple[Key, Float[Array, "nt 1"], Int, Int, Float[Array, "nt 1"]]:
+    ) -> tuple[Key, Float[Array, "nt 1"], int, int | None, Float[Array, "nt 1"]]:
         return (
             self.key,
             self.times,
@@ -276,7 +278,7 @@ class DataGeneratorODE(eqx.Module):
 
     def temporal_batch(
         self,
-    ) -> tuple["DataGeneratorODE", Float[Array, "temporal_batch_size"]]:
+    ) -> tuple[DataGeneratorODE, Float[Array, "temporal_batch_size"]]:
         """
         Return a batch of time points. If all the batches have been seen, we
         reshuffle them, otherwise we just return the next unseen batch.
@@ -297,7 +299,11 @@ class DataGeneratorODE(eqx.Module):
         else:
             nt_eff = self.nt
 
-        new_attributes = _reset_or_increment(bend, nt_eff, self._get_time_operands())
+        new_attributes = _reset_or_increment(
+            bend, nt_eff, self._get_time_operands()
+        )  # type: ignore
+        # ignore since the case self.temporal_batch_size is None has been
+        # handled above
         new = eqx.tree_at(
             lambda m: (m.key, m.times, m.curr_time_idx), self, new_attributes
         )
@@ -311,7 +317,7 @@ class DataGeneratorODE(eqx.Module):
             slice_sizes=(new.temporal_batch_size, 1),
         )
 
-    def get_batch(self) -> tuple["DataGeneratorODE", ODEBatch]:
+    def get_batch(self) -> tuple[DataGeneratorODE, ODEBatch]:
         """
         Generic method to return a batch. Here we call `self.temporal_batch()`
         """
@@ -328,23 +334,23 @@ class CubicMeshPDEStatio(eqx.Module):
     ----------
     key : Key
         Jax random key to sample new time points and to shuffle batches
-    n : Int
+    n : int
         The number of total $\Omega$ points that will be divided in
         batches. Batches are made so that each data point is seen only
         once during 1 epoch.
-    nb : Int | None
+    nb : int | None
         The total number of points in $\partial\Omega$. Can be None if no
         boundary condition is specified.
-    omega_batch_size : Int | None, default=None
+    omega_batch_size : int | None, default=None
         The size of the batch of randomly selected points among
         the `n` points. If None no minibatches are used.
-    omega_border_batch_size : Int | None, default=None
+    omega_border_batch_size : int | None, default=None
         The size of the batch of points randomly selected
         among the `nb` points. If None, `omega_border_batch_size`
         no minibatches are used. In dimension 1,
         minibatches are never used since the boundary is composed of two
         singletons.
-    dim : Int
+    dim : int
         Dimension of $\Omega$ domain
     min_pts : tuple[tuple[Float, Float], ...]
         A tuple of minimum values of the domain along each dimension. For a sampling
@@ -359,10 +365,9 @@ class CubicMeshPDEStatio(eqx.Module):
         The method that generates the `nt` time points. `grid` means
         regularly spaced points over the domain. `uniform` means uniformly
         sampled points over the domain
-    rar_parameters : Dict[str, Int], default=None
+    rar_parameters : Dict[str, int], default=None
         Defaults to None: do not use Residual Adaptative Resampling.
         Otherwise a dictionary with keys
-
         - `start_iter`: the iteration at which we start the RAR sampling scheme (we first have a "burn-in" period).
         - `update_every`: the number of gradient steps taken between
         each update of collocation points in the RAR algo.
@@ -371,7 +376,7 @@ class CubicMeshPDEStatio(eqx.Module):
         - `selected_sample_size`: the number of selected
         points from the sample to be added to the current collocation
         points.
-    n_start : Int, default=None
+    n_start : int, default=None
         Defaults to None. The effective size of n used at start time.
         This value must be
         provided when rar_parameters is not None. Otherwise we set internally
@@ -382,35 +387,35 @@ class CubicMeshPDEStatio(eqx.Module):
 
     # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
     key: Key = eqx.field(kw_only=True)
-    n: Int = eqx.field(kw_only=True, static=True)
-    nb: Int | None = eqx.field(kw_only=True, static=True, default=None)
-    omega_batch_size: Int | None = eqx.field(
+    n: int = eqx.field(kw_only=True, static=True)
+    nb: int | None = eqx.field(kw_only=True, static=True, default=None)
+    omega_batch_size: int | None = eqx.field(
         kw_only=True,
         static=True,
         default=None,  # can be None as
         # CubicMeshPDENonStatio inherits but also if omega_batch_size=n
     )  # static cause used as a
     # shape in jax.lax.dynamic_slice
-    omega_border_batch_size: Int | None = eqx.field(
+    omega_border_batch_size: int | None = eqx.field(
         kw_only=True, static=True, default=None
     )  # static cause used as a
     # shape in jax.lax.dynamic_slice
-    dim: Int = eqx.field(kw_only=True, static=True)  # static cause used as a
+    dim: int = eqx.field(kw_only=True, static=True)  # static cause used as a
     # shape in jax.lax.dynamic_slice
-    min_pts: tuple[tuple[Float, Float], ...] = eqx.field(kw_only=True)
-    max_pts: tuple[tuple[Float, Float], ...] = eqx.field(kw_only=True)
+    min_pts: tuple[float, ...] = eqx.field(kw_only=True)
+    max_pts: tuple[float, ...] = eqx.field(kw_only=True)
     method: str = eqx.field(
         kw_only=True, static=True, default_factory=lambda: "uniform"
     )
-    rar_parameters: Dict[str, Int] = eqx.field(kw_only=True, default=None)
-    n_start: Int = eqx.field(kw_only=True, default=None, static=True)
+    rar_parameters: Dict[str, int] = eqx.field(kw_only=True, default=None)
+    n_start: int = eqx.field(kw_only=True, default=None, static=True)
 
     # all the init=False fields are set in __post_init__
     p: Float[Array, "n"] = eqx.field(init=False)
-    rar_iter_from_last_sampling: Int = eqx.field(init=False)
-    rar_iter_nb: Int = eqx.field(init=False)
-    curr_omega_idx: Int = eqx.field(init=False)
-    curr_omega_border_idx: Int = eqx.field(init=False)
+    rar_iter_from_last_sampling: int = eqx.field(init=False)
+    rar_iter_nb: int = eqx.field(init=False)
+    curr_omega_idx: int = eqx.field(init=False)
+    curr_omega_border_idx: int = eqx.field(init=False)
     omega: Float[Array, "n dim"] = eqx.field(init=False)
     omega_border: Float[Array, "1 2"] | Float[Array, "(nb//4) 2 4"] | None = eqx.field(
         init=False
@@ -437,6 +442,12 @@ class CubicMeshPDEStatio(eqx.Module):
                 )
             self.n = perfect_sq
 
+        if self.omega_batch_size is None:
+            self.curr_omega_idx = 0
+        else:
+            self.curr_omega_idx = self.n + self.omega_batch_size
+            # to be sure there is a shuffling at first get_batch()
+
         if self.nb is not None:
             if self.dim == 1:
                 self.omega_border_batch_size = None
@@ -461,25 +472,18 @@ class CubicMeshPDEStatio(eqx.Module):
                     )
                 self.nb = int((2 * self.dim) * (self.nb // (2 * self.dim)))
 
-        if self.omega_batch_size is None:
-            self.curr_omega_idx = 0
-        else:
-            self.curr_omega_idx = self.n + self.omega_batch_size
-            # to be sure there is a shuffling at first get_batch()
-
-        if self.omega_border_batch_size is None:
-            self.curr_omega_border_idx = 0
-        else:
-            self.curr_omega_border_idx = self.nb + self.omega_border_batch_size
-            # to be sure there is a shuffling at first get_batch()
+            if self.omega_border_batch_size is None:
+                self.curr_omega_border_idx = 0
+            else:
+                self.curr_omega_border_idx = self.nb + self.omega_border_batch_size
+                # to be sure there is a shuffling at first get_batch()
 
         self.key, self.omega = self.generate_omega_data(self.key)
         self.key, self.omega_border = self.generate_omega_border_data(self.key)
 
     def sample_in_omega_domain(
-        self, keys: Key, sample_size: Int = None
+        self, keys: Key, sample_size: int
     ) -> Float[Array, "n dim"]:
-        sample_size = self.n if sample_size is None else sample_size
         if self.dim == 1:
             xmin, xmax = self.min_pts[0], self.max_pts[0]
             return jax.random.uniform(
@@ -500,7 +504,7 @@ class CubicMeshPDEStatio(eqx.Module):
         )
 
     def sample_in_omega_border_domain(
-        self, keys: Key, sample_size: int = None
+        self, keys: Key, sample_size: int | None = None
     ) -> Float[Array, "1 2"] | Float[Array, "(nb//4) 2 4"] | None:
         sample_size = self.nb if sample_size is None else sample_size
         if sample_size is None:
@@ -564,7 +568,7 @@ class CubicMeshPDEStatio(eqx.Module):
             + f"implemented yet. You are asking for generation in dimension d={self.dim}."
         )
 
-    def generate_omega_data(self, key: Key, data_size: int = None) -> tuple[
+    def generate_omega_data(self, key: Key, data_size: int | None = None) -> tuple[
         Key,
         Float[Array, "n dim"],
     ]:
@@ -602,7 +606,9 @@ class CubicMeshPDEStatio(eqx.Module):
             raise ValueError("Method " + self.method + " is not implemented.")
         return key, omega
 
-    def generate_omega_border_data(self, key: Key, data_size: int = None) -> tuple[
+    def generate_omega_border_data(
+        self, key: Key, data_size: int | None = None
+    ) -> tuple[
         Key,
         Float[Array, "1 2"] | Float[Array, "(nb//4) 2 4"] | None,
     ]:
@@ -625,7 +631,7 @@ class CubicMeshPDEStatio(eqx.Module):
 
     def _get_omega_operands(
         self,
-    ) -> tuple[Key, Float[Array, "n dim"], Int, Int, Float[Array, "n"]]:
+    ) -> tuple[Key, Float[Array, "n dim"], int, int | None, Float[Array, "n"]]:
         return (
             self.key,
             self.omega,
@@ -636,7 +642,7 @@ class CubicMeshPDEStatio(eqx.Module):
 
     def inside_batch(
         self,
-    ) -> tuple["CubicMeshPDEStatio", Float[Array, "omega_batch_size dim"]]:
+    ) -> tuple[CubicMeshPDEStatio, Float[Array, "omega_batch_size dim"]]:
         r"""
         Return a batch of points in $\Omega$.
         If all the batches have been seen, we reshuffle them,
@@ -658,7 +664,11 @@ class CubicMeshPDEStatio(eqx.Module):
         bstart = self.curr_omega_idx
         bend = bstart + self.omega_batch_size
 
-        new_attributes = _reset_or_increment(bend, n_eff, self._get_omega_operands())
+        new_attributes = _reset_or_increment(
+            bend, n_eff, self._get_omega_operands()
+        )  # type: ignore
+        # ignore since the case self.temporal_batch_size is None has been
+        # handled above
         new = eqx.tree_at(
             lambda m: (m.key, m.omega, m.curr_omega_idx), self, new_attributes
         )
@@ -672,7 +682,11 @@ class CubicMeshPDEStatio(eqx.Module):
     def _get_omega_border_operands(
         self,
     ) -> tuple[
-        Key, Float[Array, "1 2"] | Float[Array, "(nb//4) 2 4"] | None, Int, Int, None
+        Key,
+        Float[Array, "1 2"] | Float[Array, "(nb//4) 2 4"] | None,
+        int,
+        int | None,
+        None,
     ]:
         return (
             self.key,
@@ -685,7 +699,7 @@ class CubicMeshPDEStatio(eqx.Module):
     def border_batch(
         self,
     ) -> tuple[
-        "CubicMeshPDEStatio",
+        CubicMeshPDEStatio,
         Float[Array, "1 1 2"] | Float[Array, "omega_border_batch_size 2 4"] | None,
     ]:
         r"""
@@ -704,7 +718,7 @@ class CubicMeshPDEStatio(eqx.Module):
 
 
         """
-        if self.nb is None:
+        if self.nb is None or self.omega_border is None:
             # Avoid unnecessary reshuffling
             return self, None
 
@@ -725,7 +739,11 @@ class CubicMeshPDEStatio(eqx.Module):
         bend = bstart + self.omega_border_batch_size
 
         new_attributes = _reset_or_increment(
-            bend, self.nb, self._get_omega_border_operands()
+            bend,
+            self.nb,
+            self._get_omega_border_operands(),  # type: ignore
+            # ignore since the case self.temporal_batch_size is None has been
+            # handled above
         )
         new = eqx.tree_at(
             lambda m: (m.key, m.omega_border, m.curr_omega_border_idx),
@@ -739,7 +757,7 @@ class CubicMeshPDEStatio(eqx.Module):
             slice_sizes=(new.omega_border_batch_size, new.dim, 2 * new.dim),
         )
 
-    def get_batch(self) -> tuple["CubicMeshPDEStatio", PDEStatioBatch]:
+    def get_batch(self) -> tuple[CubicMeshPDEStatio, PDEStatioBatch]:
         """
         Generic method to return a batch. Here we call `self.inside_batch()`
         and `self.border_batch()`
@@ -759,29 +777,29 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
     ----------
     key : Key
         Jax random key to sample new time points and to shuffle batches
-    n : Int
+    n : int
         The number of total $I\times \Omega$ points that will be divided in
         batches. Batches are made so that each data point is seen only
         once during 1 epoch.
-    nb : Int | None
+    nb : int | None
         The total number of points in $\partial\Omega$. Can be None if no
         boundary condition is specified.
-    ni : Int
+    ni : int
         The number of total $\Omega$ points at $t=0$ that will be divided in
         batches. Batches are made so that each data point is seen only
         once during 1 epoch.
-    domain_batch_size : Int | None, default=None
+    domain_batch_size : int | None, default=None
         The size of the batch of randomly selected points among
         the `n` points. If None no mini-batches are used.
-    border_batch_size : Int | None, default=None
+    border_batch_size : int | None, default=None
         The size of the batch of points randomly selected
         among the `nb` points. If None, `domain_batch_size` no
         mini-batches are used.
-    initial_batch_size : Int | None, default=None
+    initial_batch_size : int | None, default=None
         The size of the batch of randomly selected points among
         the `ni` points. If None no
         mini-batches are used.
-    dim : Int
+    dim : int
         An integer. Dimension of $\Omega$ domain.
     min_pts : tuple[tuple[Float, Float], ...]
         A tuple of minimum values of the domain along each dimension. For a sampling
@@ -800,7 +818,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         The method that generates the `nt` time points. `grid` means
         regularly spaced points over the domain. `uniform` means uniformly
         sampled points over the domain
-    rar_parameters : Dict[str, Int], default=None
+    rar_parameters : Dict[str, int], default=None
         Defaults to None: do not use Residual Adaptative Resampling.
         Otherwise a dictionary with keys
 
@@ -812,7 +830,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         - `selected_sample_size`: the number of selected
         points from the sample to be added to the current collocation
         points.
-    n_start : Int, default=None
+    n_start : int, default=None
         Defaults to None. The effective size of n used at start time.
         This value must be
         provided when rar_parameters is not None. Otherwise we set internally
@@ -823,19 +841,19 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
     tmin: Float = eqx.field(kw_only=True)
     tmax: Float = eqx.field(kw_only=True)
-    ni: Int = eqx.field(kw_only=True, static=True)
-    domain_batch_size: Int | None = eqx.field(kw_only=True, static=True, default=None)
-    initial_batch_size: Int | None = eqx.field(kw_only=True, static=True, default=None)
-    border_batch_size: Int | None = eqx.field(kw_only=True, static=True, default=None)
+    ni: int = eqx.field(kw_only=True, static=True)
+    domain_batch_size: int | None = eqx.field(kw_only=True, static=True, default=None)
+    initial_batch_size: int | None = eqx.field(kw_only=True, static=True, default=None)
+    border_batch_size: int | None = eqx.field(kw_only=True, static=True, default=None)
 
-    curr_domain_idx: Int = eqx.field(init=False)
-    curr_initial_idx: Int = eqx.field(init=False)
-    curr_border_idx: Int = eqx.field(init=False)
+    curr_domain_idx: int = eqx.field(init=False)
+    curr_initial_idx: int = eqx.field(init=False)
+    curr_border_idx: int = eqx.field(init=False)
     domain: Float[Array, "n 1+dim"] = eqx.field(init=False)
     border: Float[Array, "(nb//2) 1+1 2"] | Float[Array, "(nb//4) 2+1 4"] | None = (
         eqx.field(init=False)
     )
-    initial: Float[Array, "ni dim"] = eqx.field(init=False)
+    initial: Float[Array, "ni dim"] | None = eqx.field(init=False)
 
     def __post_init__(self):
         """
@@ -893,6 +911,9 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.curr_domain_idx = self.n + self.domain_batch_size
             # to be sure there is a shuffling at first get_batch()
         if self.nb is not None:
+            assert (
+                self.omega_border is not None
+            )  # this needs to have been instanciated in super.__post_init__()
             # the check below has already been done in super.__post_init__ if
             # dim > 1. Here we retest it in whatever dim
             if self.nb % (2 * self.dim) != 0 or self.nb < 2 * self.dim:
@@ -934,7 +955,6 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
         else:
             self.border = None
-            self.curr_border_idx = None
             self.border_batch_size = None
 
         if self.ni is not None:
@@ -958,13 +978,12 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         else:
             self.initial = None
             self.initial_batch_size = None
-            self.curr_initial_idx = None
 
         # the following attributes will not be used anymore
-        self.omega = None
-        self.omega_border = None
+        del self.omega
+        del self.omega_border
 
-    def generate_time_data(self, key: Key, nt: Int) -> tuple[Key, Float[Array, "nt 1"]]:
+    def generate_time_data(self, key: Key, nt: int) -> tuple[Key, Float[Array, "nt 1"]]:
         """
         Construct a complete set of `nt` time points according to the
         specified `self.method`
@@ -977,7 +996,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             return key, self.sample_in_time_domain(subkey, nt)
         raise ValueError("Method " + self.method + " is not implemented.")
 
-    def sample_in_time_domain(self, key: Key, nt: Int) -> Float[Array, "nt 1"]:
+    def sample_in_time_domain(self, key: Key, nt: int) -> Float[Array, "nt 1"]:
         return jax.random.uniform(
             key,
             (nt, 1),
@@ -987,7 +1006,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
     def _get_domain_operands(
         self,
-    ) -> tuple[Key, Float[Array, "n 1+dim"], Int, Int, None]:
+    ) -> tuple[Key, Float[Array, "n 1+dim"], int, int | None, Array]:
         return (
             self.key,
             self.domain,
@@ -998,7 +1017,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
     def domain_batch(
         self,
-    ) -> tuple["CubicMeshPDEStatio", Float[Array, "domain_batch_size 1+dim"]]:
+    ) -> tuple[CubicMeshPDENonStatio, Float[Array, "domain_batch_size 1+dim"]]:
 
         if self.domain_batch_size is None or self.domain_batch_size == self.n:
             # Avoid unnecessary reshuffling
@@ -1016,7 +1035,13 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         else:
             n_eff = self.n
 
-        new_attributes = _reset_or_increment(bend, n_eff, self._get_domain_operands())
+        new_attributes = _reset_or_increment(
+            bend,
+            n_eff,
+            self._get_domain_operands(),  # type: ignore
+            # ignore since the case self.temporal_batch_size is None has been
+            # handled above
+        )
         new = eqx.tree_at(
             lambda m: (m.key, m.domain, m.curr_domain_idx),
             self,
@@ -1031,7 +1056,11 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
     def _get_border_operands(
         self,
     ) -> tuple[
-        Key, Float[Array, "nb 1+1 2"] | Float[Array, "(nb//4) 2+1 4"], Int, Int, None
+        Key,
+        Float[Array, "nb 1+1 2"] | Float[Array, "(nb//4) 2+1 4"] | None,
+        int,
+        int | None,
+        None,
     ]:
         return (
             self.key,
@@ -1044,12 +1073,12 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
     def border_batch(
         self,
     ) -> tuple[
-        "CubicMeshPDENonStatio",
+        CubicMeshPDENonStatio,
         Float[Array, "border_batch_size 1+1 2"]
         | Float[Array, "border_batch_size 2+1 4"]
         | None,
     ]:
-        if self.nb is None:
+        if self.nb is None or self.border is None:
             # Avoid unnecessary reshuffling
             return self, None
 
@@ -1065,7 +1094,13 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
         n_eff = self.border.shape[0]
 
-        new_attributes = _reset_or_increment(bend, n_eff, self._get_border_operands())
+        new_attributes = _reset_or_increment(
+            bend,
+            n_eff,
+            self._get_border_operands(),  # type: ignore
+            # ignore since the case self.temporal_batch_size is None has been
+            # handled above
+        )
         new = eqx.tree_at(
             lambda m: (m.key, m.border, m.curr_border_idx),
             self,
@@ -1084,7 +1119,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
     def _get_initial_operands(
         self,
-    ) -> tuple[Key, Float[Array, "ni dim"], Int, Int, None]:
+    ) -> tuple[Key, Float[Array, "ni dim"] | None, int, int | None, None]:
         return (
             self.key,
             self.initial,
@@ -1095,7 +1130,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
     def initial_batch(
         self,
-    ) -> tuple["CubicMeshPDEStatio", Float[Array, "initial_batch_size dim"]]:
+    ) -> tuple[CubicMeshPDENonStatio, Float[Array, "initial_batch_size dim"] | None]:
         if self.initial_batch_size is None or self.initial_batch_size == self.ni:
             # Avoid unnecessary reshuffling
             return self, self.initial
@@ -1105,7 +1140,13 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
         n_eff = self.ni
 
-        new_attributes = _reset_or_increment(bend, n_eff, self._get_initial_operands())
+        new_attributes = _reset_or_increment(
+            bend,
+            n_eff,
+            self._get_initial_operands(),  # type: ignore
+            # ignore since the case self.temporal_batch_size is None has been
+            # handled above
+        )
         new = eqx.tree_at(
             lambda m: (m.key, m.initial, m.curr_initial_idx),
             self,
@@ -1117,7 +1158,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             slice_sizes=(new.initial_batch_size, new.dim),
         )
 
-    def get_batch(self) -> tuple["CubicMeshPDENonStatio", PDENonStatioBatch]:
+    def get_batch(self) -> tuple[CubicMeshPDENonStatio, PDENonStatioBatch]:
         """
         Generic method to return a batch. Here we call `self.domain_batch()`,
         `self.border_batch()` and `self.initial_batch()`
@@ -1146,7 +1187,7 @@ class DataGeneratorObservations(eqx.Module):
     ----------
     key : Key
         Jax random key to shuffle batches
-    obs_batch_size : Int | None
+    obs_batch_size : int | None
         The size of the batch of randomly selected points among
         the `n` points. If None, no minibatch are used.
     observed_pinn_in : Float[Array, "n_obs nb_pinn_in"]
@@ -1178,7 +1219,7 @@ class DataGeneratorObservations(eqx.Module):
     """
 
     key: Key
-    obs_batch_size: Int | None = eqx.field(static=True)
+    obs_batch_size: int | None = eqx.field(static=True)
     observed_pinn_in: Float[Array, "n_obs nb_pinn_in"]
     observed_values: Float[Array, "n_obs nb_pinn_out"]
     observed_eq_params: Dict[str, Float[Array, "n_obs 1"]] = eqx.field(
@@ -1186,8 +1227,8 @@ class DataGeneratorObservations(eqx.Module):
     )
     sharding_device: jax.sharding.Sharding = eqx.field(static=True, default=None)
 
-    n: Int = eqx.field(init=False, static=True)
-    curr_idx: Int = eqx.field(init=False)
+    n: int = eqx.field(init=False, static=True)
+    curr_idx: int = eqx.field(init=False)
     indices: Array = eqx.field(init=False)
 
     def __post_init__(self):
@@ -1249,7 +1290,7 @@ class DataGeneratorObservations(eqx.Module):
         self.key, _ = jax.random.split(self.key, 2)  # to make it equivalent to
         # the call to _reset_batch_idx_and_permute in legacy DG
 
-    def _get_operands(self) -> tuple[Key, Int[Array, "n"], Int, Int, None]:
+    def _get_operands(self) -> tuple[Key, int[Array, "n"], int, int, None]:
         return (
             self.key,
             self.indices,
@@ -1261,7 +1302,7 @@ class DataGeneratorObservations(eqx.Module):
     def obs_batch(
         self,
     ) -> tuple[
-        "DataGeneratorObservations", Dict[str, Float[Array, "obs_batch_size dim"]]
+        DataGeneratorObservations, Dict[str, Float[Array, "obs_batch_size dim"]]
     ]:
         """
         Return a dictionary with (keys, values): (pinn_in, a mini batch of pinn
@@ -1311,7 +1352,7 @@ class DataGeneratorObservations(eqx.Module):
     def get_batch(
         self,
     ) -> tuple[
-        "DataGeneratorObservations", Dict[str, Float[Array, "obs_batch_size dim"]]
+        DataGeneratorObservations, Dict[str, Float[Array, "obs_batch_size dim"]]
     ]:
         """
         Generic method to return a batch
@@ -1330,11 +1371,11 @@ class DataGeneratorParameter(eqx.Module):
     keys : Key | Dict[str, Key]
         Jax random key to sample new time points and to shuffle batches
         or a dict of Jax random keys with key entries from param_ranges
-    n : Int
+    n : int
         The number of total points that will be divided in
         batches. Batches are made so that each data point is seen only
         once during 1 epoch.
-    param_batch_size : Int | None, default=None
+    param_batch_size : int | None, default=None
         The size of the batch of randomly selected points among
         the `n` points.  **Important**: no check is performed but
         `param_batch_size` must be the same as other collocation points
@@ -1365,8 +1406,8 @@ class DataGeneratorParameter(eqx.Module):
     """
 
     keys: Key | Dict[str, Key]
-    n: Int = eqx.field(static=True)
-    param_batch_size: Int | None = eqx.field(static=True, default=None)
+    n: int = eqx.field(static=True)
+    param_batch_size: int | None = eqx.field(static=True, default=None)
     param_ranges: Dict[str, tuple[Float, Float]] = eqx.field(
         static=True, default_factory=lambda: {}
     )
@@ -1375,7 +1416,7 @@ class DataGeneratorParameter(eqx.Module):
         default_factory=lambda: {}
     )
 
-    curr_param_idx: Dict[str, Int] = eqx.field(init=False)
+    curr_param_idx: Dict[str, int] = eqx.field(init=False)
     param_n_samples: Dict[str, Array] = eqx.field(init=False)
 
     def __post_init__(self):
@@ -1449,7 +1490,7 @@ class DataGeneratorParameter(eqx.Module):
 
     def _get_param_operands(
         self, k: str
-    ) -> tuple[Key, Float[Array, "n"], Int, Int, None]:
+    ) -> tuple[Key, Float[Array, "n"], int, int, None]:
         return (
             self.keys[k],
             self.param_n_samples[k],

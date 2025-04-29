@@ -47,13 +47,13 @@ if TYPE_CHECKING:
     from jinns.utils._types import BoundaryConditionFun
 
     class LossDictPDEStatio(TypedDict):
-        dyn_loss: Float[Array, "0"]
-        norm_loss: Float[Array, "0"]
-        boundary_loss: Float[Array, "0"]
-        observations: Float[Array, "0"]
+        dyn_loss: Float[Array, ""]
+        norm_loss: Float[Array, ""]
+        boundary_loss: Float[Array, ""]
+        observations: Float[Array, ""]
 
     class LossDictPDENonStatio(LossDictPDEStatio):
-        initial_condition: Float[Array, "0"]
+        initial_condition: Float[Array, ""]
 
 
 _IMPLEMENTED_BOUNDARY_CONDITIONS = [
@@ -298,7 +298,7 @@ class _LossPDEAbstract(eqx.Module):
         self: eqx.Module,
         params: Params[Array],
         batch: PDEStatioBatch | PDENonStatioBatch,
-    ) -> tuple[Float[Array, "0"], LossDictPDEStatio | LossDictPDENonStatio]:
+    ) -> tuple[Float[Array, ""], LossDictPDEStatio | LossDictPDENonStatio]:
         raise NotImplementedError
 
 
@@ -431,7 +431,7 @@ class LossPDEStatio(_LossPDEAbstract):
 
     def evaluate(
         self, params: Params[Array], batch: PDEStatioBatch
-    ) -> tuple[Float[Array, "0"], LossDictPDEStatio]:
+    ) -> tuple[Float[Array, ""], LossDictPDEStatio]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -690,7 +690,7 @@ class LossPDENonStatio(LossPDEStatio):
 
     def evaluate(
         self, params: Params[Array], batch: PDENonStatioBatch
-    ) -> tuple[Float[Array, "0"], LossDictPDENonStatio]:
+    ) -> tuple[Float[Array, ""], LossDictPDENonStatio]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -707,6 +707,7 @@ class LossPDENonStatio(LossPDEStatio):
             inputs/outputs/parameters
         """
         omega_batch = batch.initial_batch
+        assert omega_batch is not None
 
         # Retrieve the optional eq_params_batch
         # and update eq_params with the latter
