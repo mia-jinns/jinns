@@ -6,12 +6,11 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 import warnings
-from typing import TYPE_CHECKING, Dict
-from dataclasses import InitVar
+from typing import TYPE_CHECKING, Dict, override
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jaxtyping import Key, PyTree, Array, Float
+from jaxtyping import Key, Int, Array, Float
 from jinns.data._Batchs import *
 
 if TYPE_CHECKING:
@@ -123,7 +122,7 @@ def _reset_or_increment(
 
 def _check_and_set_rar_parameters(
     rar_parameters: dict, n: int, n_start: int
-) -> tuple[int, Float[Array, "n"], int, int]:
+) -> tuple[int, Float[Array, "n"] | None, int | None, int | None]:
     if rar_parameters is not None and n_start is None:
         raise ValueError(
             "n_start must be provided in the context of RAR sampling scheme"
@@ -209,9 +208,9 @@ class DataGeneratorODE(eqx.Module):
     n_start: int = eqx.field(static=True, default=None, kw_only=True)
 
     # all the init=False fields are set in __post_init__
-    p: Float[Array, "nt 1"] = eqx.field(init=False)
-    rar_iter_from_last_sampling: int = eqx.field(init=False)
-    rar_iter_nb: int = eqx.field(init=False)
+    p: Float[Array, "nt 1"] | None = eqx.field(init=False)
+    rar_iter_from_last_sampling: int | None = eqx.field(init=False)
+    rar_iter_nb: int | None = eqx.field(init=False)
     curr_time_idx: int = eqx.field(init=False)
     times: Float[Array, "nt 1"] = eqx.field(init=False)
 
@@ -267,7 +266,7 @@ class DataGeneratorODE(eqx.Module):
 
     def _get_time_operands(
         self,
-    ) -> tuple[Key, Float[Array, "nt 1"], int, int | None, Float[Array, "nt 1"]]:
+    ) -> tuple[Key, Float[Array, "nt 1"], int, int | None, Float[Array, "nt 1"] | None]:
         return (
             self.key,
             self.times,
@@ -294,16 +293,19 @@ class DataGeneratorODE(eqx.Module):
         if self.rar_parameters is not None:
             nt_eff = (
                 self.n_start
-                + self.rar_iter_nb * self.rar_parameters["selected_sample_size"]
+                + self.rar_iter_nb  # type: ignore
+                * self.rar_parameters["selected_sample_size"]
             )
         else:
             nt_eff = self.nt
 
         new_attributes = _reset_or_increment(
-            bend, nt_eff, self._get_time_operands()
-        )  # type: ignore
-        # ignore since the case self.temporal_batch_size is None has been
-        # handled above
+            bend,
+            nt_eff,
+            self._get_time_operands(),  # type: ignore
+            # ignore since the case self.temporal_batch_size is None has been
+            # handled above
+        )
         new = eqx.tree_at(
             lambda m: (m.key, m.times, m.curr_time_idx), self, new_attributes
         )
@@ -411,9 +413,9 @@ class CubicMeshPDEStatio(eqx.Module):
     n_start: int = eqx.field(kw_only=True, default=None, static=True)
 
     # all the init=False fields are set in __post_init__
-    p: Float[Array, "n"] = eqx.field(init=False)
-    rar_iter_from_last_sampling: int = eqx.field(init=False)
-    rar_iter_nb: int = eqx.field(init=False)
+    p: Float[Array, "n"] | None = eqx.field(init=False)
+    rar_iter_from_last_sampling: int | None = eqx.field(init=False)
+    rar_iter_nb: int | None = eqx.field(init=False)
     curr_omega_idx: int = eqx.field(init=False)
     curr_omega_border_idx: int = eqx.field(init=False)
     omega: Float[Array, "n dim"] = eqx.field(init=False)
@@ -631,7 +633,7 @@ class CubicMeshPDEStatio(eqx.Module):
 
     def _get_omega_operands(
         self,
-    ) -> tuple[Key, Float[Array, "n dim"], int, int | None, Float[Array, "n"]]:
+    ) -> tuple[Key, Float[Array, "n dim"], int, int | None, Float[Array, "n"] | None]:
         return (
             self.key,
             self.omega,
@@ -656,7 +658,8 @@ class CubicMeshPDEStatio(eqx.Module):
         if self.rar_parameters is not None:
             n_eff = (
                 self.n_start
-                + self.rar_iter_nb * self.rar_parameters["selected_sample_size"]
+                + self.rar_iter_nb  # type: ignore
+                * self.rar_parameters["selected_sample_size"]
             )
         else:
             n_eff = self.n
@@ -665,10 +668,12 @@ class CubicMeshPDEStatio(eqx.Module):
         bend = bstart + self.omega_batch_size
 
         new_attributes = _reset_or_increment(
-            bend, n_eff, self._get_omega_operands()
-        )  # type: ignore
-        # ignore since the case self.temporal_batch_size is None has been
-        # handled above
+            bend,
+            n_eff,
+            self._get_omega_operands(),  # type: ignore
+            # ignore since the case self.omega_batch_size is None has been
+            # handled above
+        )
         new = eqx.tree_at(
             lambda m: (m.key, m.omega, m.curr_omega_idx), self, new_attributes
         )
@@ -742,7 +747,7 @@ class CubicMeshPDEStatio(eqx.Module):
             bend,
             self.nb,
             self._get_omega_border_operands(),  # type: ignore
-            # ignore since the case self.temporal_batch_size is None has been
+            # ignore since the case self.omega_border_batch_size is None has been
             # handled above
         )
         new = eqx.tree_at(
@@ -980,8 +985,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.initial_batch_size = None
 
         # the following attributes will not be used anymore
-        del self.omega
-        del self.omega_border
+        self.omega = None  # type: ignore
+        self.omega_border = None
 
     def generate_time_data(self, key: Key, nt: int) -> tuple[Key, Float[Array, "nt 1"]]:
         """
@@ -1006,7 +1011,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
     def _get_domain_operands(
         self,
-    ) -> tuple[Key, Float[Array, "n 1+dim"], int, int | None, Array]:
+    ) -> tuple[Key, Float[Array, "n 1+dim"], int, int | None, Array | None]:
         return (
             self.key,
             self.domain,
@@ -1030,7 +1035,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         if self.rar_parameters is not None:
             n_eff = (
                 self.n_start
-                + self.rar_iter_nb * self.rar_parameters["selected_sample_size"]
+                + self.rar_iter_nb  # type: ignore
+                * self.rar_parameters["selected_sample_size"]
             )
         else:
             n_eff = self.n
@@ -1039,7 +1045,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             bend,
             n_eff,
             self._get_domain_operands(),  # type: ignore
-            # ignore since the case self.temporal_batch_size is None has been
+            # ignore since the case self.domain_batch_size is None has been
             # handled above
         )
         new = eqx.tree_at(
@@ -1070,6 +1076,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             None,
         )
 
+    @override
     def border_batch(
         self,
     ) -> tuple[
@@ -1098,7 +1105,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             bend,
             n_eff,
             self._get_border_operands(),  # type: ignore
-            # ignore since the case self.temporal_batch_size is None has been
+            # ignore since the case self.border_batch_size is None has been
             # handled above
         )
         new = eqx.tree_at(
@@ -1144,7 +1151,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             bend,
             n_eff,
             self._get_initial_operands(),  # type: ignore
-            # ignore since the case self.temporal_batch_size is None has been
+            # ignore since the case self.initial_batch_size is None has been
             # handled above
         )
         new = eqx.tree_at(
@@ -1158,6 +1165,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             slice_sizes=(new.initial_batch_size, new.dim),
         )
 
+    @override
     def get_batch(self) -> tuple[CubicMeshPDENonStatio, PDENonStatioBatch]:
         """
         Generic method to return a batch. Here we call `self.domain_batch()`,
@@ -1244,11 +1252,11 @@ class DataGeneratorObservations(eqx.Module):
                 )
         if len(self.observed_pinn_in.shape) == 1:
             self.observed_pinn_in = self.observed_pinn_in[:, None]
-        if len(self.observed_pinn_in.shape) > 2:
+        if self.observed_pinn_in.ndim > 2:
             raise ValueError("self.observed_pinn_in must have 2 dimensions")
         if len(self.observed_values.shape) == 1:
             self.observed_values = self.observed_values[:, None]
-        if len(self.observed_values.shape) > 2:
+        if self.observed_values.ndim > 2:
             raise ValueError("self.observed_values must have 2 dimensions")
         for k, v in self.observed_eq_params.items():
             if len(v.shape) == 1:
@@ -1290,7 +1298,7 @@ class DataGeneratorObservations(eqx.Module):
         self.key, _ = jax.random.split(self.key, 2)  # to make it equivalent to
         # the call to _reset_batch_idx_and_permute in legacy DG
 
-    def _get_operands(self) -> tuple[Key, int[Array, "n"], int, int, None]:
+    def _get_operands(self) -> tuple[Key, Int[Array, "n"], int, int | None, None]:
         return (
             self.key,
             self.indices,
@@ -1301,18 +1309,9 @@ class DataGeneratorObservations(eqx.Module):
 
     def obs_batch(
         self,
-    ) -> tuple[
-        DataGeneratorObservations, Dict[str, Float[Array, "obs_batch_size dim"]]
-    ]:
+    ) -> tuple[DataGeneratorObservations, ObsBatchDict]:
         """
-        Return a dictionary with (keys, values): (pinn_in, a mini batch of pinn
-        inputs), (obs, a mini batch of corresponding observations), (eq_params,
-        a dictionary with entry names found in `params["eq_params"]` and values
-        giving the correspond parameter value for the couple
-        (input, observation) mentioned before).
-        It can also be a dictionary of dictionaries as described above if
-        observed_pinn_in, observed_values, etc. are dictionaries with keys
-        representing the PINNs.
+        Return an update DataGeneratorObservations instance and an ObsBatchDict
         """
         if self.obs_batch_size is None or self.obs_batch_size == self.n:
             # Avoid unnecessary reshuffling
@@ -1323,7 +1322,11 @@ class DataGeneratorObservations(eqx.Module):
             }
 
         new_attributes = _reset_or_increment(
-            self.curr_idx + self.obs_batch_size, self.n, self._get_operands()
+            self.curr_idx + self.obs_batch_size,
+            self.n,
+            self._get_operands(),  # type: ignore
+            # ignore since the case self.obs_batch_size is None has been
+            # handled above
         )
         new = eqx.tree_at(
             lambda m: (m.key, m.indices, m.curr_idx), self, new_attributes
@@ -1335,7 +1338,7 @@ class DataGeneratorObservations(eqx.Module):
             slice_sizes=(new.obs_batch_size,),
         )
 
-        obs_batch = {
+        obs_batch: ObsBatchDict = {
             "pinn_in": jnp.take(
                 new.observed_pinn_in, minib_indices, unique_indices=True, axis=0
             ),
@@ -1351,9 +1354,7 @@ class DataGeneratorObservations(eqx.Module):
 
     def get_batch(
         self,
-    ) -> tuple[
-        DataGeneratorObservations, Dict[str, Float[Array, "obs_batch_size dim"]]
-    ]:
+    ) -> tuple[DataGeneratorObservations, ObsBatchDict]:
         """
         Generic method to return a batch
         """
@@ -1394,7 +1395,7 @@ class DataGeneratorParameter(eqx.Module):
         Either `grid` or `uniform`, default is `uniform`. `grid` means
         regularly spaced points over the domain. `uniform` means uniformly
         sampled points over the domain
-    user_data : Dict[str, Float[jnp.ndarray, "n"]] | None, default={}
+    user_data : Dict[str, Float[Array, "n"]] | None, default={}
         A dictionary containing user-provided data for parameters.
         The keys corresponds to the parameter name,
         and must match the keys in `params["eq_params"]`. Only
@@ -1412,7 +1413,7 @@ class DataGeneratorParameter(eqx.Module):
         static=True, default_factory=lambda: {}
     )
     method: str = eqx.field(static=True, default="uniform")
-    user_data: Dict[str, Float[onp.Array, "n"]] | None = eqx.field(
+    user_data: Dict[str, Float[Array, "n"]] | None = eqx.field(
         default_factory=lambda: {}
     )
 
@@ -1424,7 +1425,7 @@ class DataGeneratorParameter(eqx.Module):
             self.user_data = {}
         if self.param_ranges is None:
             self.param_ranges = {}
-        if self.n < self.param_batch_size:
+        if self.param_batch_size is not None and self.n < self.param_batch_size:
             raise ValueError(
                 f"Number of data points ({self.n}) is smaller than the"
                 f"number of batch points ({self.param_batch_size})."
@@ -1434,7 +1435,7 @@ class DataGeneratorParameter(eqx.Module):
             self.keys = dict(zip(all_keys, jax.random.split(self.keys, len(all_keys))))
 
         if self.param_batch_size is None:
-            self.curr_param_idx = None
+            self.curr_param_idx = None  # type: ignore
         else:
             self.curr_param_idx = {}
             for k in self.keys.keys():
@@ -1456,7 +1457,10 @@ class DataGeneratorParameter(eqx.Module):
         """
         param_n_samples = {}
 
-        all_keys = set().union(self.param_ranges, self.user_data)
+        all_keys = set().union(
+            self.param_ranges,
+            self.user_data,  # type: ignore this has been handled in post_init
+        )
         for k in all_keys:
             if (
                 self.user_data
@@ -1490,7 +1494,7 @@ class DataGeneratorParameter(eqx.Module):
 
     def _get_param_operands(
         self, k: str
-    ) -> tuple[Key, Float[Array, "n"], int, int, None]:
+    ) -> tuple[Key, Float[Array, "n"], int, int | None, None]:
         return (
             self.keys[k],
             self.param_n_samples[k],
@@ -1513,7 +1517,9 @@ class DataGeneratorParameter(eqx.Module):
             return _reset_or_increment(
                 idx_k + self.param_batch_size,
                 self.n,
-                (key_k, param_k, idx_k, self.param_batch_size, None),
+                (key_k, param_k, idx_k, self.param_batch_size, None),  # type: ignore
+                # ignore since the case self.param_batch_size is None has been
+                # handled above
             )
 
         res = jax.tree_util.tree_map(

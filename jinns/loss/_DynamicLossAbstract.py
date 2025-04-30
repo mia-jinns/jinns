@@ -6,17 +6,18 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-import equinox as eqx
-from typing import Callable, Dict, TYPE_CHECKING, ClassVar, Generic, TypeVar
-from jaxtyping import Float, Array
-from functools import partial
 import abc
+from functools import partial
+from typing import Callable, TYPE_CHECKING, ClassVar, Generic, TypeVar
+import equinox as eqx
+from jaxtyping import Float, Array
 
 
 # See : https://docs.kidger.site/equinox/api/module/advanced_fields/#equinox.AbstractClassVar--known-issues
 if TYPE_CHECKING:
     from typing import ClassVar as AbstractClassVar
     from jinns.parameters import Params
+    from jinns.nn._abstract_pinn import AbstractPINN
 else:
     from equinox import AbstractClassVar
 
@@ -57,7 +58,7 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
         Tmax needs to be given when the PINN time input is normalized in
         [0, 1], ie. we have performed renormalization of the differential
         equation
-    eq_params_heterogeneity : Dict[str, Callable | None], default=None
+    eq_params_heterogeneity : dict[str, Callable | None], default=None
         A dict with the same keys as eq_params and the value being either None
         (no heterogeneity) or a function which encodes for the spatio-temporal
         heterogeneity of the parameter.
@@ -75,26 +76,30 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
     _eq_type = AbstractClassVar[str]  # class variable denoting the type of
     # differential equation
     Tmax: Float = eqx.field(kw_only=True, default=1)
-    eq_params_heterogeneity: Dict[str, Callable | None] = eqx.field(
+    eq_params_heterogeneity: dict[str, Callable | None] = eqx.field(
         kw_only=True, default=None, static=True
     )
 
     def _eval_heterogeneous_parameters(
         self,
         inputs: InputDim,
-        u: eqx.Module,
-        params: Params,
-        eq_params_heterogeneity: Dict[str, Callable | None] = None,
-    ) -> Dict[str, float | Float[Array, "parameter_dimension"]]:
+        u: AbstractPINN,
+        params: Params[Array],
+        eq_params_heterogeneity: dict[str, Callable | None] | None = None,
+    ) -> dict[str, Array]:
         eq_params_ = {}
         if eq_params_heterogeneity is None:
             return params.eq_params
+
         for k, p in params.eq_params.items():
             try:
-                if eq_params_heterogeneity[k] is None:
-                    eq_params_[k] = p
+                if eq_params_heterogeneity[k] is not None:
+                    eq_params_[k] = eq_params_heterogeneity[k](
+                        inputs, u, params
+                    )  # type: ignore don't know why pyright says
+                    # eq_params_heterogeneity[k] can be None here
                 else:
-                    eq_params_[k] = eq_params_heterogeneity[k](inputs, u, params)
+                    eq_params_[k] = p
             except KeyError:
                 # we authorize missing eq_params_heterogeneity key
                 # if its heterogeneity is None anyway
@@ -105,7 +110,7 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
     def evaluate(
         self,
         inputs: InputDim,
-        u: eqx.Module,
+        u: AbstractPINN,
         params: Params,
     ) -> float:
         evaluation = self.equation(inputs, u, params)
@@ -134,7 +139,7 @@ class ODE(DynamicLoss[Float[Array, "1"]]):
         Tmax needs to be given when the PINN time input is normalized in
         [0, 1], ie. we have performed renormalization of the differential
         equation
-    eq_params_heterogeneity : Dict[str, Callable | None], default=None
+    eq_params_heterogeneity : dict[str, Callable | None], default=None
         Default None. A dict with the keys being the same as in eq_params
         and the value being either None (no heterogeneity) or a function
         which encodes for the spatio-temporal heterogeneity of the parameter.
@@ -151,7 +156,7 @@ class ODE(DynamicLoss[Float[Array, "1"]]):
     _eq_type: ClassVar[str] = "ODE"
 
     @abc.abstractmethod
-    def equation(self, t: Float[Array, "1"], u: eqx.Module, params: Params) -> float:
+    def equation(self, t: Float[Array, "1"], u: AbstractPINN, params: Params) -> float:
         r"""
         The differential operator defining the ODE.
 
@@ -163,7 +168,7 @@ class ODE(DynamicLoss[Float[Array, "1"]]):
         ----------
         t : Float[Array, "1"]
             A 1-dimensional jnp.array representing the time point.
-        u : eqx.Module
+        u : AbstractPINN
             The network with a call signature `u(t, params)`.
         params : Params
             The equation and neural network parameters $\theta$ and $\nu$.
@@ -191,7 +196,7 @@ class PDEStatio(DynamicLoss[Float[Array, "dim"]]):
         Tmax needs to be given when the PINN time input is normalized in
         [0, 1], ie. we have performed renormalization of the differential
         equation
-    eq_params_heterogeneity : Dict[str, Callable | None], default=None
+    eq_params_heterogeneity : dict[str, Callable | None], default=None
         Default None. A dict with the keys being the same as in eq_params
         and the value being either None (no heterogeneity) or a function
         which encodes for the spatio-temporal heterogeneity of the parameter.
@@ -208,7 +213,9 @@ class PDEStatio(DynamicLoss[Float[Array, "dim"]]):
     _eq_type: ClassVar[str] = "Statio PDE"
 
     @abc.abstractmethod
-    def equation(self, x: Float[Array, "dim"], u: eqx.Module, params: Params) -> float:
+    def equation(
+        self, x: Float[Array, "dim"], u: AbstractPINN, params: Params
+    ) -> float:
         r"""The differential operator defining the stationnary PDE.
 
         !!! warning
@@ -219,7 +226,7 @@ class PDEStatio(DynamicLoss[Float[Array, "dim"]]):
         ----------
         x : Float[Array, "dim"]
             A `d` dimensional jnp.array representing a point in the spatial domain $\Omega$.
-        u : eqx.Module
+        u : AbstractPINN
             The neural network.
         params : Params
             The parameters of the equation and the networks, $\theta$ and $\nu$ respectively.
@@ -247,7 +254,7 @@ class PDENonStatio(DynamicLoss[Float[Array, "1 + dim"]]):
         Tmax needs to be given when the PINN time input is normalized in
         [0, 1], ie. we have performed renormalization of the differential
         equation
-    eq_params_heterogeneity : Dict[str, Callable | None], default=None
+    eq_params_heterogeneity : dict[str, Callable | None], default=None
         Default None. A dict with the keys being the same as in eq_params
         and the value being either None (no heterogeneity) or a function
         which encodes for the spatio-temporal heterogeneity of the parameter.
@@ -267,7 +274,7 @@ class PDENonStatio(DynamicLoss[Float[Array, "1 + dim"]]):
     def equation(
         self,
         t_x: Float[Array, "1 + dim"],
-        u: eqx.Module,
+        u: AbstractPINN,
         params: Params,
     ) -> float:
         r"""The differential operator defining the non-stationnary PDE.
@@ -280,7 +287,7 @@ class PDENonStatio(DynamicLoss[Float[Array, "1 + dim"]]):
         ----------
         t_x : Float[Array, "1 + dim"]
             A jnp array containing the concatenation of a time point and a point in $\Omega$
-        u : eqx.Module
+        u : AbstractPINN
             The neural network.
         params : Params
             The parameters of the equation and the networks, $\theta$ and $\nu$ respectively.

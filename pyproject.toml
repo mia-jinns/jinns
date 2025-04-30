@@ -47,3 +47,8 @@ exclude_also = [
     # A pragma comment that excludes an entire file:
     "\\A(?s:.*# pragma: exclude file.*)\\Z",
     ]
+
+[tool.pyright]
+include = ["jinns"]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"

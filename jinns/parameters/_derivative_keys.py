@@ -99,7 +99,7 @@ class DerivativeKeysODE(eqx.Module):
     observations: Params[bool] | None = eqx.field(kw_only=True, default=None)
     initial_condition: Params[bool] | None = eqx.field(kw_only=True, default=None)
 
-    params: InitVar[Params[Array]] | None = eqx.field(kw_only=True, default=None)
+    params: InitVar[Params[Array] | None] = eqx.field(kw_only=True, default=None)
 
     def __post_init__(self, params: Params[Array] | None = None):
         if params is None and (
@@ -221,7 +221,7 @@ class DerivativeKeysPDEStatio(eqx.Module):
     boundary_loss: Params[bool] | None = eqx.field(kw_only=True, default=None)
     norm_loss: Params[bool] | None = eqx.field(kw_only=True, default=None)
 
-    params: InitVar[Params[Array]] | None = eqx.field(kw_only=True, default=None)
+    params: InitVar[Params[Array] | None] = eqx.field(kw_only=True, default=None)
 
     def __post_init__(self, params: Params[Array] | None = None):
         if self.dyn_loss is None:

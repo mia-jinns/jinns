@@ -5,7 +5,14 @@ from jaxtyping import Float, Array
 
 class ObsBatchDict(TypedDict):
     """
-    Correct way to handle type hints for dict with fixed set of keys
+    Keys:
+    -pinn_in, a mini batch of pinn inputs
+    -val, a mini batch of corresponding observations
+    -eq_params, a dictionary with entry names found in `params["eq_params"]`
+    and values giving the correspond parameter value for the couple (input,
+    value) mentioned before).
+
+    A TypedDict is the correct way to handle type hints for dict with fixed set of keys
     https://peps.python.org/pep-0589/
     """
 

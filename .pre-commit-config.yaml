@@ -1,17 +1,17 @@
-default_stages: [commit]
+default_stages: [pre-commit]
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
     -   id: trailing-whitespace
-        stages: [commit]
+        stages: [pre-commit]
     -   id: end-of-file-fixer
-        stages: [commit]
+        stages: [pre-commit]
   - repo: https://github.com/psf/black
     rev: 25.1.0
     hooks:
     -   id: black
-        stages: [commit]
+        stages: [pre-commit]
         #- repo: local
         #  hooks:
         #  -   id: pytest-check
