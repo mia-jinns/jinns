@@ -51,9 +51,7 @@ class SPINN(AbstractPINN):
 
     d: int = eqx.field(static=True, kw_only=True)
     r: int = eqx.field(static=True, kw_only=True)
-    eq_type: str = eqx.field(static=True, kw_only=True)
     m: int = eqx.field(static=True, kw_only=True, default=1)
-
     filter_spec: PyTree[Union[bool, Callable[[Any], bool]]] = eqx.field(
         static=True, kw_only=True, default=None
     )

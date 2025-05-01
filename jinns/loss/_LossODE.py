@@ -26,13 +26,14 @@ from jinns.parameters._params import (
 )
 from jinns.parameters._derivative_keys import _set_derivatives, DerivativeKeysODE
 from jinns.loss._loss_weights import LossWeightsODE
+from jinns.loss._abstract_loss import AbstractLoss
 
 if TYPE_CHECKING:
     # imports only used in type hints
     from jinns.parameters._params import Params
     from jinns.data._Batchs import ODEBatch
     from jinns.nn._abstract_pinn import AbstractPINN
-    from jinns.loss import DynamicLoss
+    from jinns.loss import ODE
 
     class LossDictODE(TypedDict):
         dyn_loss: Float[Array, ""]
@@ -40,7 +41,7 @@ if TYPE_CHECKING:
         observations: Float[Array, ""]
 
 
-class _LossODEAbstract(eqx.Module):
+class _LossODEAbstract(AbstractLoss):
     """
     Parameters
     ----------
@@ -128,6 +129,10 @@ class _LossODEAbstract(eqx.Module):
             self.loss_weights = LossWeightsODE()
 
     @abc.abstractmethod
+    def __call__(self, *_, **__):
+        pass
+
+    @abc.abstractmethod
     def evaluate(
         self: eqx.Module, params: Params[Array], batch: ODEBatch
     ) -> tuple[Float[Array, ""], LossDictODE]:
@@ -169,7 +174,7 @@ class LossODE(_LossODEAbstract):
         DerivativeKeysODE if the latter is not specified.
     u : eqx.Module
         the PINN
-    dynamic_loss : DynamicLoss
+    dynamic_loss : ODE
         the ODE dynamic part of the loss, basically the differential
         operator $\mathcal{N}[u](t)$. Should implement a method
         `dynamic_loss.evaluate(t, u, params)`.
@@ -184,7 +189,7 @@ class LossODE(_LossODEAbstract):
     # NOTE static=True only for leaf attributes that are not valid JAX types
     # (ie. jax.Array cannot be static) and that we do not expect to change
     u: AbstractPINN
-    dynamic_loss: DynamicLoss | None
+    dynamic_loss: ODE | None
 
     vmap_in_axes: tuple[int] = eqx.field(init=False, static=True)
 

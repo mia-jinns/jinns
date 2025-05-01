@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Callable
 import jax
 import jax.numpy as jnp
 from jax import vmap, grad
-import equinox as eqx
 from jinns.utils._utils import get_grid, _subtract_with_check
 from jinns.data._Batchs import *
 from jinns.nn._pinn import PINN
@@ -19,18 +18,19 @@ from jinns.nn._spinn import SPINN
 if TYPE_CHECKING:
     from jinns.parameters._params import Params
     from jinns.utils._types import BoundaryConditionFun
+    from jinns.nn._abstract_pinn import AbstractPINN
 
 
 def _compute_boundary_loss(
     boundary_condition_type: str,
     f: BoundaryConditionFun,
     batch: PDEStatioBatch | PDENonStatioBatch,
-    u: eqx.Module,
-    params: Params,
+    u: AbstractPINN,
+    params: Params[Array],
     facet: int,
     dim_to_apply: slice,
     vmap_in_axes: tuple,
-) -> float:
+) -> Float[Array, ""]:
     r"""A generic function that will compute the mini-batch MSE of a
     boundary condition in the stationary case, resp. non-stationary, given by:
 
@@ -98,12 +98,12 @@ def boundary_dirichlet(
         [Float[Array, "dim"] | Float[Array, "dim + 1"]], Float[Array, "dim_solution"]
     ],
     batch: PDEStatioBatch | PDENonStatioBatch,
-    u: eqx.Module,
-    params: Params,
+    u: AbstractPINN,
+    params: Params[Array],
     facet: int,
     dim_to_apply: slice,
     vmap_in_axes: tuple,
-) -> float:
+) -> Float[Array, ""]:
     r"""
     This omega boundary condition enforces a solution that is equal to `f`
     at `times_batch` x `omega_border` (non stationary case) or at `omega_border`
@@ -134,6 +134,7 @@ def boundary_dirichlet(
     vmap_in_axes
         A tuple object which specifies the in_axes of the vmapping
     """
+    assert batch.border_batch is not None
     batch_array = batch.border_batch
     batch_array = batch_array[..., facet]
 
@@ -170,12 +171,12 @@ def boundary_neumann(
         [Float[Array, "dim"] | Float[Array, "dim + 1"]], Float[Array, "dim_solution"]
     ],
     batch: PDEStatioBatch | PDENonStatioBatch,
-    u: eqx.Module,
-    params: Params,
+    u: AbstractPINN,
+    params: Params[Array],
     facet: int,
     dim_to_apply: slice,
     vmap_in_axes: tuple,
-) -> float:
+) -> Float[Array, ""]:
     r"""
     This omega boundary condition enforces a solution where $\nabla u\cdot
     n$ is equal to `f` at the cartesian product of `time_batch` x `omega
@@ -207,6 +208,7 @@ def boundary_neumann(
     vmap_in_axes
         A tuple object which specifies the in_axes of the vmapping
     """
+    assert batch.border_batch is not None
     batch_array = batch.border_batch
     batch_array = batch_array[..., facet]
 

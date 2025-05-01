@@ -111,7 +111,7 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
         self,
         inputs: InputDim,
         u: AbstractPINN,
-        params: Params,
+        params: Params[Array],
     ) -> float:
         evaluation = self.equation(inputs, u, params)
         if len(evaluation.shape) == 0:
@@ -156,7 +156,9 @@ class ODE(DynamicLoss[Float[Array, "1"]]):
     _eq_type: ClassVar[str] = "ODE"
 
     @abc.abstractmethod
-    def equation(self, t: Float[Array, "1"], u: AbstractPINN, params: Params) -> float:
+    def equation(
+        self, t: Float[Array, "1"], u: AbstractPINN, params: Params[Array]
+    ) -> float:
         r"""
         The differential operator defining the ODE.
 
@@ -170,7 +172,7 @@ class ODE(DynamicLoss[Float[Array, "1"]]):
             A 1-dimensional jnp.array representing the time point.
         u : AbstractPINN
             The network with a call signature `u(t, params)`.
-        params : Params
+        params : Params[Array]
             The equation and neural network parameters $\theta$ and $\nu$.
 
         Returns
@@ -214,7 +216,7 @@ class PDEStatio(DynamicLoss[Float[Array, "dim"]]):
 
     @abc.abstractmethod
     def equation(
-        self, x: Float[Array, "dim"], u: AbstractPINN, params: Params
+        self, x: Float[Array, "dim"], u: AbstractPINN, params: Params[Array]
     ) -> float:
         r"""The differential operator defining the stationnary PDE.
 
@@ -228,7 +230,7 @@ class PDEStatio(DynamicLoss[Float[Array, "dim"]]):
             A `d` dimensional jnp.array representing a point in the spatial domain $\Omega$.
         u : AbstractPINN
             The neural network.
-        params : Params
+        params : Params[Array]
             The parameters of the equation and the networks, $\theta$ and $\nu$ respectively.
 
         Returns
@@ -275,7 +277,7 @@ class PDENonStatio(DynamicLoss[Float[Array, "1 + dim"]]):
         self,
         t_x: Float[Array, "1 + dim"],
         u: AbstractPINN,
-        params: Params,
+        params: Params[Array],
     ) -> float:
         r"""The differential operator defining the non-stationnary PDE.
 
@@ -289,7 +291,7 @@ class PDENonStatio(DynamicLoss[Float[Array, "1 + dim"]]):
             A jnp array containing the concatenation of a time point and a point in $\Omega$
         u : AbstractPINN
             The neural network.
-        params : Params
+        params : Params[Array]
             The parameters of the equation and the networks, $\theta$ and $\nu$ respectively.
         Returns
         -------

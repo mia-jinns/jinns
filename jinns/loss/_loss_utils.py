@@ -39,7 +39,7 @@ def dynamic_loss_apply(
         | Float[Array, "batch_size dim"]
         | Float[Array, "batch_size 1+dim"]
     ),
-    params: Params[Array | int],
+    params: Params[Array],
     vmap_axes: tuple[int, Params[int | None] | None],
     loss_weight: float | Float[Array, "dyn_loss_dimension"],
     u_type: PINN | HyperPINN | None = None,
@@ -75,7 +75,7 @@ def normalization_loss_apply(
             Float[Array, "nb_norm_time_slices 1"], Float[Array, "nb_norm_samples dim"]
         ]
     ),
-    params: Params[Array | int],
+    params: Params[Array],
     vmap_axes_params: tuple[Params[int | None] | None],
     norm_weights: Float[Array, "nb_norm_samples"],
     loss_weight: float,
@@ -163,13 +163,13 @@ def normalization_loss_apply(
 def boundary_condition_apply(
     u: AbstractPINN,
     batch: PDEStatioBatch | PDENonStatioBatch,
-    params: Params[Array | int],
+    params: Params[Array],
     omega_boundary_fun: BoundaryConditionFun | dict[str, BoundaryConditionFun],
     omega_boundary_condition: str | dict[str, str],
     omega_boundary_dim: slice | dict[str, slice],
     loss_weight: float | Float[Array, "boundary_cond_dim"],
 ) -> Float[Array, ""]:
-
+    assert batch.border_batch is not None
     vmap_in_axes = (0,) + _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
     def _check_tuple_of_dict(
@@ -247,7 +247,7 @@ def boundary_condition_apply(
 def observations_loss_apply(
     u: AbstractPINN,
     batch: Float[Array, "obs_batch_size input_dim"],
-    params: Params[Array | int],
+    params: Params[Array],
     vmap_axes: tuple[int, Params[int | None] | None],
     observed_values: Float[Array, "obs_batch_size observation_dim"],
     loss_weight: float | Float[Array, "observation_dim"],
@@ -280,7 +280,7 @@ def observations_loss_apply(
 def initial_condition_apply(
     u: AbstractPINN,
     omega_batch: Float[Array, "dimension"],
-    params: Params[Array | int],
+    params: Params[Array],
     vmap_axes: tuple[int, Params[int | None] | None],
     initial_condition_fun: Callable,
     t0: Float[Array, "1"],

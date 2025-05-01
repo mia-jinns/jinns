@@ -88,9 +88,6 @@ class PINN(AbstractPINN):
     """
 
     slice_solution: slice = eqx.field(static=True, kw_only=True, default=None)
-    eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"] = eqx.field(
-        static=True, kw_only=True
-    )
     input_transform: Callable[
         [Float[Array, "input_dim"], Params[Array]], Float[Array, "output_dim"]
     ] = eqx.field(static=True, kw_only=True, default=None)

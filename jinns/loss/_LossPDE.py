@@ -31,6 +31,7 @@ from jinns.parameters._derivative_keys import (
     DerivativeKeysPDEStatio,
     DerivativeKeysPDENonStatio,
 )
+from jinns.loss._abstract_loss import AbstractLoss
 from jinns.loss._loss_weights import (
     LossWeightsPDEStatio,
     LossWeightsPDENonStatio,
@@ -43,7 +44,7 @@ if TYPE_CHECKING:
     from jinns.parameters._params import Params
     from jinns.data._Batchs import ODEBatch
     from jinns.nn._abstract_pinn import AbstractPINN
-    from jinns.loss import DynamicLoss
+    from jinns.loss import PDENonStatio, PDEStatio
     from jinns.utils._types import BoundaryConditionFun
 
     class LossDictPDEStatio(TypedDict):
@@ -63,7 +64,7 @@ _IMPLEMENTED_BOUNDARY_CONDITIONS = [
 ]
 
 
-class _LossPDEAbstract(eqx.Module):
+class _LossPDEAbstract(AbstractLoss):
     r"""
     Parameters
     ----------
@@ -294,6 +295,10 @@ class _LossPDEAbstract(eqx.Module):
                 raise ValueError("Wrong type for self.norm_weights")
 
     @abc.abstractmethod
+    def __call__(self, *_, **__):
+        pass
+
+    @abc.abstractmethod
     def evaluate(
         self: eqx.Module,
         params: Params[Array],
@@ -317,7 +322,7 @@ class LossPDEStatio(_LossPDEAbstract):
     ----------
     u : AbstractPINN
         the PINN
-    dynamic_loss : DynamicLoss
+    dynamic_loss : PDEStatio
         the stationary PDE dynamic part of the loss, basically the differential
         operator $\mathcal{N}[u](x)$. Should implement a method
         `dynamic_loss.evaluate(x, u, params)`.
@@ -392,7 +397,7 @@ class LossPDEStatio(_LossPDEAbstract):
     # (ie. jax.Array cannot be static) and that we do not expect to change
 
     u: AbstractPINN
-    dynamic_loss: DynamicLoss | None
+    dynamic_loss: PDEStatio | None
     key: Key | None = eqx.field(kw_only=True, default=None)
 
     vmap_in_axes: tuple[Int] = eqx.field(init=False, static=True)
@@ -549,7 +554,7 @@ class LossPDENonStatio(LossPDEStatio):
     ----------
     u : AbstractPINN
         the PINN
-    dynamic_loss : DynamicLoss
+    dynamic_loss : PDENonStatio
         the non stationary PDE dynamic part of the loss, basically the differential
         operator $\mathcal{N}[u](t, x)$. Should implement a method
         `dynamic_loss.evaluate(t, x, u, params)`.
@@ -621,6 +626,7 @@ class LossPDENonStatio(LossPDEStatio):
 
     """
 
+    dynamic_loss: PDENonStatio | None
     # NOTE static=True only for leaf attributes that are not valid JAX types
     # (ie. jax.Array cannot be static) and that we do not expect to change
     initial_condition_fun: Callable | None = eqx.field(
