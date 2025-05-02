@@ -12,9 +12,10 @@ import jax.numpy as jnp
 from jaxtyping import Key, Array, Float
 from jinns.data._Batchs import PDEStatioBatch
 from jinns.data._utils import _check_and_set_rar_parameters, _reset_or_increment
+from jinns.data._AbstractDataGenerator import AbstractDataGenerator
 
 
-class CubicMeshPDEStatio(eqx.Module):
+class CubicMeshPDEStatio(AbstractDataGenerator):
     r"""
     A class implementing data generator object for stationary partial
     differential equations.

@@ -10,9 +10,10 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Key, Array, Float
 from jinns.data._utils import _reset_or_increment
+from jinns.data._AbstractDataGenerator import AbstractDataGenerator
 
 
-class DataGeneratorParameter(eqx.Module):
+class DataGeneratorParameter(AbstractDataGenerator):
     r"""
     A data generator for additional unidimensional equation parameter(s).
     Mostly useful for metamodeling where batch of `params.eq_params` are fed

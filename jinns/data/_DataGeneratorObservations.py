@@ -11,9 +11,10 @@ import jax.numpy as jnp
 from jaxtyping import Key, Int, Array, Float
 from jinns.data._Batchs import ObsBatchDict
 from jinns.data._utils import _reset_or_increment
+from jinns.data._AbstractDataGenerator import AbstractDataGenerator
 
 
-class DataGeneratorObservations(eqx.Module):
+class DataGeneratorObservations(AbstractDataGenerator):
     r"""
     Despite the class name, it is rather a dataloader for user-provided
     observations which will are used in the observations loss.

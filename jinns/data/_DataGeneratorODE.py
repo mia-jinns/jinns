@@ -11,9 +11,10 @@ import jax.numpy as jnp
 from jaxtyping import Key, Array, Float
 from jinns.data._Batchs import ODEBatch
 from jinns.data._utils import _check_and_set_rar_parameters, _reset_or_increment
+from jinns.data._AbstractDataGenerator import AbstractDataGenerator
 
 
-class DataGeneratorODE(eqx.Module):
+class DataGeneratorODE(AbstractDataGenerator):
     """
     A class implementing data generator object for ordinary differential equations.
 
@@ -37,7 +38,7 @@ class DataGeneratorODE(eqx.Module):
         The method that generates the `nt` time points. `grid` means
         regularly spaced points over the domain. `uniform` means uniformly
         sampled points over the domain
-    rar_parameters : Dict[str, int], default=None
+    rar_parameters : dict[str, int], default=None
         Defaults to None: do not use Residual Adaptative Resampling.
         Otherwise a dictionary with keys
 
@@ -66,7 +67,7 @@ class DataGeneratorODE(eqx.Module):
     method: str = eqx.field(
         static=True, kw_only=True, default_factory=lambda: "uniform"
     )
-    rar_parameters: Dict[str, int] = eqx.field(default=None, kw_only=True)
+    rar_parameters: dict[str, int] = eqx.field(default=None, kw_only=True)
     n_start: int = eqx.field(static=True, default=None, kw_only=True)
 
     # all the init=False fields are set in __post_init__
