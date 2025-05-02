@@ -50,4 +50,4 @@ class LossContainer(eqx.Module):
 
 
 class StoredObjectContainer(eqx.Module):
-    stored_params: list | None
+    stored_params: Params[Array | None]

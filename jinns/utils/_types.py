@@ -19,18 +19,3 @@ if TYPE_CHECKING:
     AnyLoss: TypeAlias = LossODE | LossPDEStatio | LossPDENonStatio
 
     # rar_operands = NewType("rar_operands", tuple[Any, AnyParams, AnyDataGenerator, Int])
-
-    # main_carry = NewType(
-    #    "main_carry",
-    #    tuple[
-    #        Int,
-    #        Any,
-    #        OptimizationContainer,
-    #        OptimizationExtraContainer,
-    #        DataGeneratorContainer,
-    #        AbstractValidationModule,
-    #        LossContainer,
-    #        StoredObjectContainer,
-    #        Float[Array, "n_iter"],
-    #    ],
-    # )

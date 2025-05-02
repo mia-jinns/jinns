@@ -8,7 +8,7 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 import time
-from typing import TYPE_CHECKING, NamedTuple, Any
+from typing import TYPE_CHECKING, NamedTuple, Any, TypeAlias
 from functools import partial
 import optax
 import jax
@@ -28,6 +28,18 @@ if TYPE_CHECKING:
     from jinns.data._DataGeneratorObservations import DataGeneratorObservations
     from jinns.data._AbstractDataGenerator import AbstractDataGenerator
 
+    main_carry: TypeAlias = tuple[
+        int,
+        AnyLoss,
+        OptimizationContainer,
+        OptimizationExtraContainer,
+        DataGeneratorContainer,
+        AbstractValidationModule | None,
+        LossContainer,
+        StoredObjectContainer,
+        Float[Array, "n_iter"] | None,
+    ]
+
 
 def solve(
     n_iter: int,
@@ -45,14 +57,14 @@ def solve(
     verbose: bool = True,
     ahead_of_time: bool = True,
 ) -> tuple[
-    Params,
+    Params[Array],
     Float[Array, "n_iter"],
     dict[str, Float[Array, "n_iter"]],
     AbstractDataGenerator,
     AnyLoss,
-    NamedTuple,
-    Params[Array],
-    Float[Array, "n_iter"],
+    optax.OptState,
+    Params[Array | None],
+    Float[Array, "n_iter"] | None,
     Params[Array],
 ]:
     """
@@ -297,7 +309,7 @@ def solve(
         if verbose:
             _print_fn(i, train_loss_value, print_loss_every, prefix="[train] ")
 
-        if validation is not None:
+        if validation is not None and validation_crit_values is not None:
             # there is a jax.lax.cond because we do not necesarily call the
             # validation step every iteration
             (
@@ -311,7 +323,7 @@ def solve(
                 lambda operands: (
                     operands[0],
                     False,
-                    validation_crit_values[i - 1],
+                    validation_crit_values[i - 1],  # type: ignore don't know why it can still be None
                     False,
                 ),
                 (
@@ -436,7 +448,7 @@ def solve(
     # get ready to return the parameters at last iteration...
     # (by default arbitrary choice, this could be None)
     validation_parameters = optimization.last_non_nan_params
-    if validation is not None:
+    if validation is not None and validation_crit_values is not None:
         jax.debug.print(
             "validation loss value = {validation_loss_val}",
             validation_loss_val=validation_crit_values[i - 1],
@@ -535,7 +547,7 @@ def _store_loss_and_params(
     train_loss_values: Float[Array, "n_iter"],
     train_loss_val: float,
     loss_terms: dict[str, float],
-    tracked_params: AnyParams,
+    tracked_params: Params,
 ) -> tuple[Params, dict[str, Float[Array, "n_iter"]], Float[Array, "n_iter"]]:
     stored_params = jax.tree_util.tree_map(
         lambda stored_value, param, tracked_param: (
@@ -563,7 +575,7 @@ def _store_loss_and_params(
     return (stored_params, stored_loss_terms, train_loss_values)
 
 
-def _get_break_fun(n_iter: Int, verbose: Bool) -> Callable[[main_carry], Bool]:
+def _get_break_fun(n_iter: int, verbose: bool) -> Callable[[main_carry], bool]:
     """
     Wrapper to get the break_fun with appropriate `n_iter`.
     The verbose argument is here to control printing (or not) when exiting
