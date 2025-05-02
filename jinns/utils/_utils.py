@@ -2,20 +2,13 @@
 Implements various utility functions
 """
 
-from math import prod
 import warnings
 import jax
 import jax.numpy as jnp
-from jaxtyping import PyTree, Array
-
-from jinns.data._DataGenerators import (
-    DataGeneratorODE,
-    CubicMeshPDEStatio,
-    CubicMeshPDENonStatio,
-)
+from jaxtyping import PyTree, Array, Bool
 
 
-def _check_nan_in_pytree(pytree: PyTree) -> bool:
+def _check_nan_in_pytree(pytree: PyTree) -> Bool[Array, ""]:
     """
     Check if there is a NaN value anywhere is the pytree
 
@@ -55,7 +48,7 @@ def get_grid(in_array: Array) -> Array:
 
 
 def _check_shape_and_type(
-    r: Array | int, expected_shape: tuple, cause: str = "", binop: str = ""
+    r: Array | int | float, expected_shape: tuple, cause: str = "", binop: str = ""
 ) -> Array | float:
     """
     Ensures float type and correct shapes for broadcasting when performing a
@@ -90,7 +83,7 @@ def _check_shape_and_type(
 
 
 def _subtract_with_check(
-    a: Array | int, b: Array | int, cause: str = ""
+    a: Array | int | float, b: Array, cause: str = ""
 ) -> Array | float:
     a = _check_shape_and_type(a, b.shape, cause=cause, binop="-")
     return a - b

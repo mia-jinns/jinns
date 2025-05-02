@@ -13,16 +13,15 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jinns.data._DataGenerators import (
+from jinns.data._utils import (
     append_obs_batch,
     append_param_batch,
 )
 
 if TYPE_CHECKING:
-    from jinns.data._DataGenerators import (
-        DataGeneratorParameter,
-        DataGeneratorObservations,
-    )
+    from jinns.data._DataGeneratorParameter import DataGeneratorParameter
+    from jinns.data._DataGeneratorObservations import DataGeneratorObservations
+    from jinns.data._AbstractDataGenerator import AbstractDataGenerator
     from jinns.parameters._params import Params
     from jinns.loss._abstract_loss import AbstractLoss
     from jinns.utils._types import AnyDataGenerator
@@ -59,7 +58,7 @@ class ValidationLoss(AbstractValidationModule):
     """
 
     loss: AbstractLoss = eqx.field(kw_only=True)
-    validation_data: AnyDataGenerator = eqx.field(kw_only=True)
+    validation_data: AbstractDataGenerator = eqx.field(kw_only=True)
     validation_param_data: DataGeneratorParameter = eqx.field(
         kw_only=True, default=None
     )
@@ -85,6 +84,7 @@ class ValidationLoss(AbstractValidationModule):
     ) -> tuple[ValidationLoss, bool, Float[Array, ""], Params[Array]]:
         # do in-place mutation
 
+        # pylint / pyright complains below when using the self attributes see: https://github.com/patrick-kidger/equinox/issues/1013
         validation_data, val_batch = self.validation_data.get_batch()
         if self.validation_param_data is not None:
             validation_param_data, param_batch = self.validation_param_data.get_batch()
