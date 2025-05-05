@@ -1,5 +1,4 @@
 import abc
-from typing import Literal
 from jaxtyping import Array
 import equinox as eqx
 

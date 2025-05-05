@@ -6,7 +6,7 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-from typing import TYPE_CHECKING, Dict
+from typing import TYPE_CHECKING
 from jaxtyping import Float
 import jax
 from jax import grad
@@ -29,7 +29,7 @@ from jinns.loss._operators import (
     _u_dot_nabla_times_u_fwd,
 )
 
-from jaxtyping import Array, Float
+from jaxtyping import Array
 
 if TYPE_CHECKING:
     from jinns.parameters import Params

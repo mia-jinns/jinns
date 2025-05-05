@@ -1,4 +1,4 @@
-from typing import Literal, TypedDict
+from typing import TypedDict
 import equinox as eqx
 from jaxtyping import Float, Array
 

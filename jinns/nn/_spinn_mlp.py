@@ -10,7 +10,6 @@ import jax.numpy as jnp
 import equinox as eqx
 from jaxtyping import Key, Array, Float, PyTree
 
-from jinns.parameters._params import Params
 from jinns.nn._mlp import MLP
 from jinns.nn._spinn import SPINN
 

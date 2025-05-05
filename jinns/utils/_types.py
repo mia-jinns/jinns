@@ -2,7 +2,7 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-from typing import TypeAlias, TYPE_CHECKING, NewType, TypedDict, Callable
+from typing import TypeAlias, TYPE_CHECKING, Callable
 from jaxtyping import Float, Array
 
 if TYPE_CHECKING:

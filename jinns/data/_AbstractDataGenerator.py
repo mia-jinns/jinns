@@ -1,5 +1,4 @@
 from __future__ import annotations
-import abc
 from typing import Self, TYPE_CHECKING
 import equinox as eqx
 

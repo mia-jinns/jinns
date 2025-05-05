@@ -6,12 +6,11 @@ from __future__ import (
     annotations,
 )
 
-from typing import Literal, TYPE_CHECKING, cast, Callable
+from typing import Literal, cast, Callable
 
 import jax
 import jax.numpy as jnp
 from jax import grad
-import equinox as eqx
 from jaxtyping import Float, Array
 from jinns.parameters._params import Params
 from jinns.nn._abstract_pinn import AbstractPINN

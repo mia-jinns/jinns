@@ -2,7 +2,7 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-from typing import TYPE_CHECKING, Callable, TypeAlias, Any, Protocol, TypedDict
+from typing import TYPE_CHECKING, Callable, TypeAlias, Any, TypedDict
 from functools import partial
 from jaxtyping import Float, Array, Bool
 import jax

@@ -8,7 +8,7 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 import time
-from typing import TYPE_CHECKING, NamedTuple, Any, TypeAlias
+from typing import TYPE_CHECKING, Any, TypeAlias
 from functools import partial
 import optax
 import jax

@@ -74,12 +74,12 @@ class HyperPINN(PINN):
         **Note**: the input dimension as given in eqx_list has to match the sum
         of the dimension of `t` + the dimension of `x` or the output dimension
         after the `input_transform` function
-    input_transform : Callable[[Float[Array, "input_dim"], Params[Array]], Float[Array, "output_dim"]]
+    input_transform : Callable[[Float[Array, " input_dim"], Params[Array]], Float[Array, " output_dim"]]
         A function that will be called before entering the PINN. Its output(s)
         must match the PINN inputs (except for the parameters).
         Its inputs are the PINN inputs (`t` and/or `x` concatenated together)
         and the parameters. Default is no operation.
-    output_transform : Callable[[Float[Array, "input_dim"], Float[Array, "output_dim"], Params[Array]], Float[Array, "output_dim"]]
+    output_transform : Callable[[Float[Array, " input_dim"], Float[Array, " output_dim"], Params[Array]], Float[Array, " output_dim"]]
         A function with arguments begin the same input as the PINN, the PINN
         output and the parameter. This function will be called after exiting the PINN.
         Default is no operation.
@@ -117,7 +117,7 @@ class HyperPINN(PINN):
         )
         self.pinn_params_sum, self.pinn_params_cumsum = _get_param_nb(self.init_params)
 
-    def _hyper_to_pinn(self, hyper_output: Float[Array, "output_dim"]) -> PINN:
+    def _hyper_to_pinn(self, hyper_output: Float[Array, " output_dim"]) -> PINN:
         """
         From the output of the hypernetwork, transform to a well formed
         parameters for the pinn network (i.e. with the same PyTree structure as
@@ -146,11 +146,11 @@ class HyperPINN(PINN):
 
     def __call__(
         self,
-        inputs: Float[Array, "input_dim"],
+        inputs: Float[Array, " input_dim"],
         params: Params[Array],
         *args,
         **kwargs,
-    ) -> Float[Array, "output_dim"]:
+    ) -> Float[Array, " output_dim"]:
         """
         Evaluate the HyperPINN on some inputs with some params.
         """
@@ -201,19 +201,19 @@ class HyperPINN(PINN):
         ) = None,
         input_transform: (
             Callable[
-                [Float[Array, "input_dim"], Params[Array]],
-                Float[Array, "output_dim"],
+                [Float[Array, " input_dim"], Params[Array]],
+                Float[Array, " output_dim"],
             ]
             | None
         ) = None,
         output_transform: (
             Callable[
                 [
-                    Float[Array, "input_dim"],
-                    Float[Array, "output_dim"],
+                    Float[Array, " input_dim"],
+                    Float[Array, " output_dim"],
                     Params[Array],
                 ],
-                Float[Array, "output_dim"],
+                Float[Array, " output_dim"],
             ]
             | None
         ) = None,

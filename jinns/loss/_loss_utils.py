@@ -11,7 +11,6 @@ from types import EllipsisType
 import jax
 import jax.numpy as jnp
 from jax import vmap
-import equinox as eqx
 from jaxtyping import Float, Array
 
 from jinns.loss._boundary_conditions import (

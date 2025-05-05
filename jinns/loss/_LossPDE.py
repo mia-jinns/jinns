@@ -42,7 +42,6 @@ from jinns.data._Batchs import PDEStatioBatch, PDENonStatioBatch
 if TYPE_CHECKING:
     # imports for type hints only
     from jinns.parameters._params import Params
-    from jinns.data._Batchs import ODEBatch
     from jinns.nn._abstract_pinn import AbstractPINN
     from jinns.loss import PDENonStatio, PDEStatio
     from jinns.utils._types import BoundaryConditionFun

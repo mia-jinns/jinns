@@ -4,7 +4,7 @@ Implement abstract class for PINN architectures
 
 from __future__ import annotations
 
-from typing import Literal, Callable, Union, Any
+from typing import Callable, Union, Any
 from dataclasses import InitVar
 import equinox as eqx
 from jaxtyping import Float, Array, PyTree

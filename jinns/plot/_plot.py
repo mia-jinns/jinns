@@ -2,11 +2,10 @@
 Utility functions for plotting in 1D and 2D, with and without time.
 """
 
-from typing import Callable, cast
+from typing import Callable
 import jax.numpy as jnp
 from jax import vmap
 import matplotlib.pyplot as plt
-import matplotlib.axes
 from mpl_toolkits.axes_grid1 import ImageGrid
 from jaxtyping import Array, Float
 
