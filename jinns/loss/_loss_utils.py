@@ -18,7 +18,7 @@ from jinns.loss._boundary_conditions import (
     _compute_boundary_loss,
 )
 from jinns.utils._utils import _subtract_with_check, get_grid
-from jinns.data._DataGenerators import make_cartesian_product
+from jinns.data._utils import make_cartesian_product
 from jinns.parameters._params import _get_vmap_in_axes_params
 from jinns.nn._pinn import PINN
 from jinns.nn._spinn import SPINN

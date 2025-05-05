@@ -24,7 +24,6 @@ if TYPE_CHECKING:
     from jinns.data._AbstractDataGenerator import AbstractDataGenerator
     from jinns.parameters._params import Params
     from jinns.loss._abstract_loss import AbstractLoss
-    from jinns.utils._types import AnyDataGenerator
 
 # Using eqx Module for the DataClass + Pytree inheritance
 # Abstract class and abstract/final pattern is used

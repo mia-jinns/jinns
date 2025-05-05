@@ -2,41 +2,73 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, TypeAlias, Any, Protocol, TypedDict
 from functools import partial
+from jaxtyping import Float, Array, Bool
 import jax
 from jax import vmap
 import jax.numpy as jnp
 import equinox as eqx
-from jaxtyping import Int, Bool
 
-from jinns.data._Batchs import *
-from jinns.loss._LossODE import LossODE
-from jinns.loss._LossPDE import LossPDEStatio, LossPDENonStatio
-from jinns.loss._loss_utils import dynamic_loss_apply
-from jinns.data._DataGenerators import (
-    DataGeneratorODE,
-    CubicMeshPDEStatio,
-    CubicMeshPDENonStatio,
-)
+from jinns.data._DataGeneratorODE import DataGeneratorODE
+from jinns.data._CubicMeshPDEStatio import CubicMeshPDEStatio
+from jinns.data._CubicMeshPDENonStatio import CubicMeshPDENonStatio
 from jinns.nn._hyperpinn import HyperPINN
 from jinns.nn._spinn import SPINN
 
 
 if TYPE_CHECKING:
-    from jinns.utils._types import *
+    from jinns.data._AbstractDataGenerator import AbstractDataGenerator
+    from jinns.utils._types import AnyLoss
+    from jinns.parameters._params import Params
+
+    class DataGeneratorWithRAR(AbstractDataGenerator):
+        """
+        Add the required RAR operands for type checks
+        """
+
+        rar_parameters: RarParameterDict
+        n_start: int
+        rar_iter_from_last_sampling: int
+        rar_iter_nb: int
+        p: Float[Array, "n 1"]
+
+    rar_operands: TypeAlias = tuple[Any, Params, DataGeneratorWithRAR, int]
 
 
-def _proceed_to_rar(data: AnyDataGenerator, i: Int) -> Bool:
+class RarParameterDict(TypedDict):
+    """
+    TypedDict to specify the Residual Adaptative Resampling procedure
+    Otherwise a dictionary with keys
+    - `start_iter`: the iteration at which we start the RAR sampling scheme (we first have a "burn-in" period).
+    - `update_every`: the number of gradient steps taken between
+    each update of collocation points in the RAR algo.
+    - `sample_size`: the size of the sample from which we will select new
+    collocation points.
+    - `selected_sample_size`: the number of selected
+    points from the sample to be added to the current collocation
+    points.
+    """
+
+    start_iter: int
+    update_every: int
+    sample_size: int
+    selected_sample_size: int
+
+
+def _proceed_to_rar(data: DataGeneratorWithRAR, i: int) -> Bool[Array, ""]:
     """Utilility function with various check to ensure we can proceed with the rar_step.
     Return True if yes, and False otherwise"""
 
     # Overall checks
     check_list = [
         # check if burn-in period has ended
-        data.rar_parameters["start_iter"] <= i,
+        jnp.asarray(data.rar_parameters["start_iter"] <= i),
         # check if enough iterations since last points added
-        (data.rar_parameters["update_every"] - 1) == data.rar_iter_from_last_sampling,
+        jnp.asarray(
+            (data.rar_parameters["update_every"] - 1)
+            == data.rar_iter_from_last_sampling
+        ),
     ]
 
     # Memory allocation checks
@@ -52,13 +84,13 @@ def _proceed_to_rar(data: AnyDataGenerator, i: Int) -> Bool:
 
 @partial(jax.jit, static_argnames=["_rar_step_true", "_rar_step_false"])
 def trigger_rar(
-    i: Int,
+    i: int,
     loss: AnyLoss,
-    params: AnyParams,
-    data: AnyDataGenerator,
-    _rar_step_true: Callable[[rar_operands], AnyDataGenerator],
-    _rar_step_false: Callable[[rar_operands], AnyDataGenerator],
-) -> tuple[AnyLoss, AnyParams, AnyDataGenerator]:
+    params: Params,
+    data: DataGeneratorWithRAR,
+    _rar_step_true: Callable[[rar_operands], DataGeneratorWithRAR],
+    _rar_step_false: Callable[[rar_operands], DataGeneratorWithRAR],
+) -> tuple[AnyLoss, Params, DataGeneratorWithRAR]:
 
     if data.rar_parameters is None:
         # do nothing.
@@ -75,11 +107,11 @@ def trigger_rar(
 
 
 def init_rar(
-    data: AnyDataGenerator,
+    data: DataGeneratorWithRAR,
 ) -> tuple[
-    AnyDataGenerator,
-    Callable[[rar_operands], AnyDataGenerator],
-    Callable[[rar_operands], AnyDataGenerator],
+    DataGeneratorWithRAR,
+    Callable[[rar_operands], DataGeneratorWithRAR] | None,
+    Callable[[rar_operands], DataGeneratorWithRAR] | None,
 ]:
     """
     Separated from the main rar, because the initialization to get _true and
@@ -100,9 +132,9 @@ def init_rar(
     return data, _rar_step_true, _rar_step_false
 
 
-def _rar_step_init(sample_size: Int, selected_sample_size: Int) -> tuple[
-    Callable[[rar_operands], AnyDataGenerator],
-    Callable[[rar_operands], AnyDataGenerator],
+def _rar_step_init(sample_size: int, selected_sample_size: int) -> tuple[
+    Callable[[rar_operands], DataGeneratorWithRAR],
+    Callable[[rar_operands], DataGeneratorWithRAR],
 ]:
     """
     This is a wrapper because the sampling size and
@@ -113,8 +145,8 @@ def _rar_step_init(sample_size: Int, selected_sample_size: Int) -> tuple[
     This is a kind of manual declaration of static argnums
     """
 
-    def rar_step_true(operands: rar_operands) -> AnyDataGenerator:
-        loss, params, data, i = operands
+    def rar_step_true(operands: rar_operands) -> DataGeneratorWithRAR:
+        loss, params, data, _ = operands
         if isinstance(loss.u, HyperPINN) or isinstance(loss.u, SPINN):
             raise NotImplementedError("RAR not implemented for hyperPINN and SPINN")
 
@@ -170,7 +202,7 @@ def _rar_step_init(sample_size: Int, selected_sample_size: Int) -> tuple[
             new_times = jax.lax.dynamic_update_slice(
                 data.times,
                 higher_residual_points,
-                (data.n_start + data.rar_iter_nb * selected_sample_size,),
+                (data.n_start + data.rar_iter_nb * selected_sample_size,),  # type: ignore
             )
 
             data = eqx.tree_at(lambda m: m.times, data, new_times)
@@ -180,7 +212,7 @@ def _rar_step_init(sample_size: Int, selected_sample_size: Int) -> tuple[
             new_omega = jax.lax.dynamic_update_slice(
                 data.omega,
                 higher_residual_points,
-                (data.n_start + data.rar_iter_nb * selected_sample_size, data.dim),
+                (data.n_start + data.rar_iter_nb * selected_sample_size, data.dim),  # type: ignore
             )
 
             data = eqx.tree_at(lambda m: m.omega, data, new_omega)
@@ -189,7 +221,10 @@ def _rar_step_init(sample_size: Int, selected_sample_size: Int) -> tuple[
             new_domain = jax.lax.dynamic_update_slice(
                 data.domain,
                 higher_residual_points,
-                (data.n_start + data.rar_iter_nb * selected_sample_size, 1 + data.dim),
+                (
+                    data.n_start + data.rar_iter_nb * selected_sample_size,  # type: ignore
+                    1 + data.dim,
+                ),
             )
 
             data = eqx.tree_at(lambda m: m.domain, data, new_domain)
@@ -228,7 +263,7 @@ def _rar_step_init(sample_size: Int, selected_sample_size: Int) -> tuple[
         # have side effects in this function that will be jitted
         return data
 
-    def rar_step_false(operands: rar_operands) -> AnyDataGenerator:
+    def rar_step_false(operands: rar_operands) -> DataGeneratorWithRAR:
         _, _, data, i = operands
 
         # Add 1 only if we are after the burn in period

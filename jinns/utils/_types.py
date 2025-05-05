@@ -17,5 +17,3 @@ if TYPE_CHECKING:
 
     AnyBatch: TypeAlias = ODEBatch | PDENonStatioBatch | PDEStatioBatch
     AnyLoss: TypeAlias = LossODE | LossPDEStatio | LossPDENonStatio
-
-    # rar_operands = NewType("rar_operands", tuple[Any, AnyParams, AnyDataGenerator, Int])

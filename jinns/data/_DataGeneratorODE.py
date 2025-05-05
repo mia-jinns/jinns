@@ -5,6 +5,7 @@ Define the DataGenerators modules
 from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
+from typing import TYPE_CHECKING
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -12,6 +13,9 @@ from jaxtyping import Key, Array, Float
 from jinns.data._Batchs import ODEBatch
 from jinns.data._utils import _check_and_set_rar_parameters, _reset_or_increment
 from jinns.data._AbstractDataGenerator import AbstractDataGenerator
+
+if TYPE_CHECKING:
+    from jinns.solver._rar import RarParameterDict
 
 
 class DataGeneratorODE(AbstractDataGenerator):
@@ -38,18 +42,9 @@ class DataGeneratorODE(AbstractDataGenerator):
         The method that generates the `nt` time points. `grid` means
         regularly spaced points over the domain. `uniform` means uniformly
         sampled points over the domain
-    rar_parameters : dict[str, int], default=None
-        Defaults to None: do not use Residual Adaptative Resampling.
-        Otherwise a dictionary with keys
-
-        - `start_iter`: the iteration at which we start the RAR sampling scheme (we first have a "burn-in" period).
-        - `update_every`: the number of gradient steps taken between
-        each update of collocation points in the RAR algo.
-        - `sample_size`: the size of the sample from which we will select new
-        collocation points.
-        - `selected_sample_size`: the number of selected
-        points from the sample to be added to the current collocation
-        points.
+    rar_parameters : RarParameterDict, default=None
+       A TypedDict to specify the Residual Adaptative Resampling procedure. See
+       the docstring from RarParameterDict
     n_start : int, default=None
         Defaults to None. The effective size of nt used at start time.
         This value must be

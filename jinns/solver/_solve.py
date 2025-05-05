@@ -22,6 +22,7 @@ from jinns.utils._containers import *
 from jinns.data._utils import append_param_batch, append_obs_batch
 
 if TYPE_CHECKING:
+    from jinns.parameters._params import Params
     from jinns.utils._types import AnyLoss
     from jinns.validation._validation import AbstractValidationModule
     from jinns.data._DataGeneratorParameter import DataGeneratorParameter
