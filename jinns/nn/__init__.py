@@ -6,3 +6,17 @@ from ._mlp import PINN_MLP, MLP
 from ._spinn_mlp import SPINN_MLP, SMLP
 from ._hyperpinn import HyperPINN
 from ._ppinn import PPINN_MLP
+
+__all__ = [
+    "save_pinn",
+    "load_pinn",
+    "AbstractPINN",
+    "PINN",
+    "SPINN",
+    "PINN_MLP",
+    "MLP",
+    "SPINN_MLP",
+    "SMLP",
+    "HyperPINN",
+    "PPINN_MLP",
+]
