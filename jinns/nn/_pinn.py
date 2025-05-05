@@ -4,7 +4,7 @@ Implement abstract class for PINN architectures
 
 from __future__ import annotations
 
-from typing import Callable, Union, Any
+from typing import Callable, Union, Any, Literal
 from dataclasses import InitVar
 import equinox as eqx
 from jaxtyping import Float, Array, PyTree
@@ -87,6 +87,9 @@ class PINN(AbstractPINN):
         "nonstatio_PDE"]`
     """
 
+    eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"] = eqx.field(
+        static=True, kw_only=True
+    )
     slice_solution: slice = eqx.field(static=True, kw_only=True, default=None)
     input_transform: Callable[
         [Float[Array, " input_dim"], Params[Array]], Float[Array, " output_dim"]

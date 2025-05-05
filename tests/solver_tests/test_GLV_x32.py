@@ -6,7 +6,7 @@ from jax import random
 import equinox as eqx
 import optax
 import jinns
-from jinns.data._DataGenerators import DataGeneratorODE
+from jinns.data._DataGeneratorODE import DataGeneratorODE
 
 
 @pytest.fixture

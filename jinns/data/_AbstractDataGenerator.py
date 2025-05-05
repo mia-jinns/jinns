@@ -1,4 +1,5 @@
 from __future__ import annotations
+import abc
 from typing import Self, TYPE_CHECKING
 import equinox as eqx
 
@@ -13,6 +14,6 @@ class AbstractDataGenerator(eqx.Module):
     https://github.com/patrick-kidger/equinox/issues/1002 + https://docs.kidger.site/equinox/pattern/
     """
 
-    @abs.abstractmethod
+    @abc.abstractmethod
     def get_batch(self) -> tuple[type[Self], AnyBatch]:  # type: ignore
         pass

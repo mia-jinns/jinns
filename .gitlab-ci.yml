@@ -22,7 +22,7 @@ run_tests:
     - pip install pytest coverage pytest-cov
     - pip install -e .
   script:
-    - pytest --cov=jinns --ignore=tests/solver_tests/test_NSPipeFlow_x64.py
+    - pytest --cov=jinns
   coverage: '/TOTAL.*\s+(\d+%)$/'
 
 build_doc:

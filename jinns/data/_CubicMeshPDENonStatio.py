@@ -207,6 +207,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         else:
             self.border = None
             self.border_batch_size = None
+            self.curr_border_idx = 0
 
         if self.ni is not None:
             perfect_sq = int(jnp.round(jnp.sqrt(self.ni)) ** 2)

@@ -107,9 +107,10 @@ class _LossPDEAbstract(AbstractLoss):
     norm_weights : Float[Array, " nb_norm_samples"] | float | int, default=None
         The importance sampling weights for Monte-Carlo integration of the
         normalization constant. Must be provided if `norm_samples` is provided.
-        `norm_weights` should have the same leading dimension as
+        `norm_weights` should be broadcastble to
         `norm_samples`.
-        Alternatively, the user can pass a float or an integer.
+        Alternatively, the user can pass a float or an integer that will be
+        made broadcastable to `norm_samples`.
         These corresponds to the weights $w_k = \frac{1}{q(x_k)}$ where
         $q(\cdot)$ is the proposal p.d.f. and $x_k$ are the Monte-Carlo samples.
     obs_slice : EllipsisType | slice, default=None
@@ -279,16 +280,20 @@ class _LossPDEAbstract(AbstractLoss):
                 raise ValueError(
                     "`norm_weights` must be provided when `norm_samples` is used!"
                 )
-            if isinstance(self.norm_weights, Array):
+            if isinstance(self.norm_weights, (int, float)):
+                self.norm_weights = jnp.array(
+                    [self.norm_weights], dtype=jax.dtypes.canonicalize_dtype(float)
+                )
+                print(self.norm_samples.shape, self.norm_weights.shape)
+            elif isinstance(self.norm_weights, Array):
+                print(self.norm_samples.shape, self.norm_weights.shape)
+                # CHECK IF BROADCASTBLE
+                print((self.norm_weights * self.norm_samples).shape)
                 assert self.norm_weights.shape[0] == self.norm_samples.shape[0], (
                     "`norm_weights` should have the same leading dimension"
                     " as `norm_samples`,"
                     f" got shape {self.norm_weights.shape} and"
                     f" shape {self.norm_samples.shape}."
-                )
-            elif isinstance(self.norm_weights, (int, float)):
-                self.norm_weights = jnp.array(
-                    [self.norm_weights], dtype=jax.dtypes.canonicalize_dtype(float)
                 )
             else:
                 raise ValueError("Wrong type for self.norm_weights")
@@ -419,7 +424,7 @@ class LossPDEStatio(_LossPDEAbstract):
         return batch.domain_batch
 
     def _get_normalization_loss_batch(
-        self,
+        self, _
     ) -> tuple[Float[Array, " nb_norm_samples dimension"]]:
         return (self.norm_samples,)  # type: ignore -> cannot narrow a class attr
 
@@ -477,7 +482,7 @@ class LossPDEStatio(_LossPDEAbstract):
         if self.norm_samples is not None:
             mse_norm_loss = normalization_loss_apply(
                 self.u,
-                self._get_normalization_loss_batch(),
+                self._get_normalization_loss_batch(batch),
                 _set_derivatives(params, self.derivative_keys.norm_loss),  # type: ignore
                 vmap_in_axes_params,
                 self.norm_weights,  # type: ignore -> can't get the __post_init__ narrowing here
@@ -662,8 +667,12 @@ class LossPDENonStatio(LossPDEStatio):
                     f"Wrong self.t0 input. It should be"
                     f"a float or an array of shape (1,). Got shape: {self.t0.shape}"
                 )
-        if isinstance(self.t0, float):  # e.g. user input: 0
+        elif isinstance(self.t0, float):  # e.g. user input: 0
             self.t0 = jnp.array([self.t0])
+        elif self.t0 is None:
+            self.t0 = jnp.array([0])
+        else:
+            raise ValueError("Wrong value for t0")
 
         # witht the variables below we avoid memory overflow since a cartesian
         # product is taken

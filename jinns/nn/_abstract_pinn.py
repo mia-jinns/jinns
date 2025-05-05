@@ -11,9 +11,7 @@ class AbstractPINN(eqx.Module):
     https://github.com/patrick-kidger/equinox/issues/1002 + https://docs.kidger.site/equinox/pattern/
     """
 
-    eq_type: eqx.AbstractVar[Literal["ODE", "statio_PDE", "nonstatio_PDE"]] = eqx.field(
-        static=True, kw_only=True
-    )
+    eq_type: eqx.AbstractVar[Literal["ODE", "statio_PDE", "nonstatio_PDE"]]
 
     @abc.abstractmethod
     def __call__(self, *_, **__) -> Array:

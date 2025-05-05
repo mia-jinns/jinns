@@ -68,7 +68,9 @@ class PPINN_MLP(PINN):
     init_params: tuple[PINN, ...] = eqx.field(
         init=False
     )  # overriding parent attribute type
-    static: tuple[PINN, ...] = eqx.field(init=False)  # overriding parent attribute type
+    static: tuple[PINN, ...] = eqx.field(
+        init=False, static=True
+    )  # overriding parent attribute type
 
     def __post_init__(self, eqx_network, eqx_network_list):
         super().__post_init__(

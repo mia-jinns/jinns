@@ -167,6 +167,8 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
             else:
                 self.curr_omega_border_idx = self.nb + self.omega_border_batch_size
                 # to be sure there is a shuffling at first get_batch()
+        else:  # self.nb is None
+            self.curr_omega_border_idx = 0
 
         self.key, self.omega = self.generate_omega_data(self.key)
         self.key, self.omega_border = self.generate_omega_border_data(self.key)

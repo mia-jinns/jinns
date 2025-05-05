@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Union, Callable, Any
+from typing import Union, Callable, Any, Literal
 from dataclasses import InitVar
 from jaxtyping import PyTree, Float, Array
 import jax
@@ -49,6 +49,9 @@ class SPINN(AbstractPINN):
 
     """
 
+    eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"] = eqx.field(
+        static=True, kw_only=True
+    )
     d: int = eqx.field(static=True, kw_only=True)
     r: int = eqx.field(static=True, kw_only=True)
     m: int = eqx.field(static=True, kw_only=True, default=1)
