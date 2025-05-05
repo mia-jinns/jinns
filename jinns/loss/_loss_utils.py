@@ -22,7 +22,7 @@ from jinns.parameters._params import _get_vmap_in_axes_params
 from jinns.nn._pinn import PINN
 from jinns.nn._spinn import SPINN
 from jinns.nn._hyperpinn import HyperPINN
-from jinns.data._Batchs import *
+from jinns.data._Batchs import PDEStatioBatch, PDENonStatioBatch
 from jinns.parameters._params import Params
 
 if TYPE_CHECKING:

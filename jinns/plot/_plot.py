@@ -113,7 +113,7 @@ def plot2d(
         if not isinstance(times, list):
             try:
                 times = times.tolist()
-            except:
+            except AttributeError:
                 raise ValueError("times must be a list or an array")
 
         fig = plt.figure(figsize=figsize)

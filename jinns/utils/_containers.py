@@ -14,11 +14,14 @@ import equinox as eqx
 from jinns.parameters._params import Params
 
 if TYPE_CHECKING:
-    from jinns.utils._types import *
+    from jinns.data._AbstractDataGenerator import AbstractDataGenerator
+    from jinns.data._DataGeneratorParameter import DataGeneratorParameter
+    from jinns.data._DataGeneratorObservations import DataGeneratorObservations
+    from jinns.utils._types import AnyLoss
 
 
 class DataGeneratorContainer(eqx.Module):
-    data: AnyDataGenerator
+    data: AbstractDataGenerator
     param_data: DataGeneratorParameter | None = None
     obs_data: DataGeneratorObservations | None = None
 

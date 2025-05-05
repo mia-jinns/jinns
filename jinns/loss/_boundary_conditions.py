@@ -7,11 +7,12 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 from typing import TYPE_CHECKING, Callable
+from jaxtyping import Array, Float
 import jax
 import jax.numpy as jnp
 from jax import vmap, grad
 from jinns.utils._utils import get_grid, _subtract_with_check
-from jinns.data._Batchs import *
+from jinns.data._Batchs import PDEStatioBatch, PDENonStatioBatch
 from jinns.nn._pinn import PINN
 from jinns.nn._spinn import SPINN
 

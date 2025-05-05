@@ -8,7 +8,7 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 import time
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import TYPE_CHECKING, Any, TypeAlias, Callable
 from functools import partial
 import optax
 import jax
@@ -18,12 +18,18 @@ from jaxtyping import Float, Array
 from jinns.solver._rar import init_rar, trigger_rar
 from jinns.utils._utils import _check_nan_in_pytree
 from jinns.solver._utils import _check_batch_size
-from jinns.utils._containers import *
+from jinns.utils._containers import (
+    DataGeneratorContainer,
+    OptimizationContainer,
+    OptimizationExtraContainer,
+    LossContainer,
+    StoredObjectContainer,
+)
 from jinns.data._utils import append_param_batch, append_obs_batch
 
 if TYPE_CHECKING:
     from jinns.parameters._params import Params
-    from jinns.utils._types import AnyLoss
+    from jinns.utils._types import AnyLoss, AnyBatch
     from jinns.validation._validation import AbstractValidationModule
     from jinns.data._DataGeneratorParameter import DataGeneratorParameter
     from jinns.data._DataGeneratorObservations import DataGeneratorObservations
@@ -193,7 +199,7 @@ def solve(
 
     # RAR sampling init (ouside scanned function to avoid dynamic slice error)
     # If RAR is not used the _rar_step_*() are juste None and data is unchanged
-    data, _rar_step_true, _rar_step_false = init_rar(data)
+    data, _rar_step_true, _rar_step_false = init_rar(data)  # type: ignore
 
     # Seq2seq
     curr_seq = 0
