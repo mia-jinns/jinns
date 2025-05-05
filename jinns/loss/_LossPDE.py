@@ -281,20 +281,15 @@ class _LossPDEAbstract(AbstractLoss):
                     "`norm_weights` must be provided when `norm_samples` is used!"
                 )
             if isinstance(self.norm_weights, (int, float)):
-                self.norm_weights = jnp.array(
-                    [self.norm_weights], dtype=jax.dtypes.canonicalize_dtype(float)
+                self.norm_weights = self.norm_weights * jnp.ones(
+                    (self.norm_samples.shape[0],)
                 )
-                print(self.norm_samples.shape, self.norm_weights.shape)
-            elif isinstance(self.norm_weights, Array):
-                print(self.norm_samples.shape, self.norm_weights.shape)
-                # CHECK IF BROADCASTBLE
-                print((self.norm_weights * self.norm_samples).shape)
-                assert self.norm_weights.shape[0] == self.norm_samples.shape[0], (
-                    "`norm_weights` should have the same leading dimension"
-                    " as `norm_samples`,"
-                    f" got shape {self.norm_weights.shape} and"
-                    f" shape {self.norm_samples.shape}."
-                )
+            if isinstance(self.norm_weights, Array):
+                if not (self.norm_weights.shape[0] == self.norm_samples.shape[0]):
+                    raise ValueError(
+                        "self.norm_weights and "
+                        "self.norm_samples must have the same leading dimension"
+                    )
             else:
                 raise ValueError("Wrong type for self.norm_weights")
 
