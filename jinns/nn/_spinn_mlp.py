@@ -57,8 +57,8 @@ class SMLP(eqx.Module):
         ]
 
     def __call__(
-        self, inputs: Float[Array, "dim"] | Float[Array, "dim+1"]
-    ) -> Float[Array, "d embed_dim*output_dim"]:
+        self, inputs: Float[Array, " dim"] | Float[Array, " dim+1"]
+    ) -> Float[Array, " d embed_dim*output_dim"]:
         outputs = []
         for d in range(self.d):
             x_i = inputs[d : d + 1]

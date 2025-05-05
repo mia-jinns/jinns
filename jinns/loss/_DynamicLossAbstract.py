@@ -128,7 +128,7 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
         raise NotImplementedError("You should implement your equation.")
 
 
-class ODE(DynamicLoss[Float[Array, "1"]]):
+class ODE(DynamicLoss[Float[Array, " 1"]]):
     r"""
     Abstract base class for ODE dynamic losses. All dynamic loss must subclass
     this class and override the abstract method `equation`.
@@ -157,7 +157,7 @@ class ODE(DynamicLoss[Float[Array, "1"]]):
 
     @abc.abstractmethod
     def equation(
-        self, t: Float[Array, "1"], u: AbstractPINN, params: Params[Array]
+        self, t: Float[Array, " 1"], u: AbstractPINN, params: Params[Array]
     ) -> float:
         r"""
         The differential operator defining the ODE.
@@ -168,7 +168,7 @@ class ODE(DynamicLoss[Float[Array, "1"]]):
 
         Parameters
         ----------
-        t : Float[Array, "1"]
+        t : Float[Array, " 1"]
             A 1-dimensional jnp.array representing the time point.
         u : AbstractPINN
             The network with a call signature `u(t, params)`.
@@ -188,7 +188,7 @@ class ODE(DynamicLoss[Float[Array, "1"]]):
         raise NotImplementedError
 
 
-class PDEStatio(DynamicLoss[Float[Array, "dim"]]):
+class PDEStatio(DynamicLoss[Float[Array, " dim"]]):
     r"""
     Abstract base class for stationnary PDE dynamic losses. All dynamic loss must subclass this class and override the abstract method `equation`.
 
@@ -216,7 +216,7 @@ class PDEStatio(DynamicLoss[Float[Array, "dim"]]):
 
     @abc.abstractmethod
     def equation(
-        self, x: Float[Array, "dim"], u: AbstractPINN, params: Params[Array]
+        self, x: Float[Array, " dim"], u: AbstractPINN, params: Params[Array]
     ) -> float:
         r"""The differential operator defining the stationnary PDE.
 
@@ -226,7 +226,7 @@ class PDEStatio(DynamicLoss[Float[Array, "dim"]]):
 
         Parameters
         ----------
-        x : Float[Array, "dim"]
+        x : Float[Array, " dim"]
             A `d` dimensional jnp.array representing a point in the spatial domain $\Omega$.
         u : AbstractPINN
             The neural network.
@@ -246,7 +246,7 @@ class PDEStatio(DynamicLoss[Float[Array, "dim"]]):
         raise NotImplementedError
 
 
-class PDENonStatio(DynamicLoss[Float[Array, "1 + dim"]]):
+class PDENonStatio(DynamicLoss[Float[Array, " 1 + dim"]]):
     """
     Abstract base class for non-stationnary PDE dynamic losses. All dynamic loss must subclass this class and override the abstract method `equation`.
 
@@ -275,7 +275,7 @@ class PDENonStatio(DynamicLoss[Float[Array, "1 + dim"]]):
     @abc.abstractmethod
     def equation(
         self,
-        t_x: Float[Array, "1 + dim"],
+        t_x: Float[Array, " 1 + dim"],
         u: AbstractPINN,
         params: Params[Array],
     ) -> float:
@@ -287,7 +287,7 @@ class PDENonStatio(DynamicLoss[Float[Array, "1 + dim"]]):
 
         Parameters
         ----------
-        t_x : Float[Array, "1 + dim"]
+        t_x : Float[Array, " 1 + dim"]
             A jnp array containing the concatenation of a time point and a point in $\Omega$
         u : AbstractPINN
             The neural network.

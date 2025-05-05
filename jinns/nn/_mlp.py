@@ -77,7 +77,7 @@ class MLP(eqx.Module):
                 self.layers.append(l[0](*l[1:], key=subkey))
                 k += 1
 
-    def __call__(self, t: Float[Array, " input_dim"]) -> Float[Array, " output_dim"]:
+    def __call__(self, t: Float[Array, "  input_dim"]) -> Float[Array, "  output_dim"]:
         for layer in self.layers:
             t = layer(t)
         return t
@@ -100,19 +100,19 @@ class PINN_MLP(PINN):
         eqx_list: tuple[tuple[Callable, int, int] | tuple[Callable], ...] | None = None,
         input_transform: (
             Callable[
-                [Float[Array, " input_dim"], Params[Array]],
-                Float[Array, " output_dim"],
+                [Float[Array, "  input_dim"], Params[Array]],
+                Float[Array, "  output_dim"],
             ]
             | None
         ) = None,
         output_transform: (
             Callable[
                 [
-                    Float[Array, " input_dim"],
-                    Float[Array, " output_dim"],
+                    Float[Array, "  input_dim"],
+                    Float[Array, "  output_dim"],
                     Params[Array],
                 ],
-                Float[Array, " output_dim"],
+                Float[Array, "  output_dim"],
             ]
             | None
         ) = None,

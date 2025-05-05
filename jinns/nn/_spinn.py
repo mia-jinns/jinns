@@ -71,9 +71,9 @@ class SPINN(AbstractPINN):
 
     def __call__(
         self,
-        t_x: Float[Array, " batch_size 1+dim"],
+        t_x: Float[Array, "  batch_size 1+dim"],
         params: Params[Array],
-    ) -> Float[Array, " output_dim"]:
+    ) -> Float[Array, "  output_dim"]:
         """
         Evaluate the SPINN on some inputs with some params.
         """

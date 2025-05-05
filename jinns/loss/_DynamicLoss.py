@@ -55,10 +55,10 @@ class FisherKPP(PDENonStatio):
 
     def equation(
         self,
-        t_x: Float[Array, "1+dim"],
+        t_x: Float[Array, " 1+dim"],
         u: AbstractPINN,
         params: Params[Array],
-    ) -> Float[Array, "1"]:
+    ) -> Float[Array, " 1"]:
         r"""
         Evaluate the dynamic loss at $(t, x)$.
 
@@ -146,10 +146,10 @@ class GeneralizedLotkaVolterra(ODE):
 
     def equation(
         self,
-        t: Float[Array, "1"],
+        t: Float[Array, " 1"],
         u: AbstractPINN,
         params: Params[Array],
-    ) -> Float[Array, "1"]:
+    ) -> Float[Array, " 1"]:
         """
         Evaluate the dynamic loss at `t`.
         For stability we implement the dynamic loss in log space.
@@ -204,10 +204,10 @@ class BurgersEquation(PDENonStatio):
 
     def equation(
         self,
-        t_x: Float[Array, "1+dim"],
+        t_x: Float[Array, " 1+dim"],
         u: AbstractPINN,
         params: Params[Array],
-    ) -> Float[Array, "1"]:
+    ) -> Float[Array, " 1"]:
         r"""
         Evaluate the dynamic loss at :math:`(t,x)`.
 
@@ -300,10 +300,10 @@ class FPENonStatioLoss2D(PDENonStatio):
 
     def equation(
         self,
-        t_x: Float[Array, "1+dim"],
+        t_x: Float[Array, " 1+dim"],
         u: AbstractPINN,
         params: Params[Array],
-    ) -> Float[Array, "1"]:
+    ) -> Float[Array, " 1"]:
         r"""
         Evaluate the dynamic loss at $(t,\mathbf{x})$.
 
@@ -549,10 +549,10 @@ class NavierStokesMassConservation2DStatio(PDEStatio):
 
     def equation(
         self,
-        x: Float[Array, "dim"],
+        x: Float[Array, " dim"],
         u_p: AbstractPINN,
         params: Params[Array],
-    ) -> Float[Array, "3"]:
+    ) -> Float[Array, " 3"]:
         r"""
         Evaluate the dynamic loss at `x`.
         For stability we implement the dynamic loss in log space.

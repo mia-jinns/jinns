@@ -34,15 +34,15 @@ def dynamic_loss_apply(
     dyn_loss: Callable,
     u: AbstractPINN,
     batch: (
-        Float[Array, "batch_size 1"]
-        | Float[Array, "batch_size dim"]
-        | Float[Array, "batch_size 1+dim"]
+        Float[Array, " batch_size 1"]
+        | Float[Array, " batch_size dim"]
+        | Float[Array, " batch_size 1+dim"]
     ),
     params: Params[Array],
     vmap_axes: tuple[int, Params[int | None] | None],
-    loss_weight: float | Float[Array, "dyn_loss_dimension"],
+    loss_weight: float | Float[Array, " dyn_loss_dimension"],
     u_type: PINN | HyperPINN | None = None,
-) -> Float[Array, ""]:
+) -> Float[Array, " "]:
     """
     Sometimes when u is a lambda function a or dict we do not have access to
     its type here, hence the last argument
@@ -69,16 +69,16 @@ def dynamic_loss_apply(
 def normalization_loss_apply(
     u: AbstractPINN,
     batches: (
-        tuple[Float[Array, "nb_norm_samples dim"]]
+        tuple[Float[Array, " nb_norm_samples dim"]]
         | tuple[
-            Float[Array, "nb_norm_time_slices 1"], Float[Array, "nb_norm_samples dim"]
+            Float[Array, " nb_norm_time_slices 1"], Float[Array, " nb_norm_samples dim"]
         ]
     ),
     params: Params[Array],
     vmap_axes_params: tuple[Params[int | None] | None],
-    norm_weights: Float[Array, "nb_norm_samples"],
+    norm_weights: Float[Array, " nb_norm_samples"],
     loss_weight: float,
-) -> Float[Array, ""]:
+) -> Float[Array, " "]:
     """
     Note the squeezing on each result. We expect unidimensional *PINN since
     they represent probability distributions
@@ -166,8 +166,8 @@ def boundary_condition_apply(
     omega_boundary_fun: BoundaryConditionFun | dict[str, BoundaryConditionFun],
     omega_boundary_condition: str | dict[str, str],
     omega_boundary_dim: slice | dict[str, slice],
-    loss_weight: float | Float[Array, "boundary_cond_dim"],
-) -> Float[Array, ""]:
+    loss_weight: float | Float[Array, " boundary_cond_dim"],
+) -> Float[Array, " "]:
     assert batch.border_batch is not None
     vmap_in_axes = (0,) + _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
@@ -245,13 +245,13 @@ def boundary_condition_apply(
 
 def observations_loss_apply(
     u: AbstractPINN,
-    batch: Float[Array, "obs_batch_size input_dim"],
+    batch: Float[Array, " obs_batch_size input_dim"],
     params: Params[Array],
     vmap_axes: tuple[int, Params[int | None] | None],
-    observed_values: Float[Array, "obs_batch_size observation_dim"],
-    loss_weight: float | Float[Array, "observation_dim"],
+    observed_values: Float[Array, " obs_batch_size observation_dim"],
+    loss_weight: float | Float[Array, " observation_dim"],
     obs_slice: EllipsisType | slice | None,
-) -> Float[Array, ""]:
+) -> Float[Array, " "]:
     if isinstance(u, (PINN, HyperPINN)):
         v_u = vmap(
             lambda *args: u(*args)[u.slice_solution],
@@ -278,13 +278,13 @@ def observations_loss_apply(
 
 def initial_condition_apply(
     u: AbstractPINN,
-    omega_batch: Float[Array, "dimension"],
+    omega_batch: Float[Array, " dimension"],
     params: Params[Array],
     vmap_axes: tuple[int, Params[int | None] | None],
     initial_condition_fun: Callable,
-    t0: Float[Array, "1"],
-    loss_weight: float | Float[Array, "initial_condition_dimension"],
-) -> Float[Array, ""]:
+    t0: Float[Array, " 1"],
+    loss_weight: float | Float[Array, " initial_condition_dimension"],
+) -> Float[Array, " "]:
     n = omega_batch.shape[0]
     t0_omega_batch = jnp.concatenate([t0 * jnp.ones((n, 1)), omega_batch], axis=1)
     if isinstance(u, (PINN, HyperPINN)):

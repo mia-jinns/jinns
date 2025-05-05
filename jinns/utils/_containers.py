@@ -27,7 +27,7 @@ class ValidationContainer(eqx.Module):
     loss: AnyLoss | None
     data: DataGeneratorContainer
     hyperparams: PyTree = None
-    loss_values: Float[Array, "n_iter"] | None = None
+    loss_values: Float[Array, " n_iter"] | None = None
 
 
 class OptimizationContainer(eqx.Module):
@@ -45,8 +45,8 @@ class OptimizationExtraContainer(eqx.Module):
 
 
 class LossContainer(eqx.Module):
-    stored_loss_terms: Dict[str, Float[Array, "n_iter"]]
-    train_loss_values: Float[Array, "n_iter"]
+    stored_loss_terms: Dict[str, Float[Array, " n_iter"]]
+    train_loss_values: Float[Array, " n_iter"]
 
 
 class StoredObjectContainer(eqx.Module):

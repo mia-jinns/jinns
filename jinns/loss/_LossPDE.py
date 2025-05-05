@@ -47,13 +47,13 @@ if TYPE_CHECKING:
     from jinns.utils._types import BoundaryConditionFun
 
     class LossDictPDEStatio(TypedDict):
-        dyn_loss: Float[Array, ""]
-        norm_loss: Float[Array, ""]
-        boundary_loss: Float[Array, ""]
-        observations: Float[Array, ""]
+        dyn_loss: Float[Array, " "]
+        norm_loss: Float[Array, " "]
+        boundary_loss: Float[Array, " "]
+        observations: Float[Array, " "]
 
     class LossDictPDENonStatio(LossDictPDEStatio):
-        initial_condition: Float[Array, ""]
+        initial_condition: Float[Array, " "]
 
 
 _IMPLEMENTED_BOUNDARY_CONDITIONS = [
@@ -101,10 +101,10 @@ class _LossPDEAbstract(AbstractLoss):
         will be forced to match the boundary condition.
         Note that it must be a slice and not an integer
         (but a preprocessing of the user provided argument takes care of it)
-    norm_samples : Float[Array, "nb_norm_samples dimension"], default=None
+    norm_samples : Float[Array, " nb_norm_samples dimension"], default=None
         Monte-Carlo sample points for computing the
         normalization constant. Default is None.
-    norm_weights : Float[Array, "nb_norm_samples"] | float | int, default=None
+    norm_weights : Float[Array, " nb_norm_samples"] | float | int, default=None
         The importance sampling weights for Monte-Carlo integration of the
         normalization constant. Must be provided if `norm_samples` is provided.
         `norm_weights` should have the same leading dimension as
@@ -138,10 +138,10 @@ class _LossPDEAbstract(AbstractLoss):
     omega_boundary_dim: slice | dict[str, slice] | None = eqx.field(
         kw_only=True, default=None, static=True
     )
-    norm_samples: Float[Array, "nb_norm_samples dimension"] | None = eqx.field(
+    norm_samples: Float[Array, " nb_norm_samples dimension"] | None = eqx.field(
         kw_only=True, default=None
     )
-    norm_weights: Float[Array, "nb_norm_samples"] | float | int | None = eqx.field(
+    norm_weights: Float[Array, " nb_norm_samples"] | float | int | None = eqx.field(
         kw_only=True, default=None
     )
     obs_slice: EllipsisType | slice | None = eqx.field(
@@ -302,7 +302,7 @@ class _LossPDEAbstract(AbstractLoss):
         self: eqx.Module,
         params: Params[Array],
         batch: PDEStatioBatch | PDENonStatioBatch,
-    ) -> tuple[Float[Array, ""], LossDictPDEStatio | LossDictPDENonStatio]:
+    ) -> tuple[Float[Array, " "], LossDictPDEStatio | LossDictPDENonStatio]:
         raise NotImplementedError
 
 
@@ -366,10 +366,10 @@ class LossPDEStatio(_LossPDEAbstract):
         will be forced to match the boundary condition.
         Note that it must be a slice and not an integer
         (but a preprocessing of the user provided argument takes care of it)
-    norm_samples : Float[Array, "nb_norm_samples dimension"], default=None
+    norm_samples : Float[Array, " nb_norm_samples dimension"], default=None
         Monte-Carlo sample points for computing the
         normalization constant. Default is None.
-    norm_weights : Float[Array, "nb_norm_samples"] | float | int, default=None
+    norm_weights : Float[Array, " nb_norm_samples"] | float | int, default=None
         The importance sampling weights for Monte-Carlo integration of the
         normalization constant. Must be provided if `norm_samples` is provided.
         `norm_weights` should have the same leading dimension as
@@ -415,19 +415,19 @@ class LossPDEStatio(_LossPDEAbstract):
 
     def _get_dynamic_loss_batch(
         self, batch: PDEStatioBatch
-    ) -> Float[Array, "batch_size dimension"]:
+    ) -> Float[Array, " batch_size dimension"]:
         return batch.domain_batch
 
     def _get_normalization_loss_batch(
         self,
-    ) -> tuple[Float[Array, "nb_norm_samples dimension"]]:
+    ) -> tuple[Float[Array, " nb_norm_samples dimension"]]:
         return (self.norm_samples,)  # type: ignore -> cannot narrow a class attr
 
     # we could have used typing.cast though
 
     def _get_observations_loss_batch(
         self, batch: PDEStatioBatch
-    ) -> Float[Array, "batch_size obs_dim"]:
+    ) -> Float[Array, " batch_size obs_dim"]:
         return batch.obs_batch_dict["pinn_in"]
 
     def __call__(self, *args, **kwargs):
@@ -435,7 +435,7 @@ class LossPDEStatio(_LossPDEAbstract):
 
     def evaluate(
         self, params: Params[Array], batch: PDEStatioBatch
-    ) -> tuple[Float[Array, ""], LossDictPDEStatio]:
+    ) -> tuple[Float[Array, " "], LossDictPDEStatio]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -599,10 +599,10 @@ class LossPDENonStatio(LossPDEStatio):
         will be forced to match the boundary condition.
         Note that it must be a slice and not an integer
         (but a preprocessing of the user provided argument takes care of it)
-    norm_samples : Float[Array, "nb_norm_samples dimension"], default=None
+    norm_samples : Float[Array, " nb_norm_samples dimension"], default=None
         Monte-Carlo sample points for computing the
         normalization constant. Default is None.
-    norm_weights : Float[Array, "nb_norm_samples"] | float | int, default=None
+    norm_weights : Float[Array, " nb_norm_samples"] | float | int, default=None
         The importance sampling weights for Monte-Carlo integration of the
         normalization constant. Must be provided if `norm_samples` is provided.
         `norm_weights` should have the same leading dimension as
@@ -613,7 +613,7 @@ class LossPDENonStatio(LossPDEStatio):
     obs_slice : slice, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
-    t0 : float | Float[Array, "1"], default=None
+    t0 : float | Float[Array, " 1"], default=None
         The time at which to apply the initial condition. If None, the time
         is set to `0` by default.
     initial_condition_fun : Callable, default=None
@@ -631,7 +631,7 @@ class LossPDENonStatio(LossPDEStatio):
     initial_condition_fun: Callable | None = eqx.field(
         kw_only=True, default=None, static=True
     )
-    t0: float | Float[Array, "1"] | None = eqx.field(kw_only=True, default=None)
+    t0: float | Float[Array, " 1"] | None = eqx.field(kw_only=True, default=None)
 
     _max_norm_samples_omega: Int = eqx.field(init=False, static=True)
     _max_norm_time_slices: Int = eqx.field(init=False, static=True)
@@ -672,13 +672,13 @@ class LossPDENonStatio(LossPDEStatio):
 
     def _get_dynamic_loss_batch(
         self, batch: PDENonStatioBatch
-    ) -> Float[Array, "batch_size 1+dimension"]:
+    ) -> Float[Array, " batch_size 1+dimension"]:
         return batch.domain_batch
 
     def _get_normalization_loss_batch(
         self, batch: PDENonStatioBatch
     ) -> tuple[
-        Float[Array, "nb_norm_time_slices 1"], Float[Array, "nb_norm_samples dim"]
+        Float[Array, " nb_norm_time_slices 1"], Float[Array, " nb_norm_samples dim"]
     ]:
         return (
             batch.domain_batch[: self._max_norm_time_slices, 0:1],
@@ -687,7 +687,7 @@ class LossPDENonStatio(LossPDEStatio):
 
     def _get_observations_loss_batch(
         self, batch: PDENonStatioBatch
-    ) -> Float[Array, "batch_size 1+dim"]:
+    ) -> Float[Array, " batch_size 1+dim"]:
         return batch.obs_batch_dict["pinn_in"]
 
     def __call__(self, *args, **kwargs):
@@ -695,7 +695,7 @@ class LossPDENonStatio(LossPDEStatio):
 
     def evaluate(
         self, params: Params[Array], batch: PDENonStatioBatch
-    ) -> tuple[Float[Array, ""], LossDictPDENonStatio]:
+    ) -> tuple[Float[Array, " "], LossDictPDENonStatio]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 

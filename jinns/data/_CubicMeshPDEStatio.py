@@ -101,14 +101,14 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
     n_start: int = eqx.field(kw_only=True, default=None, static=True)
 
     # all the init=False fields are set in __post_init__
-    p: Float[Array, "n"] | None = eqx.field(init=False)
+    p: Float[Array, " n"] | None = eqx.field(init=False)
     rar_iter_from_last_sampling: int | None = eqx.field(init=False)
     rar_iter_nb: int | None = eqx.field(init=False)
     curr_omega_idx: int = eqx.field(init=False)
     curr_omega_border_idx: int = eqx.field(init=False)
-    omega: Float[Array, "n dim"] = eqx.field(init=False)
-    omega_border: Float[Array, "1 2"] | Float[Array, "(nb//4) 2 4"] | None = eqx.field(
-        init=False
+    omega: Float[Array, " n dim"] = eqx.field(init=False)
+    omega_border: Float[Array, " 1 2"] | Float[Array, " (nb//4) 2 4"] | None = (
+        eqx.field(init=False)
     )
 
     def __post_init__(self):
@@ -173,7 +173,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
 
     def sample_in_omega_domain(
         self, keys: Key, sample_size: int
-    ) -> Float[Array, "n dim"]:
+    ) -> Float[Array, " n dim"]:
         if self.dim == 1:
             xmin, xmax = self.min_pts[0], self.max_pts[0]
             return jax.random.uniform(
@@ -195,7 +195,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
 
     def sample_in_omega_border_domain(
         self, keys: Key, sample_size: int | None = None
-    ) -> Float[Array, "1 2"] | Float[Array, "(nb//4) 2 4"] | None:
+    ) -> Float[Array, " 1 2"] | Float[Array, " (nb//4) 2 4"] | None:
         sample_size = self.nb if sample_size is None else sample_size
         if sample_size is None:
             return None
@@ -260,7 +260,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
 
     def generate_omega_data(self, key: Key, data_size: int | None = None) -> tuple[
         Key,
-        Float[Array, "n dim"],
+        Float[Array, " n dim"],
     ]:
         r"""
         Construct a complete set of `self.n` $\Omega$ points according to the
@@ -300,7 +300,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         self, key: Key, data_size: int | None = None
     ) -> tuple[
         Key,
-        Float[Array, "1 2"] | Float[Array, "(nb//4) 2 4"] | None,
+        Float[Array, " 1 2"] | Float[Array, " (nb//4) 2 4"] | None,
     ]:
         r"""
         Also constructs a complete set of `self.nb`
@@ -321,7 +321,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
 
     def _get_omega_operands(
         self,
-    ) -> tuple[Key, Float[Array, "n dim"], int, int | None, Float[Array, "n"] | None]:
+    ) -> tuple[Key, Float[Array, " n dim"], int, int | None, Float[Array, " n"] | None]:
         return (
             self.key,
             self.omega,
@@ -332,7 +332,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
 
     def inside_batch(
         self,
-    ) -> tuple[CubicMeshPDEStatio, Float[Array, "omega_batch_size dim"]]:
+    ) -> tuple[CubicMeshPDEStatio, Float[Array, " omega_batch_size dim"]]:
         r"""
         Return a batch of points in $\Omega$.
         If all the batches have been seen, we reshuffle them,
@@ -376,7 +376,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         self,
     ) -> tuple[
         Key,
-        Float[Array, "1 2"] | Float[Array, "(nb//4) 2 4"] | None,
+        Float[Array, " 1 2"] | Float[Array, " (nb//4) 2 4"] | None,
         int,
         int | None,
         None,
@@ -393,7 +393,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         self,
     ) -> tuple[
         CubicMeshPDEStatio,
-        Float[Array, "1 1 2"] | Float[Array, "omega_border_batch_size 2 4"] | None,
+        Float[Array, " 1 1 2"] | Float[Array, " omega_border_batch_size 2 4"] | None,
     ]:
         r"""
         Return

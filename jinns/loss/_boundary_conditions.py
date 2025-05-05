@@ -30,7 +30,7 @@ def _compute_boundary_loss(
     facet: int,
     dim_to_apply: slice,
     vmap_in_axes: tuple,
-) -> Float[Array, ""]:
+) -> Float[Array, " "]:
     r"""A generic function that will compute the mini-batch MSE of a
     boundary condition in the stationary case, resp. non-stationary, given by:
 
@@ -95,7 +95,7 @@ def _compute_boundary_loss(
 
 def boundary_dirichlet(
     f: Callable[
-        [Float[Array, "dim"] | Float[Array, "dim + 1"]], Float[Array, "dim_solution"]
+        [Float[Array, " dim"] | Float[Array, " dim + 1"]], Float[Array, " dim_solution"]
     ],
     batch: PDEStatioBatch | PDENonStatioBatch,
     u: AbstractPINN,
@@ -103,7 +103,7 @@ def boundary_dirichlet(
     facet: int,
     dim_to_apply: slice,
     vmap_in_axes: tuple,
-) -> Float[Array, ""]:
+) -> Float[Array, " "]:
     r"""
     This omega boundary condition enforces a solution that is equal to `f`
     at `times_batch` x `omega_border` (non stationary case) or at `omega_border`
@@ -168,7 +168,7 @@ def boundary_dirichlet(
 
 def boundary_neumann(
     f: Callable[
-        [Float[Array, "dim"] | Float[Array, "dim + 1"]], Float[Array, "dim_solution"]
+        [Float[Array, " dim"] | Float[Array, " dim + 1"]], Float[Array, " dim_solution"]
     ],
     batch: PDEStatioBatch | PDENonStatioBatch,
     u: AbstractPINN,
@@ -176,7 +176,7 @@ def boundary_neumann(
     facet: int,
     dim_to_apply: slice,
     vmap_in_axes: tuple,
-) -> Float[Array, ""]:
+) -> Float[Array, " "]:
     r"""
     This omega boundary condition enforces a solution where $\nabla u\cdot
     n$ is equal to `f` at the cartesian product of `time_batch` x `omega

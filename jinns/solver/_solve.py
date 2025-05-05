@@ -38,7 +38,7 @@ if TYPE_CHECKING:
         AbstractValidationModule | None,
         LossContainer,
         StoredObjectContainer,
-        Float[Array, "n_iter"] | None,
+        Float[Array, " n_iter"] | None,
     ]
 
 
@@ -59,13 +59,13 @@ def solve(
     ahead_of_time: bool = True,
 ) -> tuple[
     Params[Array],
-    Float[Array, "n_iter"],
-    dict[str, Float[Array, "n_iter"]],
+    Float[Array, " n_iter"],
+    dict[str, Float[Array, " n_iter"]],
     AbstractDataGenerator,
     AnyLoss,
     optax.OptState,
     Params[Array | None],
-    Float[Array, "n_iter"] | None,
+    Float[Array, " n_iter"] | None,
     Params[Array],
 ]:
     """
@@ -544,12 +544,12 @@ def _store_loss_and_params(
     i: int,
     params: Params[Array],
     stored_params: Params[Array],
-    stored_loss_terms: dict[str, Float[Array, "n_iter"]],
-    train_loss_values: Float[Array, "n_iter"],
+    stored_loss_terms: dict[str, Float[Array, " n_iter"]],
+    train_loss_values: Float[Array, " n_iter"],
     train_loss_val: float,
     loss_terms: dict[str, float],
     tracked_params: Params,
-) -> tuple[Params, dict[str, Float[Array, "n_iter"]], Float[Array, "n_iter"]]:
+) -> tuple[Params, dict[str, Float[Array, " n_iter"]], Float[Array, " n_iter"]]:
     stored_params = jax.tree_util.tree_map(
         lambda stored_value, param, tracked_param: (
             None

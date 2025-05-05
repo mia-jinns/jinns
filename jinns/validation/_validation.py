@@ -80,7 +80,7 @@ class ValidationLoss(AbstractValidationModule):
 
     def __call__(
         self, params: Params[Array]
-    ) -> tuple[ValidationLoss, bool, Float[Array, ""], Params[Array]]:
+    ) -> tuple[ValidationLoss, bool, Float[Array, " "], Params[Array]]:
         # do in-place mutation
 
         # pylint / pyright complains below when using the self attributes see: https://github.com/patrick-kidger/equinox/issues/1013

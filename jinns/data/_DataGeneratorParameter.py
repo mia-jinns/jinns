@@ -47,7 +47,7 @@ class DataGeneratorParameter(AbstractDataGenerator):
         Either `grid` or `uniform`, default is `uniform`. `grid` means
         regularly spaced points over the domain. `uniform` means uniformly
         sampled points over the domain
-    user_data : dict[str, Float[Array, "n"]] | None, default={}
+    user_data : dict[str, Float[Array, " n"]] | None, default={}
         A dictionary containing user-provided data for parameters.
         The keys corresponds to the parameter name,
         and must match the keys in `params["eq_params"]`. Only
@@ -65,7 +65,7 @@ class DataGeneratorParameter(AbstractDataGenerator):
         static=True, default_factory=lambda: {}
     )
     method: str = eqx.field(static=True, default="uniform")
-    user_data: dict[str, Float[Array, "n"]] | None = eqx.field(
+    user_data: dict[str, Float[Array, " n"]] | None = eqx.field(
         default_factory=lambda: {}
     )
 
@@ -102,7 +102,7 @@ class DataGeneratorParameter(AbstractDataGenerator):
 
     def generate_data(
         self, keys: dict[str, Key]
-    ) -> tuple[dict[str, Key], dict[str, Float[Array, "n"]]]:
+    ) -> tuple[dict[str, Key], dict[str, Float[Array, " n"]]]:
         """
         Generate parameter samples, either through generation
         or using user-provided data.
@@ -146,7 +146,7 @@ class DataGeneratorParameter(AbstractDataGenerator):
 
     def _get_param_operands(
         self, k: str
-    ) -> tuple[Key, Float[Array, "n"], int, int | None, None]:
+    ) -> tuple[Key, Float[Array, " n"], int, int | None, None]:
         return (
             self.keys[k],
             self.param_n_samples[k],

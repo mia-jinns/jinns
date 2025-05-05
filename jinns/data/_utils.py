@@ -37,8 +37,8 @@ def append_obs_batch(batch: AnyBatch, obs_batch_dict: ObsBatchDict) -> AnyBatch:
 
 
 def make_cartesian_product(
-    b1: Float[Array, "batch_size dim1"], b2: Float[Array, "batch_size dim2"]
-) -> Float[Array, "rows=batch_size*batch_size (dim1+dim2)"]:
+    b1: Float[Array, " batch_size dim1"], b2: Float[Array, " batch_size dim2"]
+) -> Float[Array, " rows=batch_size*batch_size (dim1+dim2)"]:
     # rows= serves to disable jaxtyping wish for runtime check since it does not like the star
     # operator, we wish use not as expected
     """
@@ -53,8 +53,8 @@ def make_cartesian_product(
 
 
 def _reset_batch_idx_and_permute(
-    operands: tuple[Key, Float[Array, "n dimension"], int, None, Float[Array, "n"]],
-) -> tuple[Key, Float[Array, "n dimension"], int]:
+    operands: tuple[Key, Float[Array, " n dimension"], int, None, Float[Array, " n"]],
+) -> tuple[Key, Float[Array, " n dimension"], int]:
     key, domain, curr_idx, _, p = operands
     # resetting counter
     curr_idx = 0
@@ -77,8 +77,8 @@ def _reset_batch_idx_and_permute(
 
 
 def _increment_batch_idx(
-    operands: tuple[Key, Float[Array, "n dimension"], int, int, Float[Array, "n"]],
-) -> tuple[Key, Float[Array, "n dimension"], int]:
+    operands: tuple[Key, Float[Array, " n dimension"], int, int, Float[Array, " n"]],
+) -> tuple[Key, Float[Array, " n dimension"], int]:
     key, domain, curr_idx, batch_size, _ = operands
     # simply increases counter and get the batch
     curr_idx += batch_size
@@ -88,8 +88,8 @@ def _increment_batch_idx(
 def _reset_or_increment(
     bend: int,
     n_eff: int,
-    operands: tuple[Key, Float[Array, "n dimension"], int, int, Float[Array, "n"]],
-) -> tuple[Key, Float[Array, "n dimension"], int]:
+    operands: tuple[Key, Float[Array, " n dimension"], int, int, Float[Array, " n"]],
+) -> tuple[Key, Float[Array, " n dimension"], int]:
     """
     Factorize the code of the jax.lax.cond which checks if we have seen all the
     batches in an epoch
@@ -120,7 +120,7 @@ def _reset_or_increment(
 
 def _check_and_set_rar_parameters(
     rar_parameters: dict, n: int, n_start: int
-) -> tuple[int, Float[Array, "n"] | None, int | None, int | None]:
+) -> tuple[int, Float[Array, " n"] | None, int | None, int | None]:
     if rar_parameters is not None and n_start is None:
         raise ValueError(
             "n_start must be provided in the context of RAR sampling scheme"

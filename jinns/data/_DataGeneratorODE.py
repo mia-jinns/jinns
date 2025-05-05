@@ -66,11 +66,11 @@ class DataGeneratorODE(AbstractDataGenerator):
     n_start: int = eqx.field(static=True, default=None, kw_only=True)
 
     # all the init=False fields are set in __post_init__
-    p: Float[Array, "nt 1"] | None = eqx.field(init=False)
+    p: Float[Array, " nt 1"] | None = eqx.field(init=False)
     rar_iter_from_last_sampling: int | None = eqx.field(init=False)
     rar_iter_nb: int | None = eqx.field(init=False)
     curr_time_idx: int = eqx.field(init=False)
-    times: Float[Array, "nt 1"] = eqx.field(init=False)
+    times: Float[Array, " nt 1"] = eqx.field(init=False)
 
     def __post_init__(self):
         (
@@ -98,7 +98,7 @@ class DataGeneratorODE(AbstractDataGenerator):
 
     def sample_in_time_domain(
         self, key: Key, sample_size: int | None = None
-    ) -> Float[Array, "nt 1"]:
+    ) -> Float[Array, " nt 1"]:
         return jax.random.uniform(
             key,
             (self.nt if sample_size is None else sample_size, 1),
@@ -106,7 +106,7 @@ class DataGeneratorODE(AbstractDataGenerator):
             maxval=self.tmax,
         )
 
-    def generate_time_data(self, key: Key) -> tuple[Key, Float[Array, "nt"]]:
+    def generate_time_data(self, key: Key) -> tuple[Key, Float[Array, " nt"]]:
         """
         Construct a complete set of `self.nt` time points according to the
         specified `self.method`
@@ -124,7 +124,9 @@ class DataGeneratorODE(AbstractDataGenerator):
 
     def _get_time_operands(
         self,
-    ) -> tuple[Key, Float[Array, "nt 1"], int, int | None, Float[Array, "nt 1"] | None]:
+    ) -> tuple[
+        Key, Float[Array, " nt 1"], int, int | None, Float[Array, " nt 1"] | None
+    ]:
         return (
             self.key,
             self.times,
@@ -135,7 +137,7 @@ class DataGeneratorODE(AbstractDataGenerator):
 
     def temporal_batch(
         self,
-    ) -> tuple[DataGeneratorODE, Float[Array, "temporal_batch_size"]]:
+    ) -> tuple[DataGeneratorODE, Float[Array, " temporal_batch_size"]]:
         """
         Return a batch of time points. If all the batches have been seen, we
         reshuffle them, otherwise we just return the next unseen batch.

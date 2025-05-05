@@ -31,7 +31,7 @@ if TYPE_CHECKING:
         n_start: int
         rar_iter_from_last_sampling: int
         rar_iter_nb: int
-        p: Float[Array, "n 1"]
+        p: Float[Array, " n 1"]
 
     rar_operands: TypeAlias = tuple[Any, Params, DataGeneratorWithRAR, int]
 
@@ -56,7 +56,7 @@ class RarParameterDict(TypedDict):
     selected_sample_size: int
 
 
-def _proceed_to_rar(data: DataGeneratorWithRAR, i: int) -> Bool[Array, ""]:
+def _proceed_to_rar(data: DataGeneratorWithRAR, i: int) -> Bool[Array, " "]:
     """Utilility function with various check to ensure we can proceed with the rar_step.
     Return True if yes, and False otherwise"""
 

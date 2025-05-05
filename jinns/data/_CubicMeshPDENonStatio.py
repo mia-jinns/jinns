@@ -100,11 +100,11 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
     curr_domain_idx: int = eqx.field(init=False)
     curr_initial_idx: int = eqx.field(init=False)
     curr_border_idx: int = eqx.field(init=False)
-    domain: Float[Array, "n 1+dim"] = eqx.field(init=False)
-    border: Float[Array, "(nb//2) 1+1 2"] | Float[Array, "(nb//4) 2+1 4"] | None = (
+    domain: Float[Array, " n 1+dim"] = eqx.field(init=False)
+    border: Float[Array, " (nb//2) 1+1 2"] | Float[Array, " (nb//4) 2+1 4"] | None = (
         eqx.field(init=False)
     )
-    initial: Float[Array, "ni dim"] | None = eqx.field(init=False)
+    initial: Float[Array, " ni dim"] | None = eqx.field(init=False)
 
     def __post_init__(self):
         """
@@ -234,7 +234,9 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         self.omega = None  # type: ignore
         self.omega_border = None
 
-    def generate_time_data(self, key: Key, nt: int) -> tuple[Key, Float[Array, "nt 1"]]:
+    def generate_time_data(
+        self, key: Key, nt: int
+    ) -> tuple[Key, Float[Array, " nt 1"]]:
         """
         Construct a complete set of `nt` time points according to the
         specified `self.method`
@@ -247,7 +249,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             return key, self.sample_in_time_domain(subkey, nt)
         raise ValueError("Method " + self.method + " is not implemented.")
 
-    def sample_in_time_domain(self, key: Key, nt: int) -> Float[Array, "nt 1"]:
+    def sample_in_time_domain(self, key: Key, nt: int) -> Float[Array, " nt 1"]:
         return jax.random.uniform(
             key,
             (nt, 1),
@@ -257,7 +259,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
     def _get_domain_operands(
         self,
-    ) -> tuple[Key, Float[Array, "n 1+dim"], int, int | None, Array | None]:
+    ) -> tuple[Key, Float[Array, " n 1+dim"], int, int | None, Array | None]:
         return (
             self.key,
             self.domain,
@@ -268,7 +270,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
     def domain_batch(
         self,
-    ) -> tuple[CubicMeshPDENonStatio, Float[Array, "domain_batch_size 1+dim"]]:
+    ) -> tuple[CubicMeshPDENonStatio, Float[Array, " domain_batch_size 1+dim"]]:
 
         if self.domain_batch_size is None or self.domain_batch_size == self.n:
             # Avoid unnecessary reshuffling
@@ -309,7 +311,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         self,
     ) -> tuple[
         Key,
-        Float[Array, "nb 1+1 2"] | Float[Array, "(nb//4) 2+1 4"] | None,
+        Float[Array, " nb 1+1 2"] | Float[Array, " (nb//4) 2+1 4"] | None,
         int,
         int | None,
         None,
@@ -326,8 +328,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         self,
     ) -> tuple[
         CubicMeshPDENonStatio,
-        Float[Array, "border_batch_size 1+1 2"]
-        | Float[Array, "border_batch_size 2+1 4"]
+        Float[Array, " border_batch_size 1+1 2"]
+        | Float[Array, " border_batch_size 2+1 4"]
         | None,
     ]:
         if self.nb is None or self.border is None:
@@ -371,7 +373,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
     def _get_initial_operands(
         self,
-    ) -> tuple[Key, Float[Array, "ni dim"] | None, int, int | None, None]:
+    ) -> tuple[Key, Float[Array, " ni dim"] | None, int, int | None, None]:
         return (
             self.key,
             self.initial,
@@ -382,7 +384,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
     def initial_batch(
         self,
-    ) -> tuple[CubicMeshPDENonStatio, Float[Array, "initial_batch_size dim"] | None]:
+    ) -> tuple[CubicMeshPDENonStatio, Float[Array, " initial_batch_size dim"] | None]:
         if self.initial_batch_size is None or self.initial_batch_size == self.ni:
             # Avoid unnecessary reshuffling
             return self, self.initial

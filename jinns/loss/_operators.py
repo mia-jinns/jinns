@@ -33,11 +33,11 @@ def _get_eq_type(
 
 
 def divergence_rev(
-    inputs: Float[Array, "dim"] | Float[Array, "1+dim"],
+    inputs: Float[Array, " dim"] | Float[Array, " 1+dim"],
     u: AbstractPINN | Callable[[Array, Params[Array]], Array],
     params: Params[Array],
     eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
-) -> Float[Array, ""]:
+) -> Float[Array, " "]:
     r"""
     Compute the divergence of a vector field $\mathbf{u}$, i.e.,
     $\nabla_\mathbf{x} \cdot \mathbf{u}(\mathrm{inputs})$ with $\mathbf{u}$ a vector
@@ -84,11 +84,11 @@ def divergence_rev(
 
 
 def divergence_fwd(
-    inputs: Float[Array, "batch_size dim"] | Float[Array, "batch_size 1+dim"],
+    inputs: Float[Array, " batch_size dim"] | Float[Array, " batch_size 1+dim"],
     u: AbstractPINN | Callable[[Array, Params[Array]], Array],
     params: Params[Array],
     eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
-) -> Float[Array, "batch_size * (1+dim) 1"] | Float[Array, "batch_size * (dim) 1"]:
+) -> Float[Array, " batch_size * (1+dim) 1"] | Float[Array, " batch_size * (dim) 1"]:
     r"""
     Compute the divergence of a **batched** vector field $\mathbf{u}$, i.e.,
     $\nabla_\mathbf{x} \cdot \mathbf{u}(\mathbf{x})$ with $\mathbf{u}$ a vector
@@ -150,12 +150,12 @@ def divergence_fwd(
 
 
 def laplacian_rev(
-    inputs: Float[Array, "dim"] | Float[Array, "1+dim"],
+    inputs: Float[Array, " dim"] | Float[Array, " 1+dim"],
     u: AbstractPINN | Callable[[Array, Params[Array]], Array],
     params: Params[Array],
     method: Literal["trace_hessian_x", "trace_hessian_t_x", "loop"] = "trace_hessian_x",
     eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
-) -> Float[Array, ""]:
+) -> Float[Array, " "]:
     r"""
     Compute the Laplacian of a scalar field $u$ from $\mathbb{R}^d$
     to $\mathbb{R}$ or from $\mathbb{R}^{1+d}$ to $\mathbb{R}$, i.e., this
@@ -253,12 +253,12 @@ def laplacian_rev(
 
 
 def laplacian_fwd(
-    inputs: Float[Array, "batch_size 1+dim"] | Float[Array, "batch_size dim"],
+    inputs: Float[Array, " batch_size 1+dim"] | Float[Array, " batch_size dim"],
     u: AbstractPINN | Callable[[Array, Params[Array]], Array],
     params: Params[Array],
     method: Literal["trace_hessian_t_x", "trace_hessian_x", "loop"] = "loop",
     eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
-) -> Float[Array, "batch_size * (1+dim) 1"] | Float[Array, "batch_size * (dim) 1"]:
+) -> Float[Array, " batch_size * (1+dim) 1"] | Float[Array, " batch_size * (dim) 1"]:
     r"""
     Compute the Laplacian of a **batched** scalar field $u$
     from $\mathbb{R}^{b\times d}$ to $\mathbb{R}^{b\times b}$ or
@@ -394,12 +394,12 @@ def laplacian_fwd(
 
 
 def vectorial_laplacian_rev(
-    inputs: Float[Array, "dim"] | Float[Array, "1+dim"],
+    inputs: Float[Array, " dim"] | Float[Array, " 1+dim"],
     u: AbstractPINN | Callable[[Array, Params[Array]], Array],
     params: Params[Array],
     dim_out: int | None = None,
     eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
-) -> Float[Array, "dim_out"]:
+) -> Float[Array, " dim_out"]:
     r"""
     Compute the vectorial Laplacian of a vector field $\mathbf{u}$ from
     $\mathbb{R}^d$ to $\mathbb{R}^n$ or from $\mathbb{R}^{1+d}$ to
@@ -448,12 +448,12 @@ def vectorial_laplacian_rev(
 
 
 def vectorial_laplacian_fwd(
-    inputs: Float[Array, "batch_size dim"] | Float[Array, "batch_size 1+dim"],
+    inputs: Float[Array, " batch_size dim"] | Float[Array, " batch_size 1+dim"],
     u: AbstractPINN | Callable[[Array, Params[Array]], Array],
     params: Params[Array],
     dim_out: int | None = None,
     eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
-) -> Float[Array, "batch_size * (1+dim) n"] | Float[Array, "batch_size * (dim) n"]:
+) -> Float[Array, " batch_size * (1+dim) n"] | Float[Array, " batch_size * (dim) n"]:
     r"""
     Compute the vectorial Laplacian of a vector field $\mathbf{u}$ when
     `u` is a SPINN, in this case, it corresponds to a vector
@@ -504,10 +504,10 @@ def vectorial_laplacian_fwd(
 
 
 def _u_dot_nabla_times_u_rev(
-    x: Float[Array, "2"],
+    x: Float[Array, " 2"],
     u: AbstractPINN | Callable[[Array, Params[Array]], Array],
     params: Params[Array],
-) -> Float[Array, "2"]:
+) -> Float[Array, " 2"]:
     r"""
     Implement $((\mathbf{u}\cdot\nabla)\mathbf{u})(\mathbf{x})$ for
     $\mathbf{x}$ of arbitrary
@@ -536,10 +536,10 @@ def _u_dot_nabla_times_u_rev(
 
 
 def _u_dot_nabla_times_u_fwd(
-    x: Float[Array, "batch_size 2"],
+    x: Float[Array, " batch_size 2"],
     u: AbstractPINN | Callable[[Array, Params[Array]], Array],
     params: Params[Array],
-) -> Float[Array, "batch_size batch_size 2"]:
+) -> Float[Array, " batch_size batch_size 2"]:
     r"""
     Implement :math:`((\mathbf{u}\cdot\nabla)\mathbf{u})(\mathbf{x})` for
     :math:`\mathbf{x}` of arbitrary dimension **with a batch dimension**.

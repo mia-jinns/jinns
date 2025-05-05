@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
     # Here we define types available for the whole package
     BoundaryConditionFun: TypeAlias = Callable[
-        [Float[Array, "dim"] | Float[Array, "dim + 1"]], Float[Array, "dim_solution"]
+        [Float[Array, " dim"] | Float[Array, " dim + 1"]], Float[Array, " dim_solution"]
     ]
 
     AnyBatch: TypeAlias = ODEBatch | PDENonStatioBatch | PDEStatioBatch

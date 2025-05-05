@@ -12,8 +12,8 @@ from jaxtyping import Array, Float
 
 def plot2d(
     fun: Callable,
-    xy_data: tuple[Float[Array, "nx"], Float[Array, "ny"]],
-    times: Float[Array, "nt"] | list[float] | None = None,
+    xy_data: tuple[Float[Array, " nx"], Float[Array, " ny"]],
+    times: Float[Array, " nt"] | list[float] | None = None,
     Tmax: float = 1,
     title: str = "",
     figsize: tuple = (7, 7),
@@ -181,8 +181,8 @@ def plot2d(
 
 
 def _plot_2D_statio(
-    v_fun: Callable | Float[Array, "(nx*ny)^2 1"],
-    mesh: list[Float[Array, "nx*ny nx*ny"]],
+    v_fun: Callable | Float[Array, " (nx*ny)^2 1"],
+    mesh: list[Float[Array, " nx*ny nx*ny"]],
     plot: bool = True,
     colorbar: bool = True,
     cmap: str = "inferno",
@@ -244,9 +244,9 @@ def _plot_2D_statio(
 
 
 def plot1d_slice(
-    fun: Callable[[Float[Array, ""]], Float[Array, ""]],
-    xdata: Float[Array, "nx"],
-    time_slices: Float[Array, "nt"] | None = None,
+    fun: Callable[[Float[Array, " "]], Float[Array, " "]],
+    xdata: Float[Array, " nx"],
+    time_slices: Float[Array, " nt"] | None = None,
     Tmax: float = 1.0,
     title: str = "",
     figsize: tuple[int, int] = (10, 10),
@@ -308,9 +308,9 @@ def plot1d_slice(
 
 
 def plot1d_image(
-    fun: Callable[[Float[Array, ""]], Float[Array, ""]],
-    xdata: Float[Array, "nx"],
-    times: Float[Array, "nt"],
+    fun: Callable[[Float[Array, " "]], Float[Array, " "]],
+    xdata: Float[Array, " nx"],
+    times: Float[Array, " nt"],
     Tmax: float = 1.0,
     title: str = "",
     figsize: tuple[int, int] = (10, 10),

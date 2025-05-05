@@ -8,7 +8,7 @@ import jax.numpy as jnp
 from jaxtyping import PyTree, Array, Bool
 
 
-def _check_nan_in_pytree(pytree: PyTree) -> Bool[Array, ""]:
+def _check_nan_in_pytree(pytree: PyTree) -> Bool[Array, " "]:
     """
     Check if there is a NaN value anywhere is the pytree
 

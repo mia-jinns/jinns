@@ -31,7 +31,7 @@ class Params(eqx.Module, Generic[T]):
 
 def _update_eq_params_dict(
     params: Params[Array],
-    param_batch_dict: dict[str, Float[Array, "param_batch_size dim"]],
+    param_batch_dict: dict[str, Float[Array, " param_batch_size dim"]],
 ) -> Params:
     """
     Update params.eq_params with a batch of eq_params for given key(s)

@@ -26,17 +26,17 @@ class DataGeneratorObservations(AbstractDataGenerator):
     obs_batch_size : int | None
         The size of the batch of randomly selected points among
         the `n` points. If None, no minibatch are used.
-    observed_pinn_in : Float[Array, "n_obs nb_pinn_in"]
+    observed_pinn_in : Float[Array, " n_obs nb_pinn_in"]
         Observed values corresponding to the input of the PINN
         (eg. the time at which we recorded the observations). The first
         dimension must corresponds to the number of observed_values.
         The second dimension depends on the input dimension of the PINN,
         that is `1` for ODE, `n_dim_x` for stationnary PDE and `n_dim_x + 1`
         for non-stationnary PDE.
-    observed_values : Float[Array, "n_obs, nb_pinn_out"]
+    observed_values : Float[Array, " n_obs, nb_pinn_out"]
         Observed values that the PINN should learn to fit. The first
         dimension must be aligned with observed_pinn_in.
-    observed_eq_params : dict[str, Float[Array, "n_obs 1"]], default={}
+    observed_eq_params : dict[str, Float[Array, " n_obs 1"]], default={}
         A dict with keys corresponding to
         the parameter name. The keys must match the keys in
         `params["eq_params"]`. The values are jnp.array with 2 dimensions
@@ -56,9 +56,9 @@ class DataGeneratorObservations(AbstractDataGenerator):
 
     key: Key
     obs_batch_size: int | None = eqx.field(static=True)
-    observed_pinn_in: Float[Array, "n_obs nb_pinn_in"]
-    observed_values: Float[Array, "n_obs nb_pinn_out"]
-    observed_eq_params: dict[str, Float[Array, "n_obs 1"]] = eqx.field(
+    observed_pinn_in: Float[Array, " n_obs nb_pinn_in"]
+    observed_values: Float[Array, " n_obs nb_pinn_out"]
+    observed_eq_params: dict[str, Float[Array, " n_obs 1"]] = eqx.field(
         static=True, default_factory=lambda: {}
     )
     sharding_device: jax.sharding.Sharding = eqx.field(static=True, default=None)
@@ -126,7 +126,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
         self.key, _ = jax.random.split(self.key, 2)  # to make it equivalent to
         # the call to _reset_batch_idx_and_permute in legacy DG
 
-    def _get_operands(self) -> tuple[Key, Int[Array, "n"], int, int | None, None]:
+    def _get_operands(self) -> tuple[Key, Int[Array, " n"], int, int | None, None]:
         return (
             self.key,
             self.indices,
