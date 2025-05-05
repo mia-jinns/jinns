@@ -158,7 +158,7 @@ class SPINN_MLP(SPINN):
             raise RuntimeError("Wrong parameter value for eq_type")
 
         def element_is_layer(element: tuple) -> TypeGuard[tuple[Callable, int, int]]:
-            return len(element[0]) > 1
+            return len(element) > 1
 
         if element_is_layer(eqx_list[0]):
             nb_inputs_declared = eqx_list[0][
