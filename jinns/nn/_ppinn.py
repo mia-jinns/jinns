@@ -4,17 +4,18 @@ Implements utility function to create PINNs
 
 from __future__ import annotations
 
-from typing import Callable, Literal, Self, cast
+from typing import Callable, Literal, Self, cast, overload
 from dataclasses import InitVar
 import jax
 import jax.numpy as jnp
 import equinox as eqx
 
-from jaxtyping import Array, Key, Float
+from jaxtyping import Array, Key, Float, PyTree
 
 from jinns.parameters._params import Params
 from jinns.nn._pinn import PINN
 from jinns.nn._mlp import MLP
+from jinns.nn._utils import _PyTree_to_Params
 
 
 class PPINN_MLP(PINN):
@@ -84,6 +85,17 @@ class PPINN_MLP(PINN):
             self.init_params = self.init_params + (params,)
             self.static = self.static + (static,)
 
+    @overload
+    @_PyTree_to_Params
+    def __call__(
+        self,
+        inputs: Float[Array, " input_dim"],
+        params: PyTree,
+        *args,
+        **kwargs,
+    ) -> Float[Array, " output_dim"]: ...
+
+    @_PyTree_to_Params
     def __call__(
         self,
         inputs: Float[Array, " 1"] | Float[Array, " dim"] | Float[Array, " 1+dim"],
@@ -91,6 +103,9 @@ class PPINN_MLP(PINN):
     ) -> Float[Array, " output_dim"]:
         """
         Evaluate the PPINN on some inputs with some params.
+
+        Note that that thanks to the decorator, params can also directly be the
+        PyTree (SPINN, PINN_MLP, ...) that we get out of eqx.combine
         """
         if len(inputs.shape) == 0:
             # This can happen often when the user directly provides some

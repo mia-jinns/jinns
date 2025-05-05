@@ -1,7 +1,10 @@
 import abc
-from typing import Literal
+from typing import Literal, Any
 from jaxtyping import Array
 import equinox as eqx
+
+from jinns.nn._utils import _PyTree_to_Params
+from jinns.parameters._params import Params
 
 
 class AbstractPINN(eqx.Module):
@@ -14,5 +17,6 @@ class AbstractPINN(eqx.Module):
     eq_type: eqx.AbstractVar[Literal["ODE", "statio_PDE", "nonstatio_PDE"]]
 
     @abc.abstractmethod
-    def __call__(self, *_, **__) -> Array:
+    @_PyTree_to_Params
+    def __call__(self, inputs: Any, params: Params[Array], *args, **kwargs) -> Any:
         pass

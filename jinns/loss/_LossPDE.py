@@ -11,7 +11,6 @@ from dataclasses import InitVar
 from typing import TYPE_CHECKING, Callable, TypedDict
 from types import EllipsisType
 import warnings
-import jax
 import jax.numpy as jnp
 import equinox as eqx
 from jaxtyping import Float, Array, Key, Int

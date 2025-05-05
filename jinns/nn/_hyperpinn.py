@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import InitVar
-from typing import Callable, Literal, Self, Union, Any, cast
+from typing import Callable, Literal, Self, Union, Any, cast, overload
 from math import prod
 import jax
 import jax.numpy as jnp
@@ -18,6 +18,7 @@ import numpy as onp
 from jinns.nn._pinn import PINN
 from jinns.nn._mlp import MLP
 from jinns.parameters._params import Params
+from jinns.nn._utils import _PyTree_to_Params
 
 
 def _get_param_nb(
@@ -144,6 +145,17 @@ class HyperPINN(PINN):
             is_leaf=lambda x: isinstance(x, jnp.ndarray),
         )
 
+    @overload
+    @_PyTree_to_Params
+    def __call__(
+        self,
+        inputs: Float[Array, " input_dim"],
+        params: PyTree,
+        *args,
+        **kwargs,
+    ) -> Float[Array, " output_dim"]: ...
+
+    @_PyTree_to_Params
     def __call__(
         self,
         inputs: Float[Array, "  input_dim"],
@@ -153,6 +165,9 @@ class HyperPINN(PINN):
     ) -> Float[Array, "  output_dim"]:
         """
         Evaluate the HyperPINN on some inputs with some params.
+
+        Note that that thanks to the decorator, params can also directly be the
+        PyTree (SPINN, PINN_MLP, ...) that we get out of eqx.combine
         """
         if len(inputs.shape) == 0:
             # This can happen often when the user directly provides some
