@@ -2,17 +2,20 @@
 Implements utility function to create PINNs
 """
 
-from typing import Callable, Literal, Self
+from __future__ import annotations
+
+from typing import Callable, Literal, Self, cast, overload
 from dataclasses import InitVar
 import jax
 import jax.numpy as jnp
 import equinox as eqx
 
-from jaxtyping import Array, Key, PyTree, Float
+from jaxtyping import Array, Key, Float, PyTree
 
 from jinns.parameters._params import Params
 from jinns.nn._pinn import PINN
 from jinns.nn._mlp import MLP
+from jinns.nn._utils import _PyTree_to_Params
 
 
 class PPINN_MLP(PINN):
@@ -39,12 +42,12 @@ class PPINN_MLP(PINN):
         **Note**: the input dimension as given in eqx_list has to match the sum
         of the dimension of `t` + the dimension of `x` or the output dimension
         after the `input_transform` function.
-    input_transform : Callable[[Float[Array, "input_dim"], Params], Float[Array, "output_dim"]]
+    input_transform : Callable[[Float[Array, " input_dim"], Params[Array]], Float[Array, " output_dim"]]
         A function that will be called before entering the PPINN. Its output(s)
         must match the PPINN inputs (except for the parameters).
         Its inputs are the PPINN inputs (`t` and/or `x` concatenated together)
         and the parameters. Default is no operation.
-    output_transform : Callable[[Float[Array, "input_dim"], Float[Array, "output_dim"], Params], Float[Array, "output_dim"]]
+    output_transform : Callable[[Float[Array, " input_dim"], Float[Array, " output_dim"], Params[Array]], Float[Array, " output_dim"]]
         A function with arguments begin the same input as the PPINN, the PPINN
         output and the parameter. This function will be called after exiting
         the PPINN.
@@ -63,25 +66,46 @@ class PPINN_MLP(PINN):
     """
 
     eqx_network_list: InitVar[list[eqx.Module]] = eqx.field(kw_only=True)
+    init_params: tuple[PINN, ...] = eqx.field(
+        init=False
+    )  # overriding parent attribute type
+    static: tuple[PINN, ...] = eqx.field(
+        init=False, static=True
+    )  # overriding parent attribute type
 
     def __post_init__(self, eqx_network, eqx_network_list):
         super().__post_init__(
             eqx_network=eqx_network_list[0],  # this is not used since it is
             # overwritten just below
         )
-        self.init_params, self.static = (), ()
-        for eqx_network_ in eqx_network_list:
+        params, static = eqx.partition(eqx_network_list[0], self.filter_spec)
+        self.init_params, self.static = (params,), (static,)
+        for eqx_network_ in eqx_network_list[1:]:
             params, static = eqx.partition(eqx_network_, self.filter_spec)
             self.init_params = self.init_params + (params,)
             self.static = self.static + (static,)
 
+    @overload
+    @_PyTree_to_Params
     def __call__(
         self,
-        inputs: Float[Array, "1"] | Float[Array, "dim"] | Float[Array, "1+dim"],
+        inputs: Float[Array, " input_dim"],
         params: PyTree,
-    ) -> Float[Array, "output_dim"]:
+        *args,
+        **kwargs,
+    ) -> Float[Array, " output_dim"]: ...
+
+    @_PyTree_to_Params
+    def __call__(
+        self,
+        inputs: Float[Array, " 1"] | Float[Array, " dim"] | Float[Array, " 1+dim"],
+        params: Params[Array],
+    ) -> Float[Array, " output_dim"]:
         """
         Evaluate the PPINN on some inputs with some params.
+
+        Note that that thanks to the decorator, params can also directly be the
+        PyTree (SPINN, PINN_MLP, ...) that we get out of eqx.combine
         """
         if len(inputs.shape) == 0:
             # This can happen often when the user directly provides some
@@ -92,14 +116,14 @@ class PPINN_MLP(PINN):
 
         outs = []
 
-        try:
-            for params_, static in zip(params.nn_params, self.static):
-                model = eqx.combine(params_, static)
-                outs += [model(transformed_inputs)]
-        except (KeyError, AttributeError, TypeError) as e:
-            for params_, static in zip(params, self.static):
-                model = eqx.combine(params_, static)
-                outs += [model(transformed_inputs)]
+        # try:
+        for params_, static in zip(params.nn_params, self.static):
+            model = eqx.combine(params_, static)
+            outs += [model(transformed_inputs)]  # type: ignore
+        # except (KeyError, AttributeError, TypeError) as e:
+        #    for params_, static in zip(params, self.static):
+        #        model = eqx.combine(params_, static)
+        #        outs += [model(transformed_inputs)]
         # Note that below is then a global output transform
         res = self.output_transform(inputs, jnp.concatenate(outs, axis=0), params)
 
@@ -112,18 +136,31 @@ class PPINN_MLP(PINN):
     def create(
         cls,
         eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"],
-        eqx_network_list: list[eqx.nn.MLP] = None,
+        eqx_network_list: list[eqx.nn.MLP | MLP] | None = None,
         key: Key = None,
-        eqx_list_list: list[tuple[tuple[Callable, int, int] | Callable, ...]] = None,
-        input_transform: Callable[
-            [Float[Array, "input_dim"], Params], Float[Array, "output_dim"]
-        ] = None,
-        output_transform: Callable[
-            [Float[Array, "input_dim"], Float[Array, "output_dim"], Params],
-            Float[Array, "output_dim"],
-        ] = None,
-        slice_solution: slice = None,
-    ) -> tuple[Self, PyTree]:
+        eqx_list_list: (
+            list[tuple[tuple[Callable, int, int] | tuple[Callable], ...]] | None
+        ) = None,
+        input_transform: (
+            Callable[
+                [Float[Array, " input_dim"], Params[Array]],
+                Float[Array, " output_dim"],
+            ]
+            | None
+        ) = None,
+        output_transform: (
+            Callable[
+                [
+                    Float[Array, " input_dim"],
+                    Float[Array, " output_dim"],
+                    Params[Array],
+                ],
+                Float[Array, " output_dim"],
+            ]
+            | None
+        ) = None,
+        slice_solution: slice | None = None,
+    ) -> tuple[Self, tuple[PINN, ...]]:
         r"""
         Utility function to create a Parrallel PINN neural network for Jinns.
 
@@ -192,11 +229,11 @@ class PPINN_MLP(PINN):
                 eqx_network_list.append(MLP(key=subkey, eqx_list=eqx_list))
 
         ppinn = cls(
-            eqx_network=None,
-            eqx_network_list=eqx_network_list,
-            slice_solution=slice_solution,
+            eqx_network=None,  # type: ignore
+            eqx_network_list=cast(list[eqx.Module], eqx_network_list),
+            slice_solution=slice_solution,  # type: ignore
             eq_type=eq_type,
-            input_transform=input_transform,
-            output_transform=output_transform,
+            input_transform=input_transform,  # type: ignore
+            output_transform=output_transform,  # type: ignore
         )
         return ppinn, ppinn.init_params

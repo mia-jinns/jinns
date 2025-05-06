@@ -2,32 +2,36 @@
 Formalize the data structure for the parameters
 """
 
-from typing import Dict
+from typing import Generic, TypeVar
 import jax
 import equinox as eqx
-from jaxtyping import Array, PyTree
+from jaxtyping import Array, PyTree, Float
+
+T = TypeVar("T")  # the generic type for what is in the Params PyTree because we
+# have possibly Params of Arrays, boolean, ...
 
 
-class Params(eqx.Module):
+class Params(eqx.Module, Generic[T]):
     """
     The equinox module for the parameters
 
     Parameters
     ----------
-    nn_params : Pytree
+    nn_params : PyTree[T]
         A PyTree of the non-static part of the PINN eqx.Module, i.e., the
         parameters of the PINN
-    eq_params : Dict[str, Array]
+    eq_params : dict[str, T]
         A dictionary of the equation parameters. Keys are the parameter name,
         values are their corresponding value
     """
 
-    nn_params: PyTree = eqx.field(kw_only=True, default=None)
-    eq_params: Dict[str, Array] = eqx.field(kw_only=True, default=None)
+    nn_params: PyTree[T] = eqx.field(kw_only=True, default=None)
+    eq_params: dict[str, T] = eqx.field(kw_only=True, default=None)
 
 
 def _update_eq_params_dict(
-    params: Params, param_batch_dict: Dict[str, Array]
+    params: Params[Array],
+    param_batch_dict: dict[str, Float[Array, " param_batch_size dim"]],
 ) -> Params:
     """
     Update params.eq_params with a batch of eq_params for given key(s)
@@ -54,13 +58,16 @@ def _update_eq_params_dict(
 
 
 def _get_vmap_in_axes_params(
-    eq_params_batch_dict: Dict[str, Array], params: Params
-) -> tuple[Params]:
+    eq_params_batch_dict: dict[str, Array], params: Params[Array]
+) -> tuple[Params[int | None] | None]:
     """
     Return the input vmap axes when there is batch(es) of parameters to vmap
     over. The latter are designated by keys in eq_params_batch_dict.
     If eq_params_batch_dict is None (i.e. no additional parameter batch), we
     return (None,).
+
+    Note that we return a Params PyTree with an integer to designate the
+    vmapped axis or None if there is not
     """
     if eq_params_batch_dict is None:
         return (None,)
@@ -69,7 +76,7 @@ def _get_vmap_in_axes_params(
     # this is for a fine-grained vmaping
     # scheme over the params
     vmap_in_axes_params = (
-        type(params)(
+        Params(
             nn_params=None,
             eq_params={
                 k: (0 if k in eq_params_batch_dict.keys() else None)

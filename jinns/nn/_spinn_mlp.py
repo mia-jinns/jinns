@@ -4,13 +4,12 @@ https://arxiv.org/abs/2211.08761
 """
 
 from dataclasses import InitVar
-from typing import Callable, Literal, Self, Union, Any
+from typing import Callable, Literal, Self, Union, Any, TypeGuard
 import jax
 import jax.numpy as jnp
 import equinox as eqx
 from jaxtyping import Key, Array, Float, PyTree
 
-from jinns.parameters._params import Params
 from jinns.nn._mlp import MLP
 from jinns.nn._spinn import SPINN
 
@@ -26,7 +25,7 @@ class SMLP(eqx.Module):
     d : int
         The number of dimensions to treat separately, including time `t` if
         used for non-stationnary equations.
-    eqx_list : InitVar[tuple[tuple[Callable, int, int] | Callable, ...]]
+    eqx_list : InitVar[tuple[tuple[Callable, int, int] | tuple[Callable], ...]]
         A tuple of tuples of successive equinox modules and activation functions to
         describe the PINN architecture. The inner tuples must have the eqx module or
         activation function as first item, other items represents arguments
@@ -34,18 +33,18 @@ class SMLP(eqx.Module):
         The `key` argument need not be given.
         Thus typical example is `eqx_list=
         ((eqx.nn.Linear, 1, 20),
-            jax.nn.tanh,
+            (jax.nn.tanh,),
             (eqx.nn.Linear, 20, 20),
-            jax.nn.tanh,
+            (jax.nn.tanh,),
             (eqx.nn.Linear, 20, 20),
-            jax.nn.tanh,
+            (jax.nn.tanh,),
             (eqx.nn.Linear, 20, r * m)
         )`.
     """
 
     key: InitVar[Key] = eqx.field(kw_only=True)
-    eqx_list: InitVar[tuple[tuple[Callable, int, int] | Callable, ...]] = eqx.field(
-        kw_only=True
+    eqx_list: InitVar[tuple[tuple[Callable, int, int] | tuple[Callable], ...]] = (
+        eqx.field(kw_only=True)
     )
     d: int = eqx.field(static=True, kw_only=True)
 
@@ -58,8 +57,8 @@ class SMLP(eqx.Module):
         ]
 
     def __call__(
-        self, inputs: Float[Array, "dim"] | Float[Array, "dim+1"]
-    ) -> Float[Array, "d embed_dim*output_dim"]:
+        self, inputs: Float[Array, " dim"] | Float[Array, " dim+1"]
+    ) -> Float[Array, " d embed_dim*output_dim"]:
         outputs = []
         for d in range(self.d):
             x_i = inputs[d : d + 1]
@@ -78,11 +77,11 @@ class SPINN_MLP(SPINN):
         key: Key,
         d: int,
         r: int,
-        eqx_list: tuple[tuple[Callable, int, int] | Callable, ...],
+        eqx_list: tuple[tuple[Callable, int, int] | tuple[Callable], ...],
         eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"],
         m: int = 1,
         filter_spec: PyTree[Union[bool, Callable[[Any], bool]]] = None,
-    ) -> tuple[Self, PyTree]:
+    ) -> tuple[Self, SPINN]:
         """
         Utility function to create a SPINN neural network with the equinox
         library.
@@ -108,11 +107,11 @@ class SPINN_MLP(SPINN):
             The `key` argument need not be given.
             Thus typical example is
             `eqx_list=((eqx.nn.Linear, 1, 20),
-                jax.nn.tanh,
+                (jax.nn.tanh,),
+                (eqx.nn.Linea)r, 20, 20),
+                (jax.nn.tanh,),
                 (eqx.nn.Linear, 20, 20),
-                jax.nn.tanh,
-                (eqx.nn.Linear, 20, 20),
-                jax.nn.tanh,
+                (jax.nn.tanh,),
                 (eqx.nn.Linear, 20, r * m)
             )`.
         eq_type : Literal["ODE", "statio_PDE", "nonstatio_PDE"]
@@ -158,24 +157,31 @@ class SPINN_MLP(SPINN):
         if eq_type not in ["ODE", "statio_PDE", "nonstatio_PDE"]:
             raise RuntimeError("Wrong parameter value for eq_type")
 
-        try:
+        def element_is_layer(element: tuple) -> TypeGuard[tuple[Callable, int, int]]:
+            return len(element) > 1
+
+        if element_is_layer(eqx_list[0]):
             nb_inputs_declared = eqx_list[0][
                 1
             ]  # normally we look for 2nd ele of 1st layer
-        except IndexError:
+        elif element_is_layer(eqx_list[1]):
             nb_inputs_declared = eqx_list[1][
                 1
             ]  # but we can have, eg, a flatten first layer
-        if nb_inputs_declared != 1:
+        else:
+            nb_inputs_declared = None
+        if nb_inputs_declared is None or nb_inputs_declared != 1:
             raise ValueError("Input dim must be set to 1 in SPINN!")
 
-        try:
+        if element_is_layer(eqx_list[-1]):
             nb_outputs_declared = eqx_list[-1][2]  # normally we look for 3rd ele of
             # last layer
-        except IndexError:
+        elif element_is_layer(eqx_list[-2]):
             nb_outputs_declared = eqx_list[-2][2]
             # but we can have, eg, a `jnp.exp` last layer
-        if nb_outputs_declared != r * m:
+        else:
+            nb_outputs_declared = None
+        if nb_outputs_declared is None or nb_outputs_declared != r * m:
             raise ValueError("Output dim must be set to r * m in SPINN!")
 
         if d > 24:

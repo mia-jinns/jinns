@@ -2,22 +2,42 @@
 Implements diverse operators for dynamic losses
 """
 
-from typing import Literal
+from __future__ import (
+    annotations,
+)
+
+from typing import Literal, cast, Callable
 
 import jax
 import jax.numpy as jnp
 from jax import grad
-import equinox as eqx
 from jaxtyping import Float, Array
 from jinns.parameters._params import Params
+from jinns.nn._abstract_pinn import AbstractPINN
+
+
+def _get_eq_type(
+    u: AbstractPINN | Callable[[Array, Params[Array]], Array],
+    eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None,
+) -> Literal["nonstatio_PDE", "statio_PDE"]:
+    """
+    But we filter out ODE from eq_type because we only have operators that does
+    not work with ODEs so far
+    """
+    if isinstance(u, AbstractPINN):
+        assert u.eq_type != "ODE", "Cannot compute the operator for ODE PINNs"
+        return u.eq_type
+    if eq_type is None:
+        raise ValueError("eq_type could not be set!")
+    return eq_type
 
 
 def divergence_rev(
-    inputs: Float[Array, "dim"] | Float[Array, "1+dim"],
-    u: eqx.Module,
-    params: Params,
-    eq_type: Literal["nonstatio_PDE", "statio_PDE"] = None,
-) -> float:
+    inputs: Float[Array, " dim"] | Float[Array, " 1+dim"],
+    u: AbstractPINN | Callable[[Array, Params[Array]], Array],
+    params: Params[Array],
+    eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
+) -> Float[Array, " "]:
     r"""
     Compute the divergence of a vector field $\mathbf{u}$, i.e.,
     $\nabla_\mathbf{x} \cdot \mathbf{u}(\mathrm{inputs})$ with $\mathbf{u}$ a vector
@@ -41,13 +61,7 @@ def divergence_rev(
         can know that by inspecting the `u` argument (PINN object). But if `u` is
         a function, we must set this attribute.
     """
-
-    try:
-        eq_type = u.eq_type
-    except AttributeError:
-        pass  # use the value passed as argument
-    if eq_type is None:
-        raise ValueError("eq_type could not be set!")
+    eq_type = _get_eq_type(u, eq_type)
 
     def scan_fun(_, i):
         if eq_type == "nonstatio_PDE":
@@ -70,11 +84,11 @@ def divergence_rev(
 
 
 def divergence_fwd(
-    inputs: Float[Array, "batch_size dim"] | Float[Array, "batch_size 1+dim"],
-    u: eqx.Module,
-    params: Params,
-    eq_type: Literal["nonstatio_PDE", "statio_PDE"] = None,
-) -> Float[Array, "batch_size * (1+dim) 1"] | Float[Array, "batch_size * (dim) 1"]:
+    inputs: Float[Array, " batch_size dim"] | Float[Array, " batch_size 1+dim"],
+    u: AbstractPINN | Callable[[Array, Params[Array]], Array],
+    params: Params[Array],
+    eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
+) -> Float[Array, " batch_size * (1+dim) 1"] | Float[Array, " batch_size * (dim) 1"]:
     r"""
     Compute the divergence of a **batched** vector field $\mathbf{u}$, i.e.,
     $\nabla_\mathbf{x} \cdot \mathbf{u}(\mathbf{x})$ with $\mathbf{u}$ a vector
@@ -103,13 +117,7 @@ def divergence_fwd(
         can know that by inspecting the `u` argument (PINN object). But if `u` is
         a function, we must set this attribute.
     """
-
-    try:
-        eq_type = u.eq_type
-    except AttributeError:
-        pass  # use the value passed as argument
-    if eq_type is None:
-        raise ValueError("eq_type could not be set!")
+    eq_type = _get_eq_type(u, eq_type)
 
     def scan_fun(_, i):
         if eq_type == "nonstatio_PDE":
@@ -142,12 +150,12 @@ def divergence_fwd(
 
 
 def laplacian_rev(
-    inputs: Float[Array, "dim"] | Float[Array, "1+dim"],
-    u: eqx.Module,
-    params: Params,
+    inputs: Float[Array, " dim"] | Float[Array, " 1+dim"],
+    u: AbstractPINN | Callable[[Array, Params[Array]], Array],
+    params: Params[Array],
     method: Literal["trace_hessian_x", "trace_hessian_t_x", "loop"] = "trace_hessian_x",
-    eq_type: Literal["nonstatio_PDE", "statio_PDE"] = None,
-) -> float:
+    eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
+) -> Float[Array, " "]:
     r"""
     Compute the Laplacian of a scalar field $u$ from $\mathbb{R}^d$
     to $\mathbb{R}$ or from $\mathbb{R}^{1+d}$ to $\mathbb{R}$, i.e., this
@@ -180,13 +188,7 @@ def laplacian_rev(
         can know that by inspecting the `u` argument (PINN object). But if `u` is
         a function, we must set this attribute.
     """
-
-    try:
-        eq_type = u.eq_type
-    except AttributeError:
-        pass  # use the value passed as argument
-    if eq_type is None:
-        raise ValueError("eq_type could not be set!")
+    eq_type = _get_eq_type(u, eq_type)
 
     if method == "trace_hessian_x":
         # NOTE we afford a concatenate here to avoid computing Hessian elements for
@@ -226,16 +228,12 @@ def laplacian_rev(
             if eq_type == "nonstatio_PDE":
                 d2u_dxi2 = grad(
                     lambda inputs: grad(u_)(inputs)[1 + i],
-                )(
-                    inputs
-                )[1 + i]
+                )(inputs)[1 + i]
             else:
                 d2u_dxi2 = grad(
                     lambda inputs: grad(u_, 0)(inputs)[i],
                     0,
-                )(
-                    inputs
-                )[i]
+                )(inputs)[i]
             return _, d2u_dxi2
 
         if eq_type == "nonstatio_PDE":
@@ -251,12 +249,12 @@ def laplacian_rev(
 
 
 def laplacian_fwd(
-    inputs: Float[Array, "batch_size 1+dim"] | Float[Array, "batch_size dim"],
-    u: eqx.Module,
-    params: Params,
+    inputs: Float[Array, " batch_size 1+dim"] | Float[Array, " batch_size dim"],
+    u: AbstractPINN | Callable[[Array, Params[Array]], Array],
+    params: Params[Array],
     method: Literal["trace_hessian_t_x", "trace_hessian_x", "loop"] = "loop",
-    eq_type: Literal["nonstatio_PDE", "statio_PDE"] = None,
-) -> Float[Array, "batch_size * (1+dim) 1"] | Float[Array, "batch_size * (dim) 1"]:
+    eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
+) -> Float[Array, " batch_size * (1+dim) 1"] | Float[Array, " batch_size * (dim) 1"]:
     r"""
     Compute the Laplacian of a **batched** scalar field $u$
     from $\mathbb{R}^{b\times d}$ to $\mathbb{R}^{b\times b}$ or
@@ -299,13 +297,7 @@ def laplacian_fwd(
         can know that by inspecting the `u` argument (PINN object). But if `u` is
         a function, we must set this attribute.
     """
-
-    try:
-        eq_type = u.eq_type
-    except AttributeError:
-        pass  # use the value passed as argument
-    if eq_type is None:
-        raise ValueError("eq_type could not be set!")
+    eq_type = _get_eq_type(u, eq_type)
 
     if method == "loop":
 
@@ -398,12 +390,12 @@ def laplacian_fwd(
 
 
 def vectorial_laplacian_rev(
-    inputs: Float[Array, "dim"] | Float[Array, "1+dim"],
-    u: eqx.Module,
-    params: Params,
-    dim_out: int = None,
-    eq_type: Literal["nonstatio_PDE", "statio_PDE"] = None,
-) -> Float[Array, "dim_out"]:
+    inputs: Float[Array, " dim"] | Float[Array, " 1+dim"],
+    u: AbstractPINN | Callable[[Array, Params[Array]], Array],
+    params: Params[Array],
+    dim_out: int | None = None,
+    eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
+) -> Float[Array, " dim_out"]:
     r"""
     Compute the vectorial Laplacian of a vector field $\mathbf{u}$ from
     $\mathbb{R}^d$ to $\mathbb{R}^n$ or from $\mathbb{R}^{1+d}$ to
@@ -432,22 +424,18 @@ def vectorial_laplacian_rev(
         can know that by inspecting the `u` argument (PINN object). But if `u` is
         a function, we must set this attribute.
     """
+    eq_type = _get_eq_type(u, eq_type)
     if dim_out is None:
         dim_out = inputs.shape[0]
-
-    try:
-        eq_type = u.eq_type
-    except AttributeError:
-        pass  # use the value passed as argument
-    if eq_type is None:
-        raise ValueError("eq_type could not be set!")
 
     def scan_fun(_, j):
         # The loop over the components of u(x). We compute one Laplacian for
         # each of these components
         # Note the jnp.expand_dims call
         uj = lambda inputs, params: jnp.expand_dims(u(inputs, params)[j], axis=-1)
-        lap_on_j = laplacian_rev(inputs, uj, params, eq_type=eq_type)
+        lap_on_j = laplacian_rev(
+            inputs, cast(AbstractPINN, uj), params, eq_type=eq_type
+        )
 
         return _, lap_on_j
 
@@ -456,12 +444,12 @@ def vectorial_laplacian_rev(
 
 
 def vectorial_laplacian_fwd(
-    inputs: Float[Array, "batch_size dim"] | Float[Array, "batch_size 1+dim"],
-    u: eqx.Module,
-    params: Params,
-    dim_out: int = None,
-    eq_type: Literal["nonstatio_PDE", "statio_PDE"] = None,
-) -> Float[Array, "batch_size * (1+dim) n"] | Float[Array, "batch_size * (dim) n"]:
+    inputs: Float[Array, " batch_size dim"] | Float[Array, " batch_size 1+dim"],
+    u: AbstractPINN | Callable[[Array, Params[Array]], Array],
+    params: Params[Array],
+    dim_out: int | None = None,
+    eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
+) -> Float[Array, " batch_size * (1+dim) n"] | Float[Array, " batch_size * (dim) n"]:
     r"""
     Compute the vectorial Laplacian of a vector field $\mathbf{u}$ when
     `u` is a SPINN, in this case, it corresponds to a vector
@@ -492,22 +480,18 @@ def vectorial_laplacian_fwd(
         can know that by inspecting the `u` argument (PINN object). But if `u` is
         a function, we must set this attribute.
     """
+    eq_type = _get_eq_type(u, eq_type)
     if dim_out is None:
         dim_out = inputs.shape[0]
-
-    try:
-        eq_type = u.eq_type
-    except AttributeError:
-        pass  # use the value passed as argument
-    if eq_type is None:
-        raise ValueError("eq_type could not be set!")
 
     def scan_fun(_, j):
         # The loop over the components of u(x). We compute one Laplacian for
         # each of these components
         # Note the expand_dims
         uj = lambda inputs, params: jnp.expand_dims(u(inputs, params)[..., j], axis=-1)
-        lap_on_j = laplacian_fwd(inputs, uj, params, eq_type=eq_type)
+        lap_on_j = laplacian_fwd(
+            inputs, cast(AbstractPINN, uj), params, eq_type=eq_type
+        )
 
         return _, lap_on_j
 
@@ -516,8 +500,10 @@ def vectorial_laplacian_fwd(
 
 
 def _u_dot_nabla_times_u_rev(
-    x: Float[Array, "2"], u: eqx.Module, params: Params
-) -> Float[Array, "2"]:
+    x: Float[Array, " 2"],
+    u: AbstractPINN | Callable[[Array, Params[Array]], Array],
+    params: Params[Array],
+) -> Float[Array, " 2"]:
     r"""
     Implement $((\mathbf{u}\cdot\nabla)\mathbf{u})(\mathbf{x})$ for
     $\mathbf{x}$ of arbitrary
@@ -546,10 +532,10 @@ def _u_dot_nabla_times_u_rev(
 
 
 def _u_dot_nabla_times_u_fwd(
-    x: Float[Array, "batch_size 2"],
-    u: eqx.Module,
-    params: Params,
-) -> Float[Array, "batch_size batch_size 2"]:
+    x: Float[Array, " batch_size 2"],
+    u: AbstractPINN | Callable[[Array, Params[Array]], Array],
+    params: Params[Array],
+) -> Float[Array, " batch_size batch_size 2"]:
     r"""
     Implement :math:`((\mathbf{u}\cdot\nabla)\mathbf{u})(\mathbf{x})` for
     :math:`\mathbf{x}` of arbitrary dimension **with a batch dimension**.

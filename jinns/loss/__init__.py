@@ -23,3 +23,28 @@ from ._operators import (
     vectorial_laplacian_fwd,
     vectorial_laplacian_rev,
 )
+
+__all__ = [
+    "DynamicLoss",
+    "ODE",
+    "PDEStatio",
+    "PDENonStatio",
+    "LossODE",
+    "LossPDEStatio",
+    "LossPDENonStatio",
+    "GeneralizedLotkaVolterra",
+    "BurgersEquation",
+    "FPENonStatioLoss2D",
+    "OU_FPENonStatioLoss2D",
+    "FisherKPP",
+    "NavierStokesMassConservation2DStatio",
+    "LossWeightsODE",
+    "LossWeightsPDEStatio",
+    "LossWeightsPDENonStatio",
+    "divergence_fwd",
+    "divergence_rev",
+    "laplacian_fwd",
+    "laplacian_rev",
+    "vectorial_laplacian_fwd",
+    "vectorial_laplacian_rev",
+]

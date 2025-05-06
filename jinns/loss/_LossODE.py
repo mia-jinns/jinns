@@ -1,21 +1,21 @@
-# pylint: disable=unsubscriptable-object, no-member
 """
 Main module to implement a ODE loss in jinns
 """
+
 from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-from dataclasses import InitVar, fields
-from typing import TYPE_CHECKING, Dict
+from dataclasses import InitVar
+from typing import TYPE_CHECKING, TypedDict
+from types import EllipsisType
 import abc
 import warnings
 import jax
 import jax.numpy as jnp
 from jax import vmap
 import equinox as eqx
-from jaxtyping import Float, Array, Int
-from jinns.data._DataGenerators import append_obs_batch
+from jaxtyping import Float, Array
 from jinns.loss._loss_utils import (
     dynamic_loss_apply,
     observations_loss_apply,
@@ -26,14 +26,22 @@ from jinns.parameters._params import (
 )
 from jinns.parameters._derivative_keys import _set_derivatives, DerivativeKeysODE
 from jinns.loss._loss_weights import LossWeightsODE
-from jinns.loss._DynamicLossAbstract import ODE
-from jinns.nn._pinn import PINN
+from jinns.loss._abstract_loss import AbstractLoss
 
 if TYPE_CHECKING:
-    from jinns.utils._types import *
+    # imports only used in type hints
+    from jinns.parameters._params import Params
+    from jinns.data._Batchs import ODEBatch
+    from jinns.nn._abstract_pinn import AbstractPINN
+    from jinns.loss import ODE
+
+    class LossDictODE(TypedDict):
+        dyn_loss: Float[Array, " "]
+        initial_condition: Float[Array, " "]
+        observations: Float[Array, " "]
 
 
-class _LossODEAbstract(eqx.Module):
+class _LossODEAbstract(AbstractLoss):
     """
     Parameters
     ----------
@@ -48,14 +56,14 @@ class _LossODEAbstract(eqx.Module):
         Fields can be "nn_params", "eq_params" or "both". Those that should not
         be updated will have a `jax.lax.stop_gradient` called on them. Default
         is `"nn_params"` for each composant of the loss.
-    initial_condition : tuple[float | Float[Array, "1"]], default=None
+    initial_condition : tuple[float | Float[Array, " 1"], Float[Array, " dim"]], default=None
         tuple of length 2 with initial condition $(t_0, u_0)$.
-    obs_slice : Slice, default=None
+    obs_slice : EllipsisType | slice | None, default=None
         Slice object specifying the begininning/ending
         slice of u output(s) that is observed. This is useful for
         multidimensional PINN, with partially observed outputs.
         Default is None (whole output is observed).
-    params : InitVar[Params], default=None
+    params : InitVar[Params[Array]], default=None
         The main Params object of the problem needed to instanciate the
         DerivativeKeysODE if the latter is not specified.
     """
@@ -65,26 +73,27 @@ class _LossODEAbstract(eqx.Module):
     # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
     derivative_keys: DerivativeKeysODE | None = eqx.field(kw_only=True, default=None)
     loss_weights: LossWeightsODE | None = eqx.field(kw_only=True, default=None)
-    initial_condition: tuple[float | Float[Array, "1"]] | None = eqx.field(
-        kw_only=True, default=None
+    initial_condition: (
+        tuple[float | Float[Array, " 1"], Float[Array, " dim"]] | None
+    ) = eqx.field(kw_only=True, default=None)
+    obs_slice: EllipsisType | slice | None = eqx.field(
+        kw_only=True, default=None, static=True
     )
-    obs_slice: slice | None = eqx.field(kw_only=True, default=None, static=True)
 
-    params: InitVar[Params] = eqx.field(default=None, kw_only=True)
+    params: InitVar[Params[Array]] = eqx.field(default=None, kw_only=True)
 
-    def __post_init__(self, params=None):
+    def __post_init__(self, params: Params[Array] | None = None):
         if self.loss_weights is None:
             self.loss_weights = LossWeightsODE()
 
         if self.derivative_keys is None:
-            try:
-                # be default we only take gradient wrt nn_params
-                self.derivative_keys = DerivativeKeysODE(params=params)
-            except ValueError as exc:
+            # by default we only take gradient wrt nn_params
+            if params is None:
                 raise ValueError(
                     "Problem at self.derivative_keys initialization "
                     f"received {self.derivative_keys=} and {params=}"
-                ) from exc
+                )
+            self.derivative_keys = DerivativeKeysODE(params=params)
         if self.initial_condition is None:
             warnings.warn(
                 "Initial condition wasn't provided. Be sure to cover for that"
@@ -101,15 +110,16 @@ class _LossODEAbstract(eqx.Module):
                 )
             # some checks/reshaping for t0
             t0, u0 = self.initial_condition
-            if (
-                isinstance(t0, float) or not t0.shape
-            ):  # e.g. user input: 0. or jnp.array(0.)
+            if isinstance(t0, Array):
+                if not t0.shape:  # e.g. user input: jnp.array(0.)
+                    t0 = jnp.array([t0])
+                elif t0.shape != (1,):
+                    raise ValueError(
+                        f"Wrong t0 input (self.initial_condition[0]) It should be"
+                        f"a float or an array of shape (1,). Got shape: {t0.shape}"
+                    )
+            if isinstance(t0, float):  # e.g. user input: 0
                 t0 = jnp.array([t0])
-            elif t0.shape != (1,):
-                raise ValueError(
-                    f"Wrong t0 input (self.initial_condition[0]) It should be"
-                    f"a float or an array of shape (1,). Got shape: {t0.shape}"
-                )
             self.initial_condition = (t0, u0)
 
         if self.obs_slice is None:
@@ -119,9 +129,13 @@ class _LossODEAbstract(eqx.Module):
             self.loss_weights = LossWeightsODE()
 
     @abc.abstractmethod
+    def __call__(self, *_, **__):
+        pass
+
+    @abc.abstractmethod
     def evaluate(
-        self: eqx.Module, params: Params, batch: ODEBatch
-    ) -> tuple[Float, dict]:
+        self: eqx.Module, params: Params[Array], batch: ODEBatch
+    ) -> tuple[Float[Array, " "], LossDictODE]:
         raise NotImplementedError
 
 
@@ -148,19 +162,19 @@ class LossODE(_LossODEAbstract):
         Fields can be "nn_params", "eq_params" or "both". Those that should not
         be updated will have a `jax.lax.stop_gradient` called on them. Default
         is `"nn_params"` for each composant of the loss.
-    initial_condition : tuple[float | Float[Array, "1"]], default=None
+    initial_condition : tuple[float | Float[Array, " 1"]], default=None
         tuple of length 2 with initial condition $(t_0, u_0)$.
-    obs_slice Slice, default=None
+    obs_slice : EllipsisType | slice | None, default=None
         Slice object specifying the begininning/ending
         slice of u output(s) that is observed. This is useful for
         multidimensional PINN, with partially observed outputs.
         Default is None (whole output is observed).
-    params : InitVar[Params], default=None
+    params : InitVar[Params[Array]], default=None
         The main Params object of the problem needed to instanciate the
         DerivativeKeysODE if the latter is not specified.
     u : eqx.Module
         the PINN
-    dynamic_loss : DynamicLoss
+    dynamic_loss : ODE
         the ODE dynamic part of the loss, basically the differential
         operator $\mathcal{N}[u](t)$. Should implement a method
         `dynamic_loss.evaluate(t, u, params)`.
@@ -174,12 +188,12 @@ class LossODE(_LossODEAbstract):
 
     # NOTE static=True only for leaf attributes that are not valid JAX types
     # (ie. jax.Array cannot be static) and that we do not expect to change
-    u: eqx.Module
-    dynamic_loss: DynamicLoss | None
+    u: AbstractPINN
+    dynamic_loss: ODE | None
 
-    vmap_in_axes: tuple[Int] = eqx.field(init=False, static=True)
+    vmap_in_axes: tuple[int] = eqx.field(init=False, static=True)
 
-    def __post_init__(self, params=None):
+    def __post_init__(self, params: Params[Array] | None = None):
         super().__post_init__(
             params=params
         )  # because __init__ or __post_init__ of Base
@@ -191,8 +205,8 @@ class LossODE(_LossODEAbstract):
         return self.evaluate(*args, **kwargs)
 
     def evaluate(
-        self, params: Params, batch: ODEBatch
-    ) -> tuple[Float[Array, "1"], dict[str, float]]:
+        self, params: Params[Array], batch: ODEBatch
+    ) -> tuple[Float[Array, " "], LossDictODE]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -223,9 +237,9 @@ class LossODE(_LossODEAbstract):
                 self.dynamic_loss.evaluate,
                 self.u,
                 temporal_batch,
-                _set_derivatives(params, self.derivative_keys.dyn_loss),
+                _set_derivatives(params, self.derivative_keys.dyn_loss),  # type: ignore
                 self.vmap_in_axes + vmap_in_axes_params,
-                self.loss_weights.dyn_loss,
+                self.loss_weights.dyn_loss,  # type: ignore
             )
         else:
             mse_dyn_loss = jnp.array(0.0)
@@ -239,16 +253,17 @@ class LossODE(_LossODEAbstract):
                 v_u = self.u
             else:
                 v_u = vmap(self.u, (None,) + vmap_in_axes_params)
-            t0, u0 = self.initial_condition  # pylint: disable=unpacking-non-sequence
+            t0, u0 = self.initial_condition
             u0 = jnp.array(u0)
             mse_initial_condition = jnp.mean(
-                self.loss_weights.initial_condition
+                self.loss_weights.initial_condition  # type: ignore
                 * jnp.sum(
                     (
                         v_u(
                             t0,
                             _set_derivatives(
-                                params, self.derivative_keys.initial_condition
+                                params,
+                                self.derivative_keys.initial_condition,  # type: ignore
                             ),
                         )
                         - u0
@@ -267,11 +282,11 @@ class LossODE(_LossODEAbstract):
             # MSE loss wrt to an observed batch
             mse_observation_loss = observations_loss_apply(
                 self.u,
-                (batch.obs_batch_dict["pinn_in"],),
-                _set_derivatives(params, self.derivative_keys.observations),
+                batch.obs_batch_dict["pinn_in"],
+                _set_derivatives(params, self.derivative_keys.observations),  # type: ignore
                 self.vmap_in_axes + vmap_in_axes_params,
                 batch.obs_batch_dict["val"],
-                self.loss_weights.observations,
+                self.loss_weights.observations,  # type: ignore
                 self.obs_slice,
             )
         else:

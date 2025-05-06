@@ -7,31 +7,31 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 from typing import TYPE_CHECKING, Callable
+from jaxtyping import Array, Float
 import jax
 import jax.numpy as jnp
 from jax import vmap, grad
-import equinox as eqx
 from jinns.utils._utils import get_grid, _subtract_with_check
-from jinns.data._Batchs import *
+from jinns.data._Batchs import PDEStatioBatch, PDENonStatioBatch
 from jinns.nn._pinn import PINN
 from jinns.nn._spinn import SPINN
 
 if TYPE_CHECKING:
-    from jinns.utils._types import *
+    from jinns.parameters._params import Params
+    from jinns.utils._types import BoundaryConditionFun
+    from jinns.nn._abstract_pinn import AbstractPINN
 
 
 def _compute_boundary_loss(
     boundary_condition_type: str,
-    f: Callable[
-        [Float[Array, "dim"] | Float[Array, "dim + 1"]], Float[Array, "dim_solution"]
-    ],
+    f: BoundaryConditionFun,
     batch: PDEStatioBatch | PDENonStatioBatch,
-    u: eqx.Module,
-    params: AnyParams,
+    u: AbstractPINN,
+    params: Params[Array],
     facet: int,
     dim_to_apply: slice,
     vmap_in_axes: tuple,
-) -> float:
+) -> Float[Array, " "]:
     r"""A generic function that will compute the mini-batch MSE of a
     boundary condition in the stationary case, resp. non-stationary, given by:
 
@@ -96,15 +96,15 @@ def _compute_boundary_loss(
 
 def boundary_dirichlet(
     f: Callable[
-        [Float[Array, "dim"] | Float[Array, "dim + 1"]], Float[Array, "dim_solution"]
+        [Float[Array, " dim"] | Float[Array, " dim + 1"]], Float[Array, " dim_solution"]
     ],
     batch: PDEStatioBatch | PDENonStatioBatch,
-    u: eqx.Module,
-    params: Params,
+    u: AbstractPINN,
+    params: Params[Array],
     facet: int,
     dim_to_apply: slice,
     vmap_in_axes: tuple,
-) -> float:
+) -> Float[Array, " "]:
     r"""
     This omega boundary condition enforces a solution that is equal to `f`
     at `times_batch` x `omega_border` (non stationary case) or at `omega_border`
@@ -135,6 +135,7 @@ def boundary_dirichlet(
     vmap_in_axes
         A tuple object which specifies the in_axes of the vmapping
     """
+    assert batch.border_batch is not None
     batch_array = batch.border_batch
     batch_array = batch_array[..., facet]
 
@@ -168,15 +169,15 @@ def boundary_dirichlet(
 
 def boundary_neumann(
     f: Callable[
-        [Float[Array, "dim"] | Float[Array, "dim + 1"]], Float[Array, "dim_solution"]
+        [Float[Array, " dim"] | Float[Array, " dim + 1"]], Float[Array, " dim_solution"]
     ],
     batch: PDEStatioBatch | PDENonStatioBatch,
-    u: eqx.Module,
-    params: Params,
+    u: AbstractPINN,
+    params: Params[Array],
     facet: int,
     dim_to_apply: slice,
     vmap_in_axes: tuple,
-) -> float:
+) -> Float[Array, " "]:
     r"""
     This omega boundary condition enforces a solution where $\nabla u\cdot
     n$ is equal to `f` at the cartesian product of `time_batch` x `omega
@@ -208,6 +209,7 @@ def boundary_neumann(
     vmap_in_axes
         A tuple object which specifies the in_axes of the vmapping
     """
+    assert batch.border_batch is not None
     batch_array = batch.border_batch
     batch_array = batch_array[..., facet]
 
@@ -223,7 +225,6 @@ def boundary_neumann(
         n = jnp.array([[-1, 1, 0, 0], [0, 0, -1, 1]])
 
     if isinstance(u, PINN):
-
         u_ = lambda inputs, params: jnp.squeeze(u(inputs, params)[dim_to_apply])
 
         if u.eq_type == "statio_PDE":

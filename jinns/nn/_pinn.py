@@ -2,15 +2,19 @@
 Implement abstract class for PINN architectures
 """
 
-from typing import Literal, Callable, Union, Any
+from __future__ import annotations
+
+from typing import Callable, Union, Any, Literal, overload
 from dataclasses import InitVar
 import equinox as eqx
 from jaxtyping import Float, Array, PyTree
 import jax.numpy as jnp
 from jinns.parameters._params import Params
+from jinns.nn._abstract_pinn import AbstractPINN
+from jinns.nn._utils import _PyTree_to_Params
 
 
-class PINN(eqx.Module):
+class PINN(AbstractPINN):
     r"""
     Base class for PINN objects. It can be seen as a wrapper on
     an `eqx.Module` which actually implement the NN architectures, with extra
@@ -57,12 +61,12 @@ class PINN(eqx.Module):
         **Note**: the input dimension as given in eqx_list has to match the sum
         of the dimension of `t` + the dimension of `x` or the output dimension
         after the `input_transform` function.
-    input_transform : Callable[[Float[Array, "input_dim"], Params], Float[Array, "output_dim"]]
+    input_transform : Callable[[Float[Array, " input_dim"], Params[Array]], Float[Array, " output_dim"]]
         A function that will be called before entering the PINN. Its output(s)
         must match the PINN inputs (except for the parameters).
         Its inputs are the PINN inputs (`t` and/or `x` concatenated together)
         and the parameters. Default is no operation.
-    output_transform : Callable[[Float[Array, "input_dim"], Float[Array, "output_dim"], Params], Float[Array, "output_dim"]]
+    output_transform : Callable[[Float[Array, " input_dim"], Float[Array, " output_dim"], Params[Array]], Float[Array, " output_dim"]]
         A function with arguments begin the same input as the PINN, the PINN
         output and the parameter. This function will be called after exiting the PINN.
         Default is no operation.
@@ -84,16 +88,16 @@ class PINN(eqx.Module):
         "nonstatio_PDE"]`
     """
 
-    slice_solution: slice = eqx.field(static=True, kw_only=True, default=None)
     eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"] = eqx.field(
         static=True, kw_only=True
     )
+    slice_solution: slice = eqx.field(static=True, kw_only=True, default=None)
     input_transform: Callable[
-        [Float[Array, "input_dim"], Params], Float[Array, "output_dim"]
+        [Float[Array, " input_dim"], Params[Array]], Float[Array, " output_dim"]
     ] = eqx.field(static=True, kw_only=True, default=None)
     output_transform: Callable[
-        [Float[Array, "input_dim"], Float[Array, "output_dim"], Params],
-        Float[Array, "output_dim"],
+        [Float[Array, " input_dim"], Float[Array, " output_dim"], Params[Array]],
+        Float[Array, " output_dim"],
     ] = eqx.field(static=True, kw_only=True, default=None)
 
     eqx_network: InitVar[eqx.Module] = eqx.field(kw_only=True)
@@ -101,11 +105,10 @@ class PINN(eqx.Module):
         static=True, kw_only=True, default=eqx.is_inexact_array
     )
 
-    init_params: PyTree = eqx.field(init=False)
-    static: PyTree = eqx.field(init=False, static=True)
+    init_params: PINN = eqx.field(init=False)
+    static: PINN = eqx.field(init=False, static=True)
 
     def __post_init__(self, eqx_network):
-
         if self.eq_type not in ["ODE", "statio_PDE", "nonstatio_PDE"]:
             raise RuntimeError("Wrong parameter value for eq_type")
         # saving the static part of the model and initial parameters
@@ -154,18 +157,32 @@ class PINN(eqx.Module):
 
         return network(inputs)
 
+    @overload
+    @_PyTree_to_Params
     def __call__(
         self,
-        inputs: Float[Array, "input_dim"],
-        params: Params | PyTree,
+        inputs: Float[Array, " input_dim"],
+        params: PyTree,
         *args,
         **kwargs,
-    ) -> Float[Array, "output_dim"]:
+    ) -> Float[Array, " output_dim"]: ...
+
+    @_PyTree_to_Params
+    def __call__(
+        self,
+        inputs: Float[Array, " input_dim"],
+        params: Params[Array],
+        *args,
+        **kwargs,
+    ) -> Float[Array, " output_dim"]:
         """
         A proper __call__ implementation performs an eqx.combine here with
         `params` and `self.static` to recreate the callable eqx.Module
         architecture. The rest of the content of this function is dependent on
         the network.
+
+        Note that that thanks to the decorator, params can also directly be the
+        PyTree (SPINN, PINN_MLP, ...) that we get out of eqx.combine
         """
 
         if len(inputs.shape) == 0:
@@ -174,10 +191,7 @@ class PINN(eqx.Module):
             # DataGenerators)
             inputs = inputs[None]
 
-        try:
-            model = eqx.combine(params.nn_params, self.static)
-        except (KeyError, AttributeError, TypeError) as e:  # give more flexibility
-            model = eqx.combine(params, self.static)
+        model = eqx.combine(params.nn_params, self.static)
 
         # evaluate the model
         res = self.eval(model, self.input_transform(inputs, params), *args, **kwargs)

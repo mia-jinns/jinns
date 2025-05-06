@@ -8,54 +8,71 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 import time
-from typing import TYPE_CHECKING, NamedTuple, Dict, Union
+from typing import TYPE_CHECKING, Any, TypeAlias, Callable
 from functools import partial
 import optax
 import jax
 from jax import jit
 import jax.numpy as jnp
-from jaxtyping import Int, Bool, Float, Array
+from jaxtyping import Float, Array
 from jinns.solver._rar import init_rar, trigger_rar
 from jinns.utils._utils import _check_nan_in_pytree
 from jinns.solver._utils import _check_batch_size
-from jinns.utils._containers import *
-from jinns.data._DataGenerators import (
-    DataGeneratorODE,
-    CubicMeshPDEStatio,
-    CubicMeshPDENonStatio,
-    append_obs_batch,
-    append_param_batch,
+from jinns.utils._containers import (
+    DataGeneratorContainer,
+    OptimizationContainer,
+    OptimizationExtraContainer,
+    LossContainer,
+    StoredObjectContainer,
 )
+from jinns.data._utils import append_param_batch, append_obs_batch
 
 if TYPE_CHECKING:
-    from jinns.utils._types import *
+    from jinns.parameters._params import Params
+    from jinns.utils._types import AnyLoss, AnyBatch
+    from jinns.validation._validation import AbstractValidationModule
+    from jinns.data._DataGeneratorParameter import DataGeneratorParameter
+    from jinns.data._DataGeneratorObservations import DataGeneratorObservations
+    from jinns.data._AbstractDataGenerator import AbstractDataGenerator
+
+    main_carry: TypeAlias = tuple[
+        int,
+        AnyLoss,
+        OptimizationContainer,
+        OptimizationExtraContainer,
+        DataGeneratorContainer,
+        AbstractValidationModule | None,
+        LossContainer,
+        StoredObjectContainer,
+        Float[Array, " n_iter"] | None,
+    ]
 
 
 def solve(
-    n_iter: Int,
-    init_params: AnyParams,
-    data: AnyDataGenerator,
+    n_iter: int,
+    init_params: Params[Array],
+    data: AbstractDataGenerator,
     loss: AnyLoss,
     optimizer: optax.GradientTransformation,
-    print_loss_every: Int = 1000,
-    opt_state: Union[NamedTuple, None] = None,
-    tracked_params: Params | None = None,
+    print_loss_every: int = 1000,
+    opt_state: optax.OptState | None = None,
+    tracked_params: Params[Any | None] | None = None,
     param_data: DataGeneratorParameter | None = None,
     obs_data: DataGeneratorObservations | None = None,
     validation: AbstractValidationModule | None = None,
     obs_batch_sharding: jax.sharding.Sharding | None = None,
-    verbose: Bool = True,
-    ahead_of_time: Bool = True,
+    verbose: bool = True,
+    ahead_of_time: bool = True,
 ) -> tuple[
-    Params,
-    Float[Array, "n_iter"],
-    Dict[str, Float[Array, "n_iter"]],
-    AnyDataGenerator,
+    Params[Array],
+    Float[Array, " n_iter"],
+    dict[str, Float[Array, " n_iter"]],
+    AbstractDataGenerator,
     AnyLoss,
-    NamedTuple,
-    AnyParams,
-    Float[Array, "n_iter"],
-    AnyParams,
+    optax.OptState,
+    Params[Array | None],
+    Float[Array, " n_iter"] | None,
+    Params[Array],
 ]:
     """
     Performs the optimization process via stochastic gradient descent
@@ -168,11 +185,21 @@ def solve(
             _check_batch_size(obs_data, param_data, "n")
 
     if opt_state is None:
-        opt_state = optimizer.init(init_params)
+        opt_state = optimizer.init(init_params)  # type: ignore
+        # our Params are eqx.Module (dataclass + PyTree), PyTree is
+        # compatible with optax transform but not dataclass, this leads to a
+        # type hint error: we could prevent this by ensuring with the eqx.filter that
+        # we have only floating points optimizable params given to optax
+        # see https://docs.kidger.site/equinox/faq/#optax-throwing-a-typeerror
+        # opt_state = optimizer.init(
+        #    eqx.filter(init_params, eqx.is_inexact_array)
+        # )
+        # but this seems like a hack and there is no better way
+        # https://github.com/google-deepmind/optax/issues/384
 
     # RAR sampling init (ouside scanned function to avoid dynamic slice error)
     # If RAR is not used the _rar_step_*() are juste None and data is unchanged
-    data, _rar_step_true, _rar_step_false = init_rar(data)
+    data, _rar_step_true, _rar_step_false = init_rar(data)  # type: ignore
 
     # Seq2seq
     curr_seq = 0
@@ -289,7 +316,7 @@ def solve(
         if verbose:
             _print_fn(i, train_loss_value, print_loss_every, prefix="[train] ")
 
-        if validation is not None:
+        if validation is not None and validation_crit_values is not None:
             # there is a jax.lax.cond because we do not necesarily call the
             # validation step every iteration
             (
@@ -303,7 +330,7 @@ def solve(
                 lambda operands: (
                     operands[0],
                     False,
-                    validation_crit_values[i - 1],
+                    validation_crit_values[i - 1],  # type: ignore don't know why it can still be None
                     False,
                 ),
                 (
@@ -428,7 +455,7 @@ def solve(
     # get ready to return the parameters at last iteration...
     # (by default arbitrary choice, this could be None)
     validation_parameters = optimization.last_non_nan_params
-    if validation is not None:
+    if validation is not None and validation_crit_values is not None:
         jax.debug.print(
             "validation loss value = {validation_loss_val}",
             validation_loss_val=validation_crit_values[i - 1],
@@ -463,24 +490,28 @@ def _gradient_step(
     loss: AnyLoss,
     optimizer: optax.GradientTransformation,
     batch: AnyBatch,
-    params: AnyParams,
-    opt_state: NamedTuple,
-    last_non_nan_params: AnyParams,
+    params: Params[Array],
+    opt_state: optax.OptState,
+    last_non_nan_params: Params[Array],
 ) -> tuple[
     AnyLoss,
     float,
-    Dict[str, float],
-    AnyParams,
-    NamedTuple,
-    AnyParams,
+    dict[str, float],
+    Params[Array],
+    optax.OptState,
+    Params[Array],
 ]:
     """
     optimizer cannot be jit-ted.
     """
     value_grad_loss = jax.value_and_grad(loss, has_aux=True)
     (loss_val, loss_terms), grads = value_grad_loss(params, batch)
-    updates, opt_state = optimizer.update(grads, opt_state, params)
-    params = optax.apply_updates(params, updates)
+    updates, opt_state = optimizer.update(
+        grads,
+        opt_state,
+        params,  # type: ignore
+    )  # see optimizer.init for explaination
+    params = optax.apply_updates(params, updates)  # type: ignore
 
     # check if any of the parameters is NaN
     last_non_nan_params = jax.lax.cond(
@@ -501,7 +532,7 @@ def _gradient_step(
 
 
 @partial(jit, static_argnames=["prefix"])
-def _print_fn(i: Int, loss_val: Float, print_loss_every: Int, prefix: str = ""):
+def _print_fn(i: int, loss_val: Float, print_loss_every: int, prefix: str = ""):
     # note that if the following is not jitted in the main lor loop, it is
     # super slow
     _ = jax.lax.cond(
@@ -518,15 +549,15 @@ def _print_fn(i: Int, loss_val: Float, print_loss_every: Int, prefix: str = ""):
 
 @jit
 def _store_loss_and_params(
-    i: Int,
-    params: AnyParams,
-    stored_params: AnyParams,
-    stored_loss_terms: Dict[str, Float[Array, "n_iter"]],
-    train_loss_values: Float[Array, "n_iter"],
+    i: int,
+    params: Params[Array],
+    stored_params: Params[Array],
+    stored_loss_terms: dict[str, Float[Array, " n_iter"]],
+    train_loss_values: Float[Array, " n_iter"],
     train_loss_val: float,
-    loss_terms: Dict[str, float],
-    tracked_params: AnyParams,
-) -> tuple[Params, Dict[str, Float[Array, "n_iter"]], Float[Array, "n_iter"]]:
+    loss_terms: dict[str, float],
+    tracked_params: Params,
+) -> tuple[Params, dict[str, Float[Array, " n_iter"]], Float[Array, " n_iter"]]:
     stored_params = jax.tree_util.tree_map(
         lambda stored_value, param, tracked_param: (
             None
@@ -553,7 +584,7 @@ def _store_loss_and_params(
     return (stored_params, stored_loss_terms, train_loss_values)
 
 
-def _get_break_fun(n_iter: Int, verbose: Bool) -> Callable[[main_carry], Bool]:
+def _get_break_fun(n_iter: int, verbose: bool) -> Callable[[main_carry], bool]:
     """
     Wrapper to get the break_fun with appropriate `n_iter`.
     The verbose argument is here to control printing (or not) when exiting
@@ -594,7 +625,7 @@ def _get_break_fun(n_iter: Int, verbose: Bool) -> Callable[[main_carry], Bool]:
         bool_nan_in_params = jax.lax.cond(
             _check_nan_in_pytree(optimization.params),
             lambda _: stop_while_loop(
-                "NaN values in parameters " "(returning last non NaN values)"
+                "NaN values in parameters (returning last non NaN values)"
             ),
             continue_while_loop,
             None,
@@ -617,16 +648,16 @@ def _get_break_fun(n_iter: Int, verbose: Bool) -> Callable[[main_carry], Bool]:
 
 
 def _get_get_batch(
-    obs_batch_sharding: jax.sharding.Sharding,
+    obs_batch_sharding: jax.sharding.Sharding | None,
 ) -> Callable[
     [
-        AnyDataGenerator,
+        AbstractDataGenerator,
         DataGeneratorParameter | None,
         DataGeneratorObservations | None,
     ],
     tuple[
         AnyBatch,
-        AnyDataGenerator,
+        AbstractDataGenerator,
         DataGeneratorParameter | None,
         DataGeneratorObservations | None,
     ],

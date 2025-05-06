@@ -71,7 +71,7 @@ Here are the contributors guidelines:
 pip install -e .
 ```
 
-3. Install pre-commit and run it.
+3. Install pre-commit and run it. Our pre-commit hooks consist in `ruff format` and `ruff check`. You can install `ruff` simply by `pip install ruff`. We highly recommend you to check the code type hints with `pyright` even though we currently have no rule concerning type checking in the pipeline.
 
 ```bash
 pip install pre-commit

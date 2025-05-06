@@ -1,16 +1,16 @@
-# pylint: disable=unsubscriptable-object, no-member
 """
 Main module to implement a PDE loss in jinns
 """
+
 from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
 import abc
-from dataclasses import InitVar, fields
-from typing import TYPE_CHECKING, Dict, Callable
+from dataclasses import InitVar
+from typing import TYPE_CHECKING, Callable, TypedDict
+from types import EllipsisType
 import warnings
-import jax
 import jax.numpy as jnp
 import equinox as eqx
 from jaxtyping import Float, Array, Key, Int
@@ -21,7 +21,6 @@ from jinns.loss._loss_utils import (
     observations_loss_apply,
     initial_condition_apply,
 )
-from jinns.data._DataGenerators import append_obs_batch
 from jinns.parameters._params import (
     _get_vmap_in_axes_params,
     _update_eq_params_dict,
@@ -31,18 +30,30 @@ from jinns.parameters._derivative_keys import (
     DerivativeKeysPDEStatio,
     DerivativeKeysPDENonStatio,
 )
+from jinns.loss._abstract_loss import AbstractLoss
 from jinns.loss._loss_weights import (
     LossWeightsPDEStatio,
     LossWeightsPDENonStatio,
 )
-from jinns.loss._DynamicLossAbstract import PDEStatio, PDENonStatio
-from jinns.nn._pinn import PINN
-from jinns.nn._spinn import SPINN
 from jinns.data._Batchs import PDEStatioBatch, PDENonStatioBatch
 
 
 if TYPE_CHECKING:
-    from jinns.utils._types import *
+    # imports for type hints only
+    from jinns.parameters._params import Params
+    from jinns.nn._abstract_pinn import AbstractPINN
+    from jinns.loss import PDENonStatio, PDEStatio
+    from jinns.utils._types import BoundaryConditionFun
+
+    class LossDictPDEStatio(TypedDict):
+        dyn_loss: Float[Array, " "]
+        norm_loss: Float[Array, " "]
+        boundary_loss: Float[Array, " "]
+        observations: Float[Array, " "]
+
+    class LossDictPDENonStatio(LossDictPDEStatio):
+        initial_condition: Float[Array, " "]
+
 
 _IMPLEMENTED_BOUNDARY_CONDITIONS = [
     "dirichlet",
@@ -51,8 +62,8 @@ _IMPLEMENTED_BOUNDARY_CONDITIONS = [
 ]
 
 
-class _LossPDEAbstract(eqx.Module):
-    """
+class _LossPDEAbstract(AbstractLoss):
+    r"""
     Parameters
     ----------
 
@@ -67,11 +78,11 @@ class _LossPDEAbstract(eqx.Module):
         Fields can be "nn_params", "eq_params" or "both". Those that should not
         be updated will have a `jax.lax.stop_gradient` called on them. Default
         is `"nn_params"` for each composant of the loss.
-    omega_boundary_fun : Callable | Dict[str, Callable], default=None
+    omega_boundary_fun : BoundaryConditionFun | dict[str, BoundaryConditionFun], default=None
          The function to be matched in the border condition (can be None) or a
          dictionary of such functions as values and keys as described
          in `omega_boundary_condition`.
-    omega_boundary_condition : str | Dict[str, str], default=None
+    omega_boundary_condition : str | dict[str, str], default=None
         Either None (no condition, by default), or a string defining
         the boundary condition (Dirichlet or Von Neumann),
         or a dictionary with such strings as values. In this case,
@@ -82,28 +93,29 @@ class _LossPDEAbstract(eqx.Module):
         a particular boundary condition on this facet.
         The facet called “xmin”, resp. “xmax” etc., in 2D,
         refers to the set of 2D points with fixed “xmin”, resp. “xmax”, etc.
-    omega_boundary_dim : slice | Dict[str, slice], default=None
+    omega_boundary_dim : slice | dict[str, slice], default=None
         Either None, or a slice object or a dictionary of slice objects as
         values and keys as described in `omega_boundary_condition`.
         `omega_boundary_dim` indicates which dimension(s) of the PINN
         will be forced to match the boundary condition.
         Note that it must be a slice and not an integer
         (but a preprocessing of the user provided argument takes care of it)
-    norm_samples : Float[Array, "nb_norm_samples dimension"], default=None
+    norm_samples : Float[Array, " nb_norm_samples dimension"], default=None
         Monte-Carlo sample points for computing the
         normalization constant. Default is None.
-    norm_weights : Float[Array, "nb_norm_samples"] | float | int, default=None
+    norm_weights : Float[Array, " nb_norm_samples"] | float | int, default=None
         The importance sampling weights for Monte-Carlo integration of the
         normalization constant. Must be provided if `norm_samples` is provided.
-        `norm_weights` should have the same leading dimension as
+        `norm_weights` should be broadcastble to
         `norm_samples`.
-        Alternatively, the user can pass a float or an integer.
+        Alternatively, the user can pass a float or an integer that will be
+        made broadcastable to `norm_samples`.
         These corresponds to the weights $w_k = \frac{1}{q(x_k)}$ where
         $q(\cdot)$ is the proposal p.d.f. and $x_k$ are the Monte-Carlo samples.
-    obs_slice : slice, default=None
+    obs_slice : EllipsisType | slice, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
-    params : InitVar[Params], default=None
+    params : InitVar[Params[Array]], default=None
         The main Params object of the problem needed to instanciate the
         DerivativeKeysODE if the latter is not specified.
     """
@@ -117,26 +129,28 @@ class _LossPDEAbstract(eqx.Module):
     loss_weights: LossWeightsPDEStatio | LossWeightsPDENonStatio | None = eqx.field(
         kw_only=True, default=None
     )
-    omega_boundary_fun: Callable | Dict[str, Callable] | None = eqx.field(
+    omega_boundary_fun: (
+        BoundaryConditionFun | dict[str, BoundaryConditionFun] | None
+    ) = eqx.field(kw_only=True, default=None, static=True)
+    omega_boundary_condition: str | dict[str, str] | None = eqx.field(
         kw_only=True, default=None, static=True
     )
-    omega_boundary_condition: str | Dict[str, str] | None = eqx.field(
+    omega_boundary_dim: slice | dict[str, slice] | None = eqx.field(
         kw_only=True, default=None, static=True
     )
-    omega_boundary_dim: slice | Dict[str, slice] | None = eqx.field(
-        kw_only=True, default=None, static=True
-    )
-    norm_samples: Float[Array, "nb_norm_samples dimension"] | None = eqx.field(
+    norm_samples: Float[Array, " nb_norm_samples dimension"] | None = eqx.field(
         kw_only=True, default=None
     )
-    norm_weights: Float[Array, "nb_norm_samples"] | float | int | None = eqx.field(
+    norm_weights: Float[Array, " nb_norm_samples"] | float | int | None = eqx.field(
         kw_only=True, default=None
     )
-    obs_slice: slice | None = eqx.field(kw_only=True, default=None, static=True)
+    obs_slice: EllipsisType | slice | None = eqx.field(
+        kw_only=True, default=None, static=True
+    )
 
-    params: InitVar[Params] = eqx.field(kw_only=True, default=None)
+    params: InitVar[Params[Array]] = eqx.field(kw_only=True, default=None)
 
-    def __post_init__(self, params=None):
+    def __post_init__(self, params: Params[Array] | None = None):
         """
         Note that neither __init__ or __post_init__ are called when udating a
         Module with eqx.tree_at
@@ -226,6 +240,11 @@ class _LossPDEAbstract(eqx.Module):
                         )
 
         if isinstance(self.omega_boundary_fun, dict):
+            if not isinstance(self.omega_boundary_dim, dict):
+                raise ValueError(
+                    "If omega_boundary_fun is a dict then"
+                    " omega_boundary_dim should also be a dict"
+                )
             if self.omega_boundary_dim is None:
                 self.omega_boundary_dim = {
                     k: jnp.s_[::] for k in self.omega_boundary_fun.keys()
@@ -260,27 +279,29 @@ class _LossPDEAbstract(eqx.Module):
                 raise ValueError(
                     "`norm_weights` must be provided when `norm_samples` is used!"
                 )
-            try:
-                assert self.norm_weights.shape[0] == self.norm_samples.shape[0]
-            except (AssertionError, AttributeError):
-                if isinstance(self.norm_weights, (int, float)):
-                    self.norm_weights = jnp.array(
-                        [self.norm_weights], dtype=jax.dtypes.canonicalize_dtype(float)
-                    )
-                else:
+            if isinstance(self.norm_weights, (int, float)):
+                self.norm_weights = self.norm_weights * jnp.ones(
+                    (self.norm_samples.shape[0],)
+                )
+            if isinstance(self.norm_weights, Array):
+                if not (self.norm_weights.shape[0] == self.norm_samples.shape[0]):
                     raise ValueError(
-                        "`norm_weights` should have the same leading dimension"
-                        " as `norm_samples`,"
-                        f" got shape {self.norm_weights.shape} and"
-                        f" shape {self.norm_samples.shape}."
+                        "self.norm_weights and "
+                        "self.norm_samples must have the same leading dimension"
                     )
+            else:
+                raise ValueError("Wrong type for self.norm_weights")
+
+    @abc.abstractmethod
+    def __call__(self, *_, **__):
+        pass
 
     @abc.abstractmethod
     def evaluate(
         self: eqx.Module,
-        params: Params,
+        params: Params[Array],
         batch: PDEStatioBatch | PDENonStatioBatch,
-    ) -> tuple[Float, dict]:
+    ) -> tuple[Float[Array, " "], LossDictPDEStatio | LossDictPDENonStatio]:
         raise NotImplementedError
 
 
@@ -297,9 +318,9 @@ class LossPDEStatio(_LossPDEAbstract):
 
     Parameters
     ----------
-    u : eqx.Module
+    u : AbstractPINN
         the PINN
-    dynamic_loss : DynamicLoss
+    dynamic_loss : PDEStatio
         the stationary PDE dynamic part of the loss, basically the differential
         operator $\mathcal{N}[u](x)$. Should implement a method
         `dynamic_loss.evaluate(x, u, params)`.
@@ -322,11 +343,11 @@ class LossPDEStatio(_LossPDEAbstract):
         Fields can be "nn_params", "eq_params" or "both". Those that should not
         be updated will have a `jax.lax.stop_gradient` called on them. Default
         is `"nn_params"` for each composant of the loss.
-    omega_boundary_fun : Callable | Dict[str, Callable], default=None
+    omega_boundary_fun : BoundaryConditionFun | dict[str, BoundaryConditionFun], default=None
          The function to be matched in the border condition (can be None) or a
          dictionary of such functions as values and keys as described
          in `omega_boundary_condition`.
-    omega_boundary_condition : str | Dict[str, str], default=None
+    omega_boundary_condition : str | dict[str, str], default=None
         Either None (no condition, by default), or a string defining
         the boundary condition (Dirichlet or Von Neumann),
         or a dictionary with such strings as values. In this case,
@@ -337,17 +358,17 @@ class LossPDEStatio(_LossPDEAbstract):
         a particular boundary condition on this facet.
         The facet called “xmin”, resp. “xmax” etc., in 2D,
         refers to the set of 2D points with fixed “xmin”, resp. “xmax”, etc.
-    omega_boundary_dim : slice | Dict[str, slice], default=None
+    omega_boundary_dim : slice | dict[str, slice], default=None
         Either None, or a slice object or a dictionary of slice objects as
         values and keys as described in `omega_boundary_condition`.
         `omega_boundary_dim` indicates which dimension(s) of the PINN
         will be forced to match the boundary condition.
         Note that it must be a slice and not an integer
         (but a preprocessing of the user provided argument takes care of it)
-    norm_samples : Float[Array, "nb_norm_samples dimension"], default=None
+    norm_samples : Float[Array, " nb_norm_samples dimension"], default=None
         Monte-Carlo sample points for computing the
         normalization constant. Default is None.
-    norm_weights : Float[Array, "nb_norm_samples"] | float | int, default=None
+    norm_weights : Float[Array, " nb_norm_samples"] | float | int, default=None
         The importance sampling weights for Monte-Carlo integration of the
         normalization constant. Must be provided if `norm_samples` is provided.
         `norm_weights` should have the same leading dimension as
@@ -358,7 +379,7 @@ class LossPDEStatio(_LossPDEAbstract):
     obs_slice : slice, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
-    params : InitVar[Params], default=None
+    params : InitVar[Params[Array]], default=None
         The main Params object of the problem needed to instanciate the
         DerivativeKeysODE if the latter is not specified.
 
@@ -373,13 +394,13 @@ class LossPDEStatio(_LossPDEAbstract):
     # NOTE static=True only for leaf attributes that are not valid JAX types
     # (ie. jax.Array cannot be static) and that we do not expect to change
 
-    u: eqx.Module
-    dynamic_loss: DynamicLoss | None
+    u: AbstractPINN
+    dynamic_loss: PDEStatio | None
     key: Key | None = eqx.field(kw_only=True, default=None)
 
     vmap_in_axes: tuple[Int] = eqx.field(init=False, static=True)
 
-    def __post_init__(self, params=None):
+    def __post_init__(self, params: Params[Array] | None = None):
         """
         Note that neither __init__ or __post_init__ are called when udating a
         Module with eqx.tree_at!
@@ -393,25 +414,27 @@ class LossPDEStatio(_LossPDEAbstract):
 
     def _get_dynamic_loss_batch(
         self, batch: PDEStatioBatch
-    ) -> Float[Array, "batch_size dimension"]:
+    ) -> Float[Array, " batch_size dimension"]:
         return batch.domain_batch
 
     def _get_normalization_loss_batch(
         self, _
-    ) -> Float[Array, "nb_norm_samples dimension"]:
-        return (self.norm_samples,)
+    ) -> tuple[Float[Array, " nb_norm_samples dimension"]]:
+        return (self.norm_samples,)  # type: ignore -> cannot narrow a class attr
+
+    # we could have used typing.cast though
 
     def _get_observations_loss_batch(
         self, batch: PDEStatioBatch
-    ) -> Float[Array, "batch_size obs_dim"]:
-        return (batch.obs_batch_dict["pinn_in"],)
+    ) -> Float[Array, " batch_size obs_dim"]:
+        return batch.obs_batch_dict["pinn_in"]
 
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
     def evaluate(
-        self, params: Params, batch: PDEStatioBatch
-    ) -> tuple[Float[Array, "1"], dict[str, float]]:
+        self, params: Params[Array], batch: PDEStatioBatch
+    ) -> tuple[Float[Array, " "], LossDictPDEStatio]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -442,9 +465,9 @@ class LossPDEStatio(_LossPDEAbstract):
                 self.dynamic_loss.evaluate,
                 self.u,
                 self._get_dynamic_loss_batch(batch),
-                _set_derivatives(params, self.derivative_keys.dyn_loss),
+                _set_derivatives(params, self.derivative_keys.dyn_loss),  # type: ignore
                 self.vmap_in_axes + vmap_in_axes_params,
-                self.loss_weights.dyn_loss,
+                self.loss_weights.dyn_loss,  # type: ignore
             )
         else:
             mse_dyn_loss = jnp.array(0.0)
@@ -454,24 +477,28 @@ class LossPDEStatio(_LossPDEAbstract):
             mse_norm_loss = normalization_loss_apply(
                 self.u,
                 self._get_normalization_loss_batch(batch),
-                _set_derivatives(params, self.derivative_keys.norm_loss),
+                _set_derivatives(params, self.derivative_keys.norm_loss),  # type: ignore
                 vmap_in_axes_params,
-                self.norm_weights,
-                self.loss_weights.norm_loss,
+                self.norm_weights,  # type: ignore -> can't get the __post_init__ narrowing here
+                self.loss_weights.norm_loss,  # type: ignore
             )
         else:
             mse_norm_loss = jnp.array(0.0)
 
         # boundary part
-        if self.omega_boundary_condition is not None:
+        if (
+            self.omega_boundary_condition is not None
+            and self.omega_boundary_dim is not None
+            and self.omega_boundary_fun is not None
+        ):  # pyright cannot narrow down the three None otherwise as it is class attribute
             mse_boundary_loss = boundary_condition_apply(
                 self.u,
                 batch,
-                _set_derivatives(params, self.derivative_keys.boundary_loss),
+                _set_derivatives(params, self.derivative_keys.boundary_loss),  # type: ignore
                 self.omega_boundary_fun,
                 self.omega_boundary_condition,
                 self.omega_boundary_dim,
-                self.loss_weights.boundary_loss,
+                self.loss_weights.boundary_loss,  # type: ignore
             )
         else:
             mse_boundary_loss = jnp.array(0.0)
@@ -484,10 +511,10 @@ class LossPDEStatio(_LossPDEAbstract):
             mse_observation_loss = observations_loss_apply(
                 self.u,
                 self._get_observations_loss_batch(batch),
-                _set_derivatives(params, self.derivative_keys.observations),
+                _set_derivatives(params, self.derivative_keys.observations),  # type: ignore
                 self.vmap_in_axes + vmap_in_axes_params,
                 batch.obs_batch_dict["val"],
-                self.loss_weights.observations,
+                self.loss_weights.observations,  # type: ignore
                 self.obs_slice,
             )
         else:
@@ -523,9 +550,9 @@ class LossPDENonStatio(LossPDEStatio):
 
     Parameters
     ----------
-    u : eqx.Module
+    u : AbstractPINN
         the PINN
-    dynamic_loss : DynamicLoss
+    dynamic_loss : PDENonStatio
         the non stationary PDE dynamic part of the loss, basically the differential
         operator $\mathcal{N}[u](t, x)$. Should implement a method
         `dynamic_loss.evaluate(t, x, u, params)`.
@@ -549,11 +576,11 @@ class LossPDENonStatio(LossPDEStatio):
         Fields can be "nn_params", "eq_params" or "both". Those that should not
         be updated will have a `jax.lax.stop_gradient` called on them. Default
         is `"nn_params"` for each composant of the loss.
-    omega_boundary_fun : Callable | Dict[str, Callable], default=None
+    omega_boundary_fun : BoundaryConditionFun | dict[str, BoundaryConditionFun], default=None
          The function to be matched in the border condition (can be None) or a
          dictionary of such functions as values and keys as described
          in `omega_boundary_condition`.
-    omega_boundary_condition : str | Dict[str, str], default=None
+    omega_boundary_condition : str | dict[str, str], default=None
         Either None (no condition, by default), or a string defining
         the boundary condition (Dirichlet or Von Neumann),
         or a dictionary with such strings as values. In this case,
@@ -564,17 +591,17 @@ class LossPDENonStatio(LossPDEStatio):
         a particular boundary condition on this facet.
         The facet called “xmin”, resp. “xmax” etc., in 2D,
         refers to the set of 2D points with fixed “xmin”, resp. “xmax”, etc.
-    omega_boundary_dim : slice | Dict[str, slice], default=None
+    omega_boundary_dim : slice | dict[str, slice], default=None
         Either None, or a slice object or a dictionary of slice objects as
         values and keys as described in `omega_boundary_condition`.
         `omega_boundary_dim` indicates which dimension(s) of the PINN
         will be forced to match the boundary condition.
         Note that it must be a slice and not an integer
         (but a preprocessing of the user provided argument takes care of it)
-    norm_samples : Float[Array, "nb_norm_samples dimension"], default=None
+    norm_samples : Float[Array, " nb_norm_samples dimension"], default=None
         Monte-Carlo sample points for computing the
         normalization constant. Default is None.
-    norm_weights : Float[Array, "nb_norm_samples"] | float | int, default=None
+    norm_weights : Float[Array, " nb_norm_samples"] | float | int, default=None
         The importance sampling weights for Monte-Carlo integration of the
         normalization constant. Must be provided if `norm_samples` is provided.
         `norm_weights` should have the same leading dimension as
@@ -585,24 +612,25 @@ class LossPDENonStatio(LossPDEStatio):
     obs_slice : slice, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
-    t0 : float | Float[Array, "1"], default=None
+    t0 : float | Float[Array, " 1"], default=None
         The time at which to apply the initial condition. If None, the time
         is set to `0` by default.
     initial_condition_fun : Callable, default=None
         A function representing the initial condition at `t0`. If None
         (default) then no initial condition is applied.
-    params : InitVar[Params], default=None
+    params : InitVar[Params[Array]], default=None
         The main `Params` object of the problem needed to instanciate the
         `DerivativeKeysODE` if the latter is not specified.
 
     """
 
+    dynamic_loss: PDENonStatio | None
     # NOTE static=True only for leaf attributes that are not valid JAX types
     # (ie. jax.Array cannot be static) and that we do not expect to change
     initial_condition_fun: Callable | None = eqx.field(
         kw_only=True, default=None, static=True
     )
-    t0: float | Float[Array, "1"] | None = eqx.field(kw_only=True, default=None)
+    t0: float | Float[Array, " 1"] | None = eqx.field(kw_only=True, default=None)
 
     _max_norm_samples_omega: Int = eqx.field(init=False, static=True)
     _max_norm_time_slices: Int = eqx.field(init=False, static=True)
@@ -625,17 +653,20 @@ class LossPDENonStatio(LossPDEStatio):
                 "case (e.g by. hardcoding it into the PINN output)."
             )
         # some checks for t0
-        if self.t0 is None:
-            self.t0 = jnp.array([0])
-        elif (
-            isinstance(self.t0, float) or not self.t0.shape
-        ):  # e.g. user input: 0. or jnp.array(0.)
+        if isinstance(self.t0, Array):
+            if not self.t0.shape:  # e.g. user input: jnp.array(0.)
+                self.t0 = jnp.array([self.t0])
+            elif self.t0.shape != (1,):
+                raise ValueError(
+                    f"Wrong self.t0 input. It should be"
+                    f"a float or an array of shape (1,). Got shape: {self.t0.shape}"
+                )
+        elif isinstance(self.t0, float):  # e.g. user input: 0
             self.t0 = jnp.array([self.t0])
-        elif self.t0.shape != (1,):
-            raise ValueError(
-                f"Wrong t0 input (self.initial_condition[0]) It should be"
-                f"a float or an array of shape (1,). Got shape: {self.t0.shape}"
-            )
+        elif self.t0 is None:
+            self.t0 = jnp.array([0])
+        else:
+            raise ValueError("Wrong value for t0")
 
         # witht the variables below we avoid memory overflow since a cartesian
         # product is taken
@@ -644,28 +675,30 @@ class LossPDENonStatio(LossPDEStatio):
 
     def _get_dynamic_loss_batch(
         self, batch: PDENonStatioBatch
-    ) -> Float[Array, "batch_size 1+dimension"]:
+    ) -> Float[Array, " batch_size 1+dimension"]:
         return batch.domain_batch
 
     def _get_normalization_loss_batch(
         self, batch: PDENonStatioBatch
-    ) -> Float[Array, "nb_norm_time_slices nb_norm_samples dimension"]:
+    ) -> tuple[
+        Float[Array, " nb_norm_time_slices 1"], Float[Array, " nb_norm_samples dim"]
+    ]:
         return (
             batch.domain_batch[: self._max_norm_time_slices, 0:1],
-            self.norm_samples[: self._max_norm_samples_omega],
+            self.norm_samples[: self._max_norm_samples_omega],  # type: ignore -> cannot narrow a class attr
         )
 
     def _get_observations_loss_batch(
         self, batch: PDENonStatioBatch
-    ) -> tuple[Float[Array, "batch_size 1"], Float[Array, "batch_size dimension"]]:
-        return (batch.obs_batch_dict["pinn_in"],)
+    ) -> Float[Array, " batch_size 1+dim"]:
+        return batch.obs_batch_dict["pinn_in"]
 
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
     def evaluate(
-        self, params: Params, batch: PDENonStatioBatch
-    ) -> tuple[Float[Array, "1"], dict[str, float]]:
+        self, params: Params[Array], batch: PDENonStatioBatch
+    ) -> tuple[Float[Array, " "], LossDictPDENonStatio]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -682,6 +715,7 @@ class LossPDENonStatio(LossPDEStatio):
             inputs/outputs/parameters
         """
         omega_batch = batch.initial_batch
+        assert omega_batch is not None
 
         # Retrieve the optional eq_params_batch
         # and update eq_params with the latter
@@ -694,18 +728,19 @@ class LossPDENonStatio(LossPDEStatio):
 
         # For mse_dyn_loss, mse_norm_loss, mse_boundary_loss,
         # mse_observation_loss we use the evaluate from parent class
-        partial_mse, partial_mse_terms = super().evaluate(params, batch)
+        partial_mse, partial_mse_terms = super().evaluate(params, batch)  # type: ignore
+        # ignore because batch is not PDEStatioBatch. We could use typing.cast though
 
         # initial condition
         if self.initial_condition_fun is not None:
             mse_initial_condition = initial_condition_apply(
                 self.u,
                 omega_batch,
-                _set_derivatives(params, self.derivative_keys.initial_condition),
+                _set_derivatives(params, self.derivative_keys.initial_condition),  # type: ignore
                 (0,) + vmap_in_axes_params,
                 self.initial_condition_fun,
-                self.t0,
-                self.loss_weights.initial_condition,
+                self.t0,  # type: ignore can't get the narrowing in __post_init__
+                self.loss_weights.initial_condition,  # type: ignore
             )
         else:
             mse_initial_condition = jnp.array(0.0)
