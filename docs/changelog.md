@@ -2,7 +2,7 @@
 
 * v1.4.0
 
-    - Introduce pyright and some major code improvement and refactoring in the back end [!72](https://gitlab.com/mia_jinns/jinns/-/merge_requests/72). Small breaking changes could be expected for more advanced `jinns` codes.
+    - Introduce pyright and some minor code improvement and refactoring in the backend (mainly for type hints and code readability) [!72](https://gitlab.com/mia_jinns/jinns/-/merge_requests/72). Small breaking changes could be expected for more advanced `jinns` codes. New pre-commit hooks: `ruff format` and `ruff check`. You can install `ruff` simply by `pip install ruff`. Also, we highly recommend you to check the code type hints with `pyright` even though we currently have no rule concerning type checking in the pipeline.
     - Delete `SystemLossODE` and `SystemLossPDE` and associated classes [!71](https://gitlab.com/mia_jinns/jinns/-/merge_requests/71)
     - Refactor initial conditions [!69](https://gitlab.com/mia_jinns/jinns/-/merge_requests/69)
     - Minor code corrections
