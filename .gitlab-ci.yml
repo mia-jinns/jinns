@@ -6,13 +6,26 @@ stages:
   - build
   - publish
 
-black:
+.base_ruff: # from https://docs.astral.sh/ruff/integrations/#github-actions
   stage: linting
-  image: registry.gitlab.com/pipeline-components/black:latest
+  interruptible: true
+  image:
+    name: ghcr.io/astral-sh/ruff:0.11.8-alpine
+  before_script:
+    - ruff --version
+
+Ruff Check:
+  extends: .base_ruff
   script:
-    - black --check --verbose -- .
-  tags:
-    - saas-linux-small-amd64
+    - ruff check jinns --output-format=gitlab > code-quality-report.json
+  artifacts:
+    reports:
+      codequality: jinns/code-quality-report.json
+
+Ruff Format:
+  extends: .base_ruff
+  script:
+    - ruff format jinns --diff
 
 run_tests:
   stage: tests
