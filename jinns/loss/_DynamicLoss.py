@@ -494,11 +494,14 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
                     jnp.transpose(self.sigma_mat(x, eq_params)),
                 )
             )
-        return 0.5 * (
-            jnp.matmul(
-                self.sigma_mat(x, eq_params),
-                jnp.transpose(self.sigma_mat(x, eq_params)),
-            )[i, j]
+        return (
+            0.5
+            * (
+                jnp.matmul(
+                    self.sigma_mat(x, eq_params),
+                    jnp.transpose(self.sigma_mat(x, eq_params)),
+                )[i, j]
+            )
         )
 
 

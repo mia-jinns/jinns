@@ -50,7 +50,9 @@ def dynamic_loss_apply(
     if u_type == PINN or u_type == HyperPINN or isinstance(u, (PINN, HyperPINN)):
         v_dyn_loss = vmap(
             lambda batch, params: dyn_loss(
-                batch, u, params  # we must place the params at the end
+                batch,
+                u,
+                params,  # we must place the params at the end
             ),
             vmap_axes,
             0,

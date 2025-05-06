@@ -225,7 +225,6 @@ def boundary_neumann(
         n = jnp.array([[-1, 1, 0, 0], [0, 0, -1, 1]])
 
     if isinstance(u, PINN):
-
         u_ = lambda inputs, params: jnp.squeeze(u(inputs, params)[dim_to_apply])
 
         if u.eq_type == "statio_PDE":

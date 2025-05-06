@@ -507,7 +507,9 @@ def _gradient_step(
     value_grad_loss = jax.value_and_grad(loss, has_aux=True)
     (loss_val, loss_terms), grads = value_grad_loss(params, batch)
     updates, opt_state = optimizer.update(
-        grads, opt_state, params  # type: ignore
+        grads,
+        opt_state,
+        params,  # type: ignore
     )  # see optimizer.init for explaination
     params = optax.apply_updates(params, updates)  # type: ignore
 
@@ -623,7 +625,7 @@ def _get_break_fun(n_iter: int, verbose: bool) -> Callable[[main_carry], bool]:
         bool_nan_in_params = jax.lax.cond(
             _check_nan_in_pytree(optimization.params),
             lambda _: stop_while_loop(
-                "NaN values in parameters " "(returning last non NaN values)"
+                "NaN values in parameters (returning last non NaN values)"
             ),
             continue_while_loop,
             None,

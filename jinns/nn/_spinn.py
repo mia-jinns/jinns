@@ -65,7 +65,6 @@ class SPINN(AbstractPINN):
     static: SPINN = eqx.field(init=False, static=True)
 
     def __post_init__(self, eqx_spinn_network):
-
         if self.filter_spec is None:
             self.filter_spec = eqx.is_inexact_array
 

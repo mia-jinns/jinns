@@ -148,7 +148,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
                 if self.nb % (2 * self.dim) != 0 or self.nb < 2 * self.dim:
                     raise ValueError(
                         f"number of border point must be"
-                        f" a multiple of 2xd = {2*self.dim} (the # of faces of"
+                        f" a multiple of 2xd = {2 * self.dim} (the # of faces of"
                         f" a d-dimensional cube). Got {self.nb=}."
                     )
                 if (
@@ -156,7 +156,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
                     and self.nb // (2 * self.dim) < self.omega_border_batch_size
                 ):
                     raise ValueError(
-                        f"number of points per facets ({self.nb//(2*self.dim)})"
+                        f"number of points per facets ({self.nb // (2 * self.dim)})"
                         f" cannot be lower than border batch size "
                         f" ({self.omega_border_batch_size})."
                     )
@@ -260,7 +260,9 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
             + f"implemented yet. You are asking for generation in dimension d={self.dim}."
         )
 
-    def generate_omega_data(self, key: Key, data_size: int | None = None) -> tuple[
+    def generate_omega_data(
+        self, key: Key, data_size: int | None = None
+    ) -> tuple[
         Key,
         Float[Array, " n dim"],
     ]:

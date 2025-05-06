@@ -91,7 +91,6 @@ def trigger_rar(
     _rar_step_true: Callable[[rar_operands], DataGeneratorWithRAR],
     _rar_step_false: Callable[[rar_operands], DataGeneratorWithRAR],
 ) -> tuple[AnyLoss, Params, DataGeneratorWithRAR]:
-
     if data.rar_parameters is None:
         # do nothing.
         return loss, params, data
@@ -132,7 +131,9 @@ def init_rar(
     return data, _rar_step_true, _rar_step_false
 
 
-def _rar_step_init(sample_size: int, selected_sample_size: int) -> tuple[
+def _rar_step_init(
+    sample_size: int, selected_sample_size: int
+) -> tuple[
     Callable[[rar_operands], DataGeneratorWithRAR],
     Callable[[rar_operands], DataGeneratorWithRAR],
 ]:
@@ -151,7 +152,6 @@ def _rar_step_init(sample_size: int, selected_sample_size: int) -> tuple[
             raise NotImplementedError("RAR not implemented for hyperPINN and SPINN")
 
         if isinstance(data, DataGeneratorODE):
-
             new_key, subkey = jax.random.split(data.key)
             new_samples = data.sample_in_time_domain(subkey, sample_size)
             data = eqx.tree_at(lambda m: m.key, data, new_key)

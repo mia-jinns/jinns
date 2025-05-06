@@ -109,7 +109,6 @@ class PINN(AbstractPINN):
     static: PINN = eqx.field(init=False, static=True)
 
     def __post_init__(self, eqx_network):
-
         if self.eq_type not in ["ODE", "statio_PDE", "nonstatio_PDE"]:
             raise RuntimeError("Wrong parameter value for eq_type")
         # saving the static part of the model and initial parameters

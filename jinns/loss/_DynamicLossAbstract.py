@@ -25,7 +25,6 @@ InputDim = TypeVar("InputDim")
 
 
 def _decorator_heteregeneous_params(evaluate):
-
     def wrapper(*args):
         self, inputs, u, params = args
         _params = eqx.tree_at(
@@ -94,9 +93,7 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
         for k, p in params.eq_params.items():
             try:
                 if eq_params_heterogeneity[k] is not None:
-                    eq_params_[k] = eq_params_heterogeneity[k](
-                        inputs, u, params
-                    )  # type: ignore don't know why pyright says
+                    eq_params_[k] = eq_params_heterogeneity[k](inputs, u, params)  # type: ignore don't know why pyright says
                     # eq_params_heterogeneity[k] can be None here
                 else:
                     eq_params_[k] = p

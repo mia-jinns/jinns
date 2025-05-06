@@ -152,8 +152,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.domain = jnp.concatenate([domain_times, self.omega], axis=1)
         else:
             raise ValueError(
-                f"Bad value for method. Got {self.method}, expected"
-                ' "grid" or "uniform"'
+                f'Bad value for method. Got {self.method}, expected "grid" or "uniform"'
             )
 
         if self.domain_batch_size is None:
@@ -272,7 +271,6 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
     def domain_batch(
         self,
     ) -> tuple[CubicMeshPDENonStatio, Float[Array, " domain_batch_size 1+dim"]]:
-
         if self.domain_batch_size is None or self.domain_batch_size == self.n:
             # Avoid unnecessary reshuffling
             return self, self.domain

@@ -228,16 +228,12 @@ def laplacian_rev(
             if eq_type == "nonstatio_PDE":
                 d2u_dxi2 = grad(
                     lambda inputs: grad(u_)(inputs)[1 + i],
-                )(
-                    inputs
-                )[1 + i]
+                )(inputs)[1 + i]
             else:
                 d2u_dxi2 = grad(
                     lambda inputs: grad(u_, 0)(inputs)[i],
                     0,
-                )(
-                    inputs
-                )[i]
+                )(inputs)[i]
             return _, d2u_dxi2
 
         if eq_type == "nonstatio_PDE":

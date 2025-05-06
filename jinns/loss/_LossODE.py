@@ -262,7 +262,8 @@ class LossODE(_LossODEAbstract):
                         v_u(
                             t0,
                             _set_derivatives(
-                                params, self.derivative_keys.initial_condition  # type: ignore
+                                params,
+                                self.derivative_keys.initial_condition,  # type: ignore
                             ),
                         )
                         - u0
