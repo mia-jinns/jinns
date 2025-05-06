@@ -1,7 +1,7 @@
-# pylint: disable=unsubscriptable-object, no-member
 """
 Main module to implement a PDE loss in jinns
 """
+
 from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant

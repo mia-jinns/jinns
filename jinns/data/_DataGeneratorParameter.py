@@ -1,7 +1,7 @@
-# pylint: disable=unsubscriptable-object
 """
 Define the DataGenerators modules
 """
+
 from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
@@ -114,10 +114,7 @@ class DataGeneratorParameter(AbstractDataGenerator):
             self.user_data,  # type: ignore this has been handled in post_init
         )
         for k in all_keys:
-            if (
-                self.user_data
-                and k in self.user_data.keys()  # pylint: disable=no-member
-            ):
+            if self.user_data and k in self.user_data.keys():
                 if self.user_data[k].shape == (self.n, 1):
                     param_n_samples[k] = self.user_data[k]
                 if self.user_data[k].shape == (self.n,):

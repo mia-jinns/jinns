@@ -1,7 +1,7 @@
-# pylint: disable=unsubscriptable-object
 """
 Define the DataGenerators modules
 """
+
 from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant

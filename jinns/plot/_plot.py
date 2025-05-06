@@ -297,9 +297,7 @@ def plot1d_slice(
             values = v_u_tfixed(t_xdata)
         elif spinn:
             values = jnp.squeeze(fun(t_xdata)[0])
-        ax.plot(
-            xdata, values, label=f"$t_i={t * Tmax:.2f}$"
-        )  # pylint: disable=possibly-used-before-assignment
+        ax.plot(xdata, values, label=f"$t_i={t * Tmax:.2f}$")
     ax.set_xlabel("x")
     ax.set_ylabel(r"$u(t_i, x)$")
     ax.legend()
@@ -371,7 +369,7 @@ def plot1d_image(
     im = ax.pcolormesh(
         mesh[0] * Tmax,
         mesh[1],
-        values_grid,  # pylint: disable=possibly-used-before-assignment
+        values_grid,
         cmap=cmap,
         vmin=vmin_vmax[0],
         vmax=vmin_vmax[1],

@@ -1,7 +1,7 @@
-# pylint: disable=unsubscriptable-object, no-member
 """
 Main module to implement a ODE loss in jinns
 """
+
 from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
@@ -253,7 +253,7 @@ class LossODE(_LossODEAbstract):
                 v_u = self.u
             else:
                 v_u = vmap(self.u, (None,) + vmap_in_axes_params)
-            t0, u0 = self.initial_condition  # pylint: disable=unpacking-non-sequence
+            t0, u0 = self.initial_condition
             u0 = jnp.array(u0)
             mse_initial_condition = jnp.mean(
                 self.loss_weights.initial_condition  # type: ignore
