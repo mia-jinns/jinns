@@ -1,9 +1,7 @@
-from jinns.data._DataGenerators import (
-    DataGeneratorODE,
-    CubicMeshPDEStatio,
-    CubicMeshPDENonStatio,
-    DataGeneratorParameter,
-)
+from jinns.data._DataGeneratorODE import DataGeneratorODE
+from jinns.data._CubicMeshPDEStatio import CubicMeshPDEStatio
+from jinns.data._CubicMeshPDENonStatio import CubicMeshPDENonStatio
+from jinns.data._DataGeneratorParameter import DataGeneratorParameter
 
 
 def _check_batch_size(other_data, main_data, attr_name):

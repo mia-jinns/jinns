@@ -1,23 +1,11 @@
-default_stages: [commit]
+default_stages: [pre-commit]
 repos:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Ruff version.
+    rev: v0.11.8
     hooks:
-    -   id: trailing-whitespace
-        stages: [commit]
-    -   id: end-of-file-fixer
-        stages: [commit]
-  - repo: https://github.com/psf/black
-    rev: 25.1.0
-    hooks:
-    -   id: black
-        stages: [commit]
-        #- repo: local
-        #  hooks:
-        #  -   id: pytest-check
-        #      name: pytest-check
-        #      stages: [push]
-        #      types: [python] # which type of modified files should trigger the hook
-        #      entry: bash -c "cd tests/ && sh runtests.sh"
-        #      language: system
-        #      pass_filenames: false
+      # Run the linter.
+      - id: ruff
+        args: [ --fix ]
+      # Run the formatter.
+      - id: ruff-format

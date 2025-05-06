@@ -6,7 +6,7 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-from typing import TYPE_CHECKING, Dict
+from typing import TYPE_CHECKING
 from jaxtyping import Float
 import jax
 from jax import grad
@@ -29,10 +29,11 @@ from jinns.loss._operators import (
     _u_dot_nabla_times_u_fwd,
 )
 
-from jaxtyping import Array, Float
+from jaxtyping import Array
 
 if TYPE_CHECKING:
     from jinns.parameters import Params
+    from jinns.nn._abstract_pinn import AbstractPINN
 
 
 class FisherKPP(PDENonStatio):
@@ -54,10 +55,10 @@ class FisherKPP(PDENonStatio):
 
     def equation(
         self,
-        t_x: Float[Array, "1+dim"],
-        u: eqx.Module,
-        params: Params,
-    ) -> Float[Array, "1"]:
+        t_x: Float[Array, " 1+dim"],
+        u: AbstractPINN,
+        params: Params[Array],
+    ) -> Float[Array, " 1"]:
         r"""
         Evaluate the dynamic loss at $(t, x)$.
 
@@ -74,13 +75,14 @@ class FisherKPP(PDENonStatio):
             dictionaries: `eq_params` and `nn_params`, respectively the
             differential equation parameters and the neural network parameter
         """
+        assert u.eq_type != "ODE", "Cannot compute the loss for ODE PINNs"
         if isinstance(u, PINN):
             # Note that the last dim of u is nec. 1
             u_ = lambda t_x: u(t_x, params)[0]
 
             du_dt = grad(u_)(t_x)[0]
 
-            lap = laplacian_rev(t_x, u, params, eq_type=u.eq_type)[..., None]
+            lap = laplacian_rev(t_x, u, params)[..., None]
 
             return du_dt + self.Tmax * (
                 -params.eq_params["D"] * lap
@@ -96,7 +98,7 @@ class FisherKPP(PDENonStatio):
                 (t_x,),
                 (v0,),
             )
-            lap = laplacian_fwd(t_x, u, params, eq_type=u.eq_type)
+            lap = laplacian_fwd(t_x, u, params)
 
             return du_dt + self.Tmax * (
                 -params.eq_params["D"] * lap
@@ -144,10 +146,10 @@ class GeneralizedLotkaVolterra(ODE):
 
     def equation(
         self,
-        t: Float[Array, "1"],
-        u: eqx.Module,
-        params: Params,
-    ) -> Float[Array, "1"]:
+        t: Float[Array, " 1"],
+        u: AbstractPINN,
+        params: Params[Array],
+    ) -> Float[Array, " 1"]:
         """
         Evaluate the dynamic loss at `t`.
         For stability we implement the dynamic loss in log space.
@@ -202,10 +204,10 @@ class BurgersEquation(PDENonStatio):
 
     def equation(
         self,
-        t_x: Float[Array, "1+dim"],
-        u: eqx.Module,
-        params: Params,
-    ) -> Float[Array, "1"]:
+        t_x: Float[Array, " 1+dim"],
+        u: AbstractPINN,
+        params: Params[Array],
+    ) -> Float[Array, " 1"]:
         r"""
         Evaluate the dynamic loss at :math:`(t,x)`.
 
@@ -298,10 +300,10 @@ class FPENonStatioLoss2D(PDENonStatio):
 
     def equation(
         self,
-        t_x: Float[Array, "1+dim"],
-        u: eqx.Module,
-        params: Params,
-    ) -> Float[Array, "1"]:
+        t_x: Float[Array, " 1+dim"],
+        u: AbstractPINN,
+        params: Params[Array],
+    ) -> Float[Array, " 1"]:
         r"""
         Evaluate the dynamic loss at $(t,\mathbf{x})$.
 
@@ -492,11 +494,14 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
                     jnp.transpose(self.sigma_mat(x, eq_params)),
                 )
             )
-        return 0.5 * (
-            jnp.matmul(
-                self.sigma_mat(x, eq_params),
-                jnp.transpose(self.sigma_mat(x, eq_params)),
-            )[i, j]
+        return (
+            0.5
+            * (
+                jnp.matmul(
+                    self.sigma_mat(x, eq_params),
+                    jnp.transpose(self.sigma_mat(x, eq_params)),
+                )[i, j]
+            )
         )
 
 
@@ -547,10 +552,10 @@ class NavierStokesMassConservation2DStatio(PDEStatio):
 
     def equation(
         self,
-        x: Float[Array, "dim"],
-        u_p: eqx.Module,
-        params: Params,
-    ) -> Float[Array, "3"]:
+        x: Float[Array, " dim"],
+        u_p: AbstractPINN,
+        params: Params[Array],
+    ) -> Float[Array, " 3"]:
         r"""
         Evaluate the dynamic loss at `x`.
         For stability we implement the dynamic loss in log space.
@@ -565,7 +570,7 @@ class NavierStokesMassConservation2DStatio(PDEStatio):
         params
             The parameters in a Params object
         """
-
+        assert u_p.eq_type != "ODE", "Cannot compute the loss for ODE PINNs"
         if isinstance(u_p, PINN):
             u = lambda x, params: u_p(x, params)[0:2]
             p = lambda x, params: u_p(x, params)[2:3]
@@ -598,10 +603,8 @@ class NavierStokesMassConservation2DStatio(PDEStatio):
             mc = divergence_rev(x, u, params, eq_type=u_p.eq_type)
 
             # output is 3D
-            print(mc.shape)
             if mc.ndim == 0 and not result_x.ndim == 0:
                 mc = mc[None]
-            print(result_x.shape, result_y.shape, mc.shape)
             return jnp.stack([result_x, result_y, mc], axis=-1)
 
         if isinstance(u_p, SPINN):

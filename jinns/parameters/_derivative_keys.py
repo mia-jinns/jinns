@@ -2,16 +2,18 @@
 Formalize the data structure for the derivative keys
 """
 
-from functools import partial
-from dataclasses import fields, InitVar
+from dataclasses import InitVar
 from typing import Literal
+from jaxtyping import Array
 import jax
 import equinox as eqx
 
 from jinns.parameters._params import Params
 
 
-def _get_masked_parameters(derivative_mask_str: str, params: Params) -> Params:
+def _get_masked_parameters(
+    derivative_mask_str: str, params: Params[Array]
+) -> Params[bool]:
     """
     Creates the Params object with True values where we want to differentiate
     """
@@ -75,61 +77,69 @@ class DerivativeKeysODE(eqx.Module):
 
     Parameters
     ----------
-    dyn_loss : Params | None, default=None
+    dyn_loss : Params[bool] | None, default=None
         Tell wrt which node of `Params` we will differentiate the
         dynamic loss. To do so, the fields of `Params` contain True (if
         differentiation) or False (if no differentiation).
-    observations : Params | None, default=None
+    observations : Params[bool] | None, default=None
         Tell wrt which parameters among Params we will differentiate the
         observation loss. To do so, the fields of Params contain True (if
         differentiation) or False (if no differentiation).
-    initial_condition : Params | None, default=None
+    initial_condition : Params[bool] | None, default=None
         Tell wrt which parameters among Params we will differentiate the
         initial condition loss. To do so, the fields of Params contain True (if
         differentiation) or False (if no differentiation).
-    params : InitVar[Params], default=None
+    params : InitVar[Params[Array]], default=None
         The main Params object of the problem. It is required
         if some terms are unspecified (None). This is because, jinns cannot
         infer the content of `Params.eq_params`.
     """
 
-    dyn_loss: Params | None = eqx.field(kw_only=True, default=None)
-    observations: Params | None = eqx.field(kw_only=True, default=None)
-    initial_condition: Params | None = eqx.field(kw_only=True, default=None)
+    dyn_loss: Params[bool] | None = eqx.field(kw_only=True, default=None)
+    observations: Params[bool] | None = eqx.field(kw_only=True, default=None)
+    initial_condition: Params[bool] | None = eqx.field(kw_only=True, default=None)
 
-    params: InitVar[Params] = eqx.field(kw_only=True, default=None)
+    params: InitVar[Params[Array] | None] = eqx.field(kw_only=True, default=None)
 
-    def __post_init__(self, params=None):
+    def __post_init__(self, params: Params[Array] | None = None):
+        if params is None and (
+            self.dyn_loss is None
+            or self.observations is None
+            or self.initial_condition is None
+        ):
+            raise ValueError(
+                "params cannot be None since at least one loss "
+                "term has an undefined derivative key Params PyTree"
+            )
         if self.dyn_loss is None:
-            try:
-                self.dyn_loss = _get_masked_parameters("nn_params", params)
-            except AttributeError:
-                raise ValueError(
-                    "self.dyn_loss is None, hence params should be " "passed"
-                )
+            if params is None:
+                raise ValueError("self.dyn_loss is None, hence params should be passed")
+            self.dyn_loss = _get_masked_parameters("nn_params", params)
         if self.observations is None:
-            try:
-                self.observations = _get_masked_parameters("nn_params", params)
-            except AttributeError:
+            if params is None:
                 raise ValueError(
-                    "self.observations is None, hence params should be " "passed"
+                    "self.observations is None, hence params should be passed"
                 )
+            self.observations = _get_masked_parameters("nn_params", params)
         if self.initial_condition is None:
-            try:
-                self.initial_condition = _get_masked_parameters("nn_params", params)
-            except AttributeError:
+            if params is None:
                 raise ValueError(
-                    "self.initial_condition is None, hence params should be " "passed"
+                    "self.initial_condition is None, hence params should be passed"
                 )
+            self.initial_condition = _get_masked_parameters("nn_params", params)
 
     @classmethod
     def from_str(
         cls,
-        params: Params,
-        dyn_loss: Literal["nn_params", "eq_params", "both"] | Params = "nn_params",
-        observations: Literal["nn_params", "eq_params", "both"] | Params = "nn_params",
+        params: Params[Array],
+        dyn_loss: (
+            Literal["nn_params", "eq_params", "both"] | Params[bool]
+        ) = "nn_params",
+        observations: (
+            Literal["nn_params", "eq_params", "both"] | Params[bool]
+        ) = "nn_params",
         initial_condition: (
-            Literal["nn_params", "eq_params", "both"] | Params
+            Literal["nn_params", "eq_params", "both"] | Params[bool]
         ) = "nn_params",
     ):
         """
@@ -184,71 +194,75 @@ class DerivativeKeysPDEStatio(eqx.Module):
 
     Parameters
     ----------
-     dyn_loss : Params | None, default=None
+     dyn_loss : Params[bool] | None, default=None
         Tell wrt which parameters among Params we will differentiate the
         dynamic loss. To do so, the fields of Params contain True (if
         differentiation) or False (if no differentiation).
-     observations : Params | None, default=None
+     observations : Params[bool] | None, default=None
         Tell wrt which parameters among Params we will differentiate the
         observation loss. To do so, the fields of Params contain True (if
         differentiation) or False (if no differentiation).
-     boundary_loss : Params | None, default=None
+     boundary_loss : Params[bool] | None, default=None
         Tell wrt which parameters among Params we will differentiate the
         boundary loss. To do so, the fields of Params contain True (if
         differentiation) or False (if no differentiation).
-     norm_loss : Params | None, default=None
+     norm_loss : Params[bool] | None, default=None
         Tell wrt which parameters among Params we will differentiate the
         normalization loss. To do so, the fields of Params contain True (if
         differentiation) or False (if no differentiation).
-     params : InitVar[Params], default=None
+     params : InitVar[Params[Array]], default=None
         The main Params object of the problem. It is required
         if some terms are unspecified (None). This is because, jinns cannot infer the
         content of `Params.eq_params`.
     """
 
-    dyn_loss: Params | None = eqx.field(kw_only=True, default=None)
-    observations: Params | None = eqx.field(kw_only=True, default=None)
-    boundary_loss: Params | None = eqx.field(kw_only=True, default=None)
-    norm_loss: Params | None = eqx.field(kw_only=True, default=None)
+    dyn_loss: Params[bool] | None = eqx.field(kw_only=True, default=None)
+    observations: Params[bool] | None = eqx.field(kw_only=True, default=None)
+    boundary_loss: Params[bool] | None = eqx.field(kw_only=True, default=None)
+    norm_loss: Params[bool] | None = eqx.field(kw_only=True, default=None)
 
-    params: InitVar[Params] = eqx.field(kw_only=True, default=None)
+    params: InitVar[Params[Array] | None] = eqx.field(kw_only=True, default=None)
 
-    def __post_init__(self, params=None):
+    def __post_init__(self, params: Params[Array] | None = None):
         if self.dyn_loss is None:
-            try:
-                self.dyn_loss = _get_masked_parameters("nn_params", params)
-            except AttributeError:
+            if params is None:
                 raise ValueError("self.dyn_loss is None, hence params should be passed")
+            self.dyn_loss = _get_masked_parameters("nn_params", params)
         if self.observations is None:
-            try:
-                self.observations = _get_masked_parameters("nn_params", params)
-            except AttributeError:
+            if params is None:
                 raise ValueError(
                     "self.observations is None, hence params should be passed"
                 )
+            self.observations = _get_masked_parameters("nn_params", params)
         if self.boundary_loss is None:
-            try:
-                self.boundary_loss = _get_masked_parameters("nn_params", params)
-            except AttributeError:
+            if params is None:
                 raise ValueError(
                     "self.boundary_loss is None, hence params should be passed"
                 )
+            self.boundary_loss = _get_masked_parameters("nn_params", params)
         if self.norm_loss is None:
-            try:
-                self.norm_loss = _get_masked_parameters("nn_params", params)
-            except AttributeError:
+            if params is None:
                 raise ValueError(
                     "self.norm_loss is None, hence params should be passed"
                 )
+            self.norm_loss = _get_masked_parameters("nn_params", params)
 
     @classmethod
     def from_str(
         cls,
-        params: Params,
-        dyn_loss: Literal["nn_params", "eq_params", "both"] | Params = "nn_params",
-        observations: Literal["nn_params", "eq_params", "both"] | Params = "nn_params",
-        boundary_loss: Literal["nn_params", "eq_params", "both"] | Params = "nn_params",
-        norm_loss: Literal["nn_params", "eq_params", "both"] | Params = "nn_params",
+        params: Params[Array],
+        dyn_loss: (
+            Literal["nn_params", "eq_params", "both"] | Params[bool]
+        ) = "nn_params",
+        observations: (
+            Literal["nn_params", "eq_params", "both"] | Params[bool]
+        ) = "nn_params",
+        boundary_loss: (
+            Literal["nn_params", "eq_params", "both"] | Params[bool]
+        ) = "nn_params",
+        norm_loss: (
+            Literal["nn_params", "eq_params", "both"] | Params[bool]
+        ) = "nn_params",
     ):
         """
         See [jinns.parameters.DerivativeKeysODE.from_str][].
@@ -304,54 +318,61 @@ class DerivativeKeysPDENonStatio(DerivativeKeysPDEStatio):
 
     Parameters
     ----------
-    dyn_loss : Params | None, default=None
+    dyn_loss : Params[bool] | None, default=None
         Tell wrt which parameters among Params we will differentiate the
         dynamic loss. To do so, the fields of Params contain True (if
         differentiation) or False (if no differentiation).
-    observations : Params | None, default=None
+    observations : Params[bool] | None, default=None
         Tell wrt which parameters among Params we will differentiate the
         observation loss. To do so, the fields of Params contain True (if
         differentiation) or False (if no differentiation).
-    boundary_loss : Params | None, default=None
+    boundary_loss : Params[bool] | None, default=None
         Tell wrt which parameters among Params we will differentiate the
         boundary loss. To do so, the fields of Params contain True (if
         differentiation) or False (if no differentiation).
-    norm_loss : Params | None, default=None
+    norm_loss : Params[bool] | None, default=None
         Tell wrt which parameters among Params we will differentiate the
         normalization loss. To do so, the fields of Params contain True (if
         differentiation) or False (if no differentiation).
-    initial_condition : Params | None, default=None
+    initial_condition : Params[bool] | None, default=None
         Tell wrt which parameters among Params we will differentiate the
         initial_condition loss. To do so, the fields of Params contain True (if
         differentiation) or False (if no differentiation).
-    params : InitVar[Params], default=None
+    params : InitVar[Params[Array]], default=None
         The main Params object of the problem. It is required
         if some terms are unspecified (None). This is because, jinns cannot infer the
         content of `Params.eq_params`.
     """
 
-    initial_condition: Params | None = eqx.field(kw_only=True, default=None)
+    initial_condition: Params[bool] | None = eqx.field(kw_only=True, default=None)
 
-    def __post_init__(self, params=None):
+    def __post_init__(self, params: Params[Array] | None = None):
         super().__post_init__(params=params)
         if self.initial_condition is None:
-            try:
-                self.initial_condition = _get_masked_parameters("nn_params", params)
-            except AttributeError:
+            if params is None:
                 raise ValueError(
                     "self.initial_condition is None, hence params should be passed"
                 )
+            self.initial_condition = _get_masked_parameters("nn_params", params)
 
     @classmethod
     def from_str(
         cls,
-        params: Params,
-        dyn_loss: Literal["nn_params", "eq_params", "both"] | Params = "nn_params",
-        observations: Literal["nn_params", "eq_params", "both"] | Params = "nn_params",
-        boundary_loss: Literal["nn_params", "eq_params", "both"] | Params = "nn_params",
-        norm_loss: Literal["nn_params", "eq_params", "both"] | Params = "nn_params",
+        params: Params[Array],
+        dyn_loss: (
+            Literal["nn_params", "eq_params", "both"] | Params[bool]
+        ) = "nn_params",
+        observations: (
+            Literal["nn_params", "eq_params", "both"] | Params[bool]
+        ) = "nn_params",
+        boundary_loss: (
+            Literal["nn_params", "eq_params", "both"] | Params[bool]
+        ) = "nn_params",
+        norm_loss: (
+            Literal["nn_params", "eq_params", "both"] | Params[bool]
+        ) = "nn_params",
         initial_condition: (
-            Literal["nn_params", "eq_params", "both"] | Params
+            Literal["nn_params", "eq_params", "both"] | Params[bool]
         ) = "nn_params",
     ):
         """

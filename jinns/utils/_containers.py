@@ -11,12 +11,17 @@ from jaxtyping import PyTree, Array, Float, Bool
 from optax import OptState
 import equinox as eqx
 
+from jinns.parameters._params import Params
+
 if TYPE_CHECKING:
-    from jinns.utils._types import *
+    from jinns.data._AbstractDataGenerator import AbstractDataGenerator
+    from jinns.data._DataGeneratorParameter import DataGeneratorParameter
+    from jinns.data._DataGeneratorObservations import DataGeneratorObservations
+    from jinns.utils._types import AnyLoss
 
 
 class DataGeneratorContainer(eqx.Module):
-    data: AnyDataGenerator
+    data: AbstractDataGenerator
     param_data: DataGeneratorParameter | None = None
     obs_data: DataGeneratorObservations | None = None
 
@@ -25,7 +30,7 @@ class ValidationContainer(eqx.Module):
     loss: AnyLoss | None
     data: DataGeneratorContainer
     hyperparams: PyTree = None
-    loss_values: Float[Array, "n_iter"] | None = None
+    loss_values: Float[Array, " n_iter"] | None = None
 
 
 class OptimizationContainer(eqx.Module):
@@ -43,9 +48,9 @@ class OptimizationExtraContainer(eqx.Module):
 
 
 class LossContainer(eqx.Module):
-    stored_loss_terms: Dict[str, Float[Array, "n_iter"]]
-    train_loss_values: Float[Array, "n_iter"]
+    stored_loss_terms: Dict[str, Float[Array, " n_iter"]]
+    train_loss_values: Float[Array, " n_iter"]
 
 
 class StoredObjectContainer(eqx.Module):
-    stored_params: list | None
+    stored_params: Params[Array | None]

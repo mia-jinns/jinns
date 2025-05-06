@@ -1,4 +1,5 @@
-from typing import Union, Callable, Any
+from __future__ import annotations
+from typing import Union, Callable, Any, Literal, overload
 from dataclasses import InitVar
 from jaxtyping import PyTree, Float, Array
 import jax
@@ -6,9 +7,11 @@ import jax.numpy as jnp
 import equinox as eqx
 
 from jinns.parameters._params import Params
+from jinns.nn._abstract_pinn import AbstractPINN
+from jinns.nn._utils import _PyTree_to_Params
 
 
-class SPINN(eqx.Module):
+class SPINN(AbstractPINN):
     """
     A Separable PINN object compatible with the rest of jinns.
 
@@ -47,21 +50,21 @@ class SPINN(eqx.Module):
 
     """
 
+    eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"] = eqx.field(
+        static=True, kw_only=True
+    )
     d: int = eqx.field(static=True, kw_only=True)
     r: int = eqx.field(static=True, kw_only=True)
-    eq_type: str = eqx.field(static=True, kw_only=True)
     m: int = eqx.field(static=True, kw_only=True, default=1)
-
     filter_spec: PyTree[Union[bool, Callable[[Any], bool]]] = eqx.field(
         static=True, kw_only=True, default=None
     )
     eqx_spinn_network: InitVar[eqx.Module] = eqx.field(kw_only=True)
 
-    init_params: PyTree = eqx.field(init=False)
-    static: PyTree = eqx.field(init=False, static=True)
+    init_params: SPINN = eqx.field(init=False)
+    static: SPINN = eqx.field(init=False, static=True)
 
     def __post_init__(self, eqx_spinn_network):
-
         if self.filter_spec is None:
             self.filter_spec = eqx.is_inexact_array
 
@@ -69,20 +72,34 @@ class SPINN(eqx.Module):
             eqx_spinn_network, self.filter_spec
         )
 
+    @overload
+    @_PyTree_to_Params
     def __call__(
         self,
-        t_x: Float[Array, "batch_size 1+dim"],
-        params: Params | PyTree,
-    ) -> Float[Array, "output_dim"]:
+        inputs: Float[Array, " input_dim"],
+        params: PyTree,
+        *args,
+        **kwargs,
+    ) -> Float[Array, " output_dim"]: ...
+
+    @_PyTree_to_Params
+    def __call__(
+        self,
+        t_x: Float[Array, "  batch_size 1+dim"],
+        params: Params[Array],
+    ) -> Float[Array, "  output_dim"]:
         """
         Evaluate the SPINN on some inputs with some params.
+
+        Note that that thanks to the decorator, params can also directly be the
+        PyTree (SPINN, PINN_MLP, ...) that we get out of eqx.combine
         """
-        try:
-            spinn = eqx.combine(params.nn_params, self.static)
-        except (KeyError, AttributeError, TypeError) as e:
-            spinn = eqx.combine(params, self.static)
+        # try:
+        spinn = eqx.combine(params.nn_params, self.static)
+        # except (KeyError, AttributeError, TypeError) as e:
+        #    spinn = eqx.combine(params, self.static)
         v_model = jax.vmap(spinn)
-        res = v_model(t_x)
+        res = v_model(t_x)  # type: ignore
 
         a = ", ".join([f"{chr(97 + d)}z" for d in range(res.shape[1])])
         b = "".join([f"{chr(97 + d)}" for d in range(res.shape[1])])

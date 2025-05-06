@@ -2,26 +2,24 @@
 Utility functions for plotting in 1D and 2D, with and without time.
 """
 
-from functools import partial
-import warnings
-import matplotlib.pyplot as plt
+from typing import Callable
 import jax.numpy as jnp
 from jax import vmap
+import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import ImageGrid
-from typing import Callable, List
-from jaxtyping import Array, Float, Bool
+from jaxtyping import Array, Float
 
 
 def plot2d(
     fun: Callable,
-    xy_data: tuple[Float[Array, "nx"], Float[Array, "ny"]],
-    times: Float[Array, "nt"] | List[float] | None = None,
+    xy_data: tuple[Float[Array, " nx"], Float[Array, " ny"]],
+    times: Float[Array, " nt"] | list[float] | None = None,
     Tmax: float = 1,
     title: str = "",
     figsize: tuple = (7, 7),
     cmap: str = "inferno",
     spinn: bool = False,
-    vmin_vmax: tuple[float, float] = [None, None],
+    vmin_vmax: tuple[float | None, float | None] | None = None,
 ):
     r"""Generic function for plotting functions over rectangular 2-D domains
     $\Omega$. It handles both the
@@ -61,6 +59,8 @@ def plot2d(
     ValueError
         if xy_data is not a list of length 2
     """
+    if vmin_vmax is None:
+        vmin_vmax = (None, None)
 
     # if not isinstance(xy_data, jnp.ndarray) and not xy_data.shape[-1] == 2:
     if not isinstance(xy_data, list) and not len(xy_data) == 2:
@@ -100,7 +100,7 @@ def plot2d(
             im = ax.pcolormesh(
                 mesh[0],
                 mesh[1],
-                ret[0],
+                ret,
                 cmap=cmap,
                 vmin=vmin_vmax[0],
                 vmax=vmin_vmax[1],
@@ -113,7 +113,7 @@ def plot2d(
         if not isinstance(times, list):
             try:
                 times = times.tolist()
-            except:
+            except AttributeError:
                 raise ValueError("times must be a list or an array")
 
         fig = plt.figure(figsize=figsize)
@@ -129,7 +129,7 @@ def plot2d(
             cbar_pad=0.4,
         )
 
-        for idx, (t, ax) in enumerate(zip(times, grid)):
+        for idx, (t, ax) in enumerate(zip(times, iter(grid))):
             if not spinn:
                 x_grid, y_grid = mesh
                 v_fun_at_t = vmap(fun)(
@@ -142,12 +142,11 @@ def plot2d(
                         axis=-1,
                     )
                 )
-                t_slice, _ = _plot_2D_statio(
+                t_slice = _plot_2D_statio(
                     v_fun_at_t,
                     mesh,
                     plot=False,  # only use to compute t_slice
                     colorbar=False,
-                    cmap=None,
                     vmin_vmax=vmin_vmax,
                 )
             elif spinn:
@@ -161,7 +160,7 @@ def plot2d(
                     axis=-1,
                 )
                 values_grid = jnp.squeeze(fun(t_x)[0]).T
-                t_slice, _ = _plot_2D_statio(
+                t_slice = _plot_2D_statio(
                     values_grid,
                     mesh,
                     plot=False,  # only use to compute t_slice
@@ -182,14 +181,14 @@ def plot2d(
 
 
 def _plot_2D_statio(
-    v_fun: Callable | Float[Array, "(nx*ny)^2 1"],
-    mesh: Float[Array, "nx*ny nx*ny"],
-    plot: Bool = True,
-    colorbar: Bool = True,
+    v_fun: Callable | Float[Array, " (nx*ny)^2 1"],
+    mesh: list[Float[Array, " nx*ny nx*ny"]],
+    plot: bool = True,
+    colorbar: bool = True,
     cmap: str = "inferno",
     figsize: tuple[int, int] = (7, 7),
-    vmin_vmax: tuple[float, float] = [None, None],
-):
+    vmin_vmax: tuple[float | None, float | None] | None = None,
+) -> Array | None:
     """Function that plot the function u(x) with 2-D input x using pcolormesh()
 
 
@@ -217,6 +216,8 @@ def _plot_2D_statio(
     Either None or the values of u() over the meshgrid and the current plt axis
 
     """
+    if vmin_vmax is None:
+        vmin_vmax = (None, None)
 
     x_grid, y_grid = mesh
     if callable(v_fun):
@@ -238,19 +239,18 @@ def _plot_2D_statio(
 
         if colorbar:
             fig.colorbar(im, format="%0.2f")
-        # don't plt.show() because it is done in plot2d()
     else:
-        return values_grid, plt.gca()
+        return values_grid
 
 
 def plot1d_slice(
-    fun: Callable[[float, float], float],
-    xdata: Float[Array, "nx"],
-    time_slices: Float[Array, "nt"] | None = None,
+    fun: Callable[[Float[Array, " "]], Float[Array, " "]],
+    xdata: Float[Array, " nx"],
+    time_slices: Float[Array, " nt"] | None = None,
     Tmax: float = 1.0,
     title: str = "",
     figsize: tuple[int, int] = (10, 10),
-    spinn: Bool = False,
+    spinn: bool = False,
     ax=None,
 ):
     """Function for plotting time slices of a function :math:`f(t_i, x)` where
@@ -284,7 +284,7 @@ def plot1d_slice(
     if time_slices is None:
         time_slices = jnp.array([0])
     if ax is None:
-        fig, ax = plt.subplots(figsize=figsize)
+        _, ax = plt.subplots(figsize=figsize)
 
     for t in time_slices:
         t_xdata = jnp.concatenate(
@@ -306,16 +306,16 @@ def plot1d_slice(
 
 
 def plot1d_image(
-    fun: Callable[[float, float], float],
-    xdata: Float[Array, "nx"],
-    times: Float[Array, "nt"],
+    fun: Callable[[Float[Array, " "]], Float[Array, " "]],
+    xdata: Float[Array, " nx"],
+    times: Float[Array, " nt"],
     Tmax: float = 1.0,
     title: str = "",
     figsize: tuple[int, int] = (10, 10),
-    colorbar: Bool = True,
+    colorbar: bool = True,
     cmap: str = "inferno",
-    spinn: Bool = False,
-    vmin_vmax: tuple[float, float] = [None, None],
+    spinn: bool = False,
+    vmin_vmax: tuple[float | None, float | None] | None = None,
 ):
     """Function for plotting the 2-D image of a function :math:`f(t, x)` where
     `t` is time (1-D) and x is space (1-D).
@@ -350,7 +350,8 @@ def plot1d_image(
     fig, ax
         A `matplotlib` `Figure` and `Axes` objects with the figure.
     """
-
+    if vmin_vmax is None:
+        vmin_vmax = (None, None)
     mesh = jnp.meshgrid(times, xdata)  # cartesian product
     if not spinn:
         # the trick is to use _plot2Dstatio

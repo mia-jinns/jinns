@@ -7,19 +7,23 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 import abc
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array
+from jaxtyping import Array, Float
 
-from jinns.data._DataGenerators import (
+from jinns.data._utils import (
     append_obs_batch,
     append_param_batch,
 )
 
 if TYPE_CHECKING:
-    from jinns.utils._types import *
+    from jinns.data._DataGeneratorParameter import DataGeneratorParameter
+    from jinns.data._DataGeneratorObservations import DataGeneratorObservations
+    from jinns.data._AbstractDataGenerator import AbstractDataGenerator
+    from jinns.parameters._params import Params
+    from jinns.loss._abstract_loss import AbstractLoss
 
 # Using eqx Module for the DataClass + Pytree inheritance
 # Abstract class and abstract/final pattern is used
@@ -40,8 +44,8 @@ class AbstractValidationModule(eqx.Module):
 
     @abc.abstractmethod
     def __call__(
-        self, params: Params
-    ) -> tuple["AbstractValidationModule", bool, Array, bool]:
+        self, params: Params[Array]
+    ) -> tuple[AbstractValidationModule, bool, Array, Params[Array]]:
         raise NotImplementedError
 
 
@@ -52,16 +56,12 @@ class ValidationLoss(AbstractValidationModule):
     for more complicated validation strategy.
     """
 
-    loss: AnyLoss = eqx.field(kw_only=True)  # NOTE that
-    # there used to be a deepcopy here which has been suppressed. 1) No need
-    # because loss are now eqx.Module (immutable) so no risk of in-place
-    # modification. 2) deepcopy is buggy with equinox, InitVar etc. (see issue
-    # #857 on equinox github)
-    validation_data: Union[AnyDataGenerator] = eqx.field(kw_only=True)
-    validation_param_data: Union[DataGeneratorParameter, None] = eqx.field(
+    loss: AbstractLoss = eqx.field(kw_only=True)
+    validation_data: AbstractDataGenerator = eqx.field(kw_only=True)
+    validation_param_data: DataGeneratorParameter = eqx.field(
         kw_only=True, default=None
     )
-    validation_obs_data: Union[DataGeneratorObservations, None] = eqx.field(
+    validation_obs_data: DataGeneratorObservations | None = eqx.field(
         kw_only=True, default=None
     )
     call_every: int = eqx.field(kw_only=True, default=250)  # concrete typing
@@ -69,7 +69,7 @@ class ValidationLoss(AbstractValidationModule):
         kw_only=True, default=True
     )  # globally control if early stopping happens
 
-    patience: Union[int] = eqx.field(kw_only=True, default=10)
+    patience: int = eqx.field(kw_only=True, default=10)
     best_val_loss: Array = eqx.field(
         converter=jnp.asarray, default_factory=lambda: jnp.array(jnp.inf), kw_only=True
     )
@@ -79,10 +79,11 @@ class ValidationLoss(AbstractValidationModule):
     )
 
     def __call__(
-        self, params: AnyParams
-    ) -> tuple["ValidationLoss", bool, float, AnyParams]:
+        self, params: Params[Array]
+    ) -> tuple[ValidationLoss, bool, Float[Array, " "], Params[Array]]:
         # do in-place mutation
 
+        # pylint / pyright complains below when using the self attributes see: https://github.com/patrick-kidger/equinox/issues/1013
         validation_data, val_batch = self.validation_data.get_batch()
         if self.validation_param_data is not None:
             validation_param_data, param_batch = self.validation_param_data.get_batch()
