@@ -1,7 +1,8 @@
 # Changelog
 
-* on `main`
+* v1.4.0
 
+    - Introduce pyright and some major code improvement and refactoring in the back end [!72](https://gitlab.com/mia_jinns/jinns/-/merge_requests/72). Small breaking changes could be expected for more advanced `jinns` codes.
     - Delete `SystemLossODE` and `SystemLossPDE` and associated classes [!71](https://gitlab.com/mia_jinns/jinns/-/merge_requests/71)
     - Refactor initial conditions [!69](https://gitlab.com/mia_jinns/jinns/-/merge_requests/69)
     - Minor code corrections
