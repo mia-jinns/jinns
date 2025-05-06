@@ -53,3 +53,7 @@ include = ["jinns"]
 exclude = ["jinns/experimental"]
 pythonVersion = "3.11"
 typeCheckingMode = "basic"
+
+[tool.ruff]
+[tool.ruff.lint]
+ignore = ["F722", "E741", "E731"]
