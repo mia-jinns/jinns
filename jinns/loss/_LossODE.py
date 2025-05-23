@@ -7,7 +7,7 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 from dataclasses import InitVar
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, TypedDict, Callable
 from types import EllipsisType
 import abc
 import warnings
@@ -26,7 +26,7 @@ from jinns.parameters._params import (
 )
 from jinns.parameters._derivative_keys import _set_derivatives, DerivativeKeysODE
 from jinns.loss._loss_weights import LossWeightsODE
-from jinns.loss._abstract_loss import AbstractLoss
+from jinns.loss._abstract_loss import AbstractLoss, ODEComponents
 
 if TYPE_CHECKING:
     # imports only used in type hints
@@ -204,21 +204,24 @@ class LossODE(_LossODEAbstract):
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
-    def evaluate(
+    def evaluate_by_terms(
         self, params: Params[Array], batch: ODEBatch
-    ) -> tuple[Float[Array, " "], LossDictODE]:
+    ) -> tuple[ODEComponents[Float[Array, " "]], ODEComponents[Float[Array, " "]]]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 
+        We retrieve two PyTrees with loss values and gradients for each term
 
         Parameters
         ---------
         params
             Parameters at which the loss is evaluated
         batch
-            Composed of a batch of time points
-            at which to evaluate the differential operator. An optional additional batch of parameters (eg. for metamodeling) and an optional additional batch of observed inputs/outputs/parameters can
-            be supplied.
+            Composed of a batch of points in the
+            domain, a batch of points in the domain
+            border and an optional additional batch of parameters (eg. for
+            metamodeling) and an optional additional batch of observed
+            inputs/outputs/parameters
         """
         temporal_batch = batch.temporal_batch
 
@@ -233,16 +236,15 @@ class LossODE(_LossODEAbstract):
 
         ## dynamic part
         if self.dynamic_loss is not None:
-            mse_dyn_loss = dynamic_loss_apply(
+            dyn_loss_fun = lambda p: dynamic_loss_apply(
                 self.dynamic_loss.evaluate,
                 self.u,
                 temporal_batch,
-                _set_derivatives(params, self.derivative_keys.dyn_loss),  # type: ignore
+                p,
                 self.vmap_in_axes + vmap_in_axes_params,
-                self.loss_weights.dyn_loss,  # type: ignore
             )
         else:
-            mse_dyn_loss = jnp.array(0.0)
+            dyn_loss_fun = lambda _: 0.0
 
         # initial condition
         if self.initial_condition is not None:
@@ -255,49 +257,75 @@ class LossODE(_LossODEAbstract):
                 v_u = vmap(self.u, (None,) + vmap_in_axes_params)
             t0, u0 = self.initial_condition
             u0 = jnp.array(u0)
-            mse_initial_condition = jnp.mean(
-                self.loss_weights.initial_condition  # type: ignore
-                * jnp.sum(
-                    (
-                        v_u(
-                            t0,
-                            _set_derivatives(
-                                params,
-                                self.derivative_keys.initial_condition,  # type: ignore
-                            ),
-                        )
-                        - u0
-                    )
-                    ** 2,
+            initial_condition_fun = lambda p: jnp.mean(
+                jnp.sum(
+                    (v_u(t0, p) - u0) ** 2,
                     axis=-1,
                 )
             )
         else:
-            mse_initial_condition = jnp.array(0.0)
+            initial_condition_fun = lambda _: 0.0
 
         if batch.obs_batch_dict is not None:
             # update params with the batches of observed params
-            params = _update_eq_params_dict(params, batch.obs_batch_dict["eq_params"])
+            params_obs = _update_eq_params_dict(
+                params, batch.obs_batch_dict["eq_params"]
+            )
 
             # MSE loss wrt to an observed batch
-            mse_observation_loss = observations_loss_apply(
+            obs_loss_fun = lambda po: observations_loss_apply(
                 self.u,
                 batch.obs_batch_dict["pinn_in"],
-                _set_derivatives(params, self.derivative_keys.observations),  # type: ignore
+                po,
                 self.vmap_in_axes + vmap_in_axes_params,
                 batch.obs_batch_dict["val"],
-                self.loss_weights.observations,  # type: ignore
                 self.obs_slice,
             )
         else:
-            mse_observation_loss = jnp.array(0.0)
+            params_obs = None
+            obs_loss_fun = lambda _: 0.0
 
-        # total loss
-        total_loss = mse_dyn_loss + mse_initial_condition + mse_observation_loss
-        return total_loss, (
-            {
-                "dyn_loss": mse_dyn_loss,
-                "initial_condition": mse_initial_condition,
-                "observations": mse_observation_loss,
-            }
+        # get the unweighted mses for each loss term as well as the gradients
+        all_funs: ODEComponents[Callable] = ODEComponents(
+            dyn_loss_fun, initial_condition_fun, obs_loss_fun
         )
+        all_params: ODEComponents[Params[Array] | None] = ODEComponents(
+            params, params, params_obs
+        )
+        mses, grads = jax.tree.map(
+            lambda fun, params: self.get_gradients(fun, params),
+            all_funs,
+            jax.tree.map(
+                lambda p, dk: _set_derivatives(p, dk),
+                all_params,
+                self.derivative_keys,
+                is_leaf=lambda x: isinstance(x, Params),
+            ),
+        )
+
+        return mses, grads
+
+    def evaluate(
+        self, params: Params[Array], batch: ODEBatch
+    ) -> tuple[Float[Array, " "], ODEComponents[Float[Array, " "]]]:
+        """
+        Evaluate the loss function at a batch of points for given parameters.
+
+        We retrieve the total value itself and a PyTree with loss values for each term
+
+        Parameters
+        ---------
+        params
+            Parameters at which the loss is evaluated
+        batch
+            Composed of a batch of points in the
+            domain, a batch of points in the domain
+            border and an optional additional batch of parameters (eg. for
+            metamodeling) and an optional additional batch of observed
+            inputs/outputs/parameters
+        """
+        loss_terms, _ = self.evaluate_by_terms(params, batch)
+
+        loss_val = self.ponderate_and_sum(loss_terms)
+
+        return loss_val, loss_terms
