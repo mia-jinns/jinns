@@ -1,41 +1,17 @@
+from __future__ import annotations
+
 import abc
-from typing import TypeVar, Generic, TYPE_CHECKING
+from typing import TYPE_CHECKING
 from operator import add
 from jaxtyping import Array
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+from jinns.loss._loss_weights import AbstractLossWeights
 
 if TYPE_CHECKING:
     from jinns.parameters._params import Params
-    from jinns.loss._loss_weights import AbstractLossWeights
     from jinns.utils._types import AnyLossComponents, AnyBatch
-
-T = TypeVar("T")
-
-
-class ODEComponents(eqx.Module, Generic[T]):
-    """
-    Provides a template for ODE components with generic types.
-    One can inherit to specialize and add methods and attributes
-    We do not enforce keyword only to avoid being to verbose (this then can
-    work like a tuple)
-    """
-
-    dyn_loss: T
-    initial_condition: T
-    observations: T
-
-
-class PDEStatioComponents(eqx.Module, Generic[T]):
-    dyn_loss: T
-    norm_loss: T
-    boundary_loss: T
-    observations: T
-
-
-class PDENonStatioComponents(PDEStatioComponents[T]):
-    initial_condition: T
 
 
 class AbstractLoss(eqx.Module):
