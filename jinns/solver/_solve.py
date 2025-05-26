@@ -73,6 +73,7 @@ def solve(
     AbstractLoss,
     optax.OptState,
     Params[Array | None],
+    PyTree,
     Float[Array, " n_iter"] | None,
     Params[Array],
 ]:
@@ -233,14 +234,28 @@ def solve(
         # being a complex data structure
     )
 
-    # initialize the dict for stored loss values
+    # initialize the PyTree for stored loss values
     stored_loss_terms = jax.tree_util.tree_map(
         lambda _: jnp.zeros((n_iter)), loss_terms
     )
 
-    # initialize the dict for stored loss weights values
-    stored_weights_terms = jax.tree_util.tree_map(
-        lambda _: jnp.zeros((n_iter)), loss_terms
+    # initialize the PyTree for stored loss weights values
+    stored_weights_terms = eqx.tree_at(
+        lambda pt: jax.tree.leaves(
+            pt, is_leaf=lambda x: x is not None and eqx.is_inexact_array(x)
+        ),
+        loss.loss_weights,
+        tuple(
+            jnp.zeros((n_iter))
+            for n in range(
+                len(
+                    jax.tree.leaves(
+                        loss.loss_weights,
+                        is_leaf=lambda x: x is not None and eqx.is_inexact_array(x),
+                    )
+                )
+            )
+        ),
     )
 
     train_data = DataGeneratorContainer(
@@ -305,6 +320,7 @@ def solve(
 
         # Compute individual losses and individual gradients
         loss_terms, grad_terms = loss.evaluate_by_terms(optimization.params, batch)
+        jax.debug.print("{x}", x=(loss_terms.dyn_loss, grad_terms))
 
         # Update weights if an update fun has been given
         assert loss.loss_weights is not None
@@ -322,10 +338,10 @@ def solve(
             )
 
         # total grad
-        grads = loss.ponderate_and_sum(grad_terms)
+        grads = loss.ponderate_and_sum_gradient(grad_terms)
 
         # total loss
-        train_loss_value = loss.ponderate_and_sum(loss_terms)
+        train_loss_value = loss.ponderate_and_sum_loss(loss_terms)
 
         # gradient step
         (
@@ -406,8 +422,7 @@ def solve(
             i,
             params,
             stored_objects.stored_params,
-            loss_container.stored_loss_terms,
-            loss_container.train_loss_values,
+            loss_container,
             train_loss_value,
             loss_terms,
             loss.loss_weights,
@@ -509,6 +524,7 @@ def solve(
         loss,  # return the Loss if needed (no-inplace modif)
         optimization.opt_state,
         stored_objects.stored_params,
+        loss_container.stored_weights_terms,
         validation_crit_values if validation is not None else None,
         validation_parameters,
     )
@@ -603,8 +619,20 @@ def _store_loss_and_params(
 
     stored_weights_terms = jax.tree_util.tree_map(
         lambda stored_term, weight_term: stored_term.at[i].set(weight_term),
+        jax.tree.leaves(
+            loss_container.stored_weights_terms,
+            is_leaf=lambda x: x is not None and eqx.is_inexact_array(x),
+        ),
+        jax.tree.leaves(
+            weight_terms, is_leaf=lambda x: x is not None and eqx.is_inexact_array(x)
+        ),
+    )
+    stored_weights_terms = eqx.tree_at(
+        lambda pt: jax.tree.leaves(
+            pt, is_leaf=lambda x: x is not None and eqx.is_inexact_array(x)
+        ),
         loss_container.stored_weights_terms,
-        loss_terms,
+        stored_weights_terms,
     )
 
     train_loss_values = loss_container.train_loss_values.at[i].set(train_loss_val)

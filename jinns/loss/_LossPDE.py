@@ -32,7 +32,7 @@ from jinns.parameters._derivative_keys import (
     DerivativeKeysPDENonStatio,
 )
 from jinns.loss._abstract_loss import AbstractLoss
-from jinns.loss._loss_components import PDEStatioComponents
+from jinns.loss._loss_components import PDEStatioComponents, PDENonStatioComponents
 from jinns.loss._loss_weights import (
     LossWeightsPDEStatio,
     LossWeightsPDENonStatio,
@@ -468,23 +468,23 @@ class LossPDEStatio(_LossPDEAbstract):
                 self.dynamic_loss.evaluate,
                 self.u,
                 self._get_dynamic_loss_batch(batch),
-                p,
+                _set_derivatives(p, self.derivative_keys.dyn_loss),
                 self.vmap_in_axes + vmap_in_axes_params,
             )
         else:
-            dyn_loss_fun = lambda _: None
+            dyn_loss_fun = None
 
         # normalization part
         if self.norm_samples is not None:
             norm_loss_fun = lambda p: normalization_loss_apply(
                 self.u,
                 self._get_normalization_loss_batch(batch),
-                p,
+                _set_derivatives(p, self.derivative_keys.norm_loss),
                 vmap_in_axes_params,
                 self.norm_weights,  # type: ignore -> can't get the __post_init__ narrowing here
             )
         else:
-            norm_loss_fun = lambda _: 0.0
+            norm_loss_fun = None
 
         # boundary part
         if (
@@ -495,13 +495,13 @@ class LossPDEStatio(_LossPDEAbstract):
             boundary_loss_fun = lambda p: boundary_condition_apply(
                 self.u,
                 batch,
-                p,
+                _set_derivatives(p, self.derivative_keys.boundary_loss),
                 self.omega_boundary_fun,
                 self.omega_boundary_condition,
                 self.omega_boundary_dim,
             )
         else:
-            boundary_loss_fun = lambda _: 0.0
+            boundary_loss_fun = None
 
         # Observation mse
         if batch.obs_batch_dict is not None:
@@ -513,31 +513,35 @@ class LossPDEStatio(_LossPDEAbstract):
             obs_loss_fun = lambda po: observations_loss_apply(
                 self.u,
                 self._get_observations_loss_batch(batch),
-                po,
+                _set_derivatives(po, self.derivative_keys.observations),
                 self.vmap_in_axes + vmap_in_axes_params,
                 batch.obs_batch_dict["val"],
                 self.obs_slice,
             )
         else:
             params_obs = None
-            obs_loss_fun = lambda _: 0.0
+            obs_loss_fun = None
 
         # get the unweighted mses for each loss term as well as the gradients
-        all_funs: PDEStatioComponents[Callable] = PDEStatioComponents(
-            dyn_loss_fun, norm_loss_fun, boundary_loss_fun, obs_loss_fun
+        all_funs: PDEStatioComponents[Callable[[Params[Array]], Array] | None] = (
+            PDEStatioComponents(
+                dyn_loss_fun, norm_loss_fun, boundary_loss_fun, obs_loss_fun
+            )
         )
         all_params: PDEStatioComponents[Params[Array] | None] = PDEStatioComponents(
             params, params, params, params_obs
         )
-        mses, grads = jax.tree.map(
+        mses_grads = jax.tree.map(
             lambda fun, params: self.get_gradients(fun, params),
             all_funs,
-            jax.tree.map(
-                lambda p, dk: _set_derivatives(p, dk),
-                all_params,
-                self.derivative_keys,
-                is_leaf=lambda x: isinstance(x, Params),
-            ),
+            all_params,
+            is_leaf=lambda x: x is None,
+        )
+        mses = jax.tree.map(
+            lambda leaf: leaf[0], mses_grads, is_leaf=lambda x: isinstance(x, tuple)
+        )
+        grads = jax.tree.map(
+            lambda leaf: leaf[1], mses_grads, is_leaf=lambda x: isinstance(x, tuple)
         )
 
         return mses, grads
@@ -563,7 +567,7 @@ class LossPDEStatio(_LossPDEAbstract):
         """
         loss_terms, _ = self.evaluate_by_terms(params, batch)
 
-        loss_val = self.ponderate_and_sum(loss_terms)
+        loss_val = self.ponderate_and_sum_loss(loss_terms)
 
         return loss_val, loss_terms
 
@@ -730,22 +734,23 @@ class LossPDENonStatio(LossPDEStatio):
     def __call__(self, *args, **kwargs):
         return self.evaluate(*args, **kwargs)
 
-    def evaluate(
+    def evaluate_by_terms(
         self, params: Params[Array], batch: PDENonStatioBatch
-    ) -> tuple[Float[Array, " "], LossDictPDENonStatio]:
+    ) -> tuple[PDENonStatioComponents[Array], PDENonStatioComponents[Array]]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 
+        We retrieve two PyTrees with loss values and gradients for each term
 
         Parameters
         ---------
         params
             Parameters at which the loss is evaluated
         batch
-            Composed of a batch of points in
-            the domain, a batch of points in the domain
-            border, a batch of time points and an optional additional batch
-            of parameters (eg. for metamodeling) and an optional additional batch of observed
+            Composed of a batch of points in the
+            domain, a batch of points in the domain
+            border and an optional additional batch of parameters (eg. for
+            metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
         """
         omega_batch = batch.initial_batch
@@ -762,27 +767,62 @@ class LossPDENonStatio(LossPDEStatio):
 
         # For mse_dyn_loss, mse_norm_loss, mse_boundary_loss,
         # mse_observation_loss we use the evaluate from parent class
-        partial_mse, partial_mse_terms = super().evaluate(params, batch)  # type: ignore
+        # As well as for their gradients
+        partial_mses, partial_grads = super().evaluate_by_terms(params, batch)  # type: ignore
         # ignore because batch is not PDEStatioBatch. We could use typing.cast though
 
         # initial condition
         if self.initial_condition_fun is not None:
-            mse_initial_condition = initial_condition_apply(
+            mse_initial_condition_fun = lambda p: initial_condition_apply(
                 self.u,
                 omega_batch,
-                _set_derivatives(params, self.derivative_keys.initial_condition),  # type: ignore
+                _set_derivatives(p, self.derivative_keys.initial_condition),  # type: ignore
                 (0,) + vmap_in_axes_params,
-                self.initial_condition_fun,
+                self.initial_condition_fun,  # type: ignore
                 self.t0,  # type: ignore can't get the narrowing in __post_init__
-                self.loss_weights.initial_condition,  # type: ignore
+            )
+            mse_initial_condition, grad_initial_condition = self.get_gradients(
+                mse_initial_condition_fun, params
             )
         else:
-            mse_initial_condition = jnp.array(0.0)
+            mse_initial_condition = None
+            grad_initial_condition = None
 
-        # total loss
-        total_loss = partial_mse + mse_initial_condition
+        mses = PDENonStatioComponents(
+            partial_mses.dyn_loss,
+            partial_mses.norm_loss,
+            partial_mses.boundary_loss,
+            partial_mses.observations,
+            mse_initial_condition,
+        )
 
-        return total_loss, {
-            **partial_mse_terms,
-            "initial_condition": mse_initial_condition,
-        }
+        grads = PDENonStatioComponents(
+            partial_grads.dyn_loss,
+            partial_grads.norm_loss,
+            partial_grads.boundary_loss,
+            partial_grads.observations,
+            grad_initial_condition,
+        )
+
+        return mses, grads
+
+    def evaluate(
+        self, params: Params[Array], batch: PDENonStatioBatch
+    ) -> tuple[Float[Array, " "], PDENonStatioComponents[Float[Array, " "]]]:
+        """
+        Evaluate the loss function at a batch of points for given parameters.
+        We retrieve the total value itself and a PyTree with loss values for each term
+
+
+        Parameters
+        ---------
+        params
+            Parameters at which the loss is evaluated
+        batch
+            Composed of a batch of points in
+            the domain, a batch of points in the domain
+            border, a batch of time points and an optional additional batch
+            of parameters (eg. for metamodeling) and an optional additional batch of observed
+            inputs/outputs/parameters
+        """
+        return super().evaluate(params, batch)  # type: ignore

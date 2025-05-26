@@ -13,6 +13,7 @@ from ._loss_weights import (
     LossWeightsODE,
     LossWeightsPDENonStatio,
     LossWeightsPDEStatio,
+    soft_adapt,
 )
 
 from ._operators import (
@@ -47,4 +48,5 @@ __all__ = [
     "laplacian_rev",
     "vectorial_laplacian_fwd",
     "vectorial_laplacian_rev",
+    "soft_adapt",
 ]

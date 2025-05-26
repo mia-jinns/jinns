@@ -241,11 +241,11 @@ class LossODE(_LossODEAbstract):
                 self.dynamic_loss.evaluate,
                 self.u,
                 temporal_batch,
-                p,
+                _set_derivatives(p, self.derivative_keys.dyn_loss),
                 self.vmap_in_axes + vmap_in_axes_params,
             )
         else:
-            dyn_loss_fun = lambda _: 0.0
+            dyn_loss_fun = None
 
         # initial condition
         if self.initial_condition is not None:
@@ -260,12 +260,19 @@ class LossODE(_LossODEAbstract):
             u0 = jnp.array(u0)
             initial_condition_fun = lambda p: jnp.mean(
                 jnp.sum(
-                    (v_u(t0, p) - u0) ** 2,
+                    (
+                        v_u(
+                            t0,
+                            _set_derivatives(p, self.derivative_keys.initial_condition),
+                        )
+                        - u0
+                    )
+                    ** 2,
                     axis=-1,
                 )
             )
         else:
-            initial_condition_fun = lambda _: 0.0
+            initial_condition_fun = None
 
         if batch.obs_batch_dict is not None:
             # update params with the batches of observed params
@@ -277,31 +284,34 @@ class LossODE(_LossODEAbstract):
             obs_loss_fun = lambda po: observations_loss_apply(
                 self.u,
                 batch.obs_batch_dict["pinn_in"],
-                po,
+                _set_derivatives(po, self.derivative_keys.observations),
                 self.vmap_in_axes + vmap_in_axes_params,
                 batch.obs_batch_dict["val"],
                 self.obs_slice,
             )
         else:
             params_obs = None
-            obs_loss_fun = lambda _: 0.0
+            obs_loss_fun = None
 
         # get the unweighted mses for each loss term as well as the gradients
-        all_funs: ODEComponents[Callable] = ODEComponents(
-            dyn_loss_fun, initial_condition_fun, obs_loss_fun
+        all_funs: ODEComponents[Callable[[Params[Array]], Array] | None] = (
+            ODEComponents(dyn_loss_fun, initial_condition_fun, obs_loss_fun)
         )
         all_params: ODEComponents[Params[Array] | None] = ODEComponents(
             params, params, params_obs
         )
-        mses, grads = jax.tree.map(
+        mses_grads = jax.tree.map(
             lambda fun, params: self.get_gradients(fun, params),
             all_funs,
-            jax.tree.map(
-                lambda p, dk: _set_derivatives(p, dk),
-                all_params,
-                self.derivative_keys,
-                is_leaf=lambda x: isinstance(x, Params),
-            ),
+            all_params,
+            is_leaf=lambda x: x is None,
+        )
+
+        mses = jax.tree.map(
+            lambda leaf: leaf[0], mses_grads, is_leaf=lambda x: isinstance(x, tuple)
+        )
+        grads = jax.tree.map(
+            lambda leaf: leaf[1], mses_grads, is_leaf=lambda x: isinstance(x, tuple)
         )
 
         return mses, grads
@@ -327,6 +337,6 @@ class LossODE(_LossODEAbstract):
         """
         loss_terms, _ = self.evaluate_by_terms(params, batch)
 
-        loss_val = self.ponderate_and_sum(loss_terms)
+        loss_val = self.ponderate_and_sum_loss(loss_terms)
 
         return loss_val, loss_terms
