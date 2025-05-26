@@ -107,7 +107,8 @@ nav:
           - Heat equation 2D and estimation of the diffusion coefficient: 'Notebooks/PDE/2D_Heat_inverse_problem.ipynb'
           - Poisson in 2D: 'Notebooks/PDE/2D_Poisson_inverse_problem.ipynb'
       - Meta-modeling:
-        # - ODE:
+        - ODE:
+          - Mechanistic-statistical modeling in Verhulst model: 'Notebooks/ODE/MS_model_Verhulst.ipynb'
         - PDE:
           - Navier-Stokes in pipe flow: 'Notebooks/PDE/2D_Navier_Stokes_PipeFlow_Metamodel_hyperpinn.ipynb'
           - Fisher-KPP: 'Notebooks/PDE/Reaction_Diffusion_2D_homogeneous_metamodel_hyperpinn_diffrax.ipynb'
