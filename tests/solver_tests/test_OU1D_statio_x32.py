@@ -5,7 +5,6 @@ import jax.numpy as jnp
 from jax import random
 import equinox as eqx
 import optax
-from jax.scipy.stats import multivariate_normal
 import jinns
 
 
@@ -77,16 +76,13 @@ def train_OU_init():
     )
 
     class OUStatio1DLoss(jinns.loss.PDEStatio):
-
         def equation(self, x, u, params):
             u_ = lambda x: u(x, params)
             return jax.grad(lambda x: ((x - params.eq_params["mu"]) * u_(x)).squeeze())(
                 x
             ) + params.eq_params["gamma"] ** 2 / 2 * jax.grad(
                 lambda x: jax.grad(lambda x: u_(x).squeeze())(x).squeeze()
-            )(
-                x
-            )
+            )(x)
 
     OU_statio_1D_loss = OUStatio1DLoss()
 

@@ -3,7 +3,6 @@ import pytest
 import jax
 import jax.numpy as jnp
 from jax import random
-from jax.scipy.stats import norm
 import equinox as eqx
 import optax
 import jinns

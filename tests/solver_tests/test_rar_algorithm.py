@@ -105,7 +105,6 @@ params = init_params
 
 
 def get_datagenerator_rar(start_iter, update_every):
-
     rar_parameters = {
         "start_iter": start_iter,  # the gradient step at which RAR algo starts (enables a burn in period)
         "update_every": update_every,  # nb of gradient steps between two RAR procedures

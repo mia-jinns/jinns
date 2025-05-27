@@ -62,7 +62,6 @@ def train_init():
     )
 
     class LinearFODE(ODE):
-
         def equation(self, t, u, params):
             # in log-space
             u_ = lambda t, p: u(t, p)[0]

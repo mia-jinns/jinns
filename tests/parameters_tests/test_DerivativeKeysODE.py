@@ -67,7 +67,6 @@ def create_loss(tmin, Tmax, u, derivative_keys, init_params):
     u0 = 1.848
 
     class LinearFODE(ODE):
-
         def equation(self, t, u, params):
             # in log-space
             u_ = lambda t, p: u(t, p)[0]
