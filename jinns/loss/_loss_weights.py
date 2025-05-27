@@ -8,7 +8,7 @@ from typing import Callable, Self, TypeVar, Generic
 from jaxtyping import Array
 import equinox as eqx
 
-from jinns.loss._loss_components import (
+from jinns.loss._abstract_loss import (
     ODEComponents,
     PDEStatioComponents,
     PDENonStatioComponents,

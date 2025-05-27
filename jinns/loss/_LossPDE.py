@@ -31,18 +31,17 @@ from jinns.parameters._derivative_keys import (
     DerivativeKeysPDEStatio,
     DerivativeKeysPDENonStatio,
 )
-from jinns.loss._abstract_loss import AbstractLoss
-from jinns.loss._loss_components import PDEStatioComponents
+from jinns.loss._abstract_loss import AbstractLoss, PDEStatioComponents
 from jinns.loss._loss_weights import (
     LossWeightsPDEStatio,
     LossWeightsPDENonStatio,
 )
 from jinns.data._Batchs import PDEStatioBatch, PDENonStatioBatch
-from jinns.parameters._params import Params
 
 
 if TYPE_CHECKING:
     # imports for type hints only
+    from jinns.parameters._params import Params
     from jinns.nn._abstract_pinn import AbstractPINN
     from jinns.loss import PDENonStatio, PDEStatio
     from jinns.utils._types import BoundaryConditionFun

@@ -26,12 +26,11 @@ from jinns.parameters._params import (
 )
 from jinns.parameters._derivative_keys import _set_derivatives, DerivativeKeysODE
 from jinns.loss._loss_weights import LossWeightsODE
-from jinns.loss._abstract_loss import AbstractLoss
-from jinns.loss._loss_components import ODEComponents
-from jinns.parameters._params import Params
+from jinns.loss._abstract_loss import AbstractLoss, ODEComponents
 
 if TYPE_CHECKING:
     # imports only used in type hints
+    from jinns.parameters._params import Params
     from jinns.data._Batchs import ODEBatch
     from jinns.nn._abstract_pinn import AbstractPINN
     from jinns.loss import ODE
