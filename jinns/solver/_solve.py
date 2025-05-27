@@ -68,7 +68,7 @@ def solve(
 ) -> tuple[
     Params[Array],
     Float[Array, " n_iter"],
-    dict[str, Float[Array, " n_iter"]],
+    PyTree,
     AbstractDataGenerator,
     AbstractLoss,
     optax.OptState,
@@ -153,8 +153,8 @@ def solve(
     total_loss_values
         An array of the total loss term along the gradient steps
     stored_loss_terms
-        A dictionary. At each key an array of the values of a given loss
-        term is stored
+        A PyTree with attributes being arrays of all the values for each loss
+        term
     data
         The input data object
     loss
@@ -164,6 +164,9 @@ def solve(
     stored_params
         A Params objects with the stored values of the desired parameters (as
         signified in tracked_params argument)
+    stored_weights_terms
+        A PyTree with attributes being arrays of all the values for each loss
+        weight
     validation_crit_values
         An array containing the validation criterion values of the training
     best_val_params
