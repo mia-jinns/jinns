@@ -147,7 +147,7 @@ def test_data_proba_shape_before_solve():
 
 def control_shape_after_solve_with_rar(start_iter, update_every):
     train_data, rar_parameters = get_datagenerator_rar(start_iter, update_every)
-    _, _, _, train_data, _, _, _, _, _ = jinns.solve(
+    _, _, _, train_data, _, _, _, _, _, _ = jinns.solve(
         init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
     )
     assert (train_data.p != 0).sum() == train_data.n_start + jnp.round(

@@ -132,6 +132,7 @@ def test_validation_module():
         _,
         _,
         _,
+        _,
         validation_loss_values,
         best_params_spinn,
     ) = jinns.solve(

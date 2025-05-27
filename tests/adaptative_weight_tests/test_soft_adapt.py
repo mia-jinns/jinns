@@ -17,7 +17,7 @@ def test_weight_update_value():
         dyn_loss=jnp.array(0.3),
         norm_loss=jnp.array(0.6),
         boundary_loss=jnp.array(1.2),
-        update_fun=jinns.loss.soft_adapt,
+        update_method="soft_adapt",
     )
 
     loss_terms = PDEStatioComponents(
@@ -40,9 +40,9 @@ def test_weight_update_value():
         observations=None,
     )
 
-    if loss_weights.update_fun is not None:
-        loss_weights_new = loss_weights.update_fun(
-            loss_weights, loss_terms, stored_loss_terms, grad_terms
+    if loss_weights.update is not None:
+        loss_weights_new = loss_weights.update(
+            loss_terms, stored_loss_terms, grad_terms
         )
 
     assert jnp.allclose(loss_weights_new.dyn_loss, 0.333, atol=1e-3)
