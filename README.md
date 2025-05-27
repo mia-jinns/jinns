@@ -84,7 +84,7 @@ pre-commit install
 
 Don't hesitate to contribute and get your name on the list here !
 
-**List of contributors:** Hugo Gangloff, Nicolas Jouvin, Lucia Clarotto, Inass Soukarieh
+**List of contributors:** Hugo Gangloff, Nicolas Jouvin, Lucia Clarotto, Inass Soukarieh, Mohamed Badi
 
 # Cite us
 
