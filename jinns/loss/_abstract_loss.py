@@ -78,7 +78,7 @@ class AbstractLoss(eqx.Module):
             lambda w, p: w * p, weights_pytree, grads, is_leaf=eqx.is_inexact_array
         )  # Now we can multiply
         return jax.tree.map(
-            lambda *grads: jnp.sum(jnp.array(grads)),
+            lambda *grads: jnp.sum(jnp.array(grads), axis=0),
             *weighted_grads,
             is_leaf=eqx.is_inexact_array,
         )
