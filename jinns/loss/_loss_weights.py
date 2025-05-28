@@ -50,19 +50,72 @@ def soft_adapt(
     return jax.nn.softmax(jnp.array(ratio_leaves))
 
 
+def lr_annealing(
+    loss_weights: AbstractLossWeights[T],
+    grad_terms: T,
+    decay_factor: float = 0.9,  # 0.9 is the recommanded value from the article
+) -> Array:
+    r"""
+    Implementation of the Learning rate annealing
+    Algorithm 1 in the paper UNDERSTANDING AND MITIGATING GRADIENT PATHOLOGIES IN PHYSICS-INFORMED NEURAL NETWORKS
+
+    (a) Compute $\hat{\lambda}_i$ by
+    $$
+        \hat{\lambda}_i = \frac{\max_{\theta}\{|\nabla_\theta \mathcal{L}_r (\theta_n)|\}}{mean(|\nabla_\theta \mathcal{L}_i (\theta_n)|)}, \quad i=1,\dots, M,
+    $$
+
+    (b) Update the weights $\lambda_i$ using a moving average of the form
+    $$
+        \lambda_i = (1-\alpha) \lambda_{i-1} + \alpha \hat{\lambda}_i, \quad i=1, \dots, M.
+    $$
+
+    """
+    assert hasattr(grad_terms, "dyn_loss")
+    dyn_loss_grads = getattr(grad_terms, "dyn_loss")
+    data_fit_grads = [
+        getattr(grad_terms, att) if hasattr(grad_terms, att) else None
+        for att in ["norm_loss", "boundary_loss", "observations", "initial_condition"]
+    ]
+
+    dyn_loss_grads_leaves = jax.tree.leaves(
+        dyn_loss_grads,
+        is_leaf=lambda x: eqx.is_inexact_array(x),
+    )
+    max_dyn_loss_grads = jnp.max(jnp.absolute(jnp.array(dyn_loss_grads_leaves)))
+
+    mean_gradients = jax.tree.map(
+        lambda t: jnp.mean(jnp.absolute(jnp.array(jax.tree.leaves(t)))),
+        data_fit_grads,
+        is_leaf=lambda x: eqx.is_inexact_array(x),
+    )
+
+    lambda_hat = max_dyn_loss_grads / jnp.array(jax.tree.leaves(mean_gradients))
+    old_weights = jnp.array(
+        jax.tree.leaves(
+            loss_weights,
+            is_leaf=lambda x: eqx.is_inexact_array(x),
+        )
+    )
+
+    new_weigths = (1 - decay_factor) * old_weights[1:] + decay_factor * lambda_hat
+    return jnp.hstack([old_weights[0], new_weigths])
+
+
 class AbstractLossWeights(eqx.Module, Generic[T]):
     """
 
     (*) need eqx.is_inexact_array to avoid the update_method
     """
 
-    update_method: Literal["soft_adapt"] | None = eqx.field(
+    update_method: Literal["soft_adapt"] | Literal["lr_annealing"] | None = eqx.field(
         static=True, kw_only=True, default=None
     )
 
     def update(self: Self, loss_terms: T, stored_loss_terms: T, grad_terms: T) -> Self:
         if self.update_method == "soft_adapt":
             new_weights = soft_adapt(self, loss_terms, stored_loss_terms)
+        elif self.update_method == "lr_annealing":
+            new_weights = lr_annealing(self, grad_terms)
         else:
             raise ValueError("Update method for loss weights not implemented")
         return eqx.tree_at(
