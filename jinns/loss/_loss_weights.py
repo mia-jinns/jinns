@@ -53,7 +53,7 @@ def soft_adapt(
 def lr_annealing(
     loss_weights: AbstractLossWeights[T],
     grad_terms: T,
-    decay_factor: float = 0.9,  # 0.9 is the recommanded value from the article
+    decay_factor: float = 0.9,  # 0.9 is the recommended value from the article
 ) -> Array:
     r"""
     Implementation of the Learning rate annealing
@@ -79,21 +79,21 @@ def lr_annealing(
 
     dyn_loss_grads_leaves = jax.tree.leaves(
         dyn_loss_grads,
-        is_leaf=lambda x: eqx.is_inexact_array(x),
+        is_leaf=eqx.is_inexact_array,
     )
     max_dyn_loss_grads = jnp.max(jnp.absolute(jnp.array(dyn_loss_grads_leaves)))
 
     mean_gradients = jax.tree.map(
         lambda t: jnp.mean(jnp.absolute(jnp.array(jax.tree.leaves(t)))),
         data_fit_grads,
-        is_leaf=lambda x: eqx.is_inexact_array(x),
+        is_leaf=eqx.is_inexact_array,
     )
 
     lambda_hat = max_dyn_loss_grads / jnp.array(jax.tree.leaves(mean_gradients))
     old_weights = jnp.array(
         jax.tree.leaves(
             loss_weights,
-            is_leaf=lambda x: eqx.is_inexact_array(x),
+            is_leaf=eqx.is_inexact_array,
         )
     )
 
