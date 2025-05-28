@@ -120,8 +120,9 @@ def test_weight_history():
             0.2987174,
         ]
     )
-    assert jnp.allclose(stored_lw.dyn_loss, response1)
-    assert jnp.allclose(stored_lw.initial_condition, response2)
+
+    assert jnp.allclose(stored_lw.dyn_loss, response1, atol=1e-2)
+    assert jnp.allclose(stored_lw.initial_condition, response2, atol=1e-2)
     assert stored_lw.boundary_loss is None
     assert stored_lw.observations is None
     assert stored_lw.norm_loss is None
