@@ -332,6 +332,7 @@ def solve(
                 lambda pt: pt.loss_weights,
                 loss,
                 loss.loss_weights.update(  # type: ignore
+                    i,
                     loss_terms,
                     loss_container.stored_loss_terms,
                     grad_terms,

@@ -45,7 +45,7 @@ def test_lr_annealing_update():
 
     if loss_weights.update is not None:
         loss_weights_new = loss_weights.update(
-            loss_terms, stored_loss_terms, grad_terms
+            1, loss_terms, stored_loss_terms, grad_terms
         )
 
     assert jnp.allclose(loss_weights_new.dyn_loss, 1.0, atol=1e-3)

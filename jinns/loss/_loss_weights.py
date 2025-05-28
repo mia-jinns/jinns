@@ -21,6 +21,7 @@ T = TypeVar("T")
 
 def soft_adapt(
     loss_weights: AbstractLossWeights[T],
+    iteration_nb: int,
     loss_terms: T,
     stored_loss_terms: T,
 ) -> Array:
@@ -37,17 +38,29 @@ def soft_adapt(
     (*) no need since None are not treated as leaves by default and
     the only other leaves are the is_inexact_array we want
     """
-    # is_leaf test for None to avoid non used XDEComponents
-    ratio_pytree = jax.tree.map(
-        lambda lt, slt: lt / (slt[-1] + 1e-6) - jnp.max(lt / (slt[-1] + 1e-6)),
-        loss_terms,
-        stored_loss_terms,
-        # is_leaf=lambda x: eqx.is_inexact_array(x), (*)
+
+    def do_nothing(loss_weights, _, __):
+        return jnp.array(jax.tree.leaves(loss_weights, is_leaf=eqx.is_inexact_array))
+
+    def soft_adapt_(_, loss_terms, stored_loss_terms):
+        # is_leaf test for None to avoid non used XDEComponents
+        ratio_pytree = jax.tree.map(
+            lambda lt, slt: lt / (slt[-1] + 1e-6) - jnp.max(lt / (slt[-1] + 1e-6)),
+            loss_terms,
+            stored_loss_terms,
+            # is_leaf=lambda x: eqx.is_inexact_array(x), (*)
+        )
+        ratio_leaves = jax.tree.leaves(
+            ratio_pytree  # , is_leaf=eqx.is_inexact_array and x is not None (*)
+        )
+        return jax.nn.softmax(jnp.array(ratio_leaves))
+
+    return jax.lax.cond(
+        iteration_nb == 0,
+        lambda op: do_nothing(*op),
+        lambda op: soft_adapt_(*op),
+        (loss_weights, loss_terms, stored_loss_terms),
     )
-    ratio_leaves = jax.tree.leaves(
-        ratio_pytree  # , is_leaf=eqx.is_inexact_array and x is not None (*)
-    )
-    return jax.nn.softmax(jnp.array(ratio_leaves))
 
 
 def lr_annealing(
@@ -111,9 +124,15 @@ class AbstractLossWeights(eqx.Module, Generic[T]):
         static=True, kw_only=True, default=None
     )
 
-    def update(self: Self, loss_terms: T, stored_loss_terms: T, grad_terms: T) -> Self:
+    def update(
+        self: Self,
+        iteration_nb: int,
+        loss_terms: T,
+        stored_loss_terms: T,
+        grad_terms: T,
+    ) -> Self:
         if self.update_method == "soft_adapt":
-            new_weights = soft_adapt(self, loss_terms, stored_loss_terms)
+            new_weights = soft_adapt(self, iteration_nb, loss_terms, stored_loss_terms)
         elif self.update_method == "lr_annealing":
             new_weights = lr_annealing(self, grad_terms)
         else:
