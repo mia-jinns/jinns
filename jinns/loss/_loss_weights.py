@@ -40,16 +40,20 @@ def soft_adapt(
     """
 
     def do_nothing(loss_weights, _, __):
-        return jnp.array(jax.tree.leaves(loss_weights, is_leaf=eqx.is_inexact_array))
+        return jnp.array(
+            jax.tree.leaves(loss_weights, is_leaf=eqx.is_inexact_array), dtype=float
+        )
 
     def soft_adapt_(_, loss_terms, stored_loss_terms):
         # is_leaf test for None to avoid non used XDEComponents
         ratio_pytree = jax.tree.map(
-            lambda lt, slt: lt / (slt[-1] + 1e-6) - jnp.max(lt / (slt[-1] + 1e-6)),
+            lambda lt, slt: lt / (slt[iteration_nb - 1] + 1e-6),
             loss_terms,
             stored_loss_terms,
             # is_leaf=lambda x: eqx.is_inexact_array(x), (*)
         )
+        mu = jax.tree.reduce(jnp.maximum, ratio_pytree, initializer=jnp.array(-jnp.inf))
+        ratio_pytree = jax.tree.map(lambda r: r - mu, ratio_pytree)
         ratio_leaves = jax.tree.leaves(
             ratio_pytree  # , is_leaf=eqx.is_inexact_array and x is not None (*)
         )

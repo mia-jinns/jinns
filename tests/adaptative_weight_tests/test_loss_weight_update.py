@@ -17,7 +17,7 @@ def test_weight_history():
     0.5 values
     """
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
-        dyn_loss=jnp.array(0.3),
+        dyn_loss=jnp.array(1.0),
         initial_condition=jnp.array(1.0),
         update_method="soft_adapt",
     )
@@ -92,10 +92,34 @@ def test_weight_history():
             init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
         )
     )
-    response1 = jnp.full((10,), 0.5)
-    response1 = response1.at[0].set(0.3)
-    response2 = jnp.full((10,), 0.5)
-    response2 = response2.at[0].set(1.0)
+    response1 = jnp.array(
+        [
+            1.0,
+            0.8277719,
+            0.637744,
+            0.5815456,
+            0.55772996,
+            0.5572184,
+            0.5907892,
+            0.6587647,
+            0.7124741,
+            0.7012826,
+        ]
+    )
+    response2 = jnp.array(
+        [
+            1.0,
+            0.17222811,
+            0.362256,
+            0.41845444,
+            0.44227007,
+            0.4427816,
+            0.40921077,
+            0.3412353,
+            0.28752592,
+            0.2987174,
+        ]
+    )
     assert jnp.allclose(stored_lw.dyn_loss, response1)
     assert jnp.allclose(stored_lw.initial_condition, response2)
     assert stored_lw.boundary_loss is None
