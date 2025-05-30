@@ -36,7 +36,8 @@ def soft_adapt(
 
     Note all the commented is_leaf arguments:
     (*) no need since None are not treated as leaves by default and
-    the only other leaves are the is_inexact_array we want
+    the only other leaves are the is_inexact_array we want. Otherwise
+    is_leaf test for None to avoid non used XDEComponents
     """
 
     def do_nothing(loss_weights, _, __):
@@ -45,7 +46,6 @@ def soft_adapt(
         )
 
     def soft_adapt_(_, loss_terms, stored_loss_terms):
-        # is_leaf test for None to avoid non used XDEComponents
         ratio_pytree = jax.tree.map(
             lambda lt, slt: lt / (slt[iteration_nb - 1] + 1e-6),
             loss_terms,
