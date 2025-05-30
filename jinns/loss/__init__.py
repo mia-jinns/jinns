@@ -13,8 +13,8 @@ from ._loss_weights import (
     LossWeightsODE,
     LossWeightsPDENonStatio,
     LossWeightsPDEStatio,
-    soft_adapt,
 )
+from ._loss_weight_updates import soft_adapt, lr_annealing
 
 from ._operators import (
     divergence_fwd,
@@ -49,4 +49,5 @@ __all__ = [
     "vectorial_laplacian_fwd",
     "vectorial_laplacian_rev",
     "soft_adapt",
+    "lr_annealing",
 ]

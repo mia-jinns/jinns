@@ -324,19 +324,13 @@ def solve(
         # Compute individual losses and individual gradients
         loss_terms, grad_terms = loss.evaluate_by_terms(optimization.params, batch)
 
-        # Update weights if an update fun has been given
-        assert loss.loss_weights is not None
-        if loss.loss_weights.update_method is not None:
+        if loss.update_weight_method is not None:
             # avoid computations of tree_at if no updates
-            loss = eqx.tree_at(
-                lambda pt: pt.loss_weights,
-                loss,
-                loss.loss_weights.update(  # type: ignore
-                    i,
-                    loss_terms,
-                    loss_container.stored_loss_terms,
-                    grad_terms,
-                ),
+            loss = loss.update_weights(
+                i,
+                loss_terms,
+                loss_container.stored_loss_terms,
+                grad_terms,
             )
 
         # total grad

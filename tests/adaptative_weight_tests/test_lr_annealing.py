@@ -17,7 +17,6 @@ def test_lr_annealing_update():
         norm_loss=jnp.array(0.6),
         boundary_loss=jnp.array(1.2),
         initial_condition=jnp.array(0.5),
-        update_method="lr_annealing",
     )
 
     loss_terms = PDENonStatioComponents(
@@ -43,19 +42,26 @@ def test_lr_annealing_update():
         initial_condition=jnp.array(0.5),
     )
 
-    if loss_weights.update is not None:
-        loss_weights_new = loss_weights.update(
-            1, loss_terms, stored_loss_terms, grad_terms
-        )
+    loss = jinns.loss.LossPDENonStatio(
+        u=None,
+        dynamic_loss=None,
+        loss_weights=loss_weights,
+        update_weight_method="lr_annealing",
+        params=jinns.parameters.Params(eq_params={"a": jnp.array([0])}),
+    )
+    if loss.update_weight_method is not None:
+        loss_new = loss.update_weights(1, loss_terms, stored_loss_terms, grad_terms)
 
-    assert jnp.allclose(loss_weights_new.dyn_loss, 1.0, atol=1e-3)
+    assert jnp.allclose(loss_new.loss_weights.dyn_loss, 1.0, atol=1e-3)
     assert jnp.allclose(
-        loss_weights_new.norm_loss, 0.1 * (0.6) + 0.9 * (0.3 / 0.6), atol=1e-3
+        loss_new.loss_weights.norm_loss, 0.1 * (0.6) + 0.9 * (0.3 / 0.6), atol=1e-3
     )
     assert jnp.allclose(
-        loss_weights_new.boundary_loss, 0.1 * (1.2) + 0.9 * (0.3 / 1.2), atol=1e-3
+        loss_new.loss_weights.boundary_loss, 0.1 * (1.2) + 0.9 * (0.3 / 1.2), atol=1e-3
     )
     assert jnp.allclose(
-        loss_weights_new.initial_condition, 0.1 * (0.5) + 0.9 * (0.3 / 0.5), atol=1e-3
+        loss_new.loss_weights.initial_condition,
+        0.1 * (0.5) + 0.9 * (0.3 / 0.5),
+        atol=1e-3,
     )
-    assert loss_weights_new.observations is None
+    assert loss_new.loss_weights.observations is None

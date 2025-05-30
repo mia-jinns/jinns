@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import abc
-from typing import TYPE_CHECKING
-from jaxtyping import Array
+from typing import TYPE_CHECKING, Self, Literal
+from jaxtyping import Array, PyTree
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import optax
 from jinns.loss._loss_weights import AbstractLossWeights
 from jinns.parameters._params import Params
+from jinns.loss._loss_weight_updates import soft_adapt, lr_annealing
 
 if TYPE_CHECKING:
     from jinns.utils._types import AnyLossComponents, AnyBatch
@@ -21,6 +22,9 @@ class AbstractLoss(eqx.Module):
     """
 
     loss_weights = eqx.AbstractVar[AbstractLossWeights]
+    update_weight_method: Literal["soft_adapt", "lr_annealing"] | None = eqx.field(
+        kw_only=True, default=None, static=True
+    )
 
     @abc.abstractmethod
     def __call__(self, *_, **__) -> Array:
@@ -81,4 +85,30 @@ class AbstractLoss(eqx.Module):
             lambda *grads: jnp.sum(jnp.array(grads), axis=0),
             *weighted_grads,
             is_leaf=eqx.is_inexact_array,
+        )
+
+    def update_weights(
+        self: Self,
+        iteration_nb: int,
+        loss_terms: PyTree,
+        stored_loss_terms: PyTree,
+        grad_terms: PyTree,
+    ) -> Self:
+        """
+        Update the loss weights according to a predefined scheme
+        """
+        if self.update_weight_method == "soft_adapt":
+            new_weights = soft_adapt(
+                self.loss_weights, iteration_nb, loss_terms, stored_loss_terms
+            )
+        elif self.update_weight_method == "lr_annealing":
+            new_weights = lr_annealing(self.loss_weights, grad_terms)
+        else:
+            raise ValueError("update_weight_method for loss weights not implemented")
+
+        # Below we update the non None entry in the PyTree self.loss_weights
+        # we directly get the non None entries because None is not treated as a
+        # leaf
+        return eqx.tree_at(
+            lambda pt: jax.tree.leaves(pt.loss_weights), self, new_weights
         )

@@ -19,7 +19,6 @@ def test_weight_history():
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
         dyn_loss=jnp.array(1.0),
         initial_condition=jnp.array(1.0),
-        update_method="soft_adapt",
     )
 
     key = jax.random.PRNGKey(2)
@@ -80,6 +79,7 @@ def test_weight_history():
     loss = jinns.loss.LossPDENonStatio(
         u=u,
         loss_weights=loss_weights,
+        update_weight_method="soft_adapt",
         dynamic_loss=dummy_loss,
         initial_condition_fun=u0,
         params=init_params,

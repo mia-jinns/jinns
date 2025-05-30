@@ -73,7 +73,9 @@ class _LossPDEAbstract(AbstractLoss):
         The loss weights for the differents term : dynamic loss,
         initial condition (if LossWeightsPDENonStatio), boundary conditions if
         any, normalization loss if any and observations if any.
-        All fields are set to 1.0 by default.
+    update_weight_method : Literal['soft_adapt', 'lr_annealing'], default=None
+        Default is None meaning no update for loss weights. Otherwise a string
+        which indicates which update method to use for loss weights.
     derivative_keys : DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio, default=None
         Specify which field of `params` should be differentiated for each
         composant of the total loss. Particularily useful for inverse problems.
@@ -338,7 +340,9 @@ class LossPDEStatio(_LossPDEAbstract):
         The loss weights for the differents term : dynamic loss,
         boundary conditions if any, normalization loss if any and
         observations if any.
-        All fields are set to 1.0 by default.
+    update_weight_method : Literal['soft_adapt', 'lr_annealing'], default=None
+        Default is None meaning no update for loss weights. Otherwise a string
+        which indicates which update method to use for loss weights.
     derivative_keys : DerivativeKeysPDEStatio, default=None
         Specify which field of `params` should be differentiated for each
         composant of the total loss. Particularily useful for inverse problems.
@@ -607,7 +611,8 @@ class LossPDENonStatio(LossPDEStatio):
         The loss weights for the differents term : dynamic loss,
         boundary conditions if any, initial condition, normalization loss if any and
         observations if any.
-        All fields are set to 1.0 by default.
+    update_weight_method : Literal['soft_adapt', 'lr_annealing'], default=None
+        Default is None meaning no update for loss weights. Otherwise a string
     derivative_keys : DerivativeKeysPDENonStatio, default=None
         Specify which field of `params` should be differentiated for each
         composant of the total loss. Particularily useful for inverse problems.

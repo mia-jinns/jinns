@@ -49,8 +49,9 @@ class _LossODEAbstract(AbstractLoss):
 
     loss_weights : LossWeightsODE, default=None
         The loss weights for the differents term : dynamic loss,
-        initial condition and eventually observations if any. All fields are
-        set to 1.0 by default.
+        initial condition and eventually observations if any.
+    update_weight_method : Literal['soft_adapt', 'lr_annealing'], default=None
+        Default is None meaning no update for loss weights. Otherwise a string
     derivative_keys : DerivativeKeysODE, default=None
         Specify which field of `params` should be differentiated for each
         composant of the total loss. Particularily useful for inverse problems.
