@@ -37,9 +37,9 @@ def test_weight_history():
         key=subkey, eqx_list=eqx_list, eq_type="nonstatio_PDE"
     )
 
-    n = 2500
-    ni = 200
-    nb = 200
+    n = 1
+    ni = 1
+    nb = None
     dim = 1
     xmin = -1
     xmax = 1
@@ -60,6 +60,8 @@ def test_weight_history():
         tmax=tmax,
         method=method,
     )
+    train_data = eqx.tree_at(lambda pt: pt.domain, train_data, jnp.array([[0.0, 1.0]]))
+    train_data = eqx.tree_at(lambda pt: pt.initial, train_data, jnp.array([[1.0]]))
 
     nu = 1 / (100 * jnp.pi)
     init_params = jinns.parameters.Params(
@@ -71,9 +73,9 @@ def test_weight_history():
 
     class DummyLoss(jinns.loss.PDENonStatio):
         def equation(self, t_x, u, params):
-            return 0.6
+            return (0.6 - u(t_x, params).squeeze())[None]
 
-    dummy_loss = jinns.loss.BurgersEquation(Tmax=10)
+    dummy_loss = DummyLoss(Tmax=1)
 
     loss = jinns.loss.LossPDENonStatio(
         u=u,
@@ -92,37 +94,11 @@ def test_weight_history():
             init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
         )
     )
-    response1 = jnp.array(
-        [
-            1.0,
-            0.8277719,
-            0.637744,
-            0.5815456,
-            0.55772996,
-            0.5572184,
-            0.5907892,
-            0.6587647,
-            0.7124741,
-            0.7012826,
-        ]
-    )
-    response2 = jnp.array(
-        [
-            1.0,
-            0.17222811,
-            0.362256,
-            0.41845444,
-            0.44227007,
-            0.4427816,
-            0.40921077,
-            0.3412353,
-            0.28752592,
-            0.2987174,
-        ]
-    )
+    response1 = jnp.array([1.0] + [0.5] * 9)
+    response2 = jnp.array([1.0] + [0.5] * 9)
 
-    assert jnp.allclose(stored_lw.dyn_loss, response1, atol=1e-2)
-    assert jnp.allclose(stored_lw.initial_condition, response2, atol=1e-2)
+    assert jnp.allclose(stored_lw.dyn_loss, response1)
+    assert jnp.allclose(stored_lw.initial_condition, response2)
     assert stored_lw.boundary_loss is None
     assert stored_lw.observations is None
     assert stored_lw.norm_loss is None
