@@ -14,7 +14,10 @@ from ._loss_weights import (
     LossWeightsPDENonStatio,
     LossWeightsPDEStatio,
 )
-from ._loss_weight_updates import soft_adapt, lr_annealing
+from ._loss_weight_updates import (
+    soft_adapt,
+    lr_annealing,
+)
 
 from ._operators import (
     divergence_fwd,
