@@ -1,16 +1,16 @@
 """
-Formalize the loss weights data structure
+A collection of specific weight update schemes in jinns
 """
 
 from __future__ import annotations
-from typing import TypeVar
-
+from typing import TYPE_CHECKING, TypeVar
 from jaxtyping import Array
-import equinox as eqx
-import jax
 import jax.numpy as jnp
+import jax
+import equinox as eqx
 
-from jinns.loss._loss_weights import AbstractLossWeights
+if TYPE_CHECKING:
+    from jinns.loss._loss_weights import AbstractLossWeights
 
 T = TypeVar("T")
 
@@ -30,10 +30,8 @@ def soft_adapt(
     {\sum_{k=1}^{n_{loss}}\exp(\frac{L_k(i)}{L_k(i-1)+\epsilon}-\mu(i)}
     $$
 
-    Note all the commented is_leaf arguments:
-    (*) no need since None are not treated as leaves by default and
-    the only other leaves are the is_inexact_array we want. Otherwise
-    is_leaf test for None to avoid non used XDEComponents
+    Note that since None is not treated as a leaf by jax tree.util functions,
+    we naturally avoid None components from loss_terms, stored_loss_terms etc.!
     """
 
     def do_nothing(loss_weights, _, __):
@@ -46,13 +44,10 @@ def soft_adapt(
             lambda lt, slt: lt / (slt[iteration_nb - 1] + 1e-6),
             loss_terms,
             stored_loss_terms,
-            # is_leaf=lambda x: eqx.is_inexact_array(x), (*)
         )
         mu = jax.tree.reduce(jnp.maximum, ratio_pytree, initializer=jnp.array(-jnp.inf))
         ratio_pytree = jax.tree.map(lambda r: r - mu, ratio_pytree)
-        ratio_leaves = jax.tree.leaves(
-            ratio_pytree  # , is_leaf=eqx.is_inexact_array and x is not None (*)
-        )
+        ratio_leaves = jax.tree.leaves(ratio_pytree)
         return jax.nn.softmax(jnp.array(ratio_leaves))
 
     return jax.lax.cond(
@@ -82,6 +77,9 @@ def lr_annealing(
         \lambda_i = (1-\alpha) \lambda_{i-1} + \alpha \hat{\lambda}_i, \quad i=1, \dots, M.
     $$
 
+    Note that since None is not treated as a leaf by jax tree.util functions,
+    we naturally avoid None components from loss_terms, stored_loss_terms etc.!
+
     """
     assert hasattr(grad_terms, "dyn_loss")
     dyn_loss_grads = getattr(grad_terms, "dyn_loss")
@@ -99,14 +97,12 @@ def lr_annealing(
     mean_gradients = jax.tree.map(
         lambda t: jnp.mean(jnp.absolute(jnp.array(jax.tree.leaves(t)))),
         data_fit_grads,
-        is_leaf=eqx.is_inexact_array,
     )
 
     lambda_hat = max_dyn_loss_grads / jnp.array(jax.tree.leaves(mean_gradients))
     old_weights = jnp.array(
         jax.tree.leaves(
             loss_weights,
-            is_leaf=eqx.is_inexact_array,
         )
     )
 
