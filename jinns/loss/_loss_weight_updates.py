@@ -62,6 +62,7 @@ def lr_annealing(
     loss_weights: AbstractLossWeights[T],
     grad_terms: T,
     decay_factor: float = 0.9,  # 0.9 is the recommended value from the article
+    eps: float = 1e-6,
 ) -> Array:
     r"""
     Implementation of the Learning rate annealing
@@ -92,19 +93,24 @@ def lr_annealing(
         dyn_loss_grads,
         is_leaf=eqx.is_inexact_array,
     )
-    max_dyn_loss_grads = jnp.max(jnp.absolute(jnp.array(dyn_loss_grads_leaves)))
 
-    mean_gradients = jax.tree.map(
-        lambda t: jnp.mean(jnp.absolute(jnp.array(jax.tree.leaves(t)))),
-        data_fit_grads,
+    max_dyn_loss_grads = jnp.max(
+        jnp.stack([jnp.max(jnp.abs(g)) for g in dyn_loss_grads_leaves])
     )
 
-    lambda_hat = max_dyn_loss_grads / jnp.array(jax.tree.leaves(mean_gradients))
+    mean_gradients = [
+        jnp.mean(jnp.stack([jnp.abs(jnp.mean(g)) for g in jax.tree.leaves(t)]))
+        for t in data_fit_grads
+        if t is not None and jax.tree.leaves(t)
+    ]
+
+    lambda_hat = max_dyn_loss_grads / (jnp.array(mean_gradients) + eps)
+
     old_weights = jnp.array(
         jax.tree.leaves(
             loss_weights,
         )
     )
 
-    new_weigths = (1 - decay_factor) * old_weights[1:] + decay_factor * lambda_hat
-    return jnp.hstack([old_weights[0], new_weigths])
+    new_weights = (1 - decay_factor) * old_weights[1:] + decay_factor * lambda_hat
+    return jnp.hstack([old_weights[0], new_weights])
