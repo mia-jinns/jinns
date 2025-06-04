@@ -196,9 +196,9 @@ def test_loss_value():
     losses_LRA, _ = losses_and_grad_LRA(init_params, train_data.get_batch()[1])
 
     reduced_tree = jax.tree.map(
-        lambda *args: jnp.all(args[:-1] == args[1:]),  # using transiticity of =
+        lambda *args: jnp.all(args[:-1] == args[1:]),  # using transitivity of =
         losses[1],
-        losses[1],
-        losses[1],
+        losses_SA[1],
+        losses_LRA[1],
     )
     assert jax.tree.reduce(jnp.logical_and, reduced_tree, initializer=jnp.array(True))
