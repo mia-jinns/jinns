@@ -102,3 +102,120 @@ def test_weight_history():
     assert stored_lw.boundary_loss is None
     assert stored_lw.observations is None
     assert stored_lw.norm_loss is None
+
+
+def test_loss_value():
+    """
+    The loss should have the same initial value for initial parameters using the same wights
+    """
+
+    loss_weights = jinns.loss.LossWeightsPDENonStatio(
+        dyn_loss=jnp.array(1.0),
+        initial_condition=jnp.array(1.0),
+    )
+
+    key = jax.random.PRNGKey(2)
+    eqx_list = (
+        (eqx.nn.Linear, 2, 32),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 32, 32),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 32, 32),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 32, 1),
+    )
+    key, subkey = jax.random.split(key)
+    u, init_nn_params = jinns.nn.PINN_MLP.create(
+        key=subkey, eqx_list=eqx_list, eq_type="nonstatio_PDE"
+    )
+
+    n = 1
+    ni = 1
+    nb = None
+    dim = 1
+    xmin = -1
+    xmax = 1
+    tmin = 0
+    tmax = 1
+    method = "uniform"
+
+    key, subkey = jax.random.split(key)
+    train_data = jinns.data.CubicMeshPDENonStatio(
+        key=subkey,
+        n=n,
+        nb=nb,
+        ni=ni,
+        dim=dim,
+        min_pts=(xmin,),
+        max_pts=(xmax,),
+        tmin=tmin,
+        tmax=tmax,
+        method=method,
+    )
+    train_data = eqx.tree_at(lambda pt: pt.domain, train_data, jnp.array([[0.0, 1.0]]))
+    train_data = eqx.tree_at(lambda pt: pt.initial, train_data, jnp.array([[1.0]]))
+
+    nu = 1 / (100 * jnp.pi)
+    init_params = jinns.parameters.Params(
+        nn_params=init_nn_params, eq_params={"nu": nu}
+    )
+
+    def u0(x):
+        return 0.6
+
+    class DummyLoss(jinns.loss.PDENonStatio):
+        def equation(self, t_x, u, params):
+            return (0.6 - u(t_x, params).squeeze())[None]
+
+    dummy_loss = DummyLoss(Tmax=1)
+
+    loss = jinns.loss.LossPDENonStatio(
+        u=u,
+        loss_weights=loss_weights,
+        update_weight_method=None,
+        dynamic_loss=dummy_loss,
+        initial_condition_fun=u0,
+        params=init_params,
+    )
+
+    loss_SA = jinns.loss.LossPDENonStatio(
+        u=u,
+        loss_weights=loss_weights,
+        update_weight_method="soft_adapt",
+        dynamic_loss=dummy_loss,
+        initial_condition_fun=u0,
+        params=init_params,
+    )
+
+    loss_LRA = jinns.loss.LossPDENonStatio(
+        u=u,
+        loss_weights=loss_weights,
+        update_weight_method="lr_annealing",
+        dynamic_loss=dummy_loss,
+        initial_condition_fun=u0,
+        params=init_params,
+    )
+
+    losses_and_grad = jax.value_and_grad(loss, 0, has_aux=True)
+    losses_and_grad_SA = jax.value_and_grad(loss_SA, 0, has_aux=True)
+    losses_and_grad_LRA = jax.value_and_grad(loss_LRA, 0, has_aux=True)
+
+    losses, _ = losses_and_grad(init_params, train_data.get_batch()[1])
+    losses_SA, _ = losses_and_grad_SA(init_params, train_data.get_batch()[1])
+    losses_LRA, _ = losses_and_grad_LRA(init_params, train_data.get_batch()[1])
+
+    _, Loss_Components = losses
+    _, Loss_Components_SA = losses_SA
+    _, Loss_Components_LRA = losses_LRA
+
+    assert (
+        Loss_Components.initial_condition == Loss_Components_SA.initial_condition
+    ) and (
+        Loss_Components_SA.initial_condition == Loss_Components_LRA.initial_condition
+    )
+    assert (Loss_Components.boundary_loss == Loss_Components_SA.boundary_loss) and (
+        Loss_Components_SA.boundary_loss == Loss_Components_LRA.boundary_loss
+    )
+    assert (Loss_Components.dyn_loss == Loss_Components_SA.dyn_loss) and (
+        Loss_Components_SA.dyn_loss == Loss_Components_LRA.dyn_loss
+    )
