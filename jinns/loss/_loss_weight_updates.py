@@ -105,7 +105,6 @@ def lr_annealing(
     ]
 
     lambda_hat = max_dyn_loss_grads / (jnp.array(mean_gradients) + eps)
-
     old_weights = jnp.array(
         jax.tree.leaves(
             loss_weights,
