@@ -169,31 +169,22 @@ def test_loss_value():
 
     dummy_loss = DummyLoss(Tmax=1)
 
-    loss = jinns.loss.LossPDENonStatio(
-        u=u,
-        loss_weights=loss_weights,
-        update_weight_method=None,
-        dynamic_loss=dummy_loss,
-        initial_condition_fun=u0,
-        params=init_params,
-    )
+    loss_kwargs = {
+        "u": u,
+        "loss_weights": loss_weights,
+        "dynamic_loss": dummy_loss,
+        "initial_condition_fun": u0,
+        "params": init_params,
+    }
+
+    loss = jinns.loss.LossPDENonStatio(**loss_kwargs)
 
     loss_SA = jinns.loss.LossPDENonStatio(
-        u=u,
-        loss_weights=loss_weights,
-        update_weight_method="soft_adapt",
-        dynamic_loss=dummy_loss,
-        initial_condition_fun=u0,
-        params=init_params,
+        **(loss_kwargs | {"update_weight_method": "softadapt"})
     )
 
     loss_LRA = jinns.loss.LossPDENonStatio(
-        u=u,
-        loss_weights=loss_weights,
-        update_weight_method="lr_annealing",
-        dynamic_loss=dummy_loss,
-        initial_condition_fun=u0,
-        params=init_params,
+        **(loss_kwargs | {"update_weight_method": "lr_annealing"})
     )
 
     losses_and_grad = jax.value_and_grad(loss, 0, has_aux=True)
@@ -204,18 +195,10 @@ def test_loss_value():
     losses_SA, _ = losses_and_grad_SA(init_params, train_data.get_batch()[1])
     losses_LRA, _ = losses_and_grad_LRA(init_params, train_data.get_batch()[1])
 
-    _, Loss_Components = losses
-    _, Loss_Components_SA = losses_SA
-    _, Loss_Components_LRA = losses_LRA
-
-    assert (
-        Loss_Components.initial_condition == Loss_Components_SA.initial_condition
-    ) and (
-        Loss_Components_SA.initial_condition == Loss_Components_LRA.initial_condition
+    reduced_tree = jax.tree.map(
+        lambda *args: jnp.all(args[:-1] == args[1:]),  # using transiticity of =
+        losses[1],
+        losses[1],
+        losses[1],
     )
-    assert (Loss_Components.boundary_loss == Loss_Components_SA.boundary_loss) and (
-        Loss_Components_SA.boundary_loss == Loss_Components_LRA.boundary_loss
-    )
-    assert (Loss_Components.dyn_loss == Loss_Components_SA.dyn_loss) and (
-        Loss_Components_SA.dyn_loss == Loss_Components_LRA.dyn_loss
-    )
+    assert jax.tree.reduce(jnp.logical_and, reduced_tree, initializer=jnp.array(True))
