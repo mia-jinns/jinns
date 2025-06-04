@@ -118,8 +118,10 @@ class _LossODEAbstract(AbstractLoss):
                         f"Wrong t0 input (self.initial_condition[0]) It should be"
                         f"a float or an array of shape (1,). Got shape: {t0.shape}"
                     )
-            if isinstance(t0, float):  # e.g. user input: 0
+            if isinstance(t0, float):  # e.g. user input: 0.
                 t0 = jnp.array([t0])
+            if isinstance(t0, int):  # e.g. user input: 0
+                t0 = jnp.array([float(t0)])
             self.initial_condition = (t0, u0)
 
         if self.obs_slice is None:
