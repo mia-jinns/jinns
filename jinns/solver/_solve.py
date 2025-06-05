@@ -166,6 +166,9 @@ def solve(
     best_val_params
         The best parameters according to the validation criterion
     """
+    if n_iter < 1:
+        raise ValueError("Cannot run jinns.solve for n_iter<1")
+
     if param_data is not None:
         if param_data.param_batch_size is not None:
             # We need to check that batch sizes will all be compliant for

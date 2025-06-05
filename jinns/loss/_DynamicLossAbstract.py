@@ -6,6 +6,7 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
+import warnings
 import abc
 from functools import partial
 from typing import Callable, TYPE_CHECKING, ClassVar, Generic, TypeVar
@@ -115,6 +116,13 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
             raise ValueError(
                 "The output of dynamic loss must be vectorial, "
                 "i.e. of shape (d,) with d >= 1"
+            )
+        if len(evaluation.shape) > 1:
+            warnings.warn(
+                "Return value from DynamicLoss' equation has more "
+                "than one dimension. This is in general a mistake (probably from "
+                "an unfortunate broadcast in jnp.array computations) resulting in "
+                "bad reduction operations in losses."
             )
         return evaluation
 
