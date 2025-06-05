@@ -661,8 +661,10 @@ class LossPDENonStatio(LossPDEStatio):
                     f"Wrong self.t0 input. It should be"
                     f"a float or an array of shape (1,). Got shape: {self.t0.shape}"
                 )
-        elif isinstance(self.t0, float):  # e.g. user input: 0
+        elif isinstance(self.t0, float):  # e.g. user input: 0.
             self.t0 = jnp.array([self.t0])
+        elif isinstance(self.t0, int):  # e.g. user input: 0
+            self.t0 = jnp.array([float(self.t0)])
         elif self.t0 is None:
             self.t0 = jnp.array([0])
         else:
