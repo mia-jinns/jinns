@@ -2,7 +2,7 @@
 
 * Unreleased (currently on `main`)
 
-    - Minor patches [!74](https://gitlab.com/mia_jinns/jinns/-/merge_requests/74)
+    - Minor patches [!75](https://gitlab.com/mia_jinns/jinns/-/merge_requests/75)
 
 * v1.4.0
 
