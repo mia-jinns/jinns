@@ -1,5 +1,11 @@
 # Changelog
 
+* v1.5.0
+
+    - Adaptative loss weights following a user defined update scheme. Breaking changes since `jinns.solve()` returns signature has changed. Moreover, we do not support vectorial loss weights any more. Users are expected to ponderate the loss of their vectorial dynamic loss directly inside the dynamic loss definition (and obviously, this new loss weight update feature will not apply).
+    More details at [!73](https://gitlab.com/mia_jinns/jinns/-/merge_requests/73)
+    - Minor patches [!75](https://gitlab.com/mia_jinns/jinns/-/merge_requests/75)
+
 * v1.4.0
 
     - Introduce pyright and some minor code improvement and refactoring in the backend (mainly for type hints and code readability) [!72](https://gitlab.com/mia_jinns/jinns/-/merge_requests/72). Small breaking changes could be expected for more advanced `jinns` codes. New pre-commit hooks: `ruff format` and `ruff check`. You can install `ruff` simply by `pip install ruff`. Also, we highly recommend you to check the code type hints with `pyright` even though we currently have no rule concerning type checking in the pipeline.
