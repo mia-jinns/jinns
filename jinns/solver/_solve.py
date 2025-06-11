@@ -587,7 +587,15 @@ def _store_loss_and_params(
     return (stored_params, stored_loss_terms, train_loss_values)
 
 
-def _get_break_fun(n_iter: int, verbose: bool) -> Callable[[main_carry], bool]:
+def _get_break_fun(
+    n_iter: int,
+    verbose: bool,
+    conditions_str: tuple[str, str, str] = (
+        "bool_max_iter",
+        "bool_nan_in_params",
+        "bool_early_stopping",
+    ),
+) -> Callable[[main_carry], bool]:
     """
     Wrapper to get the break_fun with appropriate `n_iter`.
     The verbose argument is here to control printing (or not) when exiting
@@ -617,34 +625,41 @@ def _get_break_fun(n_iter: int, verbose: bool) -> Callable[[main_carry], bool]:
 
         (i, _, optimization, optimization_extra, _, _, _, _, _) = carry
 
-        # Condition 1
-        bool_max_iter = jax.lax.cond(
-            i >= n_iter,
-            lambda _: stop_while_loop("max iteration is reached"),
-            continue_while_loop,
-            None,
-        )
-        # Condition 2
-        bool_nan_in_params = jax.lax.cond(
-            _check_nan_in_pytree(optimization.params),
-            lambda _: stop_while_loop(
-                "NaN values in parameters (returning last non NaN values)"
-            ),
-            continue_while_loop,
-            None,
-        )
-        # Condition 3
-        bool_early_stopping = jax.lax.cond(
-            optimization_extra.early_stopping,
-            lambda _: stop_while_loop("early stopping"),
-            continue_while_loop,
-            _,
-        )
+        conditions_bool = ()
+        if "bool_max_iter" in conditions_str:
+            # Condition 1
+            bool_max_iter = jax.lax.cond(
+                i >= n_iter,
+                lambda _: stop_while_loop("max iteration is reached"),
+                continue_while_loop,
+                None,
+            )
+            conditions_bool += (bool_max_iter,)
+        if "bool_nan_in_params" in conditions_str:
+            # Condition 2
+            bool_nan_in_params = jax.lax.cond(
+                _check_nan_in_pytree(optimization.params),
+                lambda _: stop_while_loop(
+                    "NaN values in parameters (returning last non NaN values)"
+                ),
+                continue_while_loop,
+                None,
+            )
+            conditions_bool += (bool_nan_in_params,)
+        if "bool_early_stopping" in conditions_str:
+            # Condition 3
+            bool_early_stopping = jax.lax.cond(
+                optimization_extra.early_stopping,
+                lambda _: stop_while_loop("early stopping"),
+                continue_while_loop,
+                _,
+            )
+            conditions_bool += (bool_early_stopping,)
 
         # stop when one of the cond to continue is False
         return jax.tree_util.tree_reduce(
             lambda x, y: jnp.logical_and(jnp.array(x), jnp.array(y)),
-            (bool_max_iter, bool_nan_in_params, bool_early_stopping),
+            conditions_bool,
         )
 
     return break_fun
