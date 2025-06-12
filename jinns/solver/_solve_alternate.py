@@ -44,7 +44,7 @@ def solve_alternate(
     nn_optimizer = optimizers.nn_params
     eq_optimizers = optimizers.eq_params
 
-    nn_opt_state = nn_optimizer.init(init_params) # NOTE that this is not
+    nn_opt_state = nn_optimizer.init(init_params)  # NOTE that this is not
     # init_params.nn_params here because the gradient descent step on nn_params
     # will be totally classical. We afford this because of the hypothesis that
     # eq_params is much smaller than nn_params
@@ -53,9 +53,7 @@ def solve_alternate(
     )
 
     main_break_fun = _get_break_fun(
-        n_iter,
-        verbose,
-        conditions_str=("bool_max_iter", "bool_nan_in_params")
+        n_iter, verbose, conditions_str=("bool_max_iter", "bool_nan_in_params")
     )
 
     # Even if provided by the user we get rid of the following keys because we
@@ -67,31 +65,24 @@ def solve_alternate(
     nn_gd_steps_derivative_keys = jax.tree.map(
         lambda l: Params(
             nn_params=True,
-            eq_params=jax.tree.map(lambda ll: False, init_params.eq_params)),
+            eq_params=jax.tree.map(lambda ll: False, init_params.eq_params),
+        ),
         loss.derivative_keys,
     )
 
     def _one_alternate_iteration(carry):
-        (
-            params,
-            data,
-            loss,
-            nn_opt_state,
-            eq_opt_state
-        ) = carry
+        (params, data, loss, nn_opt_state, eq_opt_state) = carry
 
         # Some gradient descent steps over nn_params
         # Here we resort to the legacy DerivativeKeys to stop the update of
         # eq_params because params and nn_opt_state do include them
 
         loss = eqx.tree_at(
-            lambda pt: pt.derivative_keys,
-            loss,
-            nn_gd_steps_derivative_keys
+            lambda pt: pt.derivative_keys, loss, nn_gd_steps_derivative_keys
         )
         out = solve(
             n_iter=nn_n_iter,
-            init_params=params, # NOTE we do not get rid of eq_params here
+            init_params=params,  # NOTE we do not get rid of eq_params here
             data=data,
             loss=loss,
             optimizer=nn_optimizer,
@@ -103,12 +94,6 @@ def solve_alternate(
         # Some gradient descent steps over eq_params
         return carry
 
-    carry = (
-        init_params,
-        data,
-        loss,
-        nn_opt_state,
-        eq_opt_state
-    )
+    carry = (init_params, data, loss, nn_opt_state, eq_opt_state)
 
     jax.lax.while_loop(main_break_fun, _one_alternate_iteration, carry)
