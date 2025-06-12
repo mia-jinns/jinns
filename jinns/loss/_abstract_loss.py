@@ -22,8 +22,8 @@ class AbstractLoss(eqx.Module):
     """
 
     loss_weights = eqx.AbstractVar[AbstractLossWeights]
-    update_weight_method: Literal["soft_adapt", "lr_annealing"] | None = eqx.field(
-        kw_only=True, default=None, static=True
+    update_weight_method: Literal["soft_adapt", "lr_annealing", "ReLoBRaLo"] | None = (
+        eqx.field(kw_only=True, default=None, static=True)
     )
 
     @abc.abstractmethod
