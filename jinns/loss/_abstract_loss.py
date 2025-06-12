@@ -59,7 +59,14 @@ class AbstractLoss(eqx.Module):
         terms = jax.tree.leaves(
             terms, is_leaf=lambda x: eqx.is_inexact_array(x) and x is not None
         )
-        return jnp.sum(jnp.array(weights) * jnp.array(terms))
+        if len(weights) == len(terms):
+            return jnp.sum(jnp.array(weights) * jnp.array(terms))
+        else:
+            raise ValueError(
+                "The numbers of declared loss weights and "
+                "declared loss terms do not concord "
+                f" got {len(weights)} and {len(terms)}"
+            )
 
     def ponderate_and_sum_gradient(self, terms):
         """
