@@ -590,7 +590,7 @@ def _store_loss_and_params(
 def _get_break_fun(
     n_iter: int,
     verbose: bool,
-    conditions_str: tuple[str, str, str] = (
+    conditions_str: tuple[str,...] = (
         "bool_max_iter",
         "bool_nan_in_params",
         "bool_early_stopping",
