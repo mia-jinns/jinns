@@ -136,7 +136,11 @@ class _LossODEAbstract(AbstractLoss):
 
     @abc.abstractmethod
     def evaluate(
-        self: eqx.Module, params: Params[Array], batch: ODEBatch
+        self: eqx.Module,
+        opt_params: Params[Array],
+        batch: ODEBatch,
+        *,
+        non_opt_params: Params[Array] = None,
     ) -> tuple[Float[Array, " "], LossDictODE]:
         raise NotImplementedError
 
@@ -207,7 +211,11 @@ class LossODE(_LossODEAbstract):
         return self.evaluate(*args, **kwargs)
 
     def evaluate(
-        self, params: Params[Array], batch: ODEBatch
+        self,
+        opt_params: Params[Array],
+        batch: ODEBatch,
+        *,
+        non_opt_params: Params[Array] = None,
     ) -> tuple[Float[Array, " "], LossDictODE]:
         """
         Evaluate the loss function at a batch of points for given parameters.
@@ -222,6 +230,11 @@ class LossODE(_LossODEAbstract):
             at which to evaluate the differential operator. An optional additional batch of parameters (eg. for metamodeling) and an optional additional batch of observed inputs/outputs/parameters can
             be supplied.
         """
+        if non_opt_params is not None:
+            params = eqx.combine(opt_params, non_opt_params)
+        else:
+            params = opt_params
+
         temporal_batch = batch.temporal_batch
 
         # Retrieve the optional eq_params_batch

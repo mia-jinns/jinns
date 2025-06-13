@@ -299,8 +299,10 @@ class _LossPDEAbstract(AbstractLoss):
     @abc.abstractmethod
     def evaluate(
         self: eqx.Module,
-        params: Params[Array],
+        opt_params: Params[Array],
         batch: PDEStatioBatch | PDENonStatioBatch,
+        *,
+        non_opt_params: Params[Array] = None,
     ) -> tuple[Float[Array, " "], LossDictPDEStatio | LossDictPDENonStatio]:
         raise NotImplementedError
 
@@ -433,7 +435,11 @@ class LossPDEStatio(_LossPDEAbstract):
         return self.evaluate(*args, **kwargs)
 
     def evaluate(
-        self, params: Params[Array], batch: PDEStatioBatch
+        self,
+        opt_params: Params[Array],
+        batch: PDEStatioBatch,
+        *,
+        non_opt_params: Params[Array] = None,
     ) -> tuple[Float[Array, " "], LossDictPDEStatio]:
         """
         Evaluate the loss function at a batch of points for given parameters.
@@ -450,6 +456,11 @@ class LossPDEStatio(_LossPDEAbstract):
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
         """
+        if non_opt_params is not None:
+            params = eqx.combine(opt_params, non_opt_params)
+        else:
+            params = opt_params
+
         # Retrieve the optional eq_params_batch
         # and update eq_params with the latter
         # and update vmap_in_axes
@@ -699,7 +710,11 @@ class LossPDENonStatio(LossPDEStatio):
         return self.evaluate(*args, **kwargs)
 
     def evaluate(
-        self, params: Params[Array], batch: PDENonStatioBatch
+        self,
+        opt_params: Params[Array],
+        batch: PDENonStatioBatch,
+        *,
+        non_opt_params: Params[Array] = None,
     ) -> tuple[Float[Array, " "], LossDictPDENonStatio]:
         """
         Evaluate the loss function at a batch of points for given parameters.
@@ -716,6 +731,11 @@ class LossPDENonStatio(LossPDEStatio):
             of parameters (eg. for metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
         """
+        if non_opt_params is not None:
+            params = eqx.combine(opt_params, non_opt_params)
+        else:
+            params = opt_params
+
         omega_batch = batch.initial_batch
         assert omega_batch is not None
 

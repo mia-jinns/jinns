@@ -2,6 +2,8 @@
 Formalize the data structure for the parameters
 """
 
+from __future__ import annotations
+
 from typing import Generic, TypeVar
 import jax
 import equinox as eqx
@@ -27,6 +29,17 @@ class Params(eqx.Module, Generic[T]):
 
     nn_params: PyTree[T] = eqx.field(kw_only=True, default=None)
     eq_params: dict[str, T] = eqx.field(kw_only=True, default=None)
+
+    def partition(self, mask: Params[bool] | None):
+        """
+        following the boolean mask, partition into two Params
+        """
+        if mask is not None:
+            print(mask)
+            jax.debug.print("{x}", x=mask)
+            return eqx.partition(self, mask)
+        else:
+            return self, None
 
 
 def _update_eq_params_dict(

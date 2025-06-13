@@ -15,6 +15,7 @@ import jax
 from jax import jit
 import jax.numpy as jnp
 from jaxtyping import Float, Array
+import equinox as eqx
 from jinns.solver._rar import init_rar, trigger_rar
 from jinns.utils._utils import _check_nan_in_pytree
 from jinns.solver._utils import _check_batch_size
@@ -61,6 +62,7 @@ def solve(
     obs_data: DataGeneratorObservations | None = None,
     validation: AbstractValidationModule | None = None,
     obs_batch_sharding: jax.sharding.Sharding | None = None,
+    params_mask: Params[bool] = None,
     verbose: bool = True,
     ahead_of_time: bool = True,
 ) -> tuple[
@@ -130,6 +132,10 @@ def solve(
         Typically, a SingleDeviceSharding(gpu_device) when obs_data has been
         created with sharding_device=SingleDeviceSharding(cpu_device) to avoid
         loading on GPU huge datasets of observations.
+    params_mask
+        XXXXX
+        XXXXX
+        XXXXX
     verbose
         Default True. If False, no std output (loss or cause of
         exiting the optimization loop) will be produced.
@@ -188,7 +194,13 @@ def solve(
             _check_batch_size(obs_data, param_data, "n")
 
     if opt_state is None:
-        opt_state = optimizer.init(init_params)  # type: ignore
+        opt_init_params, non_opt_init_params = init_params.partition(params_mask)
+        opt_state = optimizer.init(opt_init_params)  # type: ignore
+
+        if params_mask is not None:
+            init_params = eqx.combine(opt_init_params, non_opt_init_params)
+        else:
+            init_params = opt_init_params
         # our Params are eqx.Module (dataclass + PyTree), PyTree is
         # compatible with optax transform but not dataclass, this leads to a
         # type hint error: we could prevent this by ensuring with the eqx.filter that
@@ -246,6 +258,7 @@ def solve(
         params=init_params,
         last_non_nan_params=init_params,
         opt_state=opt_state,
+        params_mask=params_mask,
     )
     optimization_extra = OptimizationExtraContainer(
         curr_seq=curr_seq,
@@ -313,6 +326,7 @@ def solve(
             optimization.params,
             optimization.opt_state,
             optimization.last_non_nan_params,
+            optimization.params_mask,
         )
 
         # Print train loss value during optimization
@@ -394,7 +408,7 @@ def solve(
         return (
             i,
             loss,
-            OptimizationContainer(params, last_non_nan_params, opt_state),
+            OptimizationContainer(params, last_non_nan_params, opt_state, params_mask),
             OptimizationExtraContainer(
                 curr_seq,
                 best_iter_id,
@@ -488,7 +502,7 @@ def solve(
     )
 
 
-@partial(jit, static_argnames=["optimizer"])
+@partial(jit, static_argnames=["optimizer", "params_mask"])
 def _gradient_step(
     loss: AnyLoss,
     optimizer: optax.GradientTransformation,
@@ -496,6 +510,7 @@ def _gradient_step(
     params: Params[Array],
     opt_state: optax.OptState,
     last_non_nan_params: Params[Array],
+    params_mask: Params[bool] = None,
 ) -> tuple[
     AnyLoss,
     float,
@@ -506,15 +521,28 @@ def _gradient_step(
 ]:
     """
     optimizer cannot be jit-ted.
+
+    Note that params_mask is declared as static after having been set as a eqx
+    static of the container (to become hashable JAX type) so that filter_spec
+    accept params_mask.
     """
     value_grad_loss = jax.value_and_grad(loss, has_aux=True)
-    (loss_val, loss_terms), grads = value_grad_loss(params, batch)
+
+    opt_params, non_opt_params = params.partition(params_mask)
+    (loss_val, loss_terms), grads = value_grad_loss(
+        opt_params, batch, non_opt_params=non_opt_params
+    )
     updates, opt_state = optimizer.update(
         grads,
         opt_state,
-        params,  # type: ignore
+        opt_params,  # type: ignore
     )  # see optimizer.init for explaination
-    params = optax.apply_updates(params, updates)  # type: ignore
+    opt_params = optax.apply_updates(opt_params, updates)  # type: ignore
+
+    if params_mask is not None:
+        params = eqx.combine(opt_params, non_opt_params)
+    else:
+        params = opt_params
 
     # check if any of the parameters is NaN
     last_non_nan_params = jax.lax.cond(
