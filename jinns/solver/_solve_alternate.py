@@ -13,20 +13,29 @@ import equinox as eqx
 
 from jinns.parameters._params import Params
 from jinns.solver._solve import _get_break_fun, solve
+from jinns.utils._containers import (
+    DataGeneratorContainer,
+    OptimizationContainer,
+    OptimizationExtraContainer,
+    LossContainer,
+    StoredObjectContainer,
+)
 
 if TYPE_CHECKING:
     from jinns.loss._abstract_loss import AbstractLoss
     from jinns.data._AbstractDataGenerator import AbstractDataGenerator
+    from jinns.data._DataGeneratorObservations import DataGeneratorObservations
 
 
 def solve_alternate(
-    n_iter: Params[int],
+    n_iter: int,
+    n_iter_by_solver: Params[int],
     init_params: Params[Array],
     data: AbstractDataGenerator,
     loss: AbstractLoss,
     optimizers: Params[optax.GradientTransformation],
     verbose: bool = True,
-    **kwargs_solve,
+    obs_data: DataGeneratorObservations | None = None,
 ):
     """
     Solve alternatively between nn_params and eq_params. In this functions both
@@ -42,27 +51,33 @@ def solve_alternate(
     With `jinns.solve_alternate` we want to address efficiently inverse
     problems where nn_optimizer is arbitrarily big, but eq_params prepresents
     only a few physical parameters.
+
+    About the argument in this function: https://stackoverflow.com/a/58018872
     """
     main_break_fun = _get_break_fun(
         n_iter, verbose, conditions_str=("bool_max_iter", "bool_nan_in_params")
     )
     # Even if provided by the user we get rid of the following keys because we
     # need to control their value for the alternate optimization
-    for k in ("opt_state", "ahead_of_time", "params_mask"):
-        kwargs_solve.pop(k, None)
+    # for k in ("opt_state", "ahead_of_time", "params_mask"):
+    #    kwargs_solve.pop(k, None)
 
-    nn_n_iter = n_iter.nn_params
-    eq_n_iters = n_iter.eq_params
+    nn_n_iter = n_iter_by_solver.nn_params
+    eq_n_iters = n_iter_by_solver.eq_params
 
     nn_optimizer = optimizers.nn_params
     eq_optimizers = optimizers.eq_params
 
-    nn_opt_state = nn_optimizer.init(init_params.nn_params)
+    # NOTE NOTE NOTE below we have opt_states that are shaped as Params
+    # maybe this is OK if the real gain is not to differentiate
+    # wrt to unwanted params
+    # OR MAYBE option 2 (see jinns solve)
+    nn_opt_state = nn_optimizer.init(init_params)  # .nn_params)
 
     eq_opt_states = jax.tree.map(
-        lambda opt_, params_: opt_.init(params_),
+        lambda opt_: opt_.init(init_params),
         eq_optimizers,
-        init_params.eq_params,
+        # init_params.eq_params,
         is_leaf=lambda x: isinstance(x, optax.GradientTransformation),
         # do not traverse further
     )
@@ -87,7 +102,7 @@ def solve_alternate(
             eq_optimizers, is_leaf=lambda x: isinstance(x, optax.GradientTransformation)
         )
     )
-    masks_ = tuple(jnp.eye(nb_eq_params)[i].astype(bool) for i in range(nb_eq_params))
+    masks_ = tuple(jnp.eye(nb_eq_params)[i] for i in range(nb_eq_params))
     eq_params_masks_ = jax.tree.unflatten(
         jax.tree.structure(
             eq_optimizers, is_leaf=lambda x: isinstance(x, optax.GradientTransformation)
@@ -95,24 +110,122 @@ def solve_alternate(
         masks_,
     )
     eq_params_masks = jax.tree.map(
-        lambda l, ll: Params(nn_params=False, eq_params=ll),
+        lambda l, ll: Params(
+            nn_params=False,
+            eq_params=jax.tree.unflatten(
+                jax.tree.structure(
+                    eq_optimizers,
+                    is_leaf=lambda x: isinstance(x, optax.GradientTransformation),
+                ),
+                ll,
+            ),
+        ),
         eq_optimizers,
         eq_params_masks_,
         is_leaf=lambda x: isinstance(x, optax.GradientTransformation),
     )
 
+    def replace_float(leaf):
+        if isinstance(leaf, bool):
+            return leaf
+        elif leaf == 1:
+            return True
+        elif leaf == 0:
+            return False
+        else:
+            raise ValueError
+
+    # NOTE that we need to replace will plain bool:
+    # 1. filter_spec does not even accept onp.array
+    # 2. filter_spec does not accept non static arguments. So any jnp array is
+    # non hashable and we will not be able to make it static
+    # params_mask cannot be inside the carry of course, just like the
+    # optimizer
+    eq_params_masks = jax.tree.map(lambda l: replace_float(l), eq_params_masks)
+
     # derivative keys with only eq_params updates for the gradient steps over eq_params
     # Again this is a dict for eqch eq_params
-    eq_gd_steps_derivative_keys = jax.tree.map(
-        lambda l: jax.tree.map(lambda ll: l, loss.derivative_keys),
-        eq_params_masks,
-    )
+    # eq_gd_steps_derivative_keys = jax.tree.map(
+    #    lambda l: jax.tree.map(lambda ll: l, loss.derivative_keys),
+    #    eq_params_masks,
+    # )
+    eq_gd_steps_derivative_keys = {
+        eq_param: jax.tree.map(
+            lambda l: eq_params_mask,
+            loss.derivative_keys,
+            is_leaf=lambda x: isinstance(x, Params),
+        )
+        for eq_param, eq_params_mask in eq_params_masks.items()
+    }
 
     # we checked that it was OK up to there but TODO is to introduce unit tests
     # for the pytree manipulations above
 
+    # NOTE much more containers than what's currently used
+    train_data = DataGeneratorContainer(data=data, param_data=None, obs_data=obs_data)
+    optimization = OptimizationContainer(
+        params=init_params,
+        last_non_nan_params=init_params,
+        opt_state=(nn_opt_state, eq_opt_states),
+        # params_mask=(nn_params_mask, eq_params_masks),
+    )
+    optimization_extra = OptimizationExtraContainer(
+        curr_seq=None,
+        best_iter_id=None,
+        best_val_criterion=None,
+        best_val_params=None,
+    )
+    loss_container = LossContainer(
+        stored_loss_terms=None,
+        train_loss_values=None,
+    )
+    stored_objects = StoredObjectContainer(
+        stored_params=None,
+    )
+
     def _one_alternate_iteration(carry):
-        (params, data, loss, nn_opt_state, eq_opt_states) = carry
+        (
+            i,
+            loss,
+            optimization,
+            optimization_extra,
+            train_data,
+            loss_container,
+            stored_objects,
+        ) = carry
+
+        # unpack useful values from carry containers
+        params = optimization.params
+        data = train_data.data
+        obs_data = train_data.obs_data
+        (nn_opt_state, eq_opt_states) = optimization.opt_state
+        # (nn_params_mask, eq_params_masks) = optimization.params_mask
+
+        # Some gradient descent steps over the parameters in eq_params
+        # We go for a for loop because, it is hard to mathematically
+        # conceptualize a tree map over jinns.solve()
+        eq_opt_states_ = {}
+        for eq_param, eq_optim in eq_optimizers.items():
+            loss = eqx.tree_at(
+                lambda pt: pt.derivative_keys,
+                loss,
+                eq_gd_steps_derivative_keys[eq_param],
+            )
+            params, loss_values, _, data, loss, eq_opt_state, _, _, _ = solve(
+                n_iter=eq_n_iters[eq_param],
+                init_params=params,
+                data=data,
+                loss=loss,
+                optimizer=eq_optim,
+                opt_state=eq_opt_states[eq_param],
+                ahead_of_time=False,
+                params_mask=eq_params_masks[eq_param],
+                verbose=verbose,
+                print_loss_every=1000,
+                obs_data=obs_data,
+            )
+            eq_opt_states_ = eq_opt_states_ | {eq_param: eq_opt_state}
+        eq_opt_states = eq_opt_states_
 
         # Some gradient descent steps over nn_params
         # Here we resort to the legacy DerivativeKeys to stop the update of
@@ -130,35 +243,37 @@ def solve_alternate(
             opt_state=nn_opt_state,
             ahead_of_time=False,
             params_mask=nn_params_mask,
-            **kwargs_solve,
+            verbose=verbose,
+            print_loss_every=1000,
+            obs_data=obs_data,
         )
 
-        # Some gradient descent steps over the parameters in eq_params
-        # We go for a for loop because, it is hard to mathematically
-        # conceptualize a tree map over jinns.solve()
-        eq_opt_states_ = {}
-        for eq_param, eq_optim in eq_optimizers:
-            loss = eqx.tree_at(
-                lambda pt: pt.derivative_keys,
-                loss,
-                eq_gd_steps_derivative_keys[eq_param],
-            )
-            params, loss_values, _, data, loss, eq_opt_state, _, _, _ = solve(
-                n_iter=eq_n_iters[eq_param],
-                init_params=params,
-                data=data,
-                loss=loss,
-                optimizer=eq_optim,
-                opt_state=eq_opt_states[eq_param],
-                ahead_of_time=False,
-                params_mask=eq_params_masks[eq_param],
-                **kwargs_solve,
-            )
-            eq_opt_states_ = eq_opt_states_ | {eq_param: eq_opt_state}
-        eq_opt_states = eq_opt_states_
-        carry = (params, data, loss, nn_opt_state, eq_opt_states)
-        return carry
+        i += 1
+        return (
+            i,
+            loss,
+            OptimizationContainer(
+                params,
+                OptimizationContainer.last_non_nan_params,
+                (nn_opt_state, eq_opt_states),
+                #    (nn_params_mask, eq_params_masks)
+            ),
+            optimization_extra,
+            DataGeneratorContainer(
+                data, DataGeneratorContainer.param_data, DataGeneratorContainer.obs_data
+            ),
+            loss_container,
+            stored_objects,
+        )
 
-    carry = (init_params, data, loss, nn_opt_state, eq_opt_states)
+    carry = (
+        0,
+        loss,
+        optimization,
+        optimization_extra,
+        train_data,
+        loss_container,
+        stored_objects,
+    )
 
-    jax.lax.while_loop(main_break_fun, _one_alternate_iteration, carry)
+    carry = jax.lax.while_loop(main_break_fun, _one_alternate_iteration, carry)

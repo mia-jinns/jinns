@@ -19,6 +19,7 @@ import equinox as eqx
 from jinns.solver._rar import init_rar, trigger_rar
 from jinns.utils._utils import _check_nan_in_pytree
 from jinns.solver._utils import _check_batch_size
+from jinns.parameters._params import Params
 from jinns.utils._containers import (
     DataGeneratorContainer,
     OptimizationContainer,
@@ -258,7 +259,7 @@ def solve(
         params=init_params,
         last_non_nan_params=init_params,
         opt_state=opt_state,
-        params_mask=params_mask,
+        # params_mask=params_mask,
     )
     optimization_extra = OptimizationExtraContainer(
         curr_seq=curr_seq,
@@ -326,7 +327,8 @@ def solve(
             optimization.params,
             optimization.opt_state,
             optimization.last_non_nan_params,
-            optimization.params_mask,
+            params_mask,
+            # optimization.params_mask,
         )
 
         # Print train loss value during optimization
@@ -408,7 +410,9 @@ def solve(
         return (
             i,
             loss,
-            OptimizationContainer(params, last_non_nan_params, opt_state, params_mask),
+            OptimizationContainer(
+                params, last_non_nan_params, opt_state
+            ),  # , params_mask),
             OptimizationExtraContainer(
                 curr_seq,
                 best_iter_id,
@@ -522,21 +526,40 @@ def _gradient_step(
     """
     optimizer cannot be jit-ted.
 
-    Note that params_mask is declared as static after having been set as a eqx
-    static of the container (to become hashable JAX type) so that filter_spec
-    accept params_mask.
+    Note that params_mask must be static, it cannot be part of the carry just
+    like the optimizer
     """
     value_grad_loss = jax.value_and_grad(loss, has_aux=True)
 
+    # NOTE the partitioniong
     opt_params, non_opt_params = params.partition(params_mask)
+
     (loss_val, loss_terms), grads = value_grad_loss(
         opt_params, batch, non_opt_params=non_opt_params
     )
+
+    # NOTE this partitioning could possibly be avoided, depending of the care
+    # we take in the update()
+    opt_grads, _ = grads.partition(
+        params_mask
+    )  # because the update cannot be made otherwise
+
+    opt_state = jax.tree.map(
+        lambda l: l.partition(params_mask)[0],
+        opt_state,
+        is_leaf=lambda x: isinstance(x, Params),
+    )
+    # NOTE NOTE NOTE option 2 pass to optax only jax.tree.leaves(opt_params)
+    # and jax.tree.leaves(opt_grads). They will be minimal and will match
+    # opt_state ? Or Should be work on opt_satet initially because the this
+    # requires info that only user can know (each opt state is different)
+
     updates, opt_state = optimizer.update(
-        grads,
+        opt_grads,
         opt_state,
         opt_params,  # type: ignore
     )  # see optimizer.init for explaination
+    print(opt_params, updates, opt_grads)
     opt_params = optax.apply_updates(opt_params, updates)  # type: ignore
 
     if params_mask is not None:
@@ -651,7 +674,9 @@ def _get_break_fun(
         def continue_while_loop(_):
             return True
 
-        (i, _, optimization, optimization_extra, _, _, _, _, _) = carry
+        i = carry[0]
+        optimization = carry[2]
+        optimization_extra = carry[3]
 
         conditions_bool = ()
         if "bool_max_iter" in conditions_str:
@@ -680,7 +705,7 @@ def _get_break_fun(
                 optimization_extra.early_stopping,
                 lambda _: stop_while_loop("early stopping"),
                 continue_while_loop,
-                _,
+                None,
             )
             conditions_bool += (bool_early_stopping,)
 
