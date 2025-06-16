@@ -73,9 +73,10 @@ class _LossPDEAbstract(AbstractLoss):
         The loss weights for the differents term : dynamic loss,
         initial condition (if LossWeightsPDENonStatio), boundary conditions if
         any, normalization loss if any and observations if any.
-    update_weight_method : Literal['soft_adapt', 'lr_annealing'], default=None
+        Can be updated according to a specific algorithm. See
+        `update_weight_method`
+    update_weight_method : Literal['soft_adapt', 'lr_annealing', 'ReLoBRaLo'], default=None
         Default is None meaning no update for loss weights. Otherwise a string
-        which indicates which update method to use for loss weights.
     derivative_keys : DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio, default=None
         Specify which field of `params` should be differentiated for each
         composant of the total loss. Particularily useful for inverse problems.
@@ -340,9 +341,10 @@ class LossPDEStatio(_LossPDEAbstract):
         The loss weights for the differents term : dynamic loss,
         boundary conditions if any, normalization loss if any and
         observations if any.
-    update_weight_method : Literal['soft_adapt', 'lr_annealing'], default=None
+        Can be updated according to a specific algorithm. See
+        `update_weight_method`
+    update_weight_method : Literal['soft_adapt', 'lr_annealing', 'ReLoBRaLo'], default=None
         Default is None meaning no update for loss weights. Otherwise a string
-        which indicates which update method to use for loss weights.
     derivative_keys : DerivativeKeysPDEStatio, default=None
         Specify which field of `params` should be differentiated for each
         composant of the total loss. Particularily useful for inverse problems.
@@ -440,7 +442,7 @@ class LossPDEStatio(_LossPDEAbstract):
 
     def evaluate_by_terms(
         self, params: Params[Array], batch: PDEStatioBatch
-    ) -> tuple[PDEStatioComponents[Array], PDEStatioComponents[Array]]:
+    ) -> tuple[PDEStatioComponents[Array | None], PDEStatioComponents[Array | None]]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -469,10 +471,10 @@ class LossPDEStatio(_LossPDEAbstract):
         # dynamic part
         if self.dynamic_loss is not None:
             dyn_loss_fun = lambda p: dynamic_loss_apply(
-                self.dynamic_loss.evaluate,
+                self.dynamic_loss.evaluate,  # type: ignore
                 self.u,
                 self._get_dynamic_loss_batch(batch),
-                _set_derivatives(p, self.derivative_keys.dyn_loss),
+                _set_derivatives(p, self.derivative_keys.dyn_loss),  # type: ignore
                 self.vmap_in_axes + vmap_in_axes_params,
             )
         else:
@@ -483,7 +485,7 @@ class LossPDEStatio(_LossPDEAbstract):
             norm_loss_fun = lambda p: normalization_loss_apply(
                 self.u,
                 self._get_normalization_loss_batch(batch),
-                _set_derivatives(p, self.derivative_keys.norm_loss),
+                _set_derivatives(p, self.derivative_keys.norm_loss),  # type: ignore
                 vmap_in_axes_params,
                 self.norm_weights,  # type: ignore -> can't get the __post_init__ narrowing here
             )
@@ -499,10 +501,10 @@ class LossPDEStatio(_LossPDEAbstract):
             boundary_loss_fun = lambda p: boundary_condition_apply(
                 self.u,
                 batch,
-                _set_derivatives(p, self.derivative_keys.boundary_loss),
-                self.omega_boundary_fun,
-                self.omega_boundary_condition,
-                self.omega_boundary_dim,
+                _set_derivatives(p, self.derivative_keys.boundary_loss),  # type: ignore
+                self.omega_boundary_fun,  # type: ignore
+                self.omega_boundary_condition,  # type: ignore
+                self.omega_boundary_dim,  # type: ignore
             )
         else:
             boundary_loss_fun = None
@@ -517,7 +519,7 @@ class LossPDEStatio(_LossPDEAbstract):
             obs_loss_fun = lambda po: observations_loss_apply(
                 self.u,
                 self._get_observations_loss_batch(batch),
-                _set_derivatives(po, self.derivative_keys.observations),
+                _set_derivatives(po, self.derivative_keys.observations),  # type: ignore
                 self.vmap_in_axes + vmap_in_axes_params,
                 batch.obs_batch_dict["val"],
                 self.obs_slice,
@@ -552,7 +554,7 @@ class LossPDEStatio(_LossPDEAbstract):
 
     def evaluate(
         self, params: Params[Array], batch: PDEStatioBatch
-    ) -> tuple[Float[Array, " "], PDEStatioComponents[Float[Array, " "]]]:
+    ) -> tuple[Float[Array, " "], PDEStatioComponents[Float[Array, " "] | None]]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -611,7 +613,9 @@ class LossPDENonStatio(LossPDEStatio):
         The loss weights for the differents term : dynamic loss,
         boundary conditions if any, initial condition, normalization loss if any and
         observations if any.
-    update_weight_method : Literal['soft_adapt', 'lr_annealing'], default=None
+        Can be updated according to a specific algorithm. See
+        `update_weight_method`
+    update_weight_method : Literal['soft_adapt', 'lr_annealing', 'ReLoBRaLo'], default=None
         Default is None meaning no update for loss weights. Otherwise a string
     derivative_keys : DerivativeKeysPDENonStatio, default=None
         Specify which field of `params` should be differentiated for each
@@ -743,7 +747,9 @@ class LossPDENonStatio(LossPDEStatio):
 
     def evaluate_by_terms(
         self, params: Params[Array], batch: PDENonStatioBatch
-    ) -> tuple[PDENonStatioComponents[Array], PDENonStatioComponents[Array]]:
+    ) -> tuple[
+        PDENonStatioComponents[Array | None], PDENonStatioComponents[Array | None]
+    ]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -815,7 +821,7 @@ class LossPDENonStatio(LossPDEStatio):
 
     def evaluate(
         self, params: Params[Array], batch: PDENonStatioBatch
-    ) -> tuple[Float[Array, " "], PDENonStatioComponents[Float[Array, " "]]]:
+    ) -> tuple[Float[Array, " "], PDENonStatioComponents[Float[Array, " "] | None]]:
         """
         Evaluate the loss function at a batch of points for given parameters.
         We retrieve the total value itself and a PyTree with loss values for each term

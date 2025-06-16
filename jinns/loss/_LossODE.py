@@ -50,7 +50,9 @@ class _LossODEAbstract(AbstractLoss):
     loss_weights : LossWeightsODE, default=None
         The loss weights for the differents term : dynamic loss,
         initial condition and eventually observations if any.
-    update_weight_method : Literal['soft_adapt', 'lr_annealing'], default=None
+        Can be updated according to a specific algorithm. See
+        `update_weight_method`
+    update_weight_method : Literal['soft_adapt', 'lr_annealing', 'ReLoBRaLo'], default=None
         Default is None meaning no update for loss weights. Otherwise a string
     derivative_keys : DerivativeKeysODE, default=None
         Specify which field of `params` should be differentiated for each
@@ -158,8 +160,11 @@ class LossODE(_LossODEAbstract):
     ----------
     loss_weights : LossWeightsODE, default=None
         The loss weights for the differents term : dynamic loss,
-        initial condition and eventually observations if any. All fields are
-        set to 1.0 by default.
+        initial condition and eventually observations if any.
+        Can be updated according to a specific algorithm. See
+        `update_weight_method`
+    update_weight_method : Literal['soft_adapt', 'lr_annealing', 'ReLoBRaLo'], default=None
+        Default is None meaning no update for loss weights. Otherwise a string
     derivative_keys : DerivativeKeysODE, default=None
         Specify which field of `params` should be differentiated for each
         composant of the total loss. Particularily useful for inverse problems.
@@ -210,7 +215,9 @@ class LossODE(_LossODEAbstract):
 
     def evaluate_by_terms(
         self, params: Params[Array], batch: ODEBatch
-    ) -> tuple[ODEComponents[Float[Array, " "]], ODEComponents[Float[Array, " "]]]:
+    ) -> tuple[
+        ODEComponents[Float[Array, " "] | None], ODEComponents[Float[Array, " "] | None]
+    ]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -241,10 +248,10 @@ class LossODE(_LossODEAbstract):
         ## dynamic part
         if self.dynamic_loss is not None:
             dyn_loss_fun = lambda p: dynamic_loss_apply(
-                self.dynamic_loss.evaluate,
+                self.dynamic_loss.evaluate,  # type: ignore
                 self.u,
                 temporal_batch,
-                _set_derivatives(p, self.derivative_keys.dyn_loss),
+                _set_derivatives(p, self.derivative_keys.dyn_loss),  # type: ignore
                 self.vmap_in_axes + vmap_in_axes_params,
             )
         else:
@@ -266,7 +273,7 @@ class LossODE(_LossODEAbstract):
                     (
                         v_u(
                             t0,
-                            _set_derivatives(p, self.derivative_keys.initial_condition),
+                            _set_derivatives(p, self.derivative_keys.initial_condition),  # type: ignore
                         )
                         - u0
                     )
@@ -287,7 +294,7 @@ class LossODE(_LossODEAbstract):
             obs_loss_fun = lambda po: observations_loss_apply(
                 self.u,
                 batch.obs_batch_dict["pinn_in"],
-                _set_derivatives(po, self.derivative_keys.observations),
+                _set_derivatives(po, self.derivative_keys.observations),  # type: ignore
                 self.vmap_in_axes + vmap_in_axes_params,
                 batch.obs_batch_dict["val"],
                 self.obs_slice,
@@ -321,7 +328,7 @@ class LossODE(_LossODEAbstract):
 
     def evaluate(
         self, params: Params[Array], batch: ODEBatch
-    ) -> tuple[Float[Array, " "], ODEComponents[Float[Array, " "]]]:
+    ) -> tuple[Float[Array, " "], ODEComponents[Float[Array, " "] | None]]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 

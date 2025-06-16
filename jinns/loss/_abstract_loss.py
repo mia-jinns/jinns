@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import abc
-from typing import TYPE_CHECKING, Self, Literal
+from typing import TYPE_CHECKING, Self, Literal, Callable
 from jaxtyping import Array, PyTree
 import equinox as eqx
 import jax
@@ -21,7 +21,7 @@ class AbstractLoss(eqx.Module):
     https://github.com/patrick-kidger/equinox/issues/1002 + https://docs.kidger.site/equinox/pattern/
     """
 
-    loss_weights = eqx.AbstractVar[AbstractLossWeights]
+    loss_weights: AbstractLossWeights
     update_weight_method: Literal["soft_adapt", "lr_annealing", "ReLoBRaLo"] | None = (
         eqx.field(kw_only=True, default=None, static=True)
     )
@@ -36,7 +36,9 @@ class AbstractLoss(eqx.Module):
     ) -> tuple[AnyLossComponents, AnyLossComponents]:
         pass
 
-    def get_gradients(self, fun, params):
+    def get_gradients(
+        self, fun: Callable[[Params[Array]], Array], params: Params[Array]
+    ) -> tuple[Array, Array]:
         """
         params already filtered with derivative keys here
         """

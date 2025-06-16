@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from jinns.data._Batchs import ODEBatch, PDEStatioBatch, PDENonStatioBatch
     from jinns.loss._LossODE import LossODE
     from jinns.loss._LossPDE import LossPDEStatio, LossPDENonStatio
-    from jinns.loss._abstract_loss import (
+    from jinns.loss._loss_components import (
         ODEComponents,
         PDEStatioComponents,
         PDENonStatioComponents,

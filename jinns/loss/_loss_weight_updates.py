@@ -3,7 +3,7 @@ A collection of specific weight update schemes in jinns
 """
 
 from __future__ import annotations
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING
 from jaxtyping import Array
 import jax.numpy as jnp
 import jax
@@ -11,15 +11,14 @@ import equinox as eqx
 
 if TYPE_CHECKING:
     from jinns.loss._loss_weights import AbstractLossWeights
-
-T = TypeVar("T")
+    from jinns.utils._types import AnyLossComponents
 
 
 def soft_adapt(
-    loss_weights: AbstractLossWeights[T],
+    loss_weights: AbstractLossWeights,
     iteration_nb: int,
-    loss_terms: T,
-    stored_loss_terms: T,
+    loss_terms: AnyLossComponents,
+    stored_loss_terms: AnyLossComponents,
 ) -> Array:
     r"""
     Implement the simple strategy given in
@@ -59,10 +58,10 @@ def soft_adapt(
 
 
 def ReLoBRaLo(
-    loss_weights: AbstractLossWeights[T],
+    loss_weights: AbstractLossWeights,
     iteration_nb: int,
-    loss_terms: T,
-    stored_loss_terms: T,
+    loss_terms: AnyLossComponents,
+    stored_loss_terms: AnyLossComponents,
     decay_factor: float = 0.9,
     tau: float = 1,  ## referred to as temperature in the article
     p: float = 0.9,
@@ -146,8 +145,8 @@ def ReLoBRaLo(
 
 
 def lr_annealing(
-    loss_weights: AbstractLossWeights[T],
-    grad_terms: T,
+    loss_weights: AbstractLossWeights,
+    grad_terms: AnyLossComponents,
     decay_factor: float = 0.9,  # 0.9 is the recommended value from the article
     eps: float = 1e-6,
 ) -> Array:
