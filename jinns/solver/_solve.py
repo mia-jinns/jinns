@@ -544,8 +544,13 @@ def _gradient_step(
         params_mask
     )  # because the update cannot be made otherwise
 
-    opt_state = jax.tree.map(
-        lambda l: l.partition(params_mask)[0],
+    opt_opt_state = jax.tree.map(
+        lambda l: l.partition(params_mask)[0] if isinstance(l, Params) else l,
+        opt_state,
+        is_leaf=lambda x: isinstance(x, Params),
+    )
+    non_opt_opt_state = jax.tree.map(
+        lambda l: l.partition(params_mask)[1] if isinstance(l, Params) else l,
         opt_state,
         is_leaf=lambda x: isinstance(x, Params),
     )
@@ -554,18 +559,25 @@ def _gradient_step(
     # opt_state ? Or Should be work on opt_satet initially because the this
     # requires info that only user can know (each opt state is different)
 
-    updates, opt_state = optimizer.update(
+    updates, opt_opt_state = optimizer.update(
         opt_grads,
-        opt_state,
+        opt_opt_state,
         opt_params,  # type: ignore
     )  # see optimizer.init for explaination
-    print(opt_params, updates, opt_grads)
     opt_params = optax.apply_updates(opt_params, updates)  # type: ignore
 
     if params_mask is not None:
         params = eqx.combine(opt_params, non_opt_params)
+        opt_params = jax.tree.map(
+            lambda a, b, c: eqx.combine(b, c) if isinstance(a, Params) else a,
+            opt_state,
+            opt_opt_state,
+            non_opt_opt_state,
+            is_leaf=lambda x: isinstance(x, Params),
+        )
     else:
         params = opt_params
+        opt_state = opt_opt_state
 
     # check if any of the parameters is NaN
     last_non_nan_params = jax.lax.cond(

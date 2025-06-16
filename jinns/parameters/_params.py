@@ -35,8 +35,6 @@ class Params(eqx.Module, Generic[T]):
         following the boolean mask, partition into two Params
         """
         if mask is not None:
-            print(mask)
-            jax.debug.print("{x}", x=mask)
             return eqx.partition(self, mask)
         else:
             return self, None

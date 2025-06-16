@@ -92,6 +92,7 @@ def solve_alternate(
     nn_gd_steps_derivative_keys = jax.tree.map(
         lambda l: nn_params_mask,
         loss.derivative_keys,
+        is_leaf=lambda x: isinstance(x, Params),
     )
 
     # and get the negative to optimize only on eq_params FOR EACH EQ_PARAMS
@@ -211,6 +212,9 @@ def solve_alternate(
                 loss,
                 eq_gd_steps_derivative_keys[eq_param],
             )
+            # TODO jinns solve should return the modified obs
+            # TODO below this should not call jinns solve
+            # but directly loop over _gradient_step
             params, loss_values, _, data, loss, eq_opt_state, _, _, _ = solve(
                 n_iter=eq_n_iters[eq_param],
                 init_params=params,
@@ -234,6 +238,9 @@ def solve_alternate(
         loss = eqx.tree_at(
             lambda pt: pt.derivative_keys, loss, nn_gd_steps_derivative_keys
         )
+        # TODO jinns solve should return the modified obs
+        # TODO below this should not call jinns solve
+        # but directly loop over _gradient_step
         params, loss_values, _, data, loss, nn_opt_state, _, _, _ = solve(
             n_iter=nn_n_iter,
             init_params=params,
@@ -254,14 +261,11 @@ def solve_alternate(
             loss,
             OptimizationContainer(
                 params,
-                OptimizationContainer.last_non_nan_params,
+                optimization.last_non_nan_params,
                 (nn_opt_state, eq_opt_states),
-                #    (nn_params_mask, eq_params_masks)
             ),
             optimization_extra,
-            DataGeneratorContainer(
-                data, DataGeneratorContainer.param_data, DataGeneratorContainer.obs_data
-            ),
+            DataGeneratorContainer(data, train_data.param_data, train_data.obs_data),
             loss_container,
             stored_objects,
         )
@@ -277,3 +281,4 @@ def solve_alternate(
     )
 
     carry = jax.lax.while_loop(main_break_fun, _one_alternate_iteration, carry)
+    return optimization.params
