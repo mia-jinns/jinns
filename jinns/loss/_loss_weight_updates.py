@@ -66,8 +66,11 @@ def ReLoBRaLo(
     tau: float = 1,  ## referred to as temperature in the article
     p: float = 0.9,
 ):
-    key = jax.random.PRNGKey(42)
-    n_loss = len(jax.tree.leaves(loss_terms))
+    r"""
+    Implementing the extension of softadapt: Relative Loss Balancing with random LookBack
+    """
+    key = jax.random.PRNGKey(42)  # for the Bernoulli variable
+    n_loss = len(jax.tree.leaves(loss_terms))  # number of loss terms
     epsilon = 1e-6
 
     def do_nothing(loss_weights, _):
@@ -116,9 +119,7 @@ def ReLoBRaLo(
     def subsequent_iter_case(_):
         # Compute historical weights
         def hist_weights_case1(_):
-            return rho * do_nothing(loss_weights, None) + (1 - rho) * look_back(
-                loss_terms, stored_loss_terms
-            )
+            return soft_adapt_current(loss_terms, stored_loss_terms)
 
         def hist_weights_case2(_):
             return rho * soft_adapt_prev(stored_loss_terms) + (1 - rho) * look_back(
