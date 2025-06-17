@@ -12,7 +12,8 @@ from jaxtyping import Array
 import equinox as eqx
 
 from jinns.parameters._params import Params
-from jinns.solver._solve import _get_break_fun, solve
+from jinns.solver._solve import _get_break_fun, solve, _gradient_step
+from jinns.data._Batchs import ODEBatch
 from jinns.utils._containers import (
     DataGeneratorContainer,
     OptimizationContainer,
@@ -57,6 +58,8 @@ def solve_alternate(
     main_break_fun = _get_break_fun(
         n_iter, verbose, conditions_str=("bool_max_iter", "bool_nan_in_params")
     )
+
+    # get_batch = _get_get_batch(None)
     # Even if provided by the user we get rid of the following keys because we
     # need to control their value for the alternate optimization
     # for k in ("opt_state", "ahead_of_time", "params_mask"):
@@ -195,45 +198,89 @@ def solve_alternate(
             stored_objects,
         ) = carry
 
-        # unpack useful values from carry containers
-        params = optimization.params
-        data = train_data.data
-        obs_data = train_data.obs_data
         (nn_opt_state, eq_opt_states) = optimization.opt_state
-        # (nn_params_mask, eq_params_masks) = optimization.params_mask
 
-        # Some gradient descent steps over the parameters in eq_params
-        # We go for a for loop because, it is hard to mathematically
-        # conceptualize a tree map over jinns.solve()
+        ###### OPTIMIZATION ON EQ_PARAMS ###########
+
         eq_opt_states_ = {}
         for eq_param, eq_optim in eq_optimizers.items():
+            break_fun_ = _get_break_fun(
+                eq_n_iters[eq_param], verbose, conditions_str=("bool_max_iter",)
+            )
+
+            def _eq_params_one_iteration(carry):
+                (
+                    i,
+                    loss,
+                    optimization,
+                    _,
+                    train_data,
+                    _,
+                    _,
+                ) = carry
+
+                # batch, data, param_data, obs_data = get_batch(
+                #    train_data.data, train_data.param_data, train_data.obs_data
+                # )
+                batch = ODEBatch(train_data.data.times)  # This is what Yanis does
+
+                # Gradient step
+                (
+                    loss,
+                    train_loss_value,
+                    loss_terms,
+                    params,
+                    eq_opt_state,
+                    last_non_nan_params,
+                ) = _gradient_step(
+                    loss,
+                    eq_optim,
+                    batch,
+                    optimization.params,
+                    optimization.opt_state,
+                    optimization.last_non_nan_params,
+                    eq_params_masks[eq_param],
+                )
+
+                carry = (
+                    i + 1,
+                    loss,
+                    OptimizationContainer(params, last_non_nan_params, eq_opt_state),
+                    carry[3],
+                    carry[4],
+                    carry[5],
+                    carry[6],
+                )
+
+                return carry
+
+            # 1 - some init
             loss = eqx.tree_at(
                 lambda pt: pt.derivative_keys,
-                loss,
+                carry[1],
                 eq_gd_steps_derivative_keys[eq_param],
             )
-            # TODO jinns solve should return the modified obs
-            # TODO below this should not call jinns solve
-            # but directly loop over _gradient_step
-            params, loss_values, _, data, loss, eq_opt_state, _, _, _ = solve(
-                n_iter=eq_n_iters[eq_param],
-                init_params=params,
-                data=data,
-                loss=loss,
-                optimizer=eq_optim,
-                opt_state=eq_opt_states[eq_param],
-                ahead_of_time=False,
-                params_mask=eq_params_masks[eq_param],
-                verbose=verbose,
-                print_loss_every=1000,
-                obs_data=obs_data,
+            carry = (
+                0,
+                loss,
+                OptimizationContainer(
+                    carry[2].params,
+                    carry[2].last_non_nan_params,
+                    eq_opt_states[eq_param],
+                ),
+                carry[3],
+                carry[4],
+                carry[5],
+                carry[6],
             )
-            eq_opt_states_ = eq_opt_states_ | {eq_param: eq_opt_state}
+            # 2 - go for gradient steps on this eq_params
+            carry = jax.lax.while_loop(break_fun_, _eq_params_one_iteration, carry)
+            eq_opt_states_ = eq_opt_states_ | {eq_param: carry[2].opt_state}
         eq_opt_states = eq_opt_states_
 
-        # Some gradient descent steps over nn_params
-        # Here we resort to the legacy DerivativeKeys to stop the update of
-        # eq_params because params and nn_opt_state do include them
+        ############################################
+
+        ###### OPTIMIZATION ON NN_PARAMS ###########
 
         loss = eqx.tree_at(
             lambda pt: pt.derivative_keys, loss, nn_gd_steps_derivative_keys
@@ -243,9 +290,9 @@ def solve_alternate(
         # but directly loop over _gradient_step
         params, loss_values, _, data, loss, nn_opt_state, _, _, _ = solve(
             n_iter=nn_n_iter,
-            init_params=params,
-            data=data,
-            loss=loss,
+            init_params=carry[2].params,
+            data=carry[4].data,
+            loss=carry[1],
             optimizer=nn_optimizer,
             opt_state=nn_opt_state,
             ahead_of_time=False,
@@ -254,6 +301,8 @@ def solve_alternate(
             print_loss_every=1000,
             obs_data=obs_data,
         )
+
+        ############################################
 
         i += 1
         return (

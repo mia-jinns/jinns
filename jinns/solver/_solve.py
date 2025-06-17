@@ -514,7 +514,7 @@ def _gradient_step(
     params: Params[Array],
     opt_state: optax.OptState,
     last_non_nan_params: Params[Array],
-    params_mask: Params[bool] = None,
+    params_mask: Params[bool] | None = None,
 ) -> tuple[
     AnyLoss,
     float,
