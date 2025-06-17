@@ -324,6 +324,14 @@ def solve(
             train_data.data, train_data.param_data, train_data.obs_data
         )
 
+        # ---------------------------------------------------------------------
+        # The following part is the equivalent of a
+        # > train_loss_value, grads = jax.values_and_grad(total_loss.evaluate)(params, ...)
+        # but it is decomposed on individual loss terms so that we can use it
+        # if needed for updating loss weights.
+        # Since the total loss is a weighted sum of individual loss terms, so
+        # are its total gradients.
+
         # Compute individual losses and individual gradients
         loss_terms, grad_terms = loss.evaluate_by_terms(optimization.params, batch)
 
@@ -341,6 +349,7 @@ def solve(
 
         # total loss
         train_loss_value = loss.ponderate_and_sum_loss(loss_terms)
+        # ---------------------------------------------------------------------
 
         # gradient step
         (
