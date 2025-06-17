@@ -40,7 +40,6 @@ def dynamic_loss_apply(
     ),
     params: Params[Array],
     vmap_axes: tuple[int, Params[int | None] | None],
-    loss_weight: float | Float[Array, " dyn_loss_dimension"],
     u_type: PINN | HyperPINN | None = None,
 ) -> Float[Array, " "]:
     """
@@ -58,10 +57,10 @@ def dynamic_loss_apply(
             0,
         )
         residuals = v_dyn_loss(batch, params)
-        mse_dyn_loss = jnp.mean(jnp.sum(loss_weight * residuals**2, axis=-1))
+        mse_dyn_loss = jnp.mean(jnp.sum(residuals**2, axis=-1))
     elif u_type == SPINN or isinstance(u, SPINN):
         residuals = dyn_loss(batch, u, params)
-        mse_dyn_loss = jnp.mean(jnp.sum(loss_weight * residuals**2, axis=-1))
+        mse_dyn_loss = jnp.mean(jnp.sum(residuals**2, axis=-1))
     else:
         raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
 
@@ -79,7 +78,6 @@ def normalization_loss_apply(
     params: Params[Array],
     vmap_axes_params: tuple[Params[int | None] | None],
     norm_weights: Float[Array, " nb_norm_samples"],
-    loss_weight: float,
 ) -> Float[Array, " "]:
     """
     Note the squeezing on each result. We expect unidimensional *PINN since
@@ -95,9 +93,7 @@ def normalization_loss_apply(
             res = v_u(*batches, params)
             assert res.shape[-1] == 1, "norm loss expects unidimensional *PINN"
             # Monte-Carlo integration using importance sampling
-            mse_norm_loss = loss_weight * (
-                jnp.abs(jnp.mean(res.squeeze() * norm_weights) - 1) ** 2
-            )
+            mse_norm_loss = jnp.abs(jnp.mean(res.squeeze() * norm_weights) - 1) ** 2
         else:
             # NOTE this cartesian product is costly
             batch_cart_prod = make_cartesian_product(
@@ -115,7 +111,7 @@ def normalization_loss_apply(
             assert res.shape[-1] == 1, "norm loss expects unidimensional *PINN"
             # For all times t, we perform an integration. Then we average the
             # losses over times.
-            mse_norm_loss = loss_weight * jnp.mean(
+            mse_norm_loss = jnp.mean(
                 jnp.abs(jnp.mean(res.squeeze() * norm_weights, axis=-1) - 1) ** 2
             )
     elif isinstance(u, SPINN):
@@ -123,8 +119,7 @@ def normalization_loss_apply(
             res = u(*batches, params)
             assert res.shape[-1] == 1, "norm loss expects unidimensional *SPINN"
             mse_norm_loss = (
-                loss_weight
-                * jnp.abs(
+                jnp.abs(
                     jnp.mean(
                         res.squeeze(),
                     )
@@ -144,7 +139,7 @@ def normalization_loss_apply(
             )
             assert res.shape[-1] == 1, "norm loss expects unidimensional *SPINN"
             # the outer mean() below is for the times stamps
-            mse_norm_loss = loss_weight * jnp.mean(
+            mse_norm_loss = jnp.mean(
                 jnp.abs(
                     jnp.mean(
                         res.squeeze(),
@@ -168,7 +163,6 @@ def boundary_condition_apply(
     omega_boundary_fun: BoundaryConditionFun | dict[str, BoundaryConditionFun],
     omega_boundary_condition: str | dict[str, str],
     omega_boundary_dim: slice | dict[str, slice],
-    loss_weight: float | Float[Array, " boundary_cond_dim"],
 ) -> Float[Array, " "]:
     assert batch.border_batch is not None
     vmap_in_axes = (0,) + _get_vmap_in_axes_params(batch.param_batch_dict, params)
@@ -205,10 +199,7 @@ def boundary_condition_apply(
                 None
                 if c is None
                 else jnp.mean(
-                    loss_weight
-                    * _compute_boundary_loss(
-                        c, f, batch, u, params, fa, d, vmap_in_axes
-                    )
+                    _compute_boundary_loss(c, f, batch, u, params, fa, d, vmap_in_axes)
                 )
             ),
             omega_boundary_dicts[0],  # omega_boundary_condition,
@@ -225,8 +216,7 @@ def boundary_condition_apply(
         facet_tuple = tuple(f for f in range(batch.border_batch.shape[-1]))
         b_losses_by_facet = jax.tree_util.tree_map(
             lambda fa: jnp.mean(
-                loss_weight
-                * _compute_boundary_loss(
+                _compute_boundary_loss(
                     omega_boundary_dicts[0],  # type: ignore -> need TypeIs from 3.13
                     omega_boundary_dicts[1],  # type: ignore -> need TypeIs from 3.13
                     batch,
@@ -251,7 +241,6 @@ def observations_loss_apply(
     params: Params[Array],
     vmap_axes: tuple[int, Params[int | None] | None],
     observed_values: Float[Array, " obs_batch_size observation_dim"],
-    loss_weight: float | Float[Array, " observation_dim"],
     obs_slice: EllipsisType | slice | None,
 ) -> Float[Array, " "]:
     if isinstance(u, (PINN, HyperPINN)):
@@ -263,8 +252,7 @@ def observations_loss_apply(
         val = v_u(batch, params)[:, obs_slice]
         mse_observation_loss = jnp.mean(
             jnp.sum(
-                loss_weight
-                * _subtract_with_check(
+                _subtract_with_check(
                     observed_values, val, cause="user defined observed_values"
                 )
                 ** 2,
@@ -285,7 +273,6 @@ def initial_condition_apply(
     vmap_axes: tuple[int, Params[int | None] | None],
     initial_condition_fun: Callable,
     t0: Float[Array, " 1"],
-    loss_weight: float | Float[Array, " initial_condition_dimension"],
 ) -> Float[Array, " "]:
     n = omega_batch.shape[0]
     t0_omega_batch = jnp.concatenate([t0 * jnp.ones((n, 1)), omega_batch], axis=1)
@@ -304,7 +291,7 @@ def initial_condition_apply(
         # dimension as params to be able to vmap.
         # Recall that by convention:
         # param_batch_dict = times_batch_size * omega_batch_size
-        mse_initial_condition = jnp.mean(jnp.sum(loss_weight * res**2, axis=-1))
+        mse_initial_condition = jnp.mean(jnp.sum(res**2, axis=-1))
     elif isinstance(u, SPINN):
         values = lambda t_x: u(
             t_x,
@@ -317,7 +304,7 @@ def initial_condition_apply(
             v_ini,
             cause="Output of initial_condition_fun",
         )
-        mse_initial_condition = jnp.mean(jnp.sum(loss_weight * res**2, axis=-1))
+        mse_initial_condition = jnp.mean(jnp.sum(res**2, axis=-1))
     else:
         raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
     return mse_initial_condition

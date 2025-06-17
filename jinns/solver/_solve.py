@@ -14,7 +14,8 @@ import optax
 import jax
 from jax import jit
 import jax.numpy as jnp
-from jaxtyping import Float, Array
+from jaxtyping import Float, Array, PyTree, Key
+import equinox as eqx
 from jinns.solver._rar import init_rar, trigger_rar
 from jinns.utils._utils import _check_nan_in_pytree
 from jinns.solver._utils import _check_batch_size
@@ -29,7 +30,8 @@ from jinns.data._utils import append_param_batch, append_obs_batch
 
 if TYPE_CHECKING:
     from jinns.parameters._params import Params
-    from jinns.utils._types import AnyLoss, AnyBatch
+    from jinns.utils._types import AnyBatch
+    from jinns.loss._abstract_loss import AbstractLoss
     from jinns.validation._validation import AbstractValidationModule
     from jinns.data._DataGeneratorParameter import DataGeneratorParameter
     from jinns.data._DataGeneratorObservations import DataGeneratorObservations
@@ -37,7 +39,7 @@ if TYPE_CHECKING:
 
     main_carry: TypeAlias = tuple[
         int,
-        AnyLoss,
+        AbstractLoss,
         OptimizationContainer,
         OptimizationExtraContainer,
         DataGeneratorContainer,
@@ -45,6 +47,7 @@ if TYPE_CHECKING:
         LossContainer,
         StoredObjectContainer,
         Float[Array, " n_iter"] | None,
+        Key | None,
     ]
 
 
@@ -52,7 +55,7 @@ def solve(
     n_iter: int,
     init_params: Params[Array],
     data: AbstractDataGenerator,
-    loss: AnyLoss,
+    loss: AbstractLoss,
     optimizer: optax.GradientTransformation,
     print_loss_every: int = 1000,
     opt_state: optax.OptState | None = None,
@@ -63,14 +66,16 @@ def solve(
     obs_batch_sharding: jax.sharding.Sharding | None = None,
     verbose: bool = True,
     ahead_of_time: bool = True,
+    key: Key = None,
 ) -> tuple[
     Params[Array],
     Float[Array, " n_iter"],
-    dict[str, Float[Array, " n_iter"]],
+    PyTree,
     AbstractDataGenerator,
-    AnyLoss,
+    AbstractLoss,
     optax.OptState,
     Params[Array | None],
+    PyTree,
     Float[Array, " n_iter"] | None,
     Params[Array],
 ]:
@@ -141,6 +146,9 @@ def solve(
         transformed (see https://jax.readthedocs.io/en/latest/aot.html#aot-compiled-functions-cannot-be-transformed).
         When False, jinns does not provide any timing information (which would
         be nonsense in a JIT transformed `solve()` function).
+    key
+        Default None. A JAX random key that can be used for diverse purpose in
+        the main iteration loop.
 
     Returns
     -------
@@ -150,8 +158,8 @@ def solve(
     total_loss_values
         An array of the total loss term along the gradient steps
     stored_loss_terms
-        A dictionary. At each key an array of the values of a given loss
-        term is stored
+        A PyTree with attributes being arrays of all the values for each loss
+        term
     data
         The input data object
     loss
@@ -161,6 +169,11 @@ def solve(
     stored_params
         A Params objects with the stored values of the desired parameters (as
         signified in tracked_params argument)
+    stored_weights_terms
+        A PyTree with attributes being arrays of all the values for each loss
+        weight. Note that if Loss.update_weight_method is None, we return None,
+        because loss weights are never updated and we can then save some
+        computations
     validation_crit_values
         An array containing the validation criterion values of the training
     best_val_params
@@ -234,10 +247,37 @@ def solve(
         # being a complex data structure
     )
 
-    # initialize the dict for stored loss values
+    # initialize the PyTree for stored loss values
     stored_loss_terms = jax.tree_util.tree_map(
         lambda _: jnp.zeros((n_iter)), loss_terms
     )
+
+    # initialize the PyTree for stored loss weights values
+    if loss.update_weight_method is not None:
+        stored_weights_terms = eqx.tree_at(
+            lambda pt: jax.tree.leaves(
+                pt, is_leaf=lambda x: x is not None and eqx.is_inexact_array(x)
+            ),
+            loss.loss_weights,
+            tuple(
+                jnp.zeros((n_iter))
+                for n in range(
+                    len(
+                        jax.tree.leaves(
+                            loss.loss_weights,
+                            is_leaf=lambda x: x is not None and eqx.is_inexact_array(x),
+                        )
+                    )
+                )
+            ),
+        )
+    else:
+        stored_weights_terms = None
+    if loss.update_weight_method is not None and key is None:
+        raise ValueError(
+            "`key` argument must be passed to jinns.solve when"
+            " `loss.update_weight_method` is not None"
+        )
 
     train_data = DataGeneratorContainer(
         data=data, param_data=param_data, obs_data=obs_data
@@ -255,6 +295,7 @@ def solve(
     )
     loss_container = LossContainer(
         stored_loss_terms=stored_loss_terms,
+        stored_weights_terms=stored_weights_terms,
         train_loss_values=train_loss_values,
     )
     stored_objects = StoredObjectContainer(
@@ -279,6 +320,7 @@ def solve(
         loss_container,
         stored_objects,
         validation_crit_values,
+        key,
     )
 
     def _one_iteration(carry: main_carry) -> main_carry:
@@ -292,24 +334,47 @@ def solve(
             loss_container,
             stored_objects,
             validation_crit_values,
+            key,
         ) = carry
 
         batch, data, param_data, obs_data = get_batch(
             train_data.data, train_data.param_data, train_data.obs_data
         )
 
-        # Gradient step
+        # ---------------------------------------------------------------------
+        # The following part is the equivalent of a
+        # > train_loss_value, grads = jax.values_and_grad(total_loss.evaluate)(params, ...)
+        # but it is decomposed on individual loss terms so that we can use it
+        # if needed for updating loss weights.
+        # Since the total loss is a weighted sum of individual loss terms, so
+        # are its total gradients.
+
+        # Compute individual losses and individual gradients
+        loss_terms, grad_terms = loss.evaluate_by_terms(optimization.params, batch)
+
+        if loss.update_weight_method is not None:
+            key, subkey = jax.random.split(key)  # type: ignore because key can
+            # still be None currently
+            # avoid computations of tree_at if no updates
+            loss = loss.update_weights(
+                i, loss_terms, loss_container.stored_loss_terms, grad_terms, subkey
+            )
+
+        # total grad
+        grads = loss.ponderate_and_sum_gradient(grad_terms)
+
+        # total loss
+        train_loss_value = loss.ponderate_and_sum_loss(loss_terms)
+        # ---------------------------------------------------------------------
+
+        # gradient step
         (
-            loss,
-            train_loss_value,
-            loss_terms,
             params,
             opt_state,
             last_non_nan_params,
         ) = _gradient_step(
-            loss,
+            grads,
             optimizer,
-            batch,
             optimization.params,
             optimization.opt_state,
             optimization.last_non_nan_params,
@@ -377,14 +442,14 @@ def solve(
         )
 
         # save loss value and selected parameters
-        stored_params, stored_loss_terms, train_loss_values = _store_loss_and_params(
+        stored_objects, loss_container = _store_loss_and_params(
             i,
             params,
             stored_objects.stored_params,
-            loss_container.stored_loss_terms,
-            loss_container.train_loss_values,
+            loss_container,
             train_loss_value,
             loss_terms,
+            loss.loss_weights,
             tracked_params,
         )
 
@@ -404,9 +469,10 @@ def solve(
             ),
             DataGeneratorContainer(data, param_data, obs_data),
             validation,
-            LossContainer(stored_loss_terms, train_loss_values),
-            StoredObjectContainer(stored_params),
+            loss_container,
+            stored_objects,
             validation_crit_values,
+            key,
         )
 
     # Main optimization loop. We use the LAX while loop (fully jitted) version
@@ -446,6 +512,7 @@ def solve(
         loss_container,
         stored_objects,
         validation_crit_values,
+        key,
     ) = carry
 
     if verbose:
@@ -483,6 +550,7 @@ def solve(
         loss,  # return the Loss if needed (no-inplace modif)
         optimization.opt_state,
         stored_objects.stored_params,
+        loss_container.stored_weights_terms,
         validation_crit_values if validation is not None else None,
         validation_parameters,
     )
@@ -490,16 +558,12 @@ def solve(
 
 @partial(jit, static_argnames=["optimizer"])
 def _gradient_step(
-    loss: AnyLoss,
+    grads: Params[Array],
     optimizer: optax.GradientTransformation,
-    batch: AnyBatch,
     params: Params[Array],
     opt_state: optax.OptState,
     last_non_nan_params: Params[Array],
 ) -> tuple[
-    AnyLoss,
-    float,
-    dict[str, float],
     Params[Array],
     optax.OptState,
     Params[Array],
@@ -507,13 +571,12 @@ def _gradient_step(
     """
     optimizer cannot be jit-ted.
     """
-    value_grad_loss = jax.value_and_grad(loss, has_aux=True)
-    (loss_val, loss_terms), grads = value_grad_loss(params, batch)
+
     updates, opt_state = optimizer.update(
-        grads,
+        grads,  # type: ignore
         opt_state,
         params,  # type: ignore
-    )  # see optimizer.init for explaination
+    )  # see optimizer.init for explaination for the ignore(s) here
     params = optax.apply_updates(params, updates)  # type: ignore
 
     # check if any of the parameters is NaN
@@ -525,9 +588,6 @@ def _gradient_step(
     )
 
     return (
-        loss,
-        loss_val,
-        loss_terms,
         params,
         opt_state,
         last_non_nan_params,
@@ -554,13 +614,13 @@ def _print_fn(i: int, loss_val: Float, print_loss_every: int, prefix: str = ""):
 def _store_loss_and_params(
     i: int,
     params: Params[Array],
-    stored_params: Params[Array],
-    stored_loss_terms: dict[str, Float[Array, " n_iter"]],
-    train_loss_values: Float[Array, " n_iter"],
+    stored_params: Params[Array | None],
+    loss_container: LossContainer,
     train_loss_val: float,
-    loss_terms: dict[str, float],
+    loss_terms: PyTree[Array],
+    weight_terms: PyTree[Array],
     tracked_params: Params,
-) -> tuple[Params, dict[str, Float[Array, " n_iter"]], Float[Array, " n_iter"]]:
+) -> tuple[StoredObjectContainer, LossContainer]:
     stored_params = jax.tree_util.tree_map(
         lambda stored_value, param, tracked_param: (
             None
@@ -579,12 +639,38 @@ def _store_loss_and_params(
     )
     stored_loss_terms = jax.tree_util.tree_map(
         lambda stored_term, loss_term: stored_term.at[i].set(loss_term),
-        stored_loss_terms,
+        loss_container.stored_loss_terms,
         loss_terms,
     )
 
-    train_loss_values = train_loss_values.at[i].set(train_loss_val)
-    return (stored_params, stored_loss_terms, train_loss_values)
+    if loss_container.stored_weights_terms is not None:
+        stored_weights_terms = jax.tree_util.tree_map(
+            lambda stored_term, weight_term: stored_term.at[i].set(weight_term),
+            jax.tree.leaves(
+                loss_container.stored_weights_terms,
+                is_leaf=lambda x: x is not None and eqx.is_inexact_array(x),
+            ),
+            jax.tree.leaves(
+                weight_terms,
+                is_leaf=lambda x: x is not None and eqx.is_inexact_array(x),
+            ),
+        )
+        stored_weights_terms = eqx.tree_at(
+            lambda pt: jax.tree.leaves(
+                pt, is_leaf=lambda x: x is not None and eqx.is_inexact_array(x)
+            ),
+            loss_container.stored_weights_terms,
+            stored_weights_terms,
+        )
+    else:
+        stored_weights_terms = None
+
+    train_loss_values = loss_container.train_loss_values.at[i].set(train_loss_val)
+    loss_container = LossContainer(
+        stored_loss_terms, stored_weights_terms, train_loss_values
+    )
+    stored_objects = StoredObjectContainer(stored_params)
+    return stored_objects, loss_container
 
 
 def _get_break_fun(n_iter: int, verbose: bool) -> Callable[[main_carry], bool]:
@@ -615,7 +701,7 @@ def _get_break_fun(n_iter: int, verbose: bool) -> Callable[[main_carry], bool]:
         def continue_while_loop(_):
             return True
 
-        (i, _, optimization, optimization_extra, _, _, _, _, _) = carry
+        (i, _, optimization, optimization_extra, _, _, _, _, _, _) = carry
 
         # Condition 1
         bool_max_iter = jax.lax.cond(

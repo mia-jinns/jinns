@@ -1,7 +1,9 @@
 # Changelog
 
-* Unreleased (currently on `main`)
+* v1.5.0
 
+    - Adaptative loss weights following a user defined update scheme, see the updated intro tutorial. Breaking changes since `jinns.solve()` returns signature has changed. Moreover, we do not support vectorial loss weights any more. Users are expected to ponderate the loss of their vectorial dynamic loss directly inside the dynamic loss definition (and obviously, this new loss weight update feature will not apply).
+    More details at [!73](https://gitlab.com/mia_jinns/jinns/-/merge_requests/73)
     - Minor patches [!75](https://gitlab.com/mia_jinns/jinns/-/merge_requests/75)
 
 * v1.4.0
