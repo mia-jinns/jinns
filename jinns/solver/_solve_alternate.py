@@ -205,7 +205,9 @@ def solve_alternate(
         eq_opt_states_ = {}
         for eq_param, eq_optim in eq_optimizers.items():
             break_fun_ = _get_break_fun(
-                eq_n_iters[eq_param], verbose, conditions_str=("bool_max_iter",)
+                eq_n_iters[eq_param],
+                verbose,
+                conditions_str=("bool_max_iter", "bool_nan_in_params"),
             )
 
             def _eq_params_one_iteration(carry):
@@ -256,10 +258,12 @@ def solve_alternate(
 
             # 1 - some init
             loss = eqx.tree_at(
-                lambda pt: pt.derivative_keys,
+                lambda pt: (pt.derivative_keys),  # , pt.loss_weights.initial_condition,
+                # pt.loss_weights.observations),
                 carry[1],
-                eq_gd_steps_derivative_keys[eq_param],
+                (eq_gd_steps_derivative_keys[eq_param]),  # , 0., 0.),
             )
+
             carry = (
                 0,
                 loss,
@@ -282,8 +286,8 @@ def solve_alternate(
 
         ###### OPTIMIZATION ON NN_PARAMS ###########
 
-        loss = eqx.tree_at(
-            lambda pt: pt.derivative_keys, loss, nn_gd_steps_derivative_keys
+        loss_ = eqx.tree_at(
+            lambda pt: pt.derivative_keys, carry[1], nn_gd_steps_derivative_keys
         )
         # TODO jinns solve should return the modified obs
         # TODO below this should not call jinns solve
@@ -292,7 +296,7 @@ def solve_alternate(
             n_iter=nn_n_iter,
             init_params=carry[2].params,
             data=carry[4].data,
-            loss=carry[1],
+            loss=loss_,
             optimizer=nn_optimizer,
             opt_state=nn_opt_state,
             ahead_of_time=False,

@@ -537,6 +537,8 @@ def _gradient_step(
     (loss_val, loss_terms), grads = value_grad_loss(
         opt_params, batch, non_opt_params=non_opt_params
     )
+    # print(grads.eq_params["theta"].shape)
+    # jax.debug.print("grads {x}", x=grads.eq_params["theta"])
 
     # NOTE this partitioning could possibly be avoided, depending of the care
     # we take in the update()
