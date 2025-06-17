@@ -25,6 +25,9 @@ It can also be used for forward problems and hybrid-modeling.
 
     - [Hyper PINNs](https://arxiv.org/pdf/2111.01008.pdf): useful for meta-modeling
 
+- Other
+    - Adaptative Loss Weights are now implemented. Some SoftAdapt, LRAnnealing and ReLoBRaLo are available and users can implement their own strategy. See the [tutorial](https://mia_jinns.gitlab.io/jinns/Notebooks/Tutorials/implementing_your_own_PDE_problem/)
+
 
 - **Get started**: check out our various notebooks on the [documentation](https://mia_jinns.gitlab.io/jinns/index.html).
 
@@ -84,7 +87,7 @@ pre-commit install
 
 Don't hesitate to contribute and get your name on the list here !
 
-**List of contributors:** Hugo Gangloff, Nicolas Jouvin, Lucia Clarotto, Inass Soukarieh
+**List of contributors:** Hugo Gangloff, Nicolas Jouvin, Lucia Clarotto, Inass Soukarieh, Mohamed Badi
 
 # Cite us
 

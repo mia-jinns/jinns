@@ -62,7 +62,6 @@ def train_init():
     )
 
     class LinearFODE(ODE):
-
         def equation(self, t, u, params):
             # in log-space
             u_ = lambda t, p: u(t, p)[0]
@@ -96,7 +95,7 @@ def train_1it(train_init, capsys):
 
     tx = optax.adam(learning_rate=1e90)
     n_iter = 10
-    params, total_loss_list, loss_by_term_dict, _, loss, _, _, _, _ = jinns.solve(
+    params, total_loss_list, loss_by_term_dict, _, loss, _, _, _, _, _ = jinns.solve(
         init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
     )
     captured = capsys.readouterr()

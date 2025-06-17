@@ -12,6 +12,7 @@ from functools import partial
 from typing import Callable, TYPE_CHECKING, ClassVar, Generic, TypeVar
 import equinox as eqx
 from jaxtyping import Float, Array
+import jax.numpy as jnp
 
 
 # See : https://docs.kidger.site/equinox/api/module/advanced_fields/#equinox.AbstractClassVar--known-issues
@@ -71,14 +72,31 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
         A value can be missing, in this case there is no heterogeneity (=None).
         Default None, meaning there is no heterogeneity in the equation
         parameters.
+    vectorial_dyn_loss_ponderation : Float[Array, " dim"], default=None
+        Add a different ponderation weight to each of the dimension to the
+        dynamic loss. This array must have the same dimension as the output of
+        the dynamic loss equation or an error is raised. Default is None which
+        means that a ponderation of 1 is applied on each dimension.
+        `vectorial_dyn_loss_ponderation`
+        is different from loss weights, which are attributes of Loss
+        classes and which implement scalar (and possibly dynamic)
+        ponderations for each term of the total loss.
+        `vectorial_dyn_loss_ponderation` can be used with loss weights.
     """
 
     _eq_type = AbstractClassVar[str]  # class variable denoting the type of
     # differential equation
     Tmax: Float = eqx.field(kw_only=True, default=1)
-    eq_params_heterogeneity: dict[str, Callable | None] = eqx.field(
+    eq_params_heterogeneity: dict[str, Callable | None] | None = eqx.field(
         kw_only=True, default=None, static=True
     )
+    vectorial_dyn_loss_ponderation: Float[Array, " dim"] | None = eqx.field(
+        kw_only=True, default=None
+    )
+
+    def __post_init__(self):
+        if self.vectorial_dyn_loss_ponderation is None:
+            self.vectorial_dyn_loss_ponderation = jnp.array(1.0)
 
     def _eval_heterogeneous_parameters(
         self,
@@ -111,7 +129,9 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
         u: AbstractPINN,
         params: Params[Array],
     ) -> float:
-        evaluation = self.equation(inputs, u, params)
+        evaluation = self.vectorial_dyn_loss_ponderation * self.equation(
+            inputs, u, params
+        )
         if len(evaluation.shape) == 0:
             raise ValueError(
                 "The output of dynamic loss must be vectorial, "

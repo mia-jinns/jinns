@@ -131,6 +131,7 @@ nav:
       - Advanced:
         - Differential operators: 'api/advanced/differential_operators.md'
         - Derivative keys: 'api/advanced/derivative_keys.md'
+        - Adaptative loss weights: 'api/advanced/loss_weight_updates.md'
     - Misc:
       - Framework & notations: 'maths/introduction_to_pinns.md'
       - 'maths/fokker_planck.md'

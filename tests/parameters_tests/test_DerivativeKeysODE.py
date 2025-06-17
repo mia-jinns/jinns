@@ -67,7 +67,6 @@ def create_loss(tmin, Tmax, u, derivative_keys, init_params):
     u0 = 1.848
 
     class LinearFODE(ODE):
-
         def equation(self, t, u, params):
             # in log-space
             u_ = lambda t, p: u(t, p)[0]
@@ -91,7 +90,7 @@ def create_loss(tmin, Tmax, u, derivative_keys, init_params):
 def train(train_data, params, loss):
     tx = optax.adam(learning_rate=1e0)
     n_iter = 2
-    end_params, _, _, _, _, _, _, _, _ = jinns.solve(
+    end_params, _, _, _, _, _, _, _, _, _ = jinns.solve(
         init_params=params,
         data=train_data,
         optimizer=tx,
