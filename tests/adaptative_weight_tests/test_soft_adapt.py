@@ -47,7 +47,9 @@ def test_weight_update_value():
         params=jinns.parameters.Params(eq_params={"a": jnp.array(0)}),
     )
     if loss.update_weight_method is not None:
-        loss_new = loss.update_weights(1, loss_terms, stored_loss_terms, grad_terms)
+        loss_new = loss.update_weights(
+            1, loss_terms, stored_loss_terms, grad_terms, None
+        )
 
     assert jnp.allclose(loss_new.loss_weights.dyn_loss, 0.333, atol=1e-3)
     assert jnp.allclose(loss_new.loss_weights.norm_loss, 0.333, atol=1e-3)

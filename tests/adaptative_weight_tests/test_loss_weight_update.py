@@ -89,9 +89,15 @@ def test_weight_history():
 
     tx = optax.adamw(learning_rate=1e-3)
     n_iter = 10
+    key, subkey = jax.random.split(key)
     params, total_loss_list, loss_by_term_dict, _, _, _, _, stored_lw, _, _ = (
         jinns.solve(
-            init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
+            init_params=params,
+            data=train_data,
+            optimizer=tx,
+            loss=loss,
+            n_iter=n_iter,
+            key=subkey,
         )
     )
     response1 = jnp.array([1.0] + [0.5] * 9)
