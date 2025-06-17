@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import abc
 from typing import TYPE_CHECKING, Self, Literal, Callable
-from jaxtyping import Array, PyTree
+from jaxtyping import Array, PyTree, Key
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -102,6 +102,7 @@ class AbstractLoss(eqx.Module):
         loss_terms: PyTree,
         stored_loss_terms: PyTree,
         grad_terms: PyTree,
+        key: Key,
     ) -> Self:
         """
         Update the loss weights according to a predefined scheme
@@ -114,7 +115,7 @@ class AbstractLoss(eqx.Module):
             new_weights = lr_annealing(self.loss_weights, grad_terms)
         elif self.update_weight_method == "ReLoBRaLo":
             new_weights = ReLoBRaLo(
-                self.loss_weights, iteration_nb, loss_terms, stored_loss_terms
+                self.loss_weights, iteration_nb, loss_terms, stored_loss_terms, key
             )
         else:
             raise ValueError("update_weight_method for loss weights not implemented")

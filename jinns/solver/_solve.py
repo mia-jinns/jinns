@@ -14,7 +14,7 @@ import optax
 import jax
 from jax import jit
 import jax.numpy as jnp
-from jaxtyping import Float, Array, PyTree
+from jaxtyping import Float, Array, PyTree, Key
 import equinox as eqx
 from jinns.solver._rar import init_rar, trigger_rar
 from jinns.utils._utils import _check_nan_in_pytree
@@ -47,6 +47,7 @@ if TYPE_CHECKING:
         LossContainer,
         StoredObjectContainer,
         Float[Array, " n_iter"] | None,
+        Key | None,
     ]
 
 
@@ -65,6 +66,7 @@ def solve(
     obs_batch_sharding: jax.sharding.Sharding | None = None,
     verbose: bool = True,
     ahead_of_time: bool = True,
+    key: Key = None,
 ) -> tuple[
     Params[Array],
     Float[Array, " n_iter"],
@@ -144,6 +146,9 @@ def solve(
         transformed (see https://jax.readthedocs.io/en/latest/aot.html#aot-compiled-functions-cannot-be-transformed).
         When False, jinns does not provide any timing information (which would
         be nonsense in a JIT transformed `solve()` function).
+    key
+        Default None. A JAX random key that can be used for diverse purpose in
+        the main iteration loop.
 
     Returns
     -------
@@ -268,6 +273,11 @@ def solve(
         )
     else:
         stored_weights_terms = None
+    if loss.update_weight_method is not None and key is None:
+        raise ValueError(
+            "`key` argument must be passed to jinns.solve when"
+            " `loss.update_weight_method` is not None"
+        )
 
     train_data = DataGeneratorContainer(
         data=data, param_data=param_data, obs_data=obs_data
@@ -310,6 +320,7 @@ def solve(
         loss_container,
         stored_objects,
         validation_crit_values,
+        key,
     )
 
     def _one_iteration(carry: main_carry) -> main_carry:
@@ -323,6 +334,7 @@ def solve(
             loss_container,
             stored_objects,
             validation_crit_values,
+            key,
         ) = carry
 
         batch, data, param_data, obs_data = get_batch(
@@ -341,12 +353,11 @@ def solve(
         loss_terms, grad_terms = loss.evaluate_by_terms(optimization.params, batch)
 
         if loss.update_weight_method is not None:
+            key, subkey = jax.random.split(key)  # type: ignore because key can
+            # still be None currently
             # avoid computations of tree_at if no updates
             loss = loss.update_weights(
-                i,
-                loss_terms,
-                loss_container.stored_loss_terms,
-                grad_terms,
+                i, loss_terms, loss_container.stored_loss_terms, grad_terms, subkey
             )
 
         # total grad
@@ -461,6 +472,7 @@ def solve(
             loss_container,
             stored_objects,
             validation_crit_values,
+            key,
         )
 
     # Main optimization loop. We use the LAX while loop (fully jitted) version
@@ -500,6 +512,7 @@ def solve(
         loss_container,
         stored_objects,
         validation_crit_values,
+        key,
     ) = carry
 
     if verbose:
@@ -688,7 +701,7 @@ def _get_break_fun(n_iter: int, verbose: bool) -> Callable[[main_carry], bool]:
         def continue_while_loop(_):
             return True
 
-        (i, _, optimization, optimization_extra, _, _, _, _, _) = carry
+        (i, _, optimization, optimization_extra, _, _, _, _, _, _) = carry
 
         # Condition 1
         bool_max_iter = jax.lax.cond(

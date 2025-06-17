@@ -4,7 +4,7 @@ A collection of specific weight update schemes in jinns
 
 from __future__ import annotations
 from typing import TYPE_CHECKING
-from jaxtyping import Array
+from jaxtyping import Array, Key
 import jax.numpy as jnp
 import jax
 import equinox as eqx
@@ -62,6 +62,7 @@ def ReLoBRaLo(
     iteration_nb: int,
     loss_terms: AnyLossComponents,
     stored_loss_terms: AnyLossComponents,
+    key: Key,
     decay_factor: float = 0.9,
     tau: float = 1,  ## referred to as temperature in the article
     p: float = 0.9,
@@ -69,7 +70,6 @@ def ReLoBRaLo(
     r"""
     Implementing the extension of softadapt: Relative Loss Balancing with random LookBack
     """
-    key = jax.random.PRNGKey(42)  # for the Bernoulli variable
     n_loss = len(jax.tree.leaves(loss_terms))  # number of loss terms
     epsilon = 1e-6
 
