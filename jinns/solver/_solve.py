@@ -568,7 +568,7 @@ def _gradient_step(
 
     if params_mask is not None:
         params = eqx.combine(opt_params, non_opt_params)
-        opt_params = jax.tree.map(
+        opt_state = jax.tree.map(
             lambda a, b, c: eqx.combine(b, c) if isinstance(a, Params) else a,
             opt_state,
             opt_opt_state,
