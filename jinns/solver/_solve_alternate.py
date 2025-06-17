@@ -281,4 +281,4 @@ def solve_alternate(
     )
 
     carry = jax.lax.while_loop(main_break_fun, _one_alternate_iteration, carry)
-    return optimization.params
+    return carry[2].params
