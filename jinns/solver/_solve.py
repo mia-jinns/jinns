@@ -166,7 +166,9 @@ def solve(
         signified in tracked_params argument)
     stored_weights_terms
         A PyTree with attributes being arrays of all the values for each loss
-        weight
+        weight. Note that if Loss.update_weight_method is None, we return None,
+        because loss weights are never updated and we can then save some
+        computations
     validation_crit_values
         An array containing the validation criterion values of the training
     best_val_params
@@ -246,23 +248,26 @@ def solve(
     )
 
     # initialize the PyTree for stored loss weights values
-    stored_weights_terms = eqx.tree_at(
-        lambda pt: jax.tree.leaves(
-            pt, is_leaf=lambda x: x is not None and eqx.is_inexact_array(x)
-        ),
-        loss.loss_weights,
-        tuple(
-            jnp.zeros((n_iter))
-            for n in range(
-                len(
-                    jax.tree.leaves(
-                        loss.loss_weights,
-                        is_leaf=lambda x: x is not None and eqx.is_inexact_array(x),
+    if loss.update_weight_method is not None:
+        stored_weights_terms = eqx.tree_at(
+            lambda pt: jax.tree.leaves(
+                pt, is_leaf=lambda x: x is not None and eqx.is_inexact_array(x)
+            ),
+            loss.loss_weights,
+            tuple(
+                jnp.zeros((n_iter))
+                for n in range(
+                    len(
+                        jax.tree.leaves(
+                            loss.loss_weights,
+                            is_leaf=lambda x: x is not None and eqx.is_inexact_array(x),
+                        )
                     )
                 )
-            )
-        ),
-    )
+            ),
+        )
+    else:
+        stored_weights_terms = None
 
     train_data = DataGeneratorContainer(
         data=data, param_data=param_data, obs_data=obs_data
@@ -625,23 +630,27 @@ def _store_loss_and_params(
         loss_terms,
     )
 
-    stored_weights_terms = jax.tree_util.tree_map(
-        lambda stored_term, weight_term: stored_term.at[i].set(weight_term),
-        jax.tree.leaves(
+    if loss_container.stored_weights_terms is not None:
+        stored_weights_terms = jax.tree_util.tree_map(
+            lambda stored_term, weight_term: stored_term.at[i].set(weight_term),
+            jax.tree.leaves(
+                loss_container.stored_weights_terms,
+                is_leaf=lambda x: x is not None and eqx.is_inexact_array(x),
+            ),
+            jax.tree.leaves(
+                weight_terms,
+                is_leaf=lambda x: x is not None and eqx.is_inexact_array(x),
+            ),
+        )
+        stored_weights_terms = eqx.tree_at(
+            lambda pt: jax.tree.leaves(
+                pt, is_leaf=lambda x: x is not None and eqx.is_inexact_array(x)
+            ),
             loss_container.stored_weights_terms,
-            is_leaf=lambda x: x is not None and eqx.is_inexact_array(x),
-        ),
-        jax.tree.leaves(
-            weight_terms, is_leaf=lambda x: x is not None and eqx.is_inexact_array(x)
-        ),
-    )
-    stored_weights_terms = eqx.tree_at(
-        lambda pt: jax.tree.leaves(
-            pt, is_leaf=lambda x: x is not None and eqx.is_inexact_array(x)
-        ),
-        loss_container.stored_weights_terms,
-        stored_weights_terms,
-    )
+            stored_weights_terms,
+        )
+    else:
+        stored_weights_terms = None
 
     train_loss_values = loss_container.train_loss_values.at[i].set(train_loss_val)
     loss_container = LossContainer(
