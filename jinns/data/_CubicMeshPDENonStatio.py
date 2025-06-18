@@ -7,8 +7,10 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 import warnings
 import equinox as eqx
+import numpy as np
 import jax
 import jax.numpy as jnp
+from scipy.stats import qmc
 from jaxtyping import Key, Array, Float
 from jinns.data._Batchs import PDENonStatioBatch
 from jinns.data._utils import (
@@ -147,7 +149,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
                 self.rar_iter_from_last_sampling,
                 self.rar_iter_nb,
             ) = _check_and_set_rar_parameters(self.rar_parameters, self.n, self.n_start)
-        elif self.method == "uniform":
+        elif self.method == "uniform" or self.method == "qmc":
             self.key, domain_times = self.generate_time_data(self.key, self.n)
             self.domain = jnp.concatenate([domain_times, self.omega], axis=1)
         else:
@@ -245,8 +247,10 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         if self.method == "grid":
             partial_times = (self.tmax - self.tmin) / nt
             return key, jnp.arange(self.tmin, self.tmax, partial_times)[:, None]
-        if self.method == "uniform":
+        elif self.method == "uniform":
             return key, self.sample_in_time_domain(subkey, nt)
+        elif self.method == "qmc":  # qmc for quasi Monte-Carlo
+            return key, self.qmc_in_time_domain(subkey, nt)
         raise ValueError("Method " + self.method + " is not implemented.")
 
     def sample_in_time_domain(self, key: Key, nt: int) -> Float[Array, " nt 1"]:
@@ -256,6 +260,16 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             minval=self.tmin,
             maxval=self.tmax,
         )
+
+    def qmc_in_time_domain(self, key: Key, nt: int) -> Float[Array, " nt 1"]:
+        if self.qmc_sequence not in ["sobol", "halton"]:
+            raise ValueError(f"Method {self.qmc_sequence} not implemented")
+        qmc_generator = qmc.Sobol if self.qmc_sequence == "sobol" else qmc.Halton
+        qmc_seq = qmc_generator(
+            d=1, scramble=True, rng=np.random.default_rng(np.uint32(key))
+        )
+        u = qmc_seq.random(n=nt)
+        return jnp.array(qmc.scale(u, l_bounds=self.tmin, u_bounds=self.tmax))
 
     def _get_domain_operands(
         self,

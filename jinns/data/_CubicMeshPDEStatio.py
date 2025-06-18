@@ -8,7 +8,9 @@ from __future__ import (
 import warnings
 import equinox as eqx
 import jax
+import numpy as np
 import jax.numpy as jnp
+from scipy.stats import qmc
 from jaxtyping import Key, Array, Float
 from jinns.data._Batchs import PDEStatioBatch
 from jinns.data._utils import _check_and_set_rar_parameters, _reset_or_increment
@@ -51,10 +53,12 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         in `n` dimension, this represents $(x_{1, max}, x_{2,max}, ...,
         x_{n,max})$
     method : str, default="uniform"
-        Either `grid` or `uniform`, default is `uniform`.
+        Either `grid`, `uniform` or `qmc`, default is `uniform`.
         The method that generates the `nt` time points. `grid` means
         regularly spaced points over the domain. `uniform` means uniformly
         sampled points over the domain
+    qmc_sequence: str, default="sobol"
+        Either `sobol` or `halton` default is `sobol`
     rar_parameters : dict[str, int], default=None
         Defaults to None: do not use Residual Adaptative Resampling.
         Otherwise a dictionary with keys
@@ -96,6 +100,11 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
     max_pts: tuple[float, ...] = eqx.field(kw_only=True)
     method: str = eqx.field(
         kw_only=True, static=True, default_factory=lambda: "uniform"
+    )
+    qmc_sequence: str = eqx.field(
+        kw_only=True,
+        static=True,
+        default_factory=lambda: "sobol",  # or Halton
     )
     rar_parameters: dict[str, int] = eqx.field(kw_only=True, default=None)
     n_start: int = eqx.field(kw_only=True, default=None, static=True)
@@ -195,6 +204,37 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
             axis=-1,
         )
 
+    def qmc_in_omega_domain(self, keys: Key, sample_size: int) -> Float[Array, "n dim"]:
+        if self.qmc_sequence not in ["sobol", "halton"]:
+            raise ValueError(f"Method {self.qmc_sequence} is not implemented")
+        else:
+            qmc_generator = qmc.Sobol if self.qmc_sequence == "Sobol" else qmc.Halton
+            if self.dim == 1:
+                qmc_seq = qmc_generator(
+                    d=self.dim,
+                    scramble=True,
+                    rng=np.random.default_rng(np.uint32(keys)),
+                )
+                u = qmc_seq.random(n=sample_size)
+                return jnp.array(
+                    qmc.scale(u, l_bounds=self.min_pts[0], u_bounds=self.max_pts[0])
+                )
+            return jnp.concatenate(
+                [
+                    qmc.scale(
+                        qmc.Sobol(
+                            d=self.dim,
+                            scramble=True,
+                            rng=np.random.default_rng(np.uint32(keys[i])),
+                        ).random(n=sample_size),
+                        l_bounds=self.min_pts[i],
+                        u_bounds=self.max_pts[i],
+                    )
+                    for i in range(self.dim)
+                ],
+                axis=-1,
+            )
+
     def sample_in_omega_border_domain(
         self, keys: Key, sample_size: int | None = None
     ) -> Float[Array, " 1 2"] | Float[Array, " (nb//4) 2 4"] | None:
@@ -260,6 +300,65 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
             + f"implemented yet. You are asking for generation in dimension d={self.dim}."
         )
 
+    def qmc_in_omega_border_domain(
+        self, keys: Key, sample_size: int | None = None
+    ) -> Float[Array, " 1 2"] | Float[Array, " (nb//4) 2 4"] | None:
+        if self.qmc_sequence not in ["sobol", "halton"]:
+            raise ValueError(f"Method {self.qmc_sequence} not implemented")
+        else:
+            qmc_generator = qmc.Sobol if self.qmc_sequence == "sobol" else qmc.Halton
+            sample_size = self.nb if sample_size is None else sample_size
+            if sample_size is None:
+                return None
+            if self.dim == 1:
+                xmin = self.min_pts[0]
+                xmax = self.max_pts[0]
+                return jnp.array([xmin, xmax]).astype(float)
+            if self.dim == 2:
+                # currently hard-coded the 4 edges for d==2
+                # TODO : find a general & efficient way to sample from the border
+                # (facets) of the hypercube in general dim.
+                facet_n = sample_size // (2 * self.dim)
+
+                def generate_qmc_sample(key, min_val, max_val):
+                    qmc_seq = qmc_generator(
+                        d=self.dim,
+                        scramble=True,
+                        rng=np.random.default_rng(np.uint32(key)),
+                    )
+                    u = qmc_seq.random(n=facet_n)
+                    return jnp.array(qmc.scale(u, l_bounds=min_val, u_bounds=max_val))
+
+                xmin = jnp.hstack(
+                    [
+                        self.min_pts[0] * jnp.ones((facet_n, 1)),
+                        generate_qmc_sample(keys[0], self.min_pts[1], self.max_pts[1]),
+                    ]
+                )
+                xmax = jnp.hstack(
+                    [
+                        self.max_pts[0] * jnp.ones((facet_n, 1)),
+                        generate_qmc_sample(keys[1], self.min_pts[1], self.max_pts[1]),
+                    ]
+                )
+                ymin = jnp.hstack(
+                    [
+                        generate_qmc_sample(keys[2], self.min_pts[0], self.max_pts[0]),
+                        self.min_pts[1] * jnp.ones((facet_n, 1)),
+                    ]
+                )
+                ymax = jnp.hstack(
+                    [
+                        generate_qmc_sample(keys[3], self.min_pts[0], self.max_pts[0]),
+                        self.max_pts[1] * jnp.ones((facet_n, 1)),
+                    ]
+                )
+                return jnp.stack([xmin, xmax, ymin, ymax], axis=-1)
+            raise NotImplementedError(
+                "Generation of the border of a cube in dimension > 2 is not "
+                + f"implemented yet. You are asking for generation in dimension d={self.dim}."
+            )
+
     def generate_omega_data(
         self, key: Key, data_size: int | None = None
     ) -> tuple[
@@ -296,6 +395,12 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
             else:
                 key, *subkeys = jax.random.split(key, self.dim + 1)
             omega = self.sample_in_omega_domain(subkeys, sample_size=data_size)
+        elif self.method == "qmc":
+            if self.dim == 1:
+                key, subkeys = jax.random.split(key, 2)
+            else:
+                key, *subkeys = jax.random.split(key, self.dim + 1)
+            omega = self.qmc_in_omega_domain(subkeys, sample_size=data_size)
         else:
             raise ValueError("Method " + self.method + " is not implemented.")
         return key, omega
