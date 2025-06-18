@@ -534,6 +534,10 @@ def _gradient_step(
     # NOTE the partitioniong
     opt_params, non_opt_params = params.partition(params_mask)
 
+    # NOTE NOTE
+    # if acceleration:
+    # opt_params_accelerate = jax.tree.map
+    # on remplace par opt_state... aux bons endroits
     (loss_val, loss_terms), grads = value_grad_loss(
         opt_params, batch, non_opt_params=non_opt_params
     )
