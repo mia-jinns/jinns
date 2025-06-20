@@ -288,22 +288,22 @@ def solve_alternate(
         ############################################
 
         # DEBUG: early get out of the loop
-        i += 1
-        return (
-            i,
-            carry[1],
-            OptimizationContainer(
-                carry[2].params,
-                carry[2].params,
-                (nn_opt_state, eq_opt_states),
-            ),
-            optimization_extra,
-            DataGeneratorContainer(
-                carry[4].data, train_data.param_data, train_data.obs_data
-            ),
-            loss_container,
-            stored_objects,
-        )
+        # i += 1
+        # return (
+        #    i,
+        #    carry[1],
+        #    OptimizationContainer(
+        #        carry[2].params,
+        #        carry[2].params,
+        #        (nn_opt_state, eq_opt_states),
+        #    ),
+        #    optimization_extra,
+        #    DataGeneratorContainer(
+        #        carry[4].data, train_data.param_data, train_data.obs_data
+        #    ),
+        #    loss_container,
+        #    stored_objects,
+        # )
 
         ###### OPTIMIZATION ON NN_PARAMS ###########
 
@@ -324,7 +324,7 @@ def solve_alternate(
             params_mask=nn_params_mask,
             verbose=verbose,
             print_loss_every=1000,
-            obs_data=obs_data,
+            obs_data=carry[4].obs_data,
         )
 
         ############################################
