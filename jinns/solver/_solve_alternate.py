@@ -242,6 +242,9 @@ def solve_alternate(
                     optimization.opt_state,
                     optimization.last_non_nan_params,
                     eq_params_masks[eq_param],
+                    "y",  # NOTE TODO this again should be dict to get the
+                    # posssible opt_state_field_for_acceleration for each
+                    # different parameter
                 )
 
                 carry = (

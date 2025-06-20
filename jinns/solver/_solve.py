@@ -63,7 +63,8 @@ def solve(
     obs_data: DataGeneratorObservations | None = None,
     validation: AbstractValidationModule | None = None,
     obs_batch_sharding: jax.sharding.Sharding | None = None,
-    params_mask: Params[bool] = None,
+    params_mask: Params[bool] | None = None,
+    opt_state_field_for_acceleration: str | None = None,
     verbose: bool = True,
     ahead_of_time: bool = True,
 ) -> tuple[
@@ -137,6 +138,15 @@ def solve(
         XXXXX
         XXXXX
         XXXXX
+    opt_state_field_for_acceleration
+        A string. Default is None, i.e. normal gradient descent.
+        Because in some optimization scheme one can have what is called
+        acceleration where the loss is computed at some accelerated parameter
+        values, different from the actual parameter values. These accelerated
+        parameter can be stored in the optimizer state as a field. If this
+        field name is passed to `opt_state_field_for_acceleration` then the
+        gradient step will be done by evaluate gradients at parameter value
+        `opt_state.opt_state_field_for_acceleration`.
     verbose
         Default True. If False, no std output (loss or cause of
         exiting the optimization loop) will be produced.
@@ -328,6 +338,7 @@ def solve(
             optimization.opt_state,
             optimization.last_non_nan_params,
             params_mask,
+            opt_state_field_for_acceleration,
             # optimization.params_mask,
         )
 
@@ -506,7 +517,10 @@ def solve(
     )
 
 
-@partial(jit, static_argnames=["optimizer", "params_mask"])
+@partial(
+    jit,
+    static_argnames=["optimizer", "params_mask", "opt_state_field_for_acceleration"],
+)
 def _gradient_step(
     loss: AnyLoss,
     optimizer: optax.GradientTransformation,
@@ -515,6 +529,7 @@ def _gradient_step(
     opt_state: optax.OptState,
     last_non_nan_params: Params[Array],
     params_mask: Params[bool] | None = None,
+    opt_state_field_for_acceleration: str | None = None,
 ) -> tuple[
     AnyLoss,
     float,
@@ -531,25 +546,8 @@ def _gradient_step(
     """
     value_grad_loss = jax.value_and_grad(loss, has_aux=True)
 
-    # NOTE the partitioniong
+    # NOTE the partitioning which are the root of the new approach
     opt_params, non_opt_params = params.partition(params_mask)
-
-    # NOTE NOTE
-    # if acceleration:
-    # opt_params_accelerate = jax.tree.map
-    # on remplace par opt_state... aux bons endroits
-    (loss_val, loss_terms), grads = value_grad_loss(
-        opt_params, batch, non_opt_params=non_opt_params
-    )
-    # print(grads.eq_params["theta"].shape)
-    # jax.debug.print("grads {x}", x=grads.eq_params["theta"])
-
-    # NOTE this partitioning could possibly be avoided, depending of the care
-    # we take in the update()
-    opt_grads, _ = grads.partition(
-        params_mask
-    )  # because the update cannot be made otherwise
-
     opt_opt_state = jax.tree.map(
         lambda l: l.partition(params_mask)[0] if isinstance(l, Params) else l,
         opt_state,
@@ -560,15 +558,27 @@ def _gradient_step(
         opt_state,
         is_leaf=lambda x: isinstance(x, Params),
     )
-    # NOTE NOTE NOTE option 2 pass to optax only jax.tree.leaves(opt_params)
-    # and jax.tree.leaves(opt_grads). They will be minimal and will match
-    # opt_state ? Or Should be work on opt_satet initially because the this
-    # requires info that only user can know (each opt state is different)
+
+    # NOTE to enable optimization procedures with acceleration
+    if opt_state_field_for_acceleration is not None:
+        opt_params_ = getattr(opt_opt_state, opt_state_field_for_acceleration)
+    else:
+        opt_params_ = opt_params
+    (loss_val, loss_terms), grads = value_grad_loss(
+        opt_params_, batch, non_opt_params=non_opt_params
+    )
+    # print(grads.eq_params["theta"].shape)
+    # jax.debug.print("grads {x}", x=grads.eq_params["theta"])
+
+    opt_grads, _ = grads.partition(
+        params_mask
+    )  # because the update cannot be made otherwise
 
     updates, opt_opt_state = optimizer.update(
         opt_grads,
         opt_opt_state,
-        opt_params,  # type: ignore
+        opt_params,  # type: ignore NOTE that we never give the accelerated
+        # params here, this would be a wrong procedure
     )  # see optimizer.init for explaination
     opt_params = optax.apply_updates(opt_params, updates)  # type: ignore
 
