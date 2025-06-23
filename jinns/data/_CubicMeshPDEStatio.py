@@ -204,7 +204,9 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
             axis=-1,
         )
 
-    def qmc_in_omega_domain(self, keys: Key, sample_size: int) -> Float[Array, "n dim"]:
+    def qmc_in_omega_domain(
+        self, subkey: Key, sample_size: int
+    ) -> Float[Array, "n dim"]:
         if self.qmc_sequence not in ["sobol", "halton"]:
             raise ValueError(f"Method {self.qmc_sequence} is not implemented")
         else:
@@ -213,27 +215,18 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
                 qmc_seq = qmc_generator(
                     d=self.dim,
                     scramble=True,
-                    rng=np.random.default_rng(np.uint32(keys)),
+                    rng=np.random.default_rng(np.uint32(subkey)),
                 )
                 u = qmc_seq.random(n=sample_size)
                 return jnp.array(
                     qmc.scale(u, l_bounds=self.min_pts[0], u_bounds=self.max_pts[0])
                 )
-            return jnp.concatenate(
-                [
-                    qmc.scale(
-                        qmc.Sobol(
-                            d=self.dim,
-                            scramble=True,
-                            rng=np.random.default_rng(np.uint32(keys[i])),
-                        ).random(n=sample_size),
-                        l_bounds=self.min_pts[i],
-                        u_bounds=self.max_pts[i],
-                    )
-                    for i in range(self.dim)
-                ],
-                axis=-1,
+            sampler = qmc.Sobol(
+                d=self.dim, scramble=True, rng=np.random.default_rng(np.uint32(subkey))
             )
+            samples = sampler.random(n=sample_size)
+            samples = qmc.scale(samples, l_bounds=self.min_pts, u_bounds=self.max_pts)
+            return jnp.array(samples)
 
     def sample_in_omega_border_domain(
         self, keys: Key, sample_size: int | None = None
@@ -396,11 +389,8 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
                 key, *subkeys = jax.random.split(key, self.dim + 1)
             omega = self.sample_in_omega_domain(subkeys, sample_size=data_size)
         elif self.method == "qmc":
-            if self.dim == 1:
-                key, subkeys = jax.random.split(key, 2)
-            else:
-                key, *subkeys = jax.random.split(key, self.dim + 1)
-            omega = self.qmc_in_omega_domain(subkeys, sample_size=data_size)
+            key, subkey = jax.random.split(key, 2)
+            omega = self.qmc_in_omega_domain(subkey, sample_size=data_size)
         else:
             raise ValueError("Method " + self.method + " is not implemented.")
         return key, omega
@@ -422,8 +412,11 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
             key, *subkeys = jax.random.split(key, 5)
         else:
             subkeys = None
-        omega_border = self.sample_in_omega_border_domain(
-            subkeys, sample_size=data_size
+
+        omega_border = (
+            self.sample_in_omega_border_domain(subkeys, sample_size=data_size)
+            if self.method == "uniform"
+            else self.qmc_in_omega_border_domain(subkeys, sample_size=data_size)
         )
 
         return key, omega_border
