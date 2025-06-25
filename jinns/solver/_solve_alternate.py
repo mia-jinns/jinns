@@ -12,7 +12,7 @@ from jaxtyping import Array
 import equinox as eqx
 
 from jinns.parameters._params import Params
-from jinns.solver._solve import _get_break_fun, solve, _gradient_step
+from jinns.solver._solve import _get_break_fun, _gradient_step, _get_get_batch
 from jinns.data._Batchs import ODEBatch
 from jinns.utils._containers import (
     DataGeneratorContainer,
@@ -58,6 +58,7 @@ def solve_alternate(
     main_break_fun = _get_break_fun(
         n_iter, verbose, conditions_str=("bool_max_iter", "bool_nan_in_params")
     )
+    get_batch = _get_get_batch(None)
 
     # get_batch = _get_get_batch(None)
     # Even if provided by the user we get rid of the following keys because we
@@ -170,8 +171,8 @@ def solve_alternate(
     optimization = OptimizationContainer(
         params=init_params,
         last_non_nan_params=init_params,
-        opt_state=(nn_opt_state, eq_opt_states),
-        # params_mask=(nn_params_mask, eq_params_masks),
+        opt_state=(nn_opt_state, eq_opt_states),  # NOTE that this field changes
+        # between the outer while loop and inner loops
     )
     optimization_extra = OptimizationExtraContainer(
         curr_seq=None,
@@ -187,29 +188,27 @@ def solve_alternate(
         stored_params=None,
     )
 
-    def _one_alternate_iteration(carry):
-        (
-            i,
-            loss,
-            optimization,
-            optimization_extra,
-            train_data,
-            loss_container,
-            stored_objects,
-        ) = carry
+    # Main carry defined here
+    carry = (
+        0,
+        loss,
+        optimization,
+        optimization_extra,
+        train_data,
+        loss_container,
+        stored_objects,
+    )
+    ###
 
-        (nn_opt_state, eq_opt_states) = optimization.opt_state
+    # NOTE we precompile the eq_n_iters[eq_params]-iterations over eq_params
+    # that we will repeat many times. This gets the compilation cost out of the
+    # loop
 
-        ###### OPTIMIZATION ON EQ_PARAMS ###########
+    eq_params_train_fun_compiled = {}
+    for eq_param, eq_optim in eq_optimizers.items():
+        n_iter_for_params = eq_n_iters[eq_param]
 
-        eq_opt_states_ = {}
-        for eq_param, eq_optim in eq_optimizers.items():
-            break_fun_ = _get_break_fun(
-                eq_n_iters[eq_param],
-                verbose,
-                conditions_str=("bool_max_iter", "bool_nan_in_params"),
-            )
-
+        def train_fun(n_iter, carry):
             def _eq_params_one_iteration(carry):
                 (
                     i,
@@ -221,9 +220,6 @@ def solve_alternate(
                     _,
                 ) = carry
 
-                # batch, data, param_data, obs_data = get_batch(
-                #    train_data.data, train_data.param_data, train_data.obs_data
-                # )
                 batch = ODEBatch(train_data.data.times)  # This is what Yanis does
 
                 # Gradient step
@@ -259,6 +255,12 @@ def solve_alternate(
 
                 return carry
 
+            break_fun_ = _get_break_fun(
+                n_iter_for_params,
+                verbose,
+                conditions_str=("bool_max_iter", "bool_nan_in_params"),
+            )
+
             # 1 - some init
             loss = eqx.tree_at(
                 lambda pt: (pt.derivative_keys),  # , pt.loss_weights.initial_condition,
@@ -267,6 +269,7 @@ def solve_alternate(
                 (eq_gd_steps_derivative_keys[eq_param]),  # , 0., 0.),
             )
 
+            (nn_opt_state, eq_opt_states) = optimization.opt_state
             carry = (
                 0,
                 loss,
@@ -282,77 +285,295 @@ def solve_alternate(
             )
             # 2 - go for gradient steps on this eq_params
             carry = jax.lax.while_loop(break_fun_, _eq_params_one_iteration, carry)
-            eq_opt_states_ = eq_opt_states_ | {eq_param: carry[2].opt_state}
-        eq_opt_states = eq_opt_states_
+            return (
+                carry[0],
+                carry[1],
+                OptimizationContainer(
+                    carry[2].params,
+                    carry[2].last_non_nan_params,
+                    (
+                        nn_opt_state,
+                        eq_opt_states | {eq_param: carry[2].opt_state},
+                    ),  # NOTE
+                ),
+                carry[3],
+                carry[4],
+                carry[5],
+                carry[6],
+            )
+
+        eq_params_train_fun_compiled[eq_param] = (
+            jax.jit(train_fun, static_argnums=0)
+            .trace(n_iter_for_params, jax.eval_shape(lambda _: carry, (None,)))
+            .lower()
+            .compile()
+        )
+
+    # NOTE we precompile the repetitive call to jinns.solve()
+    # In the plain while loop, the compilation is costly each time
+    # In the jax lax while loop, the compilation is better but AOT is
+    # disallowed there
+    nn_break_fun = _get_break_fun(
+        nn_n_iter, verbose, conditions_str=("bool_max_iter", "bool_nan_in_params")
+    )
+
+    def train_fun(carry):
+        def _nn_params_one_iteration(carry):
+            (
+                i,
+                loss,
+                optimization,
+                _,
+                train_data,
+                _,
+                _,
+            ) = carry
+
+            batch, data, param_data, obs_data = get_batch(
+                train_data.data, train_data.param_data, train_data.obs_data
+            )
+
+            # Gradient step
+            (
+                loss,
+                train_loss_value,
+                loss_terms,
+                params,
+                nn_opt_state,
+                last_non_nan_params,
+            ) = _gradient_step(
+                loss,
+                nn_optimizer,
+                batch,
+                optimization.params,
+                optimization.opt_state,
+                optimization.last_non_nan_params,
+                nn_params_mask,
+            )
+
+            carry = (
+                i + 1,
+                loss,
+                OptimizationContainer(params, last_non_nan_params, nn_opt_state),
+                carry[3],
+                DataGeneratorContainer(
+                    data=data, param_data=param_data, obs_data=obs_data
+                ),
+                carry[5],
+                carry[6],
+            )
+
+            return carry
+
+        # 1 - some init
+        loss = eqx.tree_at(
+            lambda pt: pt.derivative_keys, carry[1], nn_gd_steps_derivative_keys
+        )
+        (nn_opt_state, eq_opt_states) = optimization.opt_state
+        carry = (
+            0,
+            loss,
+            OptimizationContainer(
+                carry[2].params,
+                carry[2].last_non_nan_params,
+                nn_opt_state,
+            ),
+            carry[3],
+            carry[4],
+            carry[5],
+            carry[6],
+        )
+        # 2 - go for gradient steps on nn_params
+        carry = jax.lax.while_loop(nn_break_fun, _nn_params_one_iteration, carry)
+        return (
+            carry[0],
+            carry[1],
+            OptimizationContainer(
+                carry[2].params,
+                carry[2].last_non_nan_params,
+                (carry[2].opt_state, eq_opt_states),  # NOTE
+            ),
+            carry[3],
+            carry[4],
+            carry[5],
+            carry[6],
+        )
+
+    nn_params_train_fun_compiled = jax.jit(train_fun).lower(carry).compile()
+
+    def _one_alternate_iteration(carry):
+        (
+            i,
+            loss,
+            optimization,
+            optimization_extra,
+            train_data,
+            loss_container,
+            stored_objects,
+        ) = carry
+
+        # (nn_opt_state, eq_opt_states) = optimization.opt_state
+
+        ###### OPTIMIZATION ON EQ_PARAMS ###########
+
+        eq_opt_states_ = {}
+        for eq_param, eq_optim in eq_optimizers.items():
+            # break_fun_ = _get_break_fun(
+            #    eq_n_iters[eq_param],
+            #    verbose,
+            #    conditions_str=("bool_max_iter", "bool_nan_in_params"),
+            # )
+
+            # def _eq_params_one_iteration(carry):
+            #    (
+            #        i,
+            #        loss,
+            #        optimization,
+            #        _,
+            #        train_data,
+            #        _,
+            #        _,
+            #    ) = carry
+
+            #    # batch, data, param_data, obs_data = get_batch(
+            #    #    train_data.data, train_data.param_data, train_data.obs_data
+            #    # )
+            #    batch = ODEBatch(train_data.data.times)  # This is what Yanis does
+
+            #    # Gradient step
+            #    (
+            #        loss,
+            #        train_loss_value,
+            #        loss_terms,
+            #        params,
+            #        eq_opt_state,
+            #        last_non_nan_params,
+            #    ) = _gradient_step(
+            #        loss,
+            #        eq_optim,
+            #        batch,
+            #        optimization.params,
+            #        optimization.opt_state,
+            #        optimization.last_non_nan_params,
+            #        eq_params_masks[eq_param],
+            #        "y",  # NOTE TODO this again should be dict to get the
+            #        # posssible opt_state_field_for_acceleration for each
+            #        # different parameter
+            #    )
+
+            #    carry = (
+            #        i + 1,
+            #        loss,
+            #        OptimizationContainer(params, last_non_nan_params, eq_opt_state),
+            #        carry[3],
+            #        carry[4],
+            #        carry[5],
+            #        carry[6],
+            #    )
+
+            #    return carry
+
+            ## 1 - some init
+            # loss = eqx.tree_at(
+            #    lambda pt: (pt.derivative_keys),  # , pt.loss_weights.initial_condition,
+            #    # pt.loss_weights.observations),
+            #    carry[1],
+            #    (eq_gd_steps_derivative_keys[eq_param]),  # , 0., 0.),
+            # )
+
+            # carry = (
+            #    0,
+            #    loss,
+            #    OptimizationContainer(
+            #        carry[2].params,
+            #        carry[2].last_non_nan_params,
+            #        eq_opt_states[eq_param],
+            #    ),
+            #    carry[3],
+            #    carry[4],
+            #    carry[5],
+            #    carry[6],
+            # )
+            ## 2 - go for gradient steps on this eq_params
+            # carry = jax.lax.while_loop(break_fun_, _eq_params_one_iteration, carry)
+            # eq_opt_states_ = eq_opt_states_ | {eq_param: carry[2].opt_state}
+            carry = eq_params_train_fun_compiled[eq_param](carry)
+        # eq_opt_states = eq_opt_states_
+        carry = (
+            carry[0],
+            carry[1],
+            OptimizationContainer(
+                carry[2].params,
+                carry[2].last_non_nan_params,
+                (carry[2].opt_state[0], eq_opt_states),  # NOTE
+            ),
+            carry[3],
+            carry[4],
+            carry[5],
+            carry[6],
+        )
 
         ############################################
 
         # DEBUG: early get out of the loop
         # i += 1
         # return (
-        #    i,
-        #    carry[1],
-        #    OptimizationContainer(
-        #        carry[2].params,
-        #        carry[2].params,
-        #        (nn_opt_state, eq_opt_states),
-        #    ),
-        #    optimization_extra,
-        #    DataGeneratorContainer(
-        #        carry[4].data, train_data.param_data, train_data.obs_data
-        #    ),
-        #    loss_container,
-        #    stored_objects,
+        #   i,
+        #   carry[1],
+        #   OptimizationContainer(
+        #       carry[2].params,
+        #       carry[2].params,
+        #       (nn_opt_state, eq_opt_states),
+        #   ),
+        #   optimization_extra,
+        #   DataGeneratorContainer(
+        #       carry[4].data, train_data.param_data, train_data.obs_data
+        #   ),
+        #   loss_container,
+        #   stored_objects,
         # )
 
         ###### OPTIMIZATION ON NN_PARAMS ###########
 
-        loss_ = eqx.tree_at(
-            lambda pt: pt.derivative_keys, carry[1], nn_gd_steps_derivative_keys
-        )
-        # TODO jinns solve should return the modified obs
-        # TODO below this should not call jinns solve
-        # but directly loop over _gradient_step
-        params, loss_values, _, data, loss, nn_opt_state, _, _, _ = solve(
-            n_iter=nn_n_iter,
-            init_params=carry[2].params,
-            data=carry[4].data,
-            loss=loss_,
-            optimizer=nn_optimizer,
-            opt_state=nn_opt_state,
-            ahead_of_time=False,
-            params_mask=nn_params_mask,
-            verbose=verbose,
-            print_loss_every=1000,
-            obs_data=carry[4].obs_data,
-        )
+        # loss_ = eqx.tree_at(
+        #    lambda pt: pt.derivative_keys, carry[1], nn_gd_steps_derivative_keys
+        # )
+        ## TODO jinns solve should return the modified obs
+        ## TODO below this should not call jinns solve
+        ## but directly loop over _gradient_step
+        # params, loss_values, _, data, loss, nn_opt_state, _, _, _ = solve(
+        #    n_iter=nn_n_iter,
+        #    init_params=carry[2].params,
+        #    data=carry[4].data,
+        #    loss=loss_,
+        #    optimizer=nn_optimizer,
+        #    opt_state=nn_opt_state,
+        #    ahead_of_time=False,
+        #    params_mask=nn_params_mask,
+        #    verbose=verbose,
+        #    print_loss_every=1000,
+        #    obs_data=carry[4].obs_data,
+        # )
+        carry = nn_params_train_fun_compiled(carry)
 
         ############################################
 
         i += 1
         return (
             i,
-            loss,
-            OptimizationContainer(
-                params,
-                params,
-                (nn_opt_state, eq_opt_states),
-            ),
-            optimization_extra,
-            DataGeneratorContainer(data, train_data.param_data, train_data.obs_data),
-            loss_container,
-            stored_objects,
+            carry[1],
+            carry[2],
+            carry[3],
+            carry[4],
+            carry[5],
+            carry[6],
         )
 
-    carry = (
-        0,
-        loss,
-        optimization,
-        optimization_extra,
-        train_data,
-        loss_container,
-        stored_objects,
-    )
+    # jax.lax.while_loop jits its content so cannot be used when we try to
+    # precompile what is inside. JAX tranformations are not compatible with AOT
+    # carry = jax.lax.while_loop(main_break_fun, _one_alternate_iteration, carry)
 
-    carry = jax.lax.while_loop(main_break_fun, _one_alternate_iteration, carry)
+    while main_break_fun(carry):
+        carry = _one_alternate_iteration(carry)
+
     return carry[2].params
