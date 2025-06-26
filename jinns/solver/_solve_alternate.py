@@ -220,6 +220,8 @@ def solve_alternate(
                     _,
                 ) = carry
 
+                (nn_opt_state, eq_opt_states) = optimization.opt_state
+
                 batch = ODEBatch(train_data.data.times)  # This is what Yanis does
 
                 # Gradient step
@@ -235,7 +237,7 @@ def solve_alternate(
                     eq_optim,
                     batch,
                     optimization.params,
-                    optimization.opt_state,
+                    eq_opt_states[eq_param],
                     optimization.last_non_nan_params,
                     eq_params_masks[eq_param],
                     "y",  # NOTE TODO this again should be dict to get the
@@ -246,7 +248,14 @@ def solve_alternate(
                 carry = (
                     i + 1,
                     loss,
-                    OptimizationContainer(params, last_non_nan_params, eq_opt_state),
+                    OptimizationContainer(
+                        params,
+                        last_non_nan_params,
+                        (
+                            nn_opt_state,
+                            eq_opt_states | {eq_param: eq_opt_state},
+                        ),
+                    ),
                     carry[3],
                     carry[4],
                     carry[5],
@@ -269,38 +278,22 @@ def solve_alternate(
                 (eq_gd_steps_derivative_keys[eq_param]),  # , 0., 0.),
             )
 
-            (nn_opt_state, eq_opt_states) = optimization.opt_state
             carry = (
                 0,
                 loss,
-                OptimizationContainer(
-                    carry[2].params,
-                    carry[2].last_non_nan_params,
-                    eq_opt_states[eq_param],
-                ),
+                carry[2],
+                # OptimizationContainer(
+                #    carry[2].params,
+                #    carry[2].last_non_nan_params,
+                #    eq_opt_states[eq_param],
+                # ),
                 carry[3],
                 carry[4],
                 carry[5],
                 carry[6],
             )
             # 2 - go for gradient steps on this eq_params
-            carry = jax.lax.while_loop(break_fun_, _eq_params_one_iteration, carry)
-            return (
-                carry[0],
-                carry[1],
-                OptimizationContainer(
-                    carry[2].params,
-                    carry[2].last_non_nan_params,
-                    (
-                        nn_opt_state,
-                        eq_opt_states | {eq_param: carry[2].opt_state},
-                    ),  # NOTE
-                ),
-                carry[3],
-                carry[4],
-                carry[5],
-                carry[6],
-            )
+            return jax.lax.while_loop(break_fun_, _eq_params_one_iteration, carry)
 
         eq_params_train_fun_compiled[eq_param] = (
             jax.jit(train_fun, static_argnums=0)
@@ -329,6 +322,9 @@ def solve_alternate(
                 _,
             ) = carry
 
+            #
+            (nn_opt_state, eq_opt_states) = optimization.opt_state
+
             batch, data, param_data, obs_data = get_batch(
                 train_data.data, train_data.param_data, train_data.obs_data
             )
@@ -346,7 +342,7 @@ def solve_alternate(
                 nn_optimizer,
                 batch,
                 optimization.params,
-                optimization.opt_state,
+                nn_opt_state,
                 optimization.last_non_nan_params,
                 nn_params_mask,
             )
@@ -354,7 +350,9 @@ def solve_alternate(
             carry = (
                 i + 1,
                 loss,
-                OptimizationContainer(params, last_non_nan_params, nn_opt_state),
+                OptimizationContainer(
+                    params, last_non_nan_params, (nn_opt_state, eq_opt_states)
+                ),
                 carry[3],
                 DataGeneratorContainer(
                     data=data, param_data=param_data, obs_data=obs_data
@@ -369,35 +367,17 @@ def solve_alternate(
         loss = eqx.tree_at(
             lambda pt: pt.derivative_keys, carry[1], nn_gd_steps_derivative_keys
         )
-        (nn_opt_state, eq_opt_states) = optimization.opt_state
         carry = (
             0,
             loss,
-            OptimizationContainer(
-                carry[2].params,
-                carry[2].last_non_nan_params,
-                nn_opt_state,
-            ),
+            carry[2],
             carry[3],
             carry[4],
             carry[5],
             carry[6],
         )
         # 2 - go for gradient steps on nn_params
-        carry = jax.lax.while_loop(nn_break_fun, _nn_params_one_iteration, carry)
-        return (
-            carry[0],
-            carry[1],
-            OptimizationContainer(
-                carry[2].params,
-                carry[2].last_non_nan_params,
-                (carry[2].opt_state, eq_opt_states),  # NOTE
-            ),
-            carry[3],
-            carry[4],
-            carry[5],
-            carry[6],
-        )
+        return jax.lax.while_loop(nn_break_fun, _nn_params_one_iteration, carry)
 
     nn_params_train_fun_compiled = jax.jit(train_fun).lower(carry).compile()
 
@@ -412,11 +392,12 @@ def solve_alternate(
             stored_objects,
         ) = carry
 
+        jax.debug.print("jinns alternate solver iteration {x}", x=i)
+
         # (nn_opt_state, eq_opt_states) = optimization.opt_state
 
         ###### OPTIMIZATION ON EQ_PARAMS ###########
 
-        eq_opt_states_ = {}
         for eq_param, eq_optim in eq_optimizers.items():
             # break_fun_ = _get_break_fun(
             #    eq_n_iters[eq_param],
@@ -499,19 +480,19 @@ def solve_alternate(
             # eq_opt_states_ = eq_opt_states_ | {eq_param: carry[2].opt_state}
             carry = eq_params_train_fun_compiled[eq_param](carry)
         # eq_opt_states = eq_opt_states_
-        carry = (
-            carry[0],
-            carry[1],
-            OptimizationContainer(
-                carry[2].params,
-                carry[2].last_non_nan_params,
-                (carry[2].opt_state[0], eq_opt_states),  # NOTE
-            ),
-            carry[3],
-            carry[4],
-            carry[5],
-            carry[6],
-        )
+        # carry = (
+        #    carry[0],
+        #    carry[1],
+        #    OptimizationContainer(
+        #        carry[2].params,
+        #        carry[2].last_non_nan_params,
+        #        (carry[2].opt_state[0], eq_opt_states),  # NOTE
+        #    ),
+        #    carry[3],
+        #    carry[4],
+        #    carry[5],
+        #    carry[6],
+        # )
 
         ############################################
 
