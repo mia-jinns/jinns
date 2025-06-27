@@ -19,6 +19,7 @@ from jaxtyping import Float, Array
 from jinns.loss._loss_utils import (
     dynamic_loss_apply,
     observations_loss_apply,
+    initial_condition_check,
 )
 from jinns.parameters._params import (
     _get_vmap_in_axes_params,
@@ -43,7 +44,7 @@ if TYPE_CHECKING:
 
 
 class _LossODEAbstract(AbstractLoss):
-    """
+    r"""
     Parameters
     ----------
 
@@ -60,8 +61,22 @@ class _LossODEAbstract(AbstractLoss):
         Fields can be "nn_params", "eq_params" or "both". Those that should not
         be updated will have a `jax.lax.stop_gradient` called on them. Default
         is `"nn_params"` for each composant of the loss.
-    initial_condition : tuple[float | Float[Array, " 1"], Float[Array, " dim"]], default=None
-        tuple of length 2 with initial condition $(t_0, u_0)$.
+    initial_condition : tuple[
+            tuple[int | float | Float[Array, " "], ...],
+            tuple[int | float | Float[Array, " dim"], ...]
+        ] |
+        tuple[int | float | Float[Array, " "],
+              int | float | Float[Array, " dim"]
+        ], default=None
+        Most of the time, atuple of length 2 with initial condition $(t_0, u_0)$.
+        From jinns v1.5.1 we accept:
+        - jnp arrays with shape (:, 1) or tuple of (float, int) for t0
+        - jnp arrays with shape (:, :) or tuple of (float, int, 1D jnp array)
+          for u0
+        to account for example to the specific inclusion of final conditions
+        (abusing naming convention). This is for example to implement
+        $\mathcal{L}^{aux}$ from _Systems biology informed deep learning for
+        inferring parameters and hidden dynamics_, Alireza Yazdani et al., 2020
     obs_slice : EllipsisType | slice | None, default=None
         Slice object specifying the begininning/ending
         slice of u output(s) that is observed. This is useful for
@@ -78,7 +93,11 @@ class _LossODEAbstract(AbstractLoss):
     derivative_keys: DerivativeKeysODE | None = eqx.field(kw_only=True, default=None)
     loss_weights: LossWeightsODE | None = eqx.field(kw_only=True, default=None)
     initial_condition: (
-        tuple[float | Float[Array, " 1"], Float[Array, " dim"]] | None
+        tuple[
+            tuple[int | float | Float[Array, " "], ...],
+            tuple[int | float | Float[Array, " dim"], ...],
+        ]
+        | tuple[int | float | Float[Array, " "], int | float | Float[Array, " dim"]]
     ) = eqx.field(kw_only=True, default=None)
     obs_slice: EllipsisType | slice | None = eqx.field(
         kw_only=True, default=None, static=True
@@ -112,20 +131,29 @@ class _LossODEAbstract(AbstractLoss):
                     "Initial condition should be a tuple of len 2 with (t0, u0), "
                     f"{self.initial_condition} was passed."
                 )
-            # some checks/reshaping for t0
+            # some checks/reshaping for t0 and u0
             t0, u0 = self.initial_condition
-            if isinstance(t0, Array):
-                if not t0.shape:  # e.g. user input: jnp.array(0.)
-                    t0 = jnp.array([t0])
-                elif t0.shape != (1,):
-                    raise ValueError(
-                        f"Wrong t0 input (self.initial_condition[0]) It should be"
-                        f"a float or an array of shape (1,). Got shape: {t0.shape}"
-                    )
-            if isinstance(t0, float):  # e.g. user input: 0.
-                t0 = jnp.array([t0])
-            if isinstance(t0, int):  # e.g. user input: 0
-                t0 = jnp.array([float(t0)])
+            if (isinstance(t0, Array) and t0.ndim > 1) or isinstance(t0, tuple):
+                t0 = jnp.stack(
+                    [initial_condition_check(t, dim_size=1) for t in t0], axis=0
+                )
+            else:
+                t0 = jnp.array([initial_condition_check(t0, dim_size=1)])
+            # at the end we end up with t0 of shape (:, 1) to account for
+            # possibly several data points
+            if (isinstance(u0, Array) and u0.ndim > 1) or isinstance(u0, tuple):
+                u0 = jnp.stack(
+                    [initial_condition_check(u, dim_size=None) for u in u0], axis=0
+                )
+            else:
+                u0 = jnp.array([initial_condition_check(u0, dim_size=None)])
+            # at the end we end up with u0 of shape (:, ?) to account for
+            # possibly several data points
+            if t0.shape[0] != u0.shape[0]:
+                raise ValueError(
+                    "t0 and u0 must represent a same number of initial conditial"
+                )
+
             self.initial_condition = (t0, u0)
 
         if self.obs_slice is None:
@@ -259,28 +287,42 @@ class LossODE(_LossODEAbstract):
 
         # initial condition
         if self.initial_condition is not None:
-            vmap_in_axes = (None,) + vmap_in_axes_params
-            if not jax.tree_util.tree_leaves(vmap_in_axes):
-                # test if only None in vmap_in_axes to avoid the value error:
-                # `vmap must have at least one non-None value in in_axes`
-                v_u = self.u
-            else:
-                v_u = vmap(self.u, (None,) + vmap_in_axes_params)
             t0, u0 = self.initial_condition
             u0 = jnp.array(u0)
-            initial_condition_fun = lambda p: jnp.mean(
-                jnp.sum(
-                    (
-                        v_u(
-                            t0,
-                            _set_derivatives(p, self.derivative_keys.initial_condition),  # type: ignore
-                        )
-                        - u0
+
+            # first construct the plain init loss no vmaping
+            initial_condition_fun__ = lambda t, u, p: jnp.sum(
+                (
+                    self.u(
+                        t,
+                        _set_derivatives(
+                            p,
+                            self.derivative_keys.initial_condition,  # type: ignore
+                        ),
                     )
-                    ** 2,
-                    axis=-1,
+                    - u
                 )
+                ** 2,
+                axis=0,
             )
+            # now vmap over the number of conditions (first dim of t0 and u0)
+            # and take the mean
+            initial_condition_fun_ = lambda p: jnp.mean(
+                vmap(initial_condition_fun__, (0, 0, None))(t0, u0, p)
+            )
+            # now vmap over the the possible batch of parameters and take the
+            # average. Note that we then finally have a cartesian product
+            # between the batch of parameters (if any) and the number of
+            # conditions (if any)
+            if not jax.tree_util.tree_leaves(vmap_in_axes_params):
+                # if there is no parameter batch to vmap over we cannot call
+                # vmap because calling vmap must be done with at least one non
+                # None in_axes or out_axes
+                initial_condition_fun = initial_condition_fun_
+            else:
+                initial_condition_fun = lambda p: jnp.mean(
+                    vmap(initial_condition_fun_, vmap_in_axes_params)(p)
+                )
         else:
             initial_condition_fun = None
 
