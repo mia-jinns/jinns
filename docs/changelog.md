@@ -1,5 +1,9 @@
 # Changelog
 
+* Unreleased (currently on `main`)
+
+    - More (initial) conditions for LossODE. Add the possibility to handle for example a condition at t0 and tmax [!77](https://gitlab.com/mia_jinns/jinns/-/merge_requests/77)
+
 * v1.5.0
 
     - Adaptative loss weights following a user defined update scheme, see the updated intro tutorial. Breaking changes since `jinns.solve()` returns signature has changed. Moreover, we do not support vectorial loss weights any more. Users are expected to ponderate the loss of their vectorial dynamic loss directly inside the dynamic loss definition (and obviously, this new loss weight update feature will not apply).
