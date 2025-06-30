@@ -135,11 +135,19 @@ def solve(
         created with sharding_device=SingleDeviceSharding(cpu_device) to avoid
         loading on GPU huge datasets of observations.
     params_mask
-        XXXXX
-        XXXXX
-        XXXXX
+        A Params object with boolean as leaves to choose over which parameters
+        the optimization will effectively be done (over which gradient
+        computations will happen). This params_mask will then be used as the
+        filter_spec of a `eqx.partition` function. This strategy is the root of
+        the `jinns.solve_alternate` approach. `params_mask` does not replace
+        `DerivativeKeys`, the latter enable differentiating wrt certain parameters
+        with granularity over certain loss(es) only, among the parameters whose
+        differentiation is enabled by `params_mask`. Hence `DerivativeKeys` are
+        more precise and could make the job of `params_mask` somehow, but
+        `DerivativeKeys` are much less computationally efficient, hence the
+        overlay `params_mask` that have been added.
     opt_state_field_for_acceleration
-        A string. Default is None, i.e. normal gradient descent.
+        A string. Default is None, i.e. the optimizer without acceleration.
         Because in some optimization scheme one can have what is called
         acceleration where the loss is computed at some accelerated parameter
         values, different from the actual parameter values. These accelerated
@@ -323,6 +331,9 @@ def solve(
         )
 
         # Gradient step
+        # Note that optimizer and params_mask are not part of the carry since
+        # the former is not tracable and the latter (while it could be
+        # hashable) must be static because of the equinox `filter_spec` (https://github.com/patrick-kidger/equinox/issues/1036)
         (
             loss,
             train_loss_value,
@@ -546,7 +557,8 @@ def _gradient_step(
     """
     value_grad_loss = jax.value_and_grad(loss, has_aux=True)
 
-    # NOTE the partitioning which are the root of the new approach
+    # NOTE the partitioning which is the root of the new approach
+    # to optimize only on given parameters
     opt_params, non_opt_params = params.partition(params_mask)
     opt_opt_state = jax.tree.map(
         lambda l: l.partition(params_mask)[0] if isinstance(l, Params) else l,
@@ -567,8 +579,6 @@ def _gradient_step(
     (loss_val, loss_terms), grads = value_grad_loss(
         opt_params_, batch, non_opt_params=non_opt_params
     )
-    # print(grads.eq_params["theta"].shape)
-    # jax.debug.print("grads {x}", x=grads.eq_params["theta"])
 
     opt_grads, _ = grads.partition(
         params_mask
@@ -582,6 +592,7 @@ def _gradient_step(
     )  # see optimizer.init for explaination
     opt_params = optax.apply_updates(opt_params, updates)  # type: ignore
 
+    # NOTE the combine which closes the partitioned chunck
     if params_mask is not None:
         params = eqx.combine(opt_params, non_opt_params)
         opt_state = jax.tree.map(

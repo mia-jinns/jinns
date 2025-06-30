@@ -13,7 +13,6 @@ import equinox as eqx
 
 from jinns.parameters._params import Params
 from jinns.solver._solve import _get_break_fun, _gradient_step, _get_get_batch
-from jinns.data._Batchs import ODEBatch
 from jinns.utils._containers import (
     DataGeneratorContainer,
     OptimizationContainer,
@@ -26,6 +25,7 @@ if TYPE_CHECKING:
     from jinns.loss._abstract_loss import AbstractLoss
     from jinns.data._AbstractDataGenerator import AbstractDataGenerator
     from jinns.data._DataGeneratorObservations import DataGeneratorObservations
+    from jinns.data._DataGeneratorParameter import DataGeneratorParameter
 
 
 def solve_alternate(
@@ -36,7 +36,9 @@ def solve_alternate(
     loss: AbstractLoss,
     optimizers: Params[optax.GradientTransformation],
     verbose: bool = True,
+    param_data: DataGeneratorParameter | None = None,
     obs_data: DataGeneratorObservations | None = None,
+    opt_state_fields_for_acceleration: Params[str] | None = None,
 ):
     """
     Solve alternatively between nn_params and eq_params. In this functions both
@@ -44,7 +46,7 @@ def solve_alternate(
     explicitly handled separately. This approach becomes more efficient than
     relying on optax masked transforms and jinns DerivativeKeys when nn_params
     is big while eq_params is very small. The former do not prevent all
-    computations from begin done (for example, we still have a big opt_state when updating
+    computations from being done (for example, we still have a big opt_state when updating
     only eq_params, jinns DerivativeKeys only consists in putting
     stop gradients, etc. -- see for example Inverse problem tutorial on Burgers
     in jinns documentation) and hence is suboptimal.
@@ -53,18 +55,44 @@ def solve_alternate(
     problems where nn_optimizer is arbitrarily big, but eq_params prepresents
     only a few physical parameters.
 
-    About the argument in this function: https://stackoverflow.com/a/58018872
+    Parameters
+    ----------
+    n_iter
+        The maximum number of cyles of alternate iterations.
+    n_iter_by_solver
+        A Params object, where for each leaves (`nn_params` and each
+        `eq_params` keys) we find the number of iterations
+        inside one alternate cycle.
+    init_params
+        The initial jinns.parameters.Params object.
+    data
+        A DataGenerator object to retrieve batches of collocation points.
+    loss
+        The loss function to minimize.
+    optimizers
+        A Params object, where for each leaves (`nn_params` and each
+        `eq_params` keys) we find an optimizer
+    verbose
+        Default True. If False, no std output (loss or cause of
+        exiting the optimization loop) will be produced.
+    param_data
+        Default None. A DataGeneratorParameter object which can be used to
+        sample equation parameters.
+    obs_data
+        Default None. A DataGeneratorObservations
+        object which can be used to sample minibatches of observations.
+    opt_state_fields_for_acceleration
+        A Params object, where for each leaves (`nn_params` and each
+        `eq_params` keys) we find an `opt_state_field_for_acceleration` as
+        described in `jinns.solve`.
+
+    Returns
+    -------
     """
     main_break_fun = _get_break_fun(
         n_iter, verbose, conditions_str=("bool_max_iter", "bool_nan_in_params")
     )
     get_batch = _get_get_batch(None)
-
-    # get_batch = _get_get_batch(None)
-    # Even if provided by the user we get rid of the following keys because we
-    # need to control their value for the alternate optimization
-    # for k in ("opt_state", "ahead_of_time", "params_mask"):
-    #    kwargs_solve.pop(k, None)
 
     nn_n_iter = n_iter_by_solver.nn_params
     eq_n_iters = n_iter_by_solver.eq_params
@@ -72,16 +100,29 @@ def solve_alternate(
     nn_optimizer = optimizers.nn_params
     eq_optimizers = optimizers.eq_params
 
-    # NOTE NOTE NOTE below we have opt_states that are shaped as Params
-    # maybe this is OK if the real gain is not to differentiate
+    # NOTE below we have opt_states that are shaped as Params
+    # but this seems OK since the real gain is to not differentiate
     # wrt to unwanted params
-    # OR MAYBE option 2 (see jinns solve)
-    nn_opt_state = nn_optimizer.init(init_params)  # .nn_params)
+    nn_opt_state = nn_optimizer.init(init_params)
+
+    if opt_state_fields_for_acceleration is None:
+        nn_opt_state_field_for_acceleration = None
+        eq_params_opt_state_field_for_accel = jax.tree.map(
+            lambda l: None,
+            eq_optimizers,
+            is_leaf=lambda x: isinstance(x, optax.GradientTransformation),
+        )
+    else:
+        nn_opt_state_field_for_acceleration = (
+            opt_state_fields_for_acceleration.nn_params
+        )
+        eq_params_opt_state_field_for_accel = (
+            opt_state_fields_for_acceleration.eq_params
+        )
 
     eq_opt_states = jax.tree.map(
         lambda opt_: opt_.init(init_params),
         eq_optimizers,
-        # init_params.eq_params,
         is_leaf=lambda x: isinstance(x, optax.GradientTransformation),
         # do not traverse further
     )
@@ -140,7 +181,7 @@ def solve_alternate(
         else:
             raise ValueError
 
-    # NOTE that we need to replace will plain bool:
+    # Note that we need to replace with plain bool:
     # 1. filter_spec does not even accept onp.array
     # 2. filter_spec does not accept non static arguments. So any jnp array is
     # non hashable and we will not be able to make it static
@@ -149,11 +190,7 @@ def solve_alternate(
     eq_params_masks = jax.tree.map(lambda l: replace_float(l), eq_params_masks)
 
     # derivative keys with only eq_params updates for the gradient steps over eq_params
-    # Again this is a dict for eqch eq_params
-    # eq_gd_steps_derivative_keys = jax.tree.map(
-    #    lambda l: jax.tree.map(lambda ll: l, loss.derivative_keys),
-    #    eq_params_masks,
-    # )
+    # Again this is a dict for each eq_params
     eq_gd_steps_derivative_keys = {
         eq_param: jax.tree.map(
             lambda l: eq_params_mask,
@@ -167,7 +204,9 @@ def solve_alternate(
     # for the pytree manipulations above
 
     # NOTE much more containers than what's currently used
-    train_data = DataGeneratorContainer(data=data, param_data=None, obs_data=obs_data)
+    train_data = DataGeneratorContainer(
+        data=data, param_data=param_data, obs_data=obs_data
+    )
     optimization = OptimizationContainer(
         params=init_params,
         last_non_nan_params=init_params,
@@ -208,7 +247,7 @@ def solve_alternate(
     for eq_param, eq_optim in eq_optimizers.items():
         n_iter_for_params = eq_n_iters[eq_param]
 
-        def train_fun(n_iter, carry):
+        def eq_train_fun(n_iter, carry):
             def _eq_params_one_iteration(carry):
                 (
                     i,
@@ -222,7 +261,9 @@ def solve_alternate(
 
                 (nn_opt_state, eq_opt_states) = optimization.opt_state
 
-                batch = ODEBatch(train_data.data.times)  # This is what Yanis does
+                batch, data, param_data, obs_data = get_batch(
+                    train_data.data, train_data.param_data, train_data.obs_data
+                )
 
                 # Gradient step
                 (
@@ -240,9 +281,7 @@ def solve_alternate(
                     eq_opt_states[eq_param],
                     optimization.last_non_nan_params,
                     eq_params_masks[eq_param],
-                    "y",  # NOTE TODO this again should be dict to get the
-                    # posssible opt_state_field_for_acceleration for each
-                    # different parameter
+                    eq_params_opt_state_field_for_accel[eq_param],
                 )
 
                 carry = (
@@ -272,23 +311,19 @@ def solve_alternate(
 
             # 1 - some init
             loss = eqx.tree_at(
-                lambda pt: (pt.derivative_keys),  # , pt.loss_weights.initial_condition,
-                # pt.loss_weights.observations),
+                lambda pt: (pt.derivative_keys),
                 carry[1],
-                (eq_gd_steps_derivative_keys[eq_param]),  # , 0., 0.),
+                (eq_gd_steps_derivative_keys[eq_param]),
             )
 
             carry = (
                 0,
                 loss,
                 carry[2],
-                # OptimizationContainer(
-                #    carry[2].params,
-                #    carry[2].last_non_nan_params,
-                #    eq_opt_states[eq_param],
-                # ),
                 carry[3],
-                carry[4],
+                DataGeneratorContainer(
+                    data=data, param_data=param_data, obs_data=obs_data
+                ),
                 carry[5],
                 carry[6],
             )
@@ -296,7 +331,7 @@ def solve_alternate(
             return jax.lax.while_loop(break_fun_, _eq_params_one_iteration, carry)
 
         eq_params_train_fun_compiled[eq_param] = (
-            jax.jit(train_fun, static_argnums=0)
+            jax.jit(eq_train_fun, static_argnums=0)
             .trace(n_iter_for_params, jax.eval_shape(lambda _: carry, (None,)))
             .lower()
             .compile()
@@ -310,7 +345,7 @@ def solve_alternate(
         nn_n_iter, verbose, conditions_str=("bool_max_iter", "bool_nan_in_params")
     )
 
-    def train_fun(carry):
+    def nn_train_fun(carry):
         def _nn_params_one_iteration(carry):
             (
                 i,
@@ -345,6 +380,7 @@ def solve_alternate(
                 nn_opt_state,
                 optimization.last_non_nan_params,
                 nn_params_mask,
+                nn_opt_state_field_for_acceleration,
             )
 
             carry = (
@@ -379,7 +415,7 @@ def solve_alternate(
         # 2 - go for gradient steps on nn_params
         return jax.lax.while_loop(nn_break_fun, _nn_params_one_iteration, carry)
 
-    nn_params_train_fun_compiled = jax.jit(train_fun).lower(carry).compile()
+    nn_params_train_fun_compiled = jax.jit(nn_train_fun).lower(carry).compile()
 
     def _one_alternate_iteration(carry):
         (
@@ -418,8 +454,6 @@ def solve_alternate(
 
     # jax.lax.while_loop jits its content so cannot be used when we try to
     # precompile what is inside. JAX tranformations are not compatible with AOT
-    # carry = jax.lax.while_loop(main_break_fun, _one_alternate_iteration, carry)
-
     while main_break_fun(carry):
         carry = _one_alternate_iteration(carry)
 
