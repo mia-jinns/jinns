@@ -34,28 +34,18 @@ def test_initial_condition_checks():
     assert loss.initial_condition[0].shape == (1, 1)
     assert loss.initial_condition[1].shape == (1, 1)
 
-    loss = jinns.loss.LossODE(
-        u=u,
-        dynamic_loss=None,
-        initial_condition=((2.0, 2.0), (jnp.array([2.0, 2.0]), jnp.array([3.0, 3.0]))),
-        params=params,
-    )
-    # check that reshaping was done well in __post_init__ checks
-    assert loss.initial_condition[0].shape == (2, 1)
-    assert loss.initial_condition[1].shape == (2, 2)
-
-    # Catching an expected Error because u0 solution dimension are not
-    # consistent
+    # Catching an expected Error because t0 is badly shaped for specifying more
+    # than one condition (expected 2D in this case)
     """
     Added in jinns v1.5.1
     """
     with pytest.raises(ValueError):
-        _ = jinns.loss.LossODE(
+        loss = jinns.loss.LossODE(
             u=u,
             dynamic_loss=None,
             initial_condition=(
-                (2.0, 2.0),
-                (jnp.array([2.0, 2.0, 3.0]), jnp.array([3.0, 3.0])),
+                jnp.array([2.0, 2.0]),
+                (jnp.array([[2.0, 2.0], [3.0, 3.0]])),
             ),
             params=params,
         )
@@ -73,8 +63,8 @@ def test_initial_condition_checks():
             params=params,
         )
 
-    # Catching an expected Error because t0 and u0 don't match in terms of
-    # sequence length
+    # Catching an expected Error because t0 and u0 must be arrays if multiple
+    # conditions are given
     """
     Added in jinns v1.5.1
     """
@@ -111,7 +101,7 @@ def test_new_initial_condition():
     loss = jinns.loss.LossODE(
         u=lambda t, p: t,
         dynamic_loss=None,
-        initial_condition=((2.0, 1.0), (2.0, jnp.array([1.0]))),
+        initial_condition=(jnp.array([[2.0], [1.0]]), jnp.array([[2.0], [1.0]])),
         params=params,
     )
     mses, _ = loss.evaluate_by_terms(params, ODEBatch(None))
@@ -120,19 +110,11 @@ def test_new_initial_condition():
     loss = jinns.loss.LossODE(
         u=lambda t, p: jnp.concatenate([t, t]),
         dynamic_loss=None,
-        initial_condition=((2.0, 1.0), (jnp.array([2.0, 2.0]), jnp.array([1.0, 1.0]))),
+        initial_condition=(
+            jnp.array([[2.0], [1.0]]),
+            jnp.array([[2.0, 2.0], [1.0, 1.0]]),
+        ),
         params=params,
     )
     mses, _ = loss.evaluate_by_terms(params, ODEBatch(None))
     assert jnp.allclose(mses.initial_condition, jnp.array(0.0))
-
-    # Below this fails because the vectorial dimension of u must be passed as a
-    # (dim_size,) jnp array and nothing else
-    with pytest.raises(ValueError):
-        loss = jinns.loss.LossODE(
-            u=lambda t, p: jnp.concatenate([t, t]),
-            dynamic_loss=None,
-            initial_condition=((2.0, 1.0), ((2.0, 2.0), jnp.array([1.0, 1.0]))),
-            params=params,
-        )
-        mses, _ = loss.evaluate_by_terms(params, ODEBatch(None))

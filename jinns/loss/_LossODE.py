@@ -62,17 +62,18 @@ class _LossODEAbstract(AbstractLoss):
         be updated will have a `jax.lax.stop_gradient` called on them. Default
         is `"nn_params"` for each composant of the loss.
     initial_condition : tuple[
-            tuple[int | float | Float[Array, " "], ...],
-            tuple[int | float | Float[Array, " dim"], ...]
+            Float[Array, "n_cond "],
+            Float[Array, "n_cond dim"]
         ] |
         tuple[int | float | Float[Array, " "],
               int | float | Float[Array, " dim"]
-        ], default=None
+        ] | None, default=None
         Most of the time, atuple of length 2 with initial condition $(t_0, u_0)$.
-        From jinns v1.5.1 we accept:
-            - for `t0`: arrays with shape (n_conditions, 1) or tuple of (float, int)
-            - for `u0`: arrays with shape (n_conditions, n_channels) or tuple of either float, int, 1D jnp array.
-        This is useful to account for inclusion of final conditions (abusing naming convention). For example, is can be used to implement $\mathcal{L}^{aux}$ from [_Systems biology informed deep learning for inferring parameters and hidden dynamics_](https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1007575), Alireza Yazdani et al., 2020
+        From jinns v1.5.1 we accept tuples of (jnp arrays with shape (:, 1) for
+        t0, jnp arrays with shape (:, :) for u0) to account for example to the
+        specific inclusion of final conditions (abusing naming convention). This is for example to implement
+        $\mathcal{L}^{aux}$ from _Systems biology informed deep learning for
+        inferring parameters and hidden dynamics_, Alireza Yazdani et al., 2020
     obs_slice : EllipsisType | slice | None, default=None
         Slice object specifying the begininning/ending
         slice of u output(s) that is observed. This is useful for
@@ -89,11 +90,9 @@ class _LossODEAbstract(AbstractLoss):
     derivative_keys: DerivativeKeysODE | None = eqx.field(kw_only=True, default=None)
     loss_weights: LossWeightsODE | None = eqx.field(kw_only=True, default=None)
     initial_condition: (
-        tuple[
-            tuple[int | float | Float[Array, " "], ...],
-            tuple[int | float | Float[Array, " dim"], ...],
-        ]
+        tuple[Float[Array, " n_cond 1"], Float[Array, " n_cond dim"]]
         | tuple[int | float | Float[Array, " "], int | float | Float[Array, " dim"]]
+        | None
     ) = eqx.field(kw_only=True, default=None)
     obs_slice: EllipsisType | slice | None = eqx.field(
         kw_only=True, default=None, static=True
@@ -129,25 +128,56 @@ class _LossODEAbstract(AbstractLoss):
                 )
             # some checks/reshaping for t0 and u0
             t0, u0 = self.initial_condition
-            if (isinstance(t0, Array) and t0.ndim > 1) or isinstance(t0, tuple):
-                t0 = jnp.stack(
-                    [initial_condition_check(t, dim_size=1) for t in t0], axis=0
-                )
+            if isinstance(t0, Array):
+                # at the end we want to end up with t0 of shape (:, 1) to account for
+                # possibly several data points
+                if t0.ndim <= 1:
+                    # in this case we assume t0 belongs one (initial)
+                    # condition
+                    t0 = initial_condition_check(t0, dim_size=1)[
+                        None, :
+                    ]  # make a (1, 1) here
+                if t0.ndim > 2:
+                    raise ValueError(
+                        "It t0 is an Array, it represents n_cond"
+                        " imposed conditions and must be of shape (n_cond, 1)"
+                    )
             else:
-                t0 = jnp.array([initial_condition_check(t0, dim_size=1)])
-            # at the end we end up with t0 of shape (:, 1) to account for
-            # possibly several data points
-            if (isinstance(u0, Array) and u0.ndim > 1) or isinstance(u0, tuple):
-                u0 = jnp.stack(
-                    [initial_condition_check(u, dim_size=None) for u in u0], axis=0
-                )
+                # in this case t0 clearly belongs one (initial) condition
+                t0 = initial_condition_check(t0, dim_size=1)[
+                    None, :
+                ]  # make a (1, 1) here
+            if isinstance(u0, Array):
+                # at the end we want to end up with u0 of shape (:, dim) to account for
+                # possibly several data points
+                if not u0.shape:
+                    # in this case we assume u0 belongs to one (initial)
+                    # condition
+                    u0 = initial_condition_check(u0, dim_size=1)[
+                        None, :
+                    ]  # make a (1, 1) here
+                elif u0.ndim == 1:
+                    # in this case we assume u0 belongs to one (initial)
+                    # condition
+                    u0 = initial_condition_check(u0, dim_size=u0.shape[0])[
+                        None, :
+                    ]  # make a (1, dim) here
+                if u0.ndim > 2:
+                    raise ValueError(
+                        "It u0 is an Array, it represents n_cond"
+                        " imposed conditions and must be of shape (n_cond, dim)"
+                    )
             else:
-                u0 = jnp.array([initial_condition_check(u0, dim_size=None)])
-            # at the end we end up with u0 of shape (:, ?) to account for
-            # possibly several data points
-            if t0.shape[0] != u0.shape[0]:
+                # at the end we want to end up with u0 of shape (:, dim) to account for
+                # possibly several data points
+                u0 = initial_condition_check(u0, dim_size=None)[
+                    None, :
+                ]  # make a (1, 1) here
+
+            if t0.shape[0] != u0.shape[0] or t0.ndim != u0.ndim:
                 raise ValueError(
-                    f"t0 and u0 must represent the same number of initial condition(s). Got {t0.shape[0]} conditions for t0 and {u0.shape[0]} for u0."
+                    "t0 and u0 must represent a same number of initial"
+                    " conditial conditions"
                 )
 
             self.initial_condition = (t0, u0)
