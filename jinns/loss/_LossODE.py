@@ -70,13 +70,9 @@ class _LossODEAbstract(AbstractLoss):
         ], default=None
         Most of the time, atuple of length 2 with initial condition $(t_0, u_0)$.
         From jinns v1.5.1 we accept:
-        - jnp arrays with shape (:, 1) or tuple of (float, int) for t0
-        - jnp arrays with shape (:, :) or tuple of (float, int, 1D jnp array)
-          for u0
-        to account for example to the specific inclusion of final conditions
-        (abusing naming convention). This is for example to implement
-        $\mathcal{L}^{aux}$ from _Systems biology informed deep learning for
-        inferring parameters and hidden dynamics_, Alireza Yazdani et al., 2020
+            - for `t0`: arrays with shape (n_conditions, 1) or tuple of (float, int)
+            - for `u0`: arrays with shape (n_conditions, n_channels) or tuple of either float, int, 1D jnp array.
+        This is useful to account for inclusion of final conditions (abusing naming convention). For example, is can be used to implement $\mathcal{L}^{aux}$ from [_Systems biology informed deep learning for inferring parameters and hidden dynamics_](https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1007575), Alireza Yazdani et al., 2020
     obs_slice : EllipsisType | slice | None, default=None
         Slice object specifying the begininning/ending
         slice of u output(s) that is observed. This is useful for
@@ -151,7 +147,7 @@ class _LossODEAbstract(AbstractLoss):
             # possibly several data points
             if t0.shape[0] != u0.shape[0]:
                 raise ValueError(
-                    "t0 and u0 must represent a same number of initial conditial"
+                    f"t0 and u0 must represent the same number of initial condition(s). Got {t0.shape[0]} conditions for t0 and {u0.shape[0]} for u0."
                 )
 
             self.initial_condition = (t0, u0)
