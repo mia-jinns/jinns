@@ -122,7 +122,7 @@ def train_NSPipeFlow_10it(train_NSPipeFlow_init):
 
     tx = optax.adamw(learning_rate=1e-3)
     n_iter = 10
-    params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _ = jinns.solve(
+    params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _, _ = jinns.solve(
         init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
     )
     return total_loss_list[9]

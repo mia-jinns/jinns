@@ -6,7 +6,7 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-from typing import TYPE_CHECKING, Dict
+from typing import TYPE_CHECKING
 from jaxtyping import PyTree, Array, Float, Bool
 from optax import OptState
 import equinox as eqx
@@ -50,7 +50,10 @@ class OptimizationExtraContainer(eqx.Module):
 
 
 class LossContainer(eqx.Module):
-    stored_loss_terms: Dict[str, Float[Array, " n_iter"]]
+    # PyTree below refers to ODEComponents or PDEStatioComponents or
+    # PDENonStatioComponents
+    stored_loss_terms: PyTree[Float[Array, " n_iter"]]
+    stored_weights_terms: PyTree[Float[Array, " n_iter"]]
     train_loss_values: Float[Array, " n_iter"]
 
 

@@ -8,11 +8,15 @@ from typing import TYPE_CHECKING
 import jax
 import jax.numpy as jnp
 import optax
-from jaxtyping import Array
+from jaxtyping import Array, Key
 import equinox as eqx
 
 from jinns.parameters._params import Params
-from jinns.solver._solve import _get_break_fun, _gradient_step, _get_get_batch
+from jinns.solver._solve import (
+    _get_break_fun,
+    _loss_evaluate_and_gradient_step,
+    _get_get_batch,
+)
 from jinns.utils._containers import (
     DataGeneratorContainer,
     OptimizationContainer,
@@ -39,6 +43,7 @@ def solve_alternate(
     param_data: DataGeneratorParameter | None = None,
     obs_data: DataGeneratorObservations | None = None,
     opt_state_fields_for_acceleration: Params[str] | None = None,
+    key: Key = None,
 ):
     """
     Solve alternatively between nn_params and eq_params. In this functions both
@@ -85,6 +90,9 @@ def solve_alternate(
         A Params object, where for each leaves (`nn_params` and each
         `eq_params` keys) we find an `opt_state_field_for_acceleration` as
         described in `jinns.solve`.
+    key
+        Default None. A JAX random key that can be used for diverse purpose in
+        the main iteration loop.
 
     Returns
     -------
@@ -220,8 +228,7 @@ def solve_alternate(
         best_val_params=None,
     )
     loss_container = LossContainer(
-        stored_loss_terms=None,
-        train_loss_values=None,
+        stored_loss_terms=None, train_loss_values=None, stored_weights_terms=None
     )
     stored_objects = StoredObjectContainer(
         stored_params=None,
@@ -236,6 +243,7 @@ def solve_alternate(
         train_data,
         loss_container,
         stored_objects,
+        key,
     )
     ###
 
@@ -249,15 +257,7 @@ def solve_alternate(
 
         def eq_train_fun(n_iter, carry):
             def _eq_params_one_iteration(carry):
-                (
-                    i,
-                    loss,
-                    optimization,
-                    _,
-                    train_data,
-                    _,
-                    _,
-                ) = carry
+                (i, loss, optimization, _, train_data, _, _, key) = carry
 
                 (nn_opt_state, eq_opt_states) = optimization.opt_state
 
@@ -265,23 +265,31 @@ def solve_alternate(
                     train_data.data, train_data.param_data, train_data.obs_data
                 )
 
+                if key is not None:
+                    key, subkey = jax.random.split(key)
+                else:
+                    subkey = None
                 # Gradient step
                 (
-                    loss,
                     train_loss_value,
-                    loss_terms,
                     params,
-                    eq_opt_state,
                     last_non_nan_params,
-                ) = _gradient_step(
+                    eq_opt_state,
                     loss,
-                    eq_optim,
+                    loss_terms,
+                ) = _loss_evaluate_and_gradient_step(
+                    i,
                     batch,
+                    loss,
                     optimization.params,
-                    eq_opt_states[eq_param],
                     optimization.last_non_nan_params,
+                    eq_opt_states[eq_param],
+                    eq_optim,
+                    loss_container,
+                    subkey,
                     eq_params_masks[eq_param],
                     eq_params_opt_state_field_for_accel[eq_param],
+                    with_loss_weight_update=False,
                 )
 
                 carry = (
@@ -299,6 +307,7 @@ def solve_alternate(
                     carry[4],
                     carry[5],
                     carry[6],
+                    carry[7],
                 )
 
                 return carry
@@ -326,6 +335,7 @@ def solve_alternate(
                 ),
                 carry[5],
                 carry[6],
+                carry[7],
             )
             # 2 - go for gradient steps on this eq_params
             return jax.lax.while_loop(break_fun_, _eq_params_one_iteration, carry)
@@ -355,6 +365,7 @@ def solve_alternate(
                 train_data,
                 _,
                 _,
+                key,
             ) = carry
 
             #
@@ -365,22 +376,30 @@ def solve_alternate(
             )
 
             # Gradient step
+            if key is not None:
+                key, subkey = jax.random.split(key)
+            else:
+                subkey = None
             (
-                loss,
                 train_loss_value,
-                loss_terms,
                 params,
-                nn_opt_state,
                 last_non_nan_params,
-            ) = _gradient_step(
-                loss,
-                nn_optimizer,
-                batch,
-                optimization.params,
                 nn_opt_state,
+                loss,
+                loss_terms,
+            ) = _loss_evaluate_and_gradient_step(
+                i,
+                batch,
+                loss,
+                optimization.params,
                 optimization.last_non_nan_params,
+                nn_opt_state,
+                nn_optimizer,
+                loss_container,
+                subkey,
                 nn_params_mask,
                 nn_opt_state_field_for_acceleration,
+                with_loss_weight_update=True,
             )
 
             carry = (
@@ -395,6 +414,7 @@ def solve_alternate(
                 ),
                 carry[5],
                 carry[6],
+                carry[7],
             )
 
             return carry
@@ -411,6 +431,7 @@ def solve_alternate(
             carry[4],
             carry[5],
             carry[6],
+            carry[7],
         )
         # 2 - go for gradient steps on nn_params
         return jax.lax.while_loop(nn_break_fun, _nn_params_one_iteration, carry)
@@ -426,6 +447,7 @@ def solve_alternate(
             train_data,
             loss_container,
             stored_objects,
+            key,
         ) = carry
 
         jax.debug.print("jinns alternate solver iteration {x}", x=i)
@@ -442,15 +464,7 @@ def solve_alternate(
         ############################################
 
         i += 1
-        return (
-            i,
-            carry[1],
-            carry[2],
-            carry[3],
-            carry[4],
-            carry[5],
-            carry[6],
-        )
+        return (i, carry[1], carry[2], carry[3], carry[4], carry[5], carry[6], carry[7])
 
     # jax.lax.while_loop jits its content so cannot be used when we try to
     # precompile what is inside. JAX tranformations are not compatible with AOT
