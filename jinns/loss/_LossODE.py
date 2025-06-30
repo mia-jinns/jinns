@@ -68,12 +68,8 @@ class _LossODEAbstract(AbstractLoss):
         tuple[int | float | Float[Array, " "],
               int | float | Float[Array, " dim"]
         ] | None, default=None
-        Most of the time, atuple of length 2 with initial condition $(t_0, u_0)$.
-        From jinns v1.5.1 we accept tuples of (jnp arrays with shape (:, 1) for
-        t0, jnp arrays with shape (:, :) for u0) to account for example to the
-        specific inclusion of final conditions (abusing naming convention). This is for example to implement
-        $\mathcal{L}^{aux}$ from _Systems biology informed deep learning for
-        inferring parameters and hidden dynamics_, Alireza Yazdani et al., 2020
+        Most of the time, a tuple of length 2 with initial condition $(t_0, u_0)$.
+        From jinns v1.5.1 we accept tuples of jnp arrays with shape (n_cond, 1) for t0 and (n_cond, dim) for u0. This is useful to include observed conditions at different time points, such as *e.g* final conditions. It was designed to implement $\mathcal{L}^{aux}$ from _Systems biology informed deep learning for inferring parameters and hidden dynamics_, Alireza Yazdani et al., 2020
     obs_slice : EllipsisType | slice | None, default=None
         Slice object specifying the begininning/ending
         slice of u output(s) that is observed. This is useful for
@@ -143,7 +139,7 @@ class _LossODEAbstract(AbstractLoss):
                         " imposed conditions and must be of shape (n_cond, 1)"
                     )
             else:
-                # in this case t0 clearly belongs one (initial) condition
+                # in this case t0 clearly represents one (initial) condition
                 t0 = initial_condition_check(t0, dim_size=1)[
                     None, :
                 ]  # make a (1, 1) here
@@ -164,8 +160,8 @@ class _LossODEAbstract(AbstractLoss):
                     ]  # make a (1, dim) here
                 if u0.ndim > 2:
                     raise ValueError(
-                        "It u0 is an Array, it represents n_cond"
-                        " imposed conditions and must be of shape (n_cond, dim)"
+                        "It u0 is an Array, it represents n_cond "
+                        "imposed conditions and must be of shape (n_cond, dim)"
                     )
             else:
                 # at the end we want to end up with u0 of shape (:, dim) to account for
