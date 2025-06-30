@@ -67,7 +67,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         The minimum value of the time domain to consider
     tmax : float
         The maximum value of the time domain to consider
-    method : str, default="uniform"
+    method : Literal["uniform", "grid", "sobol", "halton"], default="uniform"
         Either `grid` or `uniform`, default is `uniform`.
         The method that generates the `nt` time points. `grid` means
         regularly spaced points over the domain. `uniform` means uniformly
@@ -149,12 +149,12 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
                 self.rar_iter_from_last_sampling,
                 self.rar_iter_nb,
             ) = _check_and_set_rar_parameters(self.rar_parameters, self.n, self.n_start)
-        elif self.method == "uniform" or self.method == "qmc":
+        elif self.method in ["uniform", "sobol", "halton"]:
             self.key, domain_times = self.generate_time_data(self.key, self.n)
             self.domain = jnp.concatenate([domain_times, self.omega], axis=1)
         else:
             raise ValueError(
-                f'Bad value for method. Got {self.method}, expected "grid" or "uniform"'
+                f'Bad value for method. Got {self.method}, expected "grid" or "uniform" or "sobol" or "halton"'
             )
 
         if self.domain_batch_size is None:
@@ -247,24 +247,19 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         if self.method == "grid":
             partial_times = (self.tmax - self.tmin) / nt
             return key, jnp.arange(self.tmin, self.tmax, partial_times)[:, None]
-        elif self.method == "uniform":
+        elif self.method in ["uniform", "sobol", "halton"]:
             return key, self.sample_in_time_domain(subkey, nt)
-        elif self.method == "qmc":  # qmc for quasi Monte-Carlo
-            return key, self.qmc_in_time_domain(subkey, nt)
         raise ValueError("Method " + self.method + " is not implemented.")
 
     def sample_in_time_domain(self, key: Key, nt: int) -> Float[Array, " nt 1"]:
-        return jax.random.uniform(
-            key,
-            (nt, 1),
-            minval=self.tmin,
-            maxval=self.tmax,
+        return (
+            jax.random.uniform(key, (nt, 1), minval=self.tmin, maxval=self.tmax)
+            if self.method == "uniform"
+            else self.__qmc_in_time_domain(key, nt)
         )
 
-    def qmc_in_time_domain(self, key: Key, nt: int) -> Float[Array, " nt 1"]:
-        if self.qmc_sequence not in ["sobol", "halton"]:
-            raise ValueError(f"Method {self.qmc_sequence} not implemented")
-        qmc_generator = qmc.Sobol if self.qmc_sequence == "sobol" else qmc.Halton
+    def __qmc_in_time_domain(self, key: Key, nt: int) -> Float[Array, " nt 1"]:
+        qmc_generator = qmc.Sobol if self.method == "sobol" else qmc.Halton
         qmc_seq = qmc_generator(
             d=1, scramble=True, rng=np.random.default_rng(np.uint32(key))
         )
