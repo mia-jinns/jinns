@@ -89,6 +89,12 @@ def _compute_boundary_loss(
         for s in ["von neumann", "vn", "vonneumann"]
     ):
         mse = boundary_neumann(f, batch, u, params, facet, dim_to_apply, vmap_in_axes)
+    elif any(
+        boundary_condition_type.lower() in s
+        for s in ["euler-beam", "eulerbeam", "euler", "beam"]
+    ):
+        # TODO: should we check that u is has eq_type "PDEStatio" with d=1 ? (This woul be done at every call then)
+        mse = boundary_euler_beam(u, params)
     else:
         raise ValueError("Wrong type of initial condition")
     return mse
@@ -341,3 +347,58 @@ def boundary_neumann(
     else:
         raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
     return mse_u_boundary
+
+
+def boundary_euler_beam(
+    u: AbstractPINN,
+    params: Params[Array],
+) -> Float[Array, " "]:
+    r"""
+    This omega boundary condition enforces Euler-Beam boundary conditions.
+    This is a stationary PDE in 1D with two high-order boundary condition at
+    t=1
+    $$
+        u''(1) = u'''(1) = 0,
+    $$
+    and Dirichlet + Neumann at t=0
+    $$
+        u(0) = u'(0) = 0
+    $$
+
+    __Note__: if using a batch.param_batch_dict, we need to resolve the
+    vmapping axes here however params["eq_params"] has already been fed with
+    the batch in the `evaluate()` of `LossPDE*`.
+
+    Parameters
+    ----------
+
+    u
+        The PINN or SPINN
+    params
+        The dictionary of parameters of the model.
+        Typically, it is a dictionary of
+        dictionaries: `eq_params` and `nn_params`, respectively the
+        differential equation parameters and the neural network parameter
+    """
+    # we completely ignore the batch.border_batch and enforce the constraints
+    # by hand here.
+    if isinstance(u, PINN):
+        u_x = lambda x: u(x, params).squeeze()
+        d1 = jax.grad(u_x)
+        t0 = jnp.array(0.0)
+        t1 = jnp.array(1.0)
+
+        def left_boundary():
+            return u_x(t0) ** 2 + d1(t0) ** 2
+
+        def right_boundary():
+            d2 = jax.grad(d1)
+            d3 = jax.grad(d2)
+            return d2(t1) ** 2 + d3(t1) ** 2
+
+        mse_u_boundary = left_boundary() + right_boundary()
+    else:
+        raise ValueError(
+            f"Bad type for u. Got {type(u)}, expected PINN with 1d PDE statio equation (Euler-Beam)."
+        )
+    return mse_u_boundary.squeeze()

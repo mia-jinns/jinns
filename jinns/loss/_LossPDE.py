@@ -62,6 +62,9 @@ _IMPLEMENTED_BOUNDARY_CONDITIONS = [
     "dirichlet",
     "von neumann",
     "vonneumann",
+    "euler-beam",
+    "euler",
+    "beam",
 ]
 
 
