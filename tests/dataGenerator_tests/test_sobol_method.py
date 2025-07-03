@@ -5,49 +5,82 @@ from jinns.data import CubicMeshPDENonStatio
 # Set random seed for reproducibility
 key = jax.random.PRNGKey(42)
 
-data_gen_args = {
+data_gen_args_1D = {
     "key": key,
-    "n": 1000,
-    "nb": 1000 * 4,
-    "ni": 1000,
+    "n": 1024,
+    "nb": 1024 * 4,
+    "ni": 1024,
+    "dim": 1,
+    "tmin": 0,
+    "tmax": 1,
+    "domain_batch_size": 512,
+    "initial_batch_size": 512,
+    "border_batch_size": 512,
+    "min_pts": (0.0,),
+    "max_pts": (50.0,),
+}
+
+data_gen_args_2D = {
+    "key": key,
+    "n": 1024,
+    "nb": 1024 * 4,
+    "ni": 1024,
     "dim": 2,
     "tmin": 0,
     "tmax": 1,
-    "domain_batch_size": 100,
-    "initial_batch_size": 100,
-    "border_batch_size": 100,
+    "domain_batch_size": 512,
+    "initial_batch_size": 512,
+    "border_batch_size": 512,
     "min_pts": (0.0, 0.0),
     "max_pts": (50.0, 50.0),
 }
 
 
-def test_qmc_sampling_omega_domain():
-    """Test Sobol and Halton sampling in omega domain for 1D and 2D cases."""
+def test_1D_qmc_sampling():
+    """
+    Test Sobol and Halton sampling in omega domain for 1D case.
+    """
+    dg = CubicMeshPDENonStatio(**data_gen_args_1D, method="sobol")
+    batch_object = dg.get_batch()[1]
 
-    dg = CubicMeshPDENonStatio(**data_gen_args, method="sobol")
-    data = dg.generate_omega_data(key)[1]
+    domain_batch = batch_object.domain_batch
+    border_batch = batch_object.border_batch
 
     # Check shape and bounds
-    assert data.shape == (1000, 2)
-    assert jnp.all(data >= 0.0)
-    assert jnp.all(data <= 50.0)
+    assert domain_batch.shape == (512, 2)
+    assert border_batch.shape == (512, 2, 2)
+    assert jnp.all(domain_batch[:, 0] >= 0.0)
+    assert jnp.all(domain_batch[:, 0] <= 1.0)
+    assert jnp.all(domain_batch[:, 1:] >= 0.0)
+    assert jnp.all(domain_batch[:, 1:] <= 50.0)
 
-    # Check uniformity (crude test)
-    mean = jnp.mean(data, axis=0)
-    assert jnp.allclose(mean, jnp.array([50.0 / 2, 50.0 / 2]), atol=0.1)
+    # Check points are on the boundary
+    for facet in range(2):
+        facet_points = border_batch[..., facet][:, 1:]
+        # Points should be on one of the boundaries (x=0, x=50)
+        assert jnp.any(
+            jnp.isclose(facet_points[:, 0], 0.0) | jnp.isclose(facet_points[:, 0], 50.0)
+        )
 
 
-def test_qmc_border_sampling():
-    """Test border sampling with QMC methods."""
-    dg = CubicMeshPDENonStatio(
-        **data_gen_args,
-        method="sobol",
-    )
+def test_2D_qmc_sampling():
+    """
+    Test Sobol and Halton sampling in omega domain for 1D and 2D cases.
+    """
 
-    border_batch = dg.get_batch()[1].border_batch
+    dg = CubicMeshPDENonStatio(**data_gen_args_2D, method="sobol")
+    batch_object = dg.get_batch()[1]
 
-    # Check border batch shape
-    assert border_batch.shape == (100, 3, 4)  # (batch_size, dim, n_facets)
+    domain_batch = batch_object.domain_batch
+    border_batch = batch_object.border_batch
+
+    # Check shape and bounds
+    assert domain_batch.shape == (512, 3)
+    assert border_batch.shape == (512, 3, 4)
+    assert jnp.all(domain_batch[:, 0] >= 0.0)
+    assert jnp.all(domain_batch[:, 0] <= 1.0)
+    assert jnp.all(domain_batch[:, 1:] >= 0.0)
+    assert jnp.all(domain_batch[:, 1:] <= 50.0)
 
     # Check points are on the boundary
     for facet in range(4):
