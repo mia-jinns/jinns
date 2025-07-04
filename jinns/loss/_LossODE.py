@@ -29,13 +29,13 @@ from jinns.parameters._derivative_keys import _set_derivatives, DerivativeKeysOD
 from jinns.loss._loss_weights import LossWeightsODE
 from jinns.loss._abstract_loss import AbstractLoss
 from jinns.loss._loss_components import ODEComponents
+from jinns.loss import ODE
 from jinns.parameters._params import Params
 
 if TYPE_CHECKING:
     # imports only used in type hints
     from jinns.data._Batchs import ODEBatch
     from jinns.nn._abstract_pinn import AbstractPINN
-    from jinns.loss import ODE
 
     class LossDictODE(TypedDict):
         dyn_loss: Float[Array, " "]
@@ -97,6 +97,7 @@ class _LossODEAbstract(AbstractLoss):
     params: InitVar[Params[Array]] = eqx.field(default=None, kw_only=True)
 
     def __post_init__(self, params: Params[Array] | None = None):
+        super().__post_init__()
         if self.loss_weights is None:
             self.loss_weights = LossWeightsODE()
 
@@ -231,13 +232,19 @@ class LossODE(_LossODEAbstract):
     params : InitVar[Params[Array]], default=None
         The main Params object of the problem needed to instanciate the
         DerivativeKeysODE if the latter is not specified.
-    u : eqx.Module
+    u : AbstractPINN
         the PINN
-    dynamic_loss : ODE
+    dynamic_loss : ODE | tuple[ODE, ...] | None
         the ODE dynamic part of the loss, basically the differential
         operator $\mathcal{N}[u](t)$. Should implement a method
         `dynamic_loss.evaluate(t, u, params)`.
+        Can be a tuple of ODE to account for multiple residual terms (dynamic
+        loss terms) in the global loss. This can be useful in the case you want
+        adaptative loss weights for each equation of your vectorial dynamic
+        loss: since adaptative loss weights can only be 1D in jinns, you can
+        then pass a tuple of 1D dynamic losses here.
         Can be None in order to access only some part of the evaluate call.
+
 
     Raises
     ------
@@ -248,7 +255,7 @@ class LossODE(_LossODEAbstract):
     # NOTE static=True only for leaf attributes that are not valid JAX types
     # (ie. jax.Array cannot be static) and that we do not expect to change
     u: AbstractPINN
-    dynamic_loss: ODE | None
+    dynamic_loss: ODE | tuple[ODE, ...] | None
 
     vmap_in_axes: tuple[int] = eqx.field(init=False, static=True)
 
@@ -297,13 +304,31 @@ class LossODE(_LossODEAbstract):
 
         ## dynamic part
         if self.dynamic_loss is not None:
-            dyn_loss_fun = lambda p: dynamic_loss_apply(
-                self.dynamic_loss.evaluate,  # type: ignore
-                self.u,
-                temporal_batch,
-                _set_derivatives(p, self.derivative_keys.dyn_loss),  # type: ignore
-                self.vmap_in_axes + vmap_in_axes_params,
-            )
+            if isinstance(self.dynamic_loss, tuple):
+                # for each dynamic loss in the tuple self.dynamic_loss
+                # we return a lambda function of the parameters only
+                dyn_loss_fun = jax.tree.map(
+                    lambda d: lambda p: dynamic_loss_apply(
+                        d.evaluate,  # type: ignore
+                        self.u,
+                        temporal_batch,
+                        _set_derivatives(p, self.derivative_keys.dyn_loss),  # type: ignore
+                        self.vmap_in_axes + vmap_in_axes_params,
+                    ),
+                    self.dynamic_loss,
+                    is_leaf=lambda x: isinstance(x, ODE),  # do not traverse
+                    # further than first level
+                )
+            else:
+                # so far it is better not to default to the tuple computation
+                # above for retrocompatibility
+                dyn_loss_fun = lambda p: dynamic_loss_apply(
+                    self.dynamic_loss.evaluate,  # type: ignore
+                    self.u,
+                    temporal_batch,
+                    _set_derivatives(p, self.derivative_keys.dyn_loss),  # type: ignore
+                    self.vmap_in_axes + vmap_in_axes_params,
+                )
         else:
             dyn_loss_fun = None
 
@@ -367,12 +392,14 @@ class LossODE(_LossODEAbstract):
             params_obs = None
             obs_loss_fun = None
 
+        # NOTE TODO below dyn_loss_fun can now be a tuple of fun so update
+        # type hints please!
         # get the unweighted mses for each loss term as well as the gradients
         all_funs: ODEComponents[Callable[[Params[Array]], Array] | None] = (
             ODEComponents(dyn_loss_fun, initial_condition_fun, obs_loss_fun)
         )
         all_params: ODEComponents[Params[Array] | None] = ODEComponents(
-            params, params, params_obs
+            jax.tree.map(lambda l: params, dyn_loss_fun), params, params_obs
         )
         mses_grads = jax.tree.map(
             lambda fun, params: self.get_gradients(fun, params),
@@ -380,14 +407,23 @@ class LossODE(_LossODEAbstract):
             all_params,
             is_leaf=lambda x: x is None,
         )
-
+        # NOTE the is_leaf below is more complex since it must pass possible the tuple
+        # of dyn_loss and then stops (but also account it should not stop when
+        # the tuple of dyn_loss is of length 2)
         mses = jax.tree.map(
-            lambda leaf: leaf[0], mses_grads, is_leaf=lambda x: isinstance(x, tuple)
+            lambda leaf: leaf[0],
+            mses_grads,
+            is_leaf=lambda x: isinstance(x, tuple)
+            and len(x) == 2
+            and isinstance(x[1], Params),
         )
         grads = jax.tree.map(
-            lambda leaf: leaf[1], mses_grads, is_leaf=lambda x: isinstance(x, tuple)
+            lambda leaf: leaf[1],
+            mses_grads,
+            is_leaf=lambda x: isinstance(x, tuple)
+            and len(x) == 2
+            and isinstance(x[1], Params),
         )
-
         return mses, grads
 
     def evaluate(

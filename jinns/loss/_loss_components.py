@@ -18,11 +18,23 @@ class XDEComponentsAbstract(eqx.Module, Generic[T]):
         For the dataclass to be iterated like a dictionary.
         Practical and retrocompatible with old code when loss components were
         dictionaries
+
+        condition: if it is not a tuple it should not be None. It it is a tuple
+        it should not be only Nones
         """
         return {
             field.name: getattr(self, field.name)
             for field in fields(self)
-            if getattr(self, field.name) is not None
+            if (
+                (
+                    not isinstance(getattr(self, field.name), tuple)
+                    and getattr(self, field.name) is not None
+                )
+                or (
+                    isinstance(getattr(self, field.name), tuple)
+                    and not all(item is None for item in getattr(self, field.name))
+                )
+            )
         }.items()
 
 

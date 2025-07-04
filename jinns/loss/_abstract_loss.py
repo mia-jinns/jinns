@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import abc
-from typing import TYPE_CHECKING, Self, Literal, Callable
+from typing import TYPE_CHECKING, Self, Literal, Callable, get_args
 from jaxtyping import Array, PyTree, Key
 import equinox as eqx
 import jax
@@ -9,10 +9,20 @@ import jax.numpy as jnp
 import optax
 from jinns.loss._loss_weights import AbstractLossWeights
 from jinns.parameters._params import Params
-from jinns.loss._loss_weight_updates import soft_adapt, lr_annealing, ReLoBRaLo
+from jinns.loss._loss_weight_updates import (
+    soft_adapt,
+    prior_loss,
+    lr_annealing,
+    ReLoBRaLo,
+)
 
 if TYPE_CHECKING:
     from jinns.utils._types import AnyLossComponents, AnyBatch
+
+
+AvailableUpdateWeightMethods = Literal[
+    "soft_adapt", "prior_loss", "lr_annealing", "ReLoBRaLo"
+]
 
 
 class AbstractLoss(eqx.Module):
@@ -22,9 +32,16 @@ class AbstractLoss(eqx.Module):
     """
 
     loss_weights: AbstractLossWeights
-    update_weight_method: Literal["soft_adapt", "lr_annealing", "ReLoBRaLo"] | None = (
-        eqx.field(kw_only=True, default=None, static=True)
+    update_weight_method: AvailableUpdateWeightMethods | None = eqx.field(
+        kw_only=True, default=None, static=True
     )
+
+    def __post_init__(self):
+        if (
+            self.update_weight_method is not None
+            and self.update_weight_method not in get_args(AvailableUpdateWeightMethods)
+        ):
+            raise ValueError("update_weight_method is not a valid method")
 
     @abc.abstractmethod
     def __call__(self, *_, **__) -> Array:
@@ -67,7 +84,9 @@ class AbstractLoss(eqx.Module):
             raise ValueError(
                 "The numbers of declared loss weights and "
                 "declared loss terms do not concord "
-                f" got {len(weights)} and {len(terms)}"
+                f" got {len(weights)} and {len(terms)}. "
+                "If you passed tuple of dyn_loss, make sure to pass "
+                "tuple of loss weights at LossWeights.dyn_loss."
             )
 
     def ponderate_and_sum_gradient(self, terms):
@@ -111,6 +130,8 @@ class AbstractLoss(eqx.Module):
             new_weights = soft_adapt(
                 self.loss_weights, iteration_nb, loss_terms, stored_loss_terms
             )
+        elif self.update_weight_method == "prior_loss":
+            new_weights = prior_loss(self.loss_weights, iteration_nb, stored_loss_terms)
         elif self.update_weight_method == "lr_annealing":
             new_weights = lr_annealing(self.loss_weights, grad_terms)
         elif self.update_weight_method == "ReLoBRaLo":

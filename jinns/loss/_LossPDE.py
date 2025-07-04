@@ -161,6 +161,7 @@ class _LossPDEAbstract(AbstractLoss):
         Note that neither __init__ or __post_init__ are called when udating a
         Module with eqx.tree_at
         """
+        super().__post_init__()
         if self.derivative_keys is None:
             # be default we only take gradient wrt nn_params
             try:
