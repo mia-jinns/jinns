@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import abc
+from dataclasses import InitVar
 from typing import TYPE_CHECKING, Self, Literal, Callable, get_args
 from jaxtyping import Array, PyTree, Key
 import equinox as eqx
@@ -32,16 +33,26 @@ class AbstractLoss(eqx.Module):
     """
 
     loss_weights: AbstractLossWeights
+    loss_weight_scales: AbstractLossWeights = eqx.field(init=False)
     update_weight_method: AvailableUpdateWeightMethods | None = eqx.field(
         kw_only=True, default=None, static=True
     )
+    keep_initial_loss_weight_scales: InitVar[bool] = eqx.field(
+        default=True, kw_only=True
+    )
 
-    def __post_init__(self):
+    def __post_init__(self, keep_initial_loss_weight_scales: bool = True):
         if (
             self.update_weight_method is not None
             and self.update_weight_method not in get_args(AvailableUpdateWeightMethods)
         ):
             raise ValueError("update_weight_method is not a valid method")
+        if keep_initial_loss_weight_scales:
+            self.loss_weight_scales = self.loss_weights
+        else:
+            self.loss_weight_scales = optax.tree_utils.tree_ones_like(self.loss_weights)
+            # self.loss_weight_scales will contain None where self.loss_weights
+            # has None
 
     @abc.abstractmethod
     def __call__(self, *_, **__) -> Array:
@@ -144,6 +155,13 @@ class AbstractLoss(eqx.Module):
         # Below we update the non None entry in the PyTree self.loss_weights
         # we directly get the non None entries because None is not treated as a
         # leaf
+
+        new_weights = jax.lax.cond(
+            iteration_nb == 0,
+            lambda nw: nw,
+            lambda nw: jnp.array(jax.tree.leaves(self.loss_weight_scales)) * nw,
+            new_weights,
+        )
         return eqx.tree_at(
             lambda pt: jax.tree.leaves(pt.loss_weights), self, new_weights
         )

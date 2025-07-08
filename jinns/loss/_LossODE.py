@@ -55,6 +55,12 @@ class _LossODEAbstract(AbstractLoss):
         `update_weight_method`
     update_weight_method : Literal['soft_adapt', 'lr_annealing', 'ReLoBRaLo'], default=None
         Default is None meaning no update for loss weights. Otherwise a string
+    keep_initial_loss_weight_scales : bool, default=True
+        Only used if an update weight method is specified. It decides whether
+        the updated loss weights are multiplied by the initial `loss_weights`
+        passed by the user at initialization. This is useful to force some
+        scale difference between the adaptative loss weights even after the
+        update method is applied.
     derivative_keys : DerivativeKeysODE, default=None
         Specify which field of `params` should be differentiated for each
         composant of the total loss. Particularily useful for inverse problems.
@@ -96,8 +102,14 @@ class _LossODEAbstract(AbstractLoss):
 
     params: InitVar[Params[Array]] = eqx.field(default=None, kw_only=True)
 
-    def __post_init__(self, params: Params[Array] | None = None):
-        super().__post_init__()
+    def __post_init__(
+        self,
+        keep_initial_loss_weight_scales: bool = True,
+        params: Params[Array] | None = None,
+    ):
+        super().__post_init__(
+            keep_initial_loss_weight_scales=keep_initial_loss_weight_scales
+        )
         if self.loss_weights is None:
             self.loss_weights = LossWeightsODE()
 
@@ -216,6 +228,12 @@ class LossODE(_LossODEAbstract):
         `update_weight_method`
     update_weight_method : Literal['soft_adapt', 'lr_annealing', 'ReLoBRaLo'], default=None
         Default is None meaning no update for loss weights. Otherwise a string
+    keep_initial_loss_weight_scales : bool, default=True
+        Only used if an update weight method is specified. It decides whether
+        the updated loss weights are multiplied by the initial `loss_weights`
+        passed by the user at initialization. This is useful to force some
+        scale difference between the adaptative loss weights even after the
+        update method is applied.
     derivative_keys : DerivativeKeysODE, default=None
         Specify which field of `params` should be differentiated for each
         composant of the total loss. Particularily useful for inverse problems.
@@ -259,9 +277,14 @@ class LossODE(_LossODEAbstract):
 
     vmap_in_axes: tuple[int] = eqx.field(init=False, static=True)
 
-    def __post_init__(self, params: Params[Array] | None = None):
+    def __post_init__(
+        self,
+        keep_initial_loss_weight_scales: bool = True,
+        params: Params[Array] | None = None,
+    ):
         super().__post_init__(
-            params=params
+            keep_initial_loss_weight_scales=keep_initial_loss_weight_scales,
+            params=params,
         )  # because __init__ or __post_init__ of Base
         # class is not automatically called
 
