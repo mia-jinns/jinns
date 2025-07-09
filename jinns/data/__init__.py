@@ -1,6 +1,7 @@
 from ._DataGeneratorODE import DataGeneratorODE
 from ._CubicMeshPDEStatio import CubicMeshPDEStatio
 from ._CubicMeshPDENonStatio import CubicMeshPDENonStatio
+from ._ACMPDENonStatio import ACMPDENonStatio
 from ._DataGeneratorObservations import DataGeneratorObservations
 from ._DataGeneratorParameter import DataGeneratorParameter
 from ._Batchs import ODEBatch, PDEStatioBatch, PDENonStatioBatch
@@ -11,6 +12,7 @@ __all__ = [
     "DataGeneratorODE",
     "CubicMeshPDEStatio",
     "CubicMeshPDENonStatio",
+    "ACMPDENonStatio",
     "DataGeneratorParameter",
     "DataGeneratorObservations",
     "ODEBatch",
