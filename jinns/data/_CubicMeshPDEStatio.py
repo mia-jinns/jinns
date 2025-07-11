@@ -135,6 +135,22 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
                 )
             self.n = perfect_sq
 
+        if self.method in ["sobol", "halton"]:
+            log2_n = jnp.log2(self.n)
+            lower_pow = 2 ** jnp.floor(log2_n)
+            higher_pow = 2 ** jnp.ceil(log2_n)
+            closest_two_power = (
+                lower_pow
+                if (self.n - lower_pow) < (higher_pow - self.n)
+                else higher_pow
+            )
+            if self.n != closest_two_power:
+                warnings.warn(
+                    f"QuasiMonteCarlo sampling with {self.method} requires sample size to be a power fo 2."
+                    f"Modfiying self.n from {self.n} to {closest_two_power}.",
+                )
+                self.n = int(closest_two_power)
+
         if self.omega_batch_size is None:
             self.curr_omega_idx = 0
         else:
@@ -179,13 +195,13 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
     def sample_in_omega_domain(
         self, keys: Key, sample_size: int
     ) -> Float[Array, " n dim"]:
-        if self.dim == 1:
-            xmin, xmax = self.min_pts[0], self.max_pts[0]
-            return jax.random.uniform(
-                keys, shape=(sample_size, 1), minval=xmin, maxval=xmax
-            )
-        # keys = jax.random.split(key, self.dim)
         if self.method == "uniform":
+            if self.dim == 1:
+                xmin, xmax = self.min_pts[0], self.max_pts[0]
+                return jax.random.uniform(
+                    keys, shape=(sample_size, 1), minval=xmin, maxval=xmax
+                )
+
             return jnp.concatenate(
                 [
                     jax.random.uniform(
@@ -199,9 +215,9 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
                 axis=-1,
             )
         else:
-            return self.__qmc_in_omega_domain(keys, sample_size)
+            return self._qmc_in_omega_domain(keys, sample_size)
 
-    def __qmc_in_omega_domain(
+    def _qmc_in_omega_domain(
         self, subkey: Key, sample_size: int
     ) -> Float[Array, "n dim"]:
         qmc_generator = qmc.Sobol if self.method == "sobol" else qmc.Halton
@@ -401,12 +417,16 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         else:
             subkeys = None
 
-        omega_border = (
-            self.sample_in_omega_border_domain(subkeys, sample_size=data_size)
-            if self.method == "uniform"
-            else self.qmc_in_omega_border_domain(subkeys, sample_size=data_size)
-        )
-
+        if self.method in ["grid", "uniform"]:
+            omega_border = self.sample_in_omega_border_domain(
+                subkeys, sample_size=data_size
+            )
+        elif self.method in ["sobol", "halton"]:
+            omega_border = self.qmc_in_omega_border_domain(
+                subkeys, sample_size=data_size
+            )
+        else:
+            raise ValueError("Method " + self.method + " is not implemented.")
         return key, omega_border
 
     def _get_omega_operands(
