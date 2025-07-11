@@ -57,7 +57,9 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         Either "grid", "uniform", "sobol" or "halton", default is `uniform`.
         The method that generates the `nt` time points. `grid` means
         regularly spaced points over the domain. `uniform` means uniformly
-        sampled points over the domain
+        sampled points over the domain.
+        **Note** that Sobol and Halton approaches use scipy modules and will not
+        be JIT compatible.
     rar_parameters : dict[str, int], default=None
         Defaults to None: do not use Residual Adaptative Resampling.
         Otherwise a dictionary with keys
