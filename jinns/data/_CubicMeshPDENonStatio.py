@@ -206,7 +206,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
                     )
             else:
                 self.key, self.border = self.qmc_in_time_omega_border_domain(
-                    self.key, self.nb
+                    self.key,
+                    self.nb,  # type: ignore (see inside the fun)
                 )
 
             if self.border_batch_size is None:
@@ -303,6 +304,9 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
     ) -> tuple[Key, Float[Array, "n 1+dim"]] | None:
         """
         For each facet of the border we generate Quasi-MonteCarlo sequences jointy with time.
+
+        We need to do some type ignore in this function because we have lost
+        the type narrowing from post_init,  type checkers only narrow at function level and because we cannot narrow a class attribute.
         """
         qmc_generator = qmc.Sobol if self.method == "sobol" else qmc.Halton
         sample_size = self.nb if sample_size is None else sample_size
@@ -313,13 +317,18 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             qmc_seq = qmc_generator(
                 d=1, scramble=True, rng=np.random.default_rng(np.uint32(subkey))
             )
-            boundary_times = jnp.array(qmc_seq.random(self.nb // (2 * self.dim)))
+            boundary_times = jnp.array(
+                qmc_seq.random(self.nb // (2 * self.dim))  # type: ignore
+            )
             boundary_times = boundary_times.reshape(-1, 1, 1)
             boundary_times = jnp.repeat(
-                boundary_times, self.omega_border.shape[-1], axis=2
+                boundary_times,
+                self.omega_border.shape[-1],  # type: ignore
+                axis=2,
             )
             return key, make_cartesian_product(
-                boundary_times, self.omega_border[None, None]
+                boundary_times,
+                self.omega_border[None, None],  # type: ignore
             )
         if self.dim == 2:
             # currently hard-coded the 4 edges for d==2
