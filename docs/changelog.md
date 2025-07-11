@@ -1,5 +1,11 @@
 # Changelog
 
+* Unreleased (currently on `main`)
+
+    - More (initial) conditions for LossODE. Add the possibility to handle for example a condition at t0 and tmax [!77](https://gitlab.com/mia_jinns/jinns/-/merge_requests/77)
+    - Fix [inconsistent timings](https://gitlab.com/mia_jinns/jinns/-/issues?show=eyJpaWQiOiIxOCIsImZ1bGxfcGF0aCI6Im1pYV9qaW5ucy9qaW5ucyIsImlkIjoxNzAwMjcyNzh9) in `jinns.solve()`: the total elapsed time could previously be far off the sum of compilation + training time. This was due to a waste call to (non-JIT) `loss.evaluate` in the initialization. We now don't waste compute time to init the training loop and print the additional "initialization time" in order to have consistent timing with respect to user's elapsed time.
+    - Fix silence `equinox` warning about `field(init=False)` [!83](https://gitlab.com/mia_jinns/jinns/-/merge_requests/83).
+
 * v1.5.0
 
     - Adaptative loss weights following a user defined update scheme, see the updated intro tutorial. Breaking changes since `jinns.solve()` returns signature has changed. Moreover, we do not support vectorial loss weights any more. Users are expected to ponderate the loss of their vectorial dynamic loss directly inside the dynamic loss definition (and obviously, this new loss weight update feature will not apply).

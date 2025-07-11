@@ -308,3 +308,26 @@ def initial_condition_apply(
     else:
         raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
     return mse_initial_condition
+
+
+def initial_condition_check(x, dim_size=None):
+    """
+    Make a (dim_size,) jnp array from an int, a float or a 0D jnp array
+
+    """
+    if isinstance(x, Array):
+        if not x.shape:  # e.g. user input: jnp.array(0.)
+            x = jnp.array([x])
+        if dim_size is not None:  # we check for the required dims_ize
+            if x.shape != (dim_size,):
+                raise ValueError(
+                    f"Wrong dim_size. It should be({dim_size},). Got shape: {x.shape}"
+                )
+
+    elif isinstance(x, float):  # e.g. user input: 0.
+        x = jnp.array([x])
+    elif isinstance(x, int):  # e.g. user input: 0
+        x = jnp.array([float(x)])
+    else:
+        raise ValueError(f"Wrong value, expected Array, float or int, got {type(x)}")
+    return x
