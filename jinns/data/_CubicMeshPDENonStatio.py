@@ -153,7 +153,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.key, domain_times = self.generate_time_data(self.key, self.n)
             self.domain = jnp.concatenate([domain_times, self.omega], axis=1)
         elif self.method in ["sobol", "halton"]:
-            self.domain = self.qmc_in_time_omega_domain(self.key, self.n)
+            self.key, self.domain = self.qmc_in_time_omega_domain(self.key, self.n)
         else:
             raise ValueError(
                 f'Bad value for method. Got {self.method}, expected "grid" or "uniform" or "sobol" or "halton"'
@@ -219,14 +219,30 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.curr_border_idx = 0
 
         if self.ni is not None:
-            perfect_sq = int(jnp.round(jnp.sqrt(self.ni)) ** 2)
-            if self.ni != perfect_sq:
-                warnings.warn(
-                    "Grid sampling is requested in dimension 2 with a non"
-                    f" perfect square dataset size (self.ni = {self.ni})."
-                    f" Modifying self.ni to self.ni = {perfect_sq}."
+            if self.method == "grid":
+                perfect_sq = int(jnp.round(jnp.sqrt(self.ni)) ** 2)
+                if self.ni != perfect_sq:
+                    warnings.warn(
+                        "Grid sampling is requested in dimension 2 with a non"
+                        f" perfect square dataset size (self.ni = {self.ni})."
+                        f" Modifying self.ni to self.ni = {perfect_sq}."
+                    )
+                self.ni = perfect_sq
+            if self.method in ["sobol", "halton"]:
+                log2_n = jnp.log2(self.ni)
+                lower_pow = 2 ** jnp.floor(log2_n)
+                higher_pow = 2 ** jnp.ceil(log2_n)
+                closest_two_power = (
+                    lower_pow
+                    if (self.ni - lower_pow) < (higher_pow - self.ni)
+                    else higher_pow
                 )
-            self.ni = perfect_sq
+                if self.n != closest_two_power:
+                    warnings.warn(
+                        f"QuasiMonteCarlo sampling with {self.method} requires sample size to be a power fo 2."
+                        f"Modfiying self.n from {self.ni} to {closest_two_power}.",
+                    )
+                self.ni = int(closest_two_power)
             self.key, self.initial = self.generate_omega_data(
                 self.key, data_size=self.ni
             )
@@ -264,20 +280,21 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
     def qmc_in_time_omega_domain(
         self, key: Key, sample_size: int
-    ) -> Float[Array, "n 1+dim"]:
+    ) -> tuple[Key, Float[Array, "n 1+dim"]]:
         """
         Because in Quasi-Monte Carlo sampling we cannot concatenate two vectors generated independently
         We generate time and omega samples jointly
         """
+        key, subkey = jax.random.split(key, 2)
         qmc_generator = qmc.Sobol if self.method == "sobol" else qmc.Halton
         sampler = qmc_generator(
-            d=self.dim + 1, scramble=True, rng=np.random.default_rng(np.uint32(key))
+            d=self.dim + 1, scramble=True, rng=np.random.default_rng(np.uint32(subkey))
         )
         samples = sampler.random(n=sample_size)
         samples[:, 1:] = qmc.scale(
             samples[:, 1:], l_bounds=self.min_pts, u_bounds=self.max_pts
         )  # We scale omega domain to be in (min_pts, max_pts)
-        return jnp.array(samples)
+        return key, jnp.array(samples)
 
     def qmc_in_time_omega_border_domain(
         self, key: Key, sample_size: int | None = None
@@ -290,12 +307,11 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         if sample_size is None:
             return None
         if self.dim == 1:
+            key, subkey = jax.random.split(key, 2)
             qmc_seq = qmc_generator(
-                d=1, scramble=True, rng=np.random.default_rng(np.uint32(key))
+                d=1, scramble=True, rng=np.random.default_rng(np.uint32(subkey))
             )
-            boundary_times = jnp.array(
-                qmc_seq.random(self.nb // (2 * self.dim))
-            )  ## WE SHOULD TRIM TO THE POWER OF TWO IF IT IS NOT THE CASE
+            boundary_times = jnp.array(qmc_seq.random(self.nb // (2 * self.dim)))
             boundary_times = boundary_times.reshape(-1, 1, 1)
             boundary_times = jnp.repeat(
                 boundary_times, self.omega_border.shape[-1], axis=2
