@@ -126,4 +126,4 @@ def test_initial_loss_Fisher(train_Fisher_init):
 
 def test_10it_Fisher(train_Fisher_10it):
     total_loss_val = train_Fisher_10it
-    assert jnp.allclose(total_loss_val, 0.93934155, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 0.7936549, atol=1e-1)

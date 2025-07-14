@@ -8,8 +8,11 @@ from __future__ import (
 import warnings
 import equinox as eqx
 import jax
+import numpy as np
 import jax.numpy as jnp
+from scipy.stats import qmc
 from jaxtyping import Key, Array, Float
+from typing import Literal
 from jinns.data._Batchs import PDEStatioBatch
 from jinns.data._utils import _check_and_set_rar_parameters, _reset_or_increment
 from jinns.data._AbstractDataGenerator import AbstractDataGenerator
@@ -50,11 +53,13 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         A tuple of maximum values of the domain along each dimension. For a sampling
         in `n` dimension, this represents $(x_{1, max}, x_{2,max}, ...,
         x_{n,max})$
-    method : str, default="uniform"
-        Either `grid` or `uniform`, default is `uniform`.
+    method : Literal["grid", "uniform", "sobol", "halton"], default="uniform"
+        Either "grid", "uniform", "sobol" or "halton", default is `uniform`.
         The method that generates the `nt` time points. `grid` means
         regularly spaced points over the domain. `uniform` means uniformly
-        sampled points over the domain
+        sampled points over the domain.
+        **Note** that Sobol and Halton approaches use scipy modules and will not
+        be JIT compatible.
     rar_parameters : dict[str, int], default=None
         Defaults to None: do not use Residual Adaptative Resampling.
         Otherwise a dictionary with keys
@@ -94,7 +99,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
     # shape in jax.lax.dynamic_slice
     min_pts: tuple[float, ...] = eqx.field(kw_only=True)
     max_pts: tuple[float, ...] = eqx.field(kw_only=True)
-    method: str = eqx.field(
+    method: Literal["grid", "uniform", "sobol", "halton"] = eqx.field(
         kw_only=True, static=True, default_factory=lambda: "uniform"
     )
     rar_parameters: dict[str, int] = eqx.field(kw_only=True, default=None)
@@ -131,6 +136,22 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
                     f" Modifying self.n to self.n = {perfect_sq}."
                 )
             self.n = perfect_sq
+
+        if self.method in ["sobol", "halton"]:
+            log2_n = jnp.log2(self.n)
+            lower_pow = 2 ** jnp.floor(log2_n)
+            higher_pow = 2 ** jnp.ceil(log2_n)
+            closest_two_power = (
+                lower_pow
+                if (self.n - lower_pow) < (higher_pow - self.n)
+                else higher_pow
+            )
+            if self.n != closest_two_power:
+                warnings.warn(
+                    f"QuasiMonteCarlo sampling with {self.method} requires sample size to be a power fo 2."
+                    f"Modfiying self.n from {self.n} to {closest_two_power}.",
+                )
+                self.n = int(closest_two_power)
 
         if self.omega_batch_size is None:
             self.curr_omega_idx = 0
@@ -176,24 +197,48 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
     def sample_in_omega_domain(
         self, keys: Key, sample_size: int
     ) -> Float[Array, " n dim"]:
-        if self.dim == 1:
-            xmin, xmax = self.min_pts[0], self.max_pts[0]
-            return jax.random.uniform(
-                keys, shape=(sample_size, 1), minval=xmin, maxval=xmax
-            )
-        # keys = jax.random.split(key, self.dim)
-        return jnp.concatenate(
-            [
-                jax.random.uniform(
-                    keys[i],
-                    (sample_size, 1),
-                    minval=self.min_pts[i],
-                    maxval=self.max_pts[i],
+        if self.method == "uniform":
+            if self.dim == 1:
+                xmin, xmax = self.min_pts[0], self.max_pts[0]
+                return jax.random.uniform(
+                    keys, shape=(sample_size, 1), minval=xmin, maxval=xmax
                 )
-                for i in range(self.dim)
-            ],
-            axis=-1,
+
+            return jnp.concatenate(
+                [
+                    jax.random.uniform(
+                        keys[i],
+                        (sample_size, 1),
+                        minval=self.min_pts[i],
+                        maxval=self.max_pts[i],
+                    )
+                    for i in range(self.dim)
+                ],
+                axis=-1,
+            )
+        else:
+            return self._qmc_in_omega_domain(keys, sample_size)
+
+    def _qmc_in_omega_domain(
+        self, subkey: Key, sample_size: int
+    ) -> Float[Array, "n dim"]:
+        qmc_generator = qmc.Sobol if self.method == "sobol" else qmc.Halton
+        if self.dim == 1:
+            qmc_seq = qmc_generator(
+                d=self.dim,
+                scramble=True,
+                rng=np.random.default_rng(np.uint32(subkey)),
+            )
+            u = qmc_seq.random(n=sample_size)
+            return jnp.array(
+                qmc.scale(u, l_bounds=self.min_pts[0], u_bounds=self.max_pts[0])
+            )
+        sampler = qmc.Sobol(
+            d=self.dim, scramble=True, rng=np.random.default_rng(np.uint32(subkey))
         )
+        samples = sampler.random(n=sample_size)
+        samples = qmc.scale(samples, l_bounds=self.min_pts, u_bounds=self.max_pts)
+        return jnp.array(samples)
 
     def sample_in_omega_border_domain(
         self, keys: Key, sample_size: int | None = None
@@ -260,6 +305,62 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
             + f"implemented yet. You are asking for generation in dimension d={self.dim}."
         )
 
+    def qmc_in_omega_border_domain(
+        self, keys: Key, sample_size: int | None = None
+    ) -> Float[Array, " 1 2"] | Float[Array, " (nb//4) 2 4"] | None:
+        qmc_generator = qmc.Sobol if self.method == "sobol" else qmc.Halton
+        sample_size = self.nb if sample_size is None else sample_size
+        if sample_size is None:
+            return None
+        if self.dim == 1:
+            xmin = self.min_pts[0]
+            xmax = self.max_pts[0]
+            return jnp.array([xmin, xmax]).astype(float)
+        if self.dim == 2:
+            # currently hard-coded the 4 edges for d==2
+            # TODO : find a general & efficient way to sample from the border
+            # (facets) of the hypercube in general dim.
+            facet_n = sample_size // (2 * self.dim)
+
+            def generate_qmc_sample(key, min_val, max_val):
+                qmc_seq = qmc_generator(
+                    d=1,
+                    scramble=True,
+                    rng=np.random.default_rng(np.uint32(key)),
+                )
+                u = qmc_seq.random(n=facet_n)
+                return jnp.array(qmc.scale(u, l_bounds=min_val, u_bounds=max_val))
+
+            xmin = jnp.hstack(
+                [
+                    self.min_pts[0] * jnp.ones((facet_n, 1)),
+                    generate_qmc_sample(keys[0], self.min_pts[1], self.max_pts[1]),
+                ]
+            )
+            xmax = jnp.hstack(
+                [
+                    self.max_pts[0] * jnp.ones((facet_n, 1)),
+                    generate_qmc_sample(keys[1], self.min_pts[1], self.max_pts[1]),
+                ]
+            )
+            ymin = jnp.hstack(
+                [
+                    generate_qmc_sample(keys[2], self.min_pts[0], self.max_pts[0]),
+                    self.min_pts[1] * jnp.ones((facet_n, 1)),
+                ]
+            )
+            ymax = jnp.hstack(
+                [
+                    generate_qmc_sample(keys[3], self.min_pts[0], self.max_pts[0]),
+                    self.max_pts[1] * jnp.ones((facet_n, 1)),
+                ]
+            )
+            return jnp.stack([xmin, xmax, ymin, ymax], axis=-1)
+        raise NotImplementedError(
+            "Generation of the border of a cube in dimension > 2 is not "
+            + f"implemented yet. You are asking for generation in dimension d={self.dim}."
+        )
+
     def generate_omega_data(
         self, key: Key, data_size: int | None = None
     ) -> tuple[
@@ -290,8 +391,8 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
                 )
                 xyz_ = [a.reshape((data_size, 1)) for a in xyz_]
                 omega = jnp.concatenate(xyz_, axis=-1)
-        elif self.method == "uniform":
-            if self.dim == 1:
+        elif self.method in ["uniform", "sobol", "halton"]:
+            if self.dim == 1 or self.method in ["sobol", "halton"]:
                 key, subkeys = jax.random.split(key, 2)
             else:
                 key, *subkeys = jax.random.split(key, self.dim + 1)
@@ -317,10 +418,17 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
             key, *subkeys = jax.random.split(key, 5)
         else:
             subkeys = None
-        omega_border = self.sample_in_omega_border_domain(
-            subkeys, sample_size=data_size
-        )
 
+        if self.method in ["grid", "uniform"]:
+            omega_border = self.sample_in_omega_border_domain(
+                subkeys, sample_size=data_size
+            )
+        elif self.method in ["sobol", "halton"]:
+            omega_border = self.qmc_in_omega_border_domain(
+                subkeys, sample_size=data_size
+            )
+        else:
+            raise ValueError("Method " + self.method + " is not implemented.")
         return key, omega_border
 
     def _get_omega_operands(
