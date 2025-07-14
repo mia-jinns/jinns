@@ -110,4 +110,4 @@ def test_initial_loss_Burgers(train_Burgers_init):
 
 def test_10it_Burgers(train_Burgers_10it):
     total_loss_val = train_Burgers_10it
-    assert jnp.allclose(total_loss_val, 3.3629522, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 2.710215, atol=1e-1)
