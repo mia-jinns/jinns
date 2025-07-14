@@ -72,7 +72,6 @@ def train_ReacDiff_init():
     D = 0.05
     r1, r2, r3 = 0.0, -4.0, 2.0
     g = 1.0
-    l = xmax - xmin
 
     init_params = jinns.parameters.Params(
         nn_params=init_nn_params_spinn,
@@ -156,7 +155,7 @@ def train_ReacDiff_10it(train_ReacDiff_init):
 def test_initial_loss_ReacDiff(train_ReacDiff_init):
     init_params, loss, train_data = train_ReacDiff_init
     assert jnp.allclose(
-        loss.evaluate(init_params, train_data.get_batch()[1])[0], 0.95541906, atol=1e-1
+        loss.evaluate(init_params, train_data.get_batch()[1])[0], 1.0590025, atol=1e-1
     )
 
 

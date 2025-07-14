@@ -7,8 +7,10 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 import warnings
 import equinox as eqx
+import numpy as np
 import jax
 import jax.numpy as jnp
+from scipy.stats import qmc
 from jaxtyping import Key, Array, Float
 from jinns.data._Batchs import PDENonStatioBatch
 from jinns.data._utils import (
@@ -65,11 +67,13 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         The minimum value of the time domain to consider
     tmax : float
         The maximum value of the time domain to consider
-    method : str, default="uniform"
+    method : Literal["uniform", "grid", "sobol", "halton"], default="uniform"
         Either `grid` or `uniform`, default is `uniform`.
         The method that generates the `nt` time points. `grid` means
         regularly spaced points over the domain. `uniform` means uniformly
-        sampled points over the domain
+        sampled points over the domain.
+        **Note** that Sobol and Halton approaches use scipy modules and will not
+        be JIT compatible.
     rar_parameters : Dict[str, int], default=None
         Defaults to None: do not use Residual Adaptative Resampling.
         Otherwise a dictionary with keys
@@ -150,9 +154,11 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         elif self.method == "uniform":
             self.key, domain_times = self.generate_time_data(self.key, self.n)
             self.domain = jnp.concatenate([domain_times, self.omega], axis=1)
+        elif self.method in ["sobol", "halton"]:
+            self.key, self.domain = self.qmc_in_time_omega_domain(self.key, self.n)
         else:
             raise ValueError(
-                f'Bad value for method. Got {self.method}, expected "grid" or "uniform"'
+                f'Bad value for method. Got {self.method}, expected "grid" or "uniform" or "sobol" or "halton"'
             )
 
         if self.domain_batch_size is None:
@@ -182,21 +188,28 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
                     "number of points per facets (nb//2*self.dim)"
                     " cannot be lower than border batch size"
                 )
-            self.key, boundary_times = self.generate_time_data(
-                self.key, self.nb // (2 * self.dim)
-            )
-            boundary_times = boundary_times.reshape(-1, 1, 1)
-            boundary_times = jnp.repeat(
-                boundary_times, self.omega_border.shape[-1], axis=2
-            )
-            if self.dim == 1:
-                self.border = make_cartesian_product(
-                    boundary_times, self.omega_border[None, None]
+            if self.method in ["grid", "uniform"]:
+                self.key, boundary_times = self.generate_time_data(
+                    self.key, self.nb // (2 * self.dim)
                 )
+                boundary_times = boundary_times.reshape(-1, 1, 1)
+                boundary_times = jnp.repeat(
+                    boundary_times, self.omega_border.shape[-1], axis=2
+                )
+                if self.dim == 1:
+                    self.border = make_cartesian_product(
+                        boundary_times, self.omega_border[None, None]
+                    )
+                else:
+                    self.border = jnp.concatenate(
+                        [boundary_times, self.omega_border], axis=1
+                    )
             else:
-                self.border = jnp.concatenate(
-                    [boundary_times, self.omega_border], axis=1
+                self.key, self.border = self.qmc_in_time_omega_border_domain(
+                    self.key,
+                    self.nb,  # type: ignore (see inside the fun)
                 )
+
             if self.border_batch_size is None:
                 self.curr_border_idx = 0
             else:
@@ -209,14 +222,30 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.curr_border_idx = 0
 
         if self.ni is not None:
-            perfect_sq = int(jnp.round(jnp.sqrt(self.ni)) ** 2)
-            if self.ni != perfect_sq:
-                warnings.warn(
-                    "Grid sampling is requested in dimension 2 with a non"
-                    f" perfect square dataset size (self.ni = {self.ni})."
-                    f" Modifying self.ni to self.ni = {perfect_sq}."
+            if self.method == "grid":
+                perfect_sq = int(jnp.round(jnp.sqrt(self.ni)) ** 2)
+                if self.ni != perfect_sq:
+                    warnings.warn(
+                        "Grid sampling is requested in dimension 2 with a non"
+                        f" perfect square dataset size (self.ni = {self.ni})."
+                        f" Modifying self.ni to self.ni = {perfect_sq}."
+                    )
+                self.ni = perfect_sq
+            if self.method in ["sobol", "halton"]:
+                log2_n = jnp.log2(self.ni)
+                lower_pow = 2 ** jnp.floor(log2_n)
+                higher_pow = 2 ** jnp.ceil(log2_n)
+                closest_two_power = (
+                    lower_pow
+                    if (self.ni - lower_pow) < (higher_pow - self.ni)
+                    else higher_pow
                 )
-            self.ni = perfect_sq
+                if self.n != closest_two_power:
+                    warnings.warn(
+                        f"QuasiMonteCarlo sampling with {self.method} requires sample size to be a power fo 2."
+                        f"Modfiying self.n from {self.ni} to {closest_two_power}.",
+                    )
+                self.ni = int(closest_two_power)
             self.key, self.initial = self.generate_omega_data(
                 self.key, data_size=self.ni
             )
@@ -245,16 +274,115 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         if self.method == "grid":
             partial_times = (self.tmax - self.tmin) / nt
             return key, jnp.arange(self.tmin, self.tmax, partial_times)[:, None]
-        if self.method == "uniform":
+        elif self.method in ["uniform", "sobol", "halton"]:
             return key, self.sample_in_time_domain(subkey, nt)
         raise ValueError("Method " + self.method + " is not implemented.")
 
     def sample_in_time_domain(self, key: Key, nt: int) -> Float[Array, " nt 1"]:
-        return jax.random.uniform(
-            key,
-            (nt, 1),
-            minval=self.tmin,
-            maxval=self.tmax,
+        return jax.random.uniform(key, (nt, 1), minval=self.tmin, maxval=self.tmax)
+
+    def qmc_in_time_omega_domain(
+        self, key: Key, sample_size: int
+    ) -> tuple[Key, Float[Array, "n 1+dim"]]:
+        """
+        Because in Quasi-Monte Carlo sampling we cannot concatenate two vectors generated independently
+        We generate time and omega samples jointly
+        """
+        key, subkey = jax.random.split(key, 2)
+        qmc_generator = qmc.Sobol if self.method == "sobol" else qmc.Halton
+        sampler = qmc_generator(
+            d=self.dim + 1, scramble=True, rng=np.random.default_rng(np.uint32(subkey))
+        )
+        samples = sampler.random(n=sample_size)
+        samples[:, 1:] = qmc.scale(
+            samples[:, 1:], l_bounds=self.min_pts, u_bounds=self.max_pts
+        )  # We scale omega domain to be in (min_pts, max_pts)
+        return key, jnp.array(samples)
+
+    def qmc_in_time_omega_border_domain(
+        self, key: Key, sample_size: int | None = None
+    ) -> tuple[Key, Float[Array, "n 1+dim"]] | None:
+        """
+        For each facet of the border we generate Quasi-MonteCarlo sequences jointy with time.
+
+        We need to do some type ignore in this function because we have lost
+        the type narrowing from post_init,  type checkers only narrow at function level and because we cannot narrow a class attribute.
+        """
+        qmc_generator = qmc.Sobol if self.method == "sobol" else qmc.Halton
+        sample_size = self.nb if sample_size is None else sample_size
+        if sample_size is None:
+            return None
+        if self.dim == 1:
+            key, subkey = jax.random.split(key, 2)
+            qmc_seq = qmc_generator(
+                d=1, scramble=True, rng=np.random.default_rng(np.uint32(subkey))
+            )
+            boundary_times = jnp.array(
+                qmc_seq.random(self.nb // (2 * self.dim))  # type: ignore
+            )
+            boundary_times = boundary_times.reshape(-1, 1, 1)
+            boundary_times = jnp.repeat(
+                boundary_times,
+                self.omega_border.shape[-1],  # type: ignore
+                axis=2,
+            )
+            return key, make_cartesian_product(
+                boundary_times,
+                self.omega_border[None, None],  # type: ignore
+            )
+        if self.dim == 2:
+            # currently hard-coded the 4 edges for d==2
+            # TODO : find a general & efficient way to sample from the border
+            # (facets) of the hypercube in general dim.
+            key, *subkeys = jax.random.split(key, 5)
+            facet_n = sample_size // (2 * self.dim)
+
+            def generate_qmc_sample(key, min_val, max_val):
+                qmc_seq = qmc_generator(
+                    d=2,
+                    scramble=True,
+                    rng=np.random.default_rng(np.uint32(key)),
+                )
+                u = qmc_seq.random(n=facet_n)
+                u[:, 1:2] = qmc.scale(u[:, 1:2], l_bounds=min_val, u_bounds=max_val)
+                return jnp.array(u)
+
+            xmin_sample = generate_qmc_sample(
+                subkeys[0], self.min_pts[1], self.max_pts[1]
+            )  # [t,x,y]
+            xmin = jnp.hstack(
+                [
+                    xmin_sample[:, 0:1],
+                    self.min_pts[0] * jnp.ones((facet_n, 1)),
+                    xmin_sample[:, 1:2],
+                ]
+            )
+            xmax_sample = generate_qmc_sample(
+                subkeys[1], self.min_pts[1], self.max_pts[1]
+            )
+            xmax = jnp.hstack(
+                [
+                    xmax_sample[:, 0:1],
+                    self.max_pts[0] * jnp.ones((facet_n, 1)),
+                    xmax_sample[:, 1:2],
+                ]
+            )
+            ymin = jnp.hstack(
+                [
+                    generate_qmc_sample(subkeys[2], self.min_pts[0], self.max_pts[0]),
+                    self.min_pts[1] * jnp.ones((facet_n, 1)),
+                ]
+            )
+            ymax = jnp.hstack(
+                [
+                    generate_qmc_sample(subkeys[3], self.min_pts[0], self.max_pts[0]),
+                    self.max_pts[1] * jnp.ones((facet_n, 1)),
+                ]
+            )
+            return key, jnp.stack([xmin, xmax, ymin, ymax], axis=-1)
+        raise NotImplementedError(
+            "Generation of the border of a cube in dimension > 2 is not "
+            + f"implemented yet. You are asking for generation in dimension d={self.dim}."
         )
 
     def _get_domain_operands(
