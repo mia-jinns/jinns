@@ -12,6 +12,14 @@ from jaxtyping import Array, PyTree, Float
 T = TypeVar("T")  # the generic type for what is in the Params PyTree because we
 # have possibly Params of Arrays, boolean, ...
 
+### NOTE
+### We are taking derivatives with respect to Params eqx.Modules.
+### This has been shown to behave weirdly if some fields of eqx.Modules have
+### been set as `field(init=False)`, we then should never create such fields in
+### jinns' Params modules.
+### We currently have silenced the warning related to this (see jinns.__init__
+### see https://github.com/patrick-kidger/equinox/pull/1043/commits/f88e62ab809140334c2f987ed13eff0d80b8be13
+
 
 class Params(eqx.Module, Generic[T]):
     """

@@ -203,6 +203,7 @@ def solve(
     best_val_params
         The best parameters according to the validation criterion
     """
+    initialization_time = time.time()
     if n_iter < 1:
         raise ValueError("Cannot run jinns.solve for n_iter<1")
 
@@ -255,11 +256,6 @@ def solve(
     # get_batch with device_put, the latter is not jittable
     get_batch = _get_get_batch(obs_batch_sharding)
 
-    # initialize the dict for stored parameter values
-    # we need to get a loss_term to init stuff
-    batch_ini, data, param_data, obs_data = get_batch(data, param_data, obs_data)
-    _, loss_terms = loss(init_params, batch_ini)
-
     # initialize parameter tracking
     if tracked_params is None:
         tracked_params = jax.tree.map(lambda p: None, init_params)
@@ -276,6 +272,13 @@ def solve(
         # nn_params=None, eq_params={"nu": True})` while init_params.nn_params
         # being a complex data structure
     )
+
+    # initialize the dict for stored parameter values
+    # we need to get a loss_term to init stuff
+    # NOTE: we use jax.eval_shape to avoid FLOPS since we only need the tree
+    # structure
+    batch_ini, data, param_data, obs_data = get_batch(data, param_data, obs_data)
+    _, loss_terms = jax.eval_shape(loss, init_params, batch_ini)
 
     # initialize the PyTree for stored loss values
     stored_loss_terms = jax.tree_util.tree_map(
@@ -492,6 +495,9 @@ def solve(
             validation_crit_values,
             key,
         )
+
+    if verbose:
+        print("Initialization time:", time.time() - initialization_time)
 
     # Main optimization loop. We use the LAX while loop (fully jitted) version
     # if no mixing devices. Otherwise we use the standard while loop. Here devices only

@@ -21,6 +21,7 @@ from jinns.loss._loss_utils import (
     normalization_loss_apply,
     observations_loss_apply,
     initial_condition_apply,
+    initial_condition_check,
 )
 from jinns.parameters._params import (
     _get_vmap_in_axes_params,
@@ -711,22 +712,12 @@ class LossPDENonStatio(LossPDEStatio):
                 "case (e.g by. hardcoding it into the PINN output)."
             )
         # some checks for t0
-        if isinstance(self.t0, Array):
-            if not self.t0.shape:  # e.g. user input: jnp.array(0.)
-                self.t0 = jnp.array([self.t0])
-            elif self.t0.shape != (1,):
-                raise ValueError(
-                    f"Wrong self.t0 input. It should be"
-                    f"a float or an array of shape (1,). Got shape: {self.t0.shape}"
-                )
-        elif isinstance(self.t0, float):  # e.g. user input: 0.
-            self.t0 = jnp.array([self.t0])
-        elif isinstance(self.t0, int):  # e.g. user input: 0
-            self.t0 = jnp.array([float(self.t0)])
-        elif self.t0 is None:
-            self.t0 = jnp.array([0])
+        t0 = self.t0
+        if t0 is None:
+            t0 = jnp.array([0])
         else:
-            raise ValueError("Wrong value for t0")
+            t0 = initial_condition_check(t0, dim_size=1)
+        self.t0 = t0
 
         # witht the variables below we avoid memory overflow since a cartesian
         # product is taken
