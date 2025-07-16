@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import operator
 from typing import TYPE_CHECKING
 import jax
 import jax.numpy as jnp
@@ -16,6 +17,7 @@ from jinns.solver._solve import (
     _get_break_fun,
     _loss_evaluate_and_gradient_step,
     _get_get_batch,
+    _store_loss_and_params
 )
 from jinns.utils._containers import (
     DataGeneratorContainer,
@@ -212,6 +214,27 @@ def solve_alternate(
     # for the pytree manipulations above
 
     # NOTE much more containers than what's currently used
+
+    #######################################
+    # SOME INITIALIZATIONS FOR CONTAINERS #
+    #######################################
+
+    # initialize the dict for stored parameter values
+    # we need to get a loss_term to init stuff
+    # NOTE: we use jax.eval_shape to avoid FLOPS since we only need the tree
+    # structure
+    batch_ini, data, param_data, obs_data = get_batch(data, param_data, obs_data)
+    _, loss_terms = jax.eval_shape(loss, init_params, batch_ini)
+    # initialize the PyTree for stored loss values
+    stored_loss_terms = jax.tree_util.tree_map(
+        lambda _: jnp.zeros((n_iter)), loss_terms
+    )
+    total_iter_all_solvers = jax.tree.reduce(operator.mul, n_iter_by_solver, 1)
+    n_iter_list_eq_params = jax.tree.leaves(n_iter_by_solver.eq_params)
+    train_loss_values = jnp.zeros(
+        (n_iter * total_iter_all_solvers)
+    )
+
     train_data = DataGeneratorContainer(
         data=data, param_data=param_data, obs_data=obs_data
     )
@@ -228,8 +251,11 @@ def solve_alternate(
         best_val_params=None,
     )
     loss_container = LossContainer(
-        stored_loss_terms=None, train_loss_values=None, stored_weights_terms=None
+        stored_loss_terms=stored_loss_terms,
+        train_loss_values=train_loss_values,
+        stored_weights_terms=None
     )
+    print(loss_container)
     stored_objects = StoredObjectContainer(
         stored_params=None,
     )
@@ -252,12 +278,16 @@ def solve_alternate(
     # loop
 
     eq_params_train_fun_compiled = {}
-    for eq_param, eq_optim in eq_optimizers.items():
+    for idx_params, (eq_param, eq_optim) in enumerate(eq_optimizers.items()):
         n_iter_for_params = eq_n_iters[eq_param]
 
         def eq_train_fun(n_iter, carry):
+
+            i = carry[0]
+            loss_container = carry[5]
+
             def _eq_params_one_iteration(carry):
-                (i, loss, optimization, _, train_data, _, _, key) = carry
+                (i, loss, optimization, _, train_data, loss_container, _, key) = carry
 
                 (nn_opt_state, eq_opt_states) = optimization.opt_state
 
@@ -292,6 +322,18 @@ def solve_alternate(
                     with_loss_weight_update=False,
                 )
 
+                # save loss value and selected parameters
+                _, loss_container_ = _store_loss_and_params(
+                    i,
+                    None, #params,
+                    None, #stored_objects.stored_params,
+                    loss_container,
+                    train_loss_value,
+                    loss_terms,
+                    loss.loss_weights,
+                    None, #tracked_params,
+                )
+
                 carry = (
                     i + 1,
                     loss,
@@ -304,8 +346,10 @@ def solve_alternate(
                         ),
                     ),
                     carry[3],
-                    carry[4],
-                    carry[5],
+                    DataGeneratorContainer(
+                        data=data, param_data=param_data, obs_data=obs_data
+                    ),
+                    loss_container_,
                     carry[6],
                     carry[7],
                 )
@@ -319,26 +363,64 @@ def solve_alternate(
             )
 
             # 1 - some init
-            loss = eqx.tree_at(
+            loss_ = eqx.tree_at(
                 lambda pt: (pt.derivative_keys),
                 carry[1],
                 (eq_gd_steps_derivative_keys[eq_param]),
             )
+            # Reinit a loss container for this inner loop
+            stored_loss_terms_ = jax.tree_util.tree_map(
+                lambda _: jnp.zeros((n_iter_for_params)), loss_terms
+            )
+            train_loss_values_ = jnp.zeros(
+                (n_iter_for_params,)
+            )
+            loss_container_ = LossContainer(
+                stored_loss_terms=stored_loss_terms_,
+                train_loss_values=train_loss_values_,
+                stored_weights_terms=None
+            )
 
-            carry = (
+            carry_ = (
                 0,
-                loss,
+                loss_,
                 carry[2],
                 carry[3],
-                DataGeneratorContainer(
-                    data=data, param_data=param_data, obs_data=obs_data
-                ),
-                carry[5],
+                carry[4],
+                loss_container_,
                 carry[6],
                 carry[7],
             )
             # 2 - go for gradient steps on this eq_params
-            return jax.lax.while_loop(break_fun_, _eq_params_one_iteration, carry)
+            carry_ = jax.lax.while_loop(break_fun_, _eq_params_one_iteration,
+                                      carry_)
+
+            # Now we prepare back the main carry
+            start_idx = i*sum(n_iter_list_eq_params[:idx_params-1])
+            end_idx = i*sum(n_iter_list_eq_params[:idx_params-1]) + n_iter_for_params
+            loss_container_ = carry_[5]
+            loss_container = LossContainer(
+                stored_loss_terms=jax.tree.map(
+                    lambda s, l: s.at[start_idx:end_idx].set(l),
+                    loss_container.stored_loss_terms,
+                    loss_container_.stored_loss_terms
+                ),
+                train_loss_values=loss_container.train_loss_values.at[start_idx:end_idx].set(loss_container_.train_loss_values),
+                stored_weights_terms=None
+            )
+
+            carry = (
+                i,
+                carry_[1],
+                carry_[2],
+                carry_[3],
+                carry_[4],
+                loss_container,
+                carry_[6],
+                carry_[7]
+            )
+            return carry
+
 
         eq_params_train_fun_compiled[eq_param] = (
             jax.jit(eq_train_fun, static_argnums=0)
@@ -356,6 +438,8 @@ def solve_alternate(
     )
 
     def nn_train_fun(carry):
+        i = carry[0]
+        loss_container = carry[5]
         def _nn_params_one_iteration(carry):
             (
                 i,
@@ -363,7 +447,7 @@ def solve_alternate(
                 optimization,
                 _,
                 train_data,
-                _,
+                loss_container,
                 _,
                 key,
             ) = carry
@@ -402,6 +486,18 @@ def solve_alternate(
                 with_loss_weight_update=True,
             )
 
+            # save loss value and selected parameters
+            _, loss_container_ = _store_loss_and_params(
+                i,
+                None, #params,
+                None, #stored_objects.stored_params,
+                loss_container,
+                train_loss_value,
+                loss_terms,
+                loss.loss_weights,
+                None, #tracked_params,
+            )
+
             carry = (
                 i + 1,
                 loss,
@@ -412,7 +508,7 @@ def solve_alternate(
                 DataGeneratorContainer(
                     data=data, param_data=param_data, obs_data=obs_data
                 ),
-                carry[5],
+                loss_container_,
                 carry[6],
                 carry[7],
             )
@@ -420,12 +516,12 @@ def solve_alternate(
             return carry
 
         # 1 - some init
-        loss = eqx.tree_at(
+        loss_ = eqx.tree_at(
             lambda pt: pt.derivative_keys, carry[1], nn_gd_steps_derivative_keys
         )
-        carry = (
+        carry_ = (
             0,
-            loss,
+            loss_,
             carry[2],
             carry[3],
             carry[4],
@@ -434,7 +530,34 @@ def solve_alternate(
             carry[7],
         )
         # 2 - go for gradient steps on nn_params
-        return jax.lax.while_loop(nn_break_fun, _nn_params_one_iteration, carry)
+        carry_ = jax.lax.while_loop(nn_break_fun_, _nn_params_one_iteration,
+                                    carry_)
+
+        # Now we prepare back the main carry
+        start_idx = i*sum(n_iter_list_eq_params)
+        end_idx = i*sum(n_iter_list_eq_params) + nn_n_iter
+        loss_container_ = carry_[5]
+        loss_container = LossContainer(
+            stored_loss_terms=jax.tree.map(
+                lambda s, l: s.at[start_idx:end_idx].set(l),
+                loss_container.stored_loss_terms,
+                loss_container_.stored_loss_terms
+            ),
+            train_loss_values=loss_container.train_loss_values.at[start_idx:end_idx].set(loss_container_.train_loss_values),
+            stored_weights_terms=None
+        )
+
+        carry = (
+            i,
+            carry_[1],
+            carry_[2],
+            carry_[3],
+            carry_[4],
+            loss_container,
+            carry_[6],
+            carry_[7]
+        )
+        return carry
 
     nn_params_train_fun_compiled = jax.jit(nn_train_fun).lower(carry).compile()
 
@@ -471,4 +594,4 @@ def solve_alternate(
     while main_break_fun(carry):
         carry = _one_alternate_iteration(carry)
 
-    return carry[2].params
+    return carry[2].params, carry[5]
