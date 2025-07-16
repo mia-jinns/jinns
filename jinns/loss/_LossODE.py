@@ -76,7 +76,10 @@ class _LossODEAbstract(AbstractLoss):
         ] | None, default=None
         Most of the time, a tuple of length 2 with initial condition $(t_0, u_0)$.
         From jinns v1.5.1 we accept tuples of jnp arrays with shape (n_cond, 1) for t0 and (n_cond, dim) for u0. This is useful to include observed conditions at different time points, such as *e.g* final conditions. It was designed to implement $\mathcal{L}^{aux}$ from _Systems biology informed deep learning for inferring parameters and hidden dynamics_, Alireza Yazdani et al., 2020
-    obs_slice : EllipsisType | slice | None, default=None
+    obs_slice : tuple[EllipsisType | slice, ...] | None, default=None
+        **Note**: If several observation datasets are passed this arguments need to be set as a
+        tuple of jnp.slice objects with the same length as the number of
+        observation datasets
         Slice object specifying the begininning/ending
         slice of u output(s) that is observed. This is useful for
         multidimensional PINN, with partially observed outputs.
@@ -96,7 +99,7 @@ class _LossODEAbstract(AbstractLoss):
         | tuple[int | float | Float[Array, " "], int | float | Float[Array, " dim"]]
         | None
     ) = eqx.field(kw_only=True, default=None)
-    obs_slice: EllipsisType | slice | None = eqx.field(
+    obs_slice: tuple[EllipsisType | slice, ...] | None = eqx.field(
         kw_only=True, default=None, static=True
     )
 
@@ -192,7 +195,10 @@ class _LossODEAbstract(AbstractLoss):
             self.initial_condition = (t0, u0)
 
         if self.obs_slice is None:
-            self.obs_slice = jnp.s_[...]
+            self.obs_slice = (jnp.s_[...],)
+
+        if not isinstance(self.obs_slice, tuple):
+            self.obs_slice = (self.obs_slice,)
 
         if self.loss_weights is None:
             self.loss_weights = LossWeightsODE()
@@ -397,20 +403,46 @@ class LossODE(_LossODEAbstract):
             initial_condition_fun = None
 
         if batch.obs_batch_dict is not None:
-            # update params with the batches of observed params
-            params_obs = _update_eq_params_dict(
-                params, batch.obs_batch_dict["eq_params"]
+            # if isinstance(batch.obs_batch_dict, tuple):
+            if len(batch.obs_batch_dict) != len(self.obs_slice):  # type: ignore
+                raise ValueError(
+                    "There must be the same number of "
+                    "observation datasets as the number of "
+                    "obs_slice"
+                )
+            params_obs = jax.tree.map(
+                lambda d: _update_eq_params_dict(params, d["eq_params"]),
+                batch.obs_batch_dict,
+                is_leaf=lambda x: isinstance(x, dict),
             )
-
-            # MSE loss wrt to an observed batch
-            obs_loss_fun = lambda po: observations_loss_apply(
-                self.u,
-                batch.obs_batch_dict["pinn_in"],
-                _set_derivatives(po, self.derivative_keys.observations),  # type: ignore
-                self.vmap_in_axes + vmap_in_axes_params,
-                batch.obs_batch_dict["val"],
+            obs_loss_fun = jax.tree.map(
+                lambda d, slice_: lambda po: observations_loss_apply(
+                    self.u,
+                    d["pinn_in"],
+                    _set_derivatives(po, self.derivative_keys.observations),  # type: ignore
+                    self.vmap_in_axes + vmap_in_axes_params,
+                    d["val"],
+                    slice_,
+                ),
+                batch.obs_batch_dict,
                 self.obs_slice,
+                is_leaf=lambda x: isinstance(x, dict),
             )
+            # else:
+            #    # update params with the batches of observed params
+            #    params_obs = _update_eq_params_dict(
+            #        params, batch.obs_batch_dict["eq_params"]
+            #    )
+
+            #    # MSE loss wrt to an observed batch
+            #    obs_loss_fun = lambda po: observations_loss_apply(
+            #        self.u,
+            #        batch.obs_batch_dict["pinn_in"],
+            #        _set_derivatives(po, self.derivative_keys.observations),  # type: ignore
+            #        self.vmap_in_axes + vmap_in_axes_params,
+            #        batch.obs_batch_dict["val"],
+            #        self.obs_slice,
+            #    )
         else:
             params_obs = None
             obs_loss_fun = None

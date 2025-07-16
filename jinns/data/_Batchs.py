@@ -24,7 +24,7 @@ class ObsBatchDict(TypedDict):
 class ODEBatch(eqx.Module):
     temporal_batch: Float[Array, "  batch_size"]
     param_batch_dict: dict[str, Array] = eqx.field(default=None)
-    obs_batch_dict: ObsBatchDict = eqx.field(default=None)
+    obs_batch_dict: tuple[ObsBatchDict, ...] = eqx.field(default=None)
 
 
 class PDENonStatioBatch(eqx.Module):
@@ -32,11 +32,11 @@ class PDENonStatioBatch(eqx.Module):
     border_batch: Float[Array, "  batch_size dimension n_facets"] | None
     initial_batch: Float[Array, "  batch_size dimension"] | None
     param_batch_dict: dict[str, Array] = eqx.field(default=None)
-    obs_batch_dict: ObsBatchDict = eqx.field(default=None)
+    obs_batch_dict: tuple[ObsBatchDict, ...] = eqx.field(default=None)
 
 
 class PDEStatioBatch(eqx.Module):
     domain_batch: Float[Array, "  batch_size dimension"]
     border_batch: Float[Array, "  batch_size dimension n_facets"] | None
     param_batch_dict: dict[str, Array] = eqx.field(default=None)
-    obs_batch_dict: ObsBatchDict = eqx.field(default=None)
+    obs_batch_dict: tuple[ObsBatchDict, ...] = eqx.field(default=None)

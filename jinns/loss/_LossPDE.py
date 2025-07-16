@@ -156,12 +156,18 @@ class _LossPDEAbstract(AbstractLoss):
 
     params: InitVar[Params[Array]] = eqx.field(kw_only=True, default=None)
 
-    def __post_init__(self, params: Params[Array] | None = None):
+    def __post_init__(
+        self,
+        keep_initial_loss_weight_scales: bool = True,
+        params: Params[Array] | None = None,
+    ):
         """
         Note that neither __init__ or __post_init__ are called when udating a
         Module with eqx.tree_at
         """
-        super().__post_init__()
+        super().__post_init__(
+            keep_initial_loss_weight_scales=keep_initial_loss_weight_scales
+        )
         if self.derivative_keys is None:
             # be default we only take gradient wrt nn_params
             try:
@@ -410,13 +416,18 @@ class LossPDEStatio(_LossPDEAbstract):
 
     vmap_in_axes: tuple[Int] = eqx.field(init=False, static=True)
 
-    def __post_init__(self, params: Params[Array] | None = None):
+    def __post_init__(
+        self,
+        keep_initial_loss_weight_scales: bool = True,
+        params: Params[Array] | None = None,
+    ):
         """
         Note that neither __init__ or __post_init__ are called when udating a
         Module with eqx.tree_at!
         """
         super().__post_init__(
-            params=params
+            keep_initial_loss_weight_scales=keep_initial_loss_weight_scales,
+            params=params,
         )  # because __init__ or __post_init__ of Base
         # class is not automatically called
 
@@ -684,13 +695,14 @@ class LossPDENonStatio(LossPDEStatio):
     _max_norm_samples_omega: Int = eqx.field(init=False, static=True)
     _max_norm_time_slices: Int = eqx.field(init=False, static=True)
 
-    def __post_init__(self, params=None):
+    def __post_init__(self, keep_initial_loss_weight_scales: bool = True, params=None):
         """
         Note that neither __init__ or __post_init__ are called when udating a
         Module with eqx.tree_at!
         """
         super().__post_init__(
-            params=params
+            keep_initial_loss_weight_scales=keep_initial_loss_weight_scales,
+            params=params,
         )  # because __init__ or __post_init__ of Base
         # class is not automatically called
 

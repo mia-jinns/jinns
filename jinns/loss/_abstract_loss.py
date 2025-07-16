@@ -98,6 +98,8 @@ class AbstractLoss(eqx.Module):
                 f" got {len(weights)} and {len(terms)}. "
                 "If you passed tuple of dyn_loss, make sure to pass "
                 "tuple of loss weights at LossWeights.dyn_loss."
+                "If you passed tuple of obs datasets, make sure to pass "
+                "tuple of loss weights at LossWeights.observations."
             )
 
     def ponderate_and_sum_gradient(self, terms):

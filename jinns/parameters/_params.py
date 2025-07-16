@@ -42,7 +42,6 @@ def _update_eq_params_dict(
     param_batch_dict_ = param_batch_dict | {
         k: None for k in set(params.eq_params.keys()) - set(param_batch_dict.keys())
     }
-
     # Replace at non None leafs
     params = eqx.tree_at(
         lambda p: p.eq_params,
