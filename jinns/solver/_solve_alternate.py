@@ -337,7 +337,7 @@ def solve_alternate(
                     subkey,
                     eq_params_masks[eq_param],
                     eq_params_opt_state_field_for_accel[eq_param],
-                    with_loss_weight_update=False,
+                    with_loss_weight_update=True,
                 )
 
                 # save loss value and selected parameters
@@ -380,6 +380,9 @@ def solve_alternate(
                 conditions_str=("bool_max_iter", "bool_nan_in_params"),
             )
 
+            start_idx = i * (sum(n_iter_list_eq_params) + nn_n_iter) + sum(
+                n_iter_list_eq_params[: idx_params - 1]
+            )
             # 1 - some init
             loss_ = eqx.tree_at(
                 lambda pt: (pt.derivative_keys),
@@ -410,8 +413,15 @@ def solve_alternate(
                         )
                     ),
                 )
+                # ensure continuity between steps for loss weights
+                stored_weights_terms_ = jax.tree_util.tree_map(
+                    lambda st_, st: st_.at[-1].set(st[start_idx - 1]),
+                    stored_weights_terms_,
+                    loss_container.stored_weights_terms,
+                )
             else:
                 stored_weights_terms_ = None
+
             loss_container_ = LossContainer(
                 stored_loss_terms=stored_loss_terms_,
                 train_loss_values=train_loss_values_,
@@ -432,15 +442,8 @@ def solve_alternate(
             carry_ = jax.lax.while_loop(break_fun_, _eq_params_one_iteration, carry_)
 
             # Now we prepare back the main carry
-            start_idx = i * (sum(n_iter_list_eq_params) + nn_n_iter) + sum(
-                n_iter_list_eq_params[: idx_params - 1]
-            )
             # jax.debug.print("start_idx eqx {i}", i=start_idx)
             loss_container_ = carry_[5]
-            print(
-                loss_container.stored_weights_terms,
-                loss_container_.stored_weights_terms,
-            )
             loss_container = LossContainer(
                 stored_loss_terms=jax.tree.map(
                     lambda s, l: jax.lax.dynamic_update_slice(s, l, (start_idx,)),
@@ -566,6 +569,9 @@ def solve_alternate(
             return carry
 
         # 1 - some init
+        start_idx = i * (sum(n_iter_list_eq_params) + nn_n_iter) + sum(
+            n_iter_list_eq_params
+        )
         loss_ = eqx.tree_at(
             lambda pt: pt.derivative_keys, carry[1], nn_gd_steps_derivative_keys
         )
@@ -581,7 +587,7 @@ def solve_alternate(
                 ),
                 loss_.loss_weights,
                 tuple(
-                    jnp.zeros((n_iter_for_params))
+                    jnp.zeros((nn_n_iter))
                     for n in range(
                         len(
                             jax.tree.leaves(
@@ -592,6 +598,12 @@ def solve_alternate(
                         )
                     )
                 ),
+            )
+            # ensure continuity between steps for loss weights
+            stored_weights_terms_ = jax.tree_util.tree_map(
+                lambda st_, st: st_.at[-1].set(st[start_idx - 1]),
+                stored_weights_terms_,
+                loss_container.stored_weights_terms,
             )
         else:
             stored_weights_terms_ = None
@@ -614,9 +626,6 @@ def solve_alternate(
         carry_ = jax.lax.while_loop(nn_break_fun_, _nn_params_one_iteration, carry_)
 
         # Now we prepare back the main carry
-        start_idx = i * (sum(n_iter_list_eq_params) + nn_n_iter) + sum(
-            n_iter_list_eq_params
-        )
         # jax.debug.print("start_idx nn {i}", i=start_idx)
         loss_container_ = carry_[5]
         loss_container = LossContainer(
