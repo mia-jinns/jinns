@@ -233,6 +233,28 @@ def solve_alternate(
     n_iter_list_eq_params = jax.tree.leaves(n_iter_by_solver.eq_params)
     train_loss_values = jnp.zeros((n_iter * total_iter_all_solvers))
 
+    # initialize the PyTree for stored loss weights values
+    if loss.update_weight_method is not None:
+        stored_weights_terms = eqx.tree_at(
+            lambda pt: jax.tree.leaves(
+                pt, is_leaf=lambda x: x is not None and eqx.is_inexact_array(x)
+            ),
+            loss.loss_weights,
+            tuple(
+                jnp.zeros((n_iter * total_iter_all_solvers))
+                for n in range(
+                    len(
+                        jax.tree.leaves(
+                            loss.loss_weights,
+                            is_leaf=lambda x: x is not None and eqx.is_inexact_array(x),
+                        )
+                    )
+                )
+            ),
+        )
+    else:
+        stored_weights_terms = None
+
     train_data = DataGeneratorContainer(
         data=data, param_data=param_data, obs_data=obs_data
     )
@@ -251,7 +273,7 @@ def solve_alternate(
     loss_container = LossContainer(
         stored_loss_terms=stored_loss_terms,
         train_loss_values=train_loss_values,
-        stored_weights_terms=None,
+        stored_weights_terms=stored_weights_terms,
     )
     stored_objects = StoredObjectContainer(
         stored_params=None,
@@ -369,10 +391,31 @@ def solve_alternate(
                 lambda _: jnp.zeros((n_iter_for_params)), loss_terms
             )
             train_loss_values_ = jnp.zeros((n_iter_for_params,))
+            if loss_.update_weight_method is not None:
+                stored_weights_terms_ = eqx.tree_at(
+                    lambda pt: jax.tree.leaves(
+                        pt, is_leaf=lambda x: x is not None and eqx.is_inexact_array(x)
+                    ),
+                    loss_.loss_weights,
+                    tuple(
+                        jnp.zeros((n_iter_for_params))
+                        for n in range(
+                            len(
+                                jax.tree.leaves(
+                                    loss_.loss_weights,
+                                    is_leaf=lambda x: x is not None
+                                    and eqx.is_inexact_array(x),
+                                )
+                            )
+                        )
+                    ),
+                )
+            else:
+                stored_weights_terms_ = None
             loss_container_ = LossContainer(
                 stored_loss_terms=stored_loss_terms_,
                 train_loss_values=train_loss_values_,
-                stored_weights_terms=None,
+                stored_weights_terms=stored_weights_terms_,
             )
 
             carry_ = (
@@ -394,6 +437,10 @@ def solve_alternate(
             )
             # jax.debug.print("start_idx eqx {i}", i=start_idx)
             loss_container_ = carry_[5]
+            print(
+                loss_container.stored_weights_terms,
+                loss_container_.stored_weights_terms,
+            )
             loss_container = LossContainer(
                 stored_loss_terms=jax.tree.map(
                     lambda s, l: jax.lax.dynamic_update_slice(s, l, (start_idx,)),
@@ -405,7 +452,11 @@ def solve_alternate(
                     loss_container_.train_loss_values,
                     (start_idx,),
                 ),
-                stored_weights_terms=None,
+                stored_weights_terms=jax.tree.map(
+                    lambda s, l: jax.lax.dynamic_update_slice(s, l, (start_idx,)),
+                    loss_container.stored_weights_terms,
+                    loss_container_.stored_weights_terms,
+                ),
             )
 
             carry = (
@@ -523,10 +574,31 @@ def solve_alternate(
             lambda _: jnp.zeros((nn_n_iter,)), loss_terms
         )
         train_loss_values_ = jnp.zeros((nn_n_iter,))
+        if loss_.update_weight_method is not None:
+            stored_weights_terms_ = eqx.tree_at(
+                lambda pt: jax.tree.leaves(
+                    pt, is_leaf=lambda x: x is not None and eqx.is_inexact_array(x)
+                ),
+                loss_.loss_weights,
+                tuple(
+                    jnp.zeros((n_iter_for_params))
+                    for n in range(
+                        len(
+                            jax.tree.leaves(
+                                loss_.loss_weights,
+                                is_leaf=lambda x: x is not None
+                                and eqx.is_inexact_array(x),
+                            )
+                        )
+                    )
+                ),
+            )
+        else:
+            stored_weights_terms_ = None
         loss_container_ = LossContainer(
             stored_loss_terms=stored_loss_terms_,
             train_loss_values=train_loss_values_,
-            stored_weights_terms=None,
+            stored_weights_terms=stored_weights_terms_,
         )
         carry_ = (
             0,
@@ -558,7 +630,11 @@ def solve_alternate(
                 loss_container_.train_loss_values,
                 (start_idx,),
             ),
-            stored_weights_terms=None,
+            stored_weights_terms=jax.tree.map(
+                lambda s, l: jax.lax.dynamic_update_slice(s, l, (start_idx,)),
+                loss_container.stored_weights_terms,
+                loss_container_.stored_weights_terms,
+            ),
         )
 
         carry = (
