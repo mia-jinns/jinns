@@ -8,7 +8,7 @@ from __future__ import (
 
 import abc
 from dataclasses import InitVar
-from typing import TYPE_CHECKING, Callable, TypedDict
+from typing import TYPE_CHECKING, Callable, TypedDict, cast
 from types import EllipsisType
 import warnings
 import jax
@@ -129,10 +129,10 @@ class _LossPDEAbstract(AbstractLoss):
     # NOTE static=True only for leaf attributes that are not valid JAX types
     # (ie. jax.Array cannot be static) and that we do not expect to change
     # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
-    derivative_keys: DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio | None = (
-        eqx.field(kw_only=True, default=None)
+    derivative_keys: DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio = eqx.field(
+        kw_only=True, default=None
     )
-    loss_weights: LossWeightsPDEStatio | LossWeightsPDENonStatio | None = eqx.field(
+    loss_weights: LossWeightsPDEStatio | LossWeightsPDENonStatio = eqx.field(
         kw_only=True, default=None
     )
     omega_boundary_fun: (
@@ -144,10 +144,10 @@ class _LossPDEAbstract(AbstractLoss):
     omega_boundary_dim: slice | dict[str, slice] | None = eqx.field(
         kw_only=True, default=None, static=True
     )
-    norm_samples: Float[Array, " nb_norm_samples dimension"] | None = eqx.field(
+    norm_samples: Float[Array, " nb_norm_samples dimension"] = eqx.field(
         kw_only=True, default=None
     )
-    norm_weights: Float[Array, " nb_norm_samples"] | float | int | None = eqx.field(
+    norm_weights: Float[Array, " nb_norm_samples"] = eqx.field(
         kw_only=True, default=None
     )
     obs_slice: EllipsisType | slice | None = eqx.field(
@@ -309,14 +309,6 @@ class _LossPDEAbstract(AbstractLoss):
     def __call__(self, *_, **__):
         pass
 
-    @abc.abstractmethod
-    def evaluate(
-        self: eqx.Module,
-        params: Params[Array],
-        batch: PDEStatioBatch | PDENonStatioBatch,
-    ) -> tuple[Float[Array, " "], LossDictPDEStatio | LossDictPDENonStatio]:
-        raise NotImplementedError
-
 
 class LossPDEStatio(_LossPDEAbstract):
     r"""Loss object for a stationary partial differential equation
@@ -441,9 +433,7 @@ class LossPDEStatio(_LossPDEAbstract):
     def _get_normalization_loss_batch(
         self, _
     ) -> tuple[Float[Array, " nb_norm_samples dimension"]]:
-        return (self.norm_samples,)  # type: ignore -> cannot narrow a class attr
-
-    # we could have used typing.cast though
+        return (self.norm_samples,)
 
     def _get_observations_loss_batch(
         self, batch: PDEStatioBatch
@@ -487,7 +477,7 @@ class LossPDEStatio(_LossPDEAbstract):
                 self.dynamic_loss.evaluate,  # type: ignore
                 self.u,
                 self._get_dynamic_loss_batch(batch),
-                _set_derivatives(p, self.derivative_keys.dyn_loss),  # type: ignore
+                _set_derivatives(p, self.derivative_keys.dyn_loss),
                 self.vmap_in_axes + vmap_in_axes_params,
             )
         else:
@@ -498,9 +488,9 @@ class LossPDEStatio(_LossPDEAbstract):
             norm_loss_fun = lambda p: normalization_loss_apply(
                 self.u,
                 self._get_normalization_loss_batch(batch),
-                _set_derivatives(p, self.derivative_keys.norm_loss),  # type: ignore
+                _set_derivatives(p, self.derivative_keys.norm_loss),
                 vmap_in_axes_params,
-                self.norm_weights,  # type: ignore -> can't get the __post_init__ narrowing here
+                self.norm_weights,
             )
         else:
             norm_loss_fun = None
@@ -510,14 +500,20 @@ class LossPDEStatio(_LossPDEAbstract):
             self.omega_boundary_condition is not None
             and self.omega_boundary_dim is not None
             and self.omega_boundary_fun is not None
-        ):  # pyright cannot narrow down the three None otherwise as it is class attribute
+        ):
+            # we declare local (narrowed) variables for Pyright
+            # which is unable to narrow inside lambda def
+            # https://github.com/microsoft/pyright/discussions/8340
+            fun = self.omega_boundary_fun
+            cond = self.omega_boundary_condition
+            dim = self.omega_boundary_dim
             boundary_loss_fun = lambda p: boundary_condition_apply(
                 self.u,
                 batch,
-                _set_derivatives(p, self.derivative_keys.boundary_loss),  # type: ignore
-                self.omega_boundary_fun,  # type: ignore
-                self.omega_boundary_condition,  # type: ignore
-                self.omega_boundary_dim,  # type: ignore
+                _set_derivatives(p, self.derivative_keys.boundary_loss),
+                fun,
+                cond,
+                dim,
             )
         else:
             boundary_loss_fun = None
@@ -532,7 +528,7 @@ class LossPDEStatio(_LossPDEAbstract):
             obs_loss_fun = lambda po: observations_loss_apply(
                 self.u,
                 self._get_observations_loss_batch(batch),
-                _set_derivatives(po, self.derivative_keys.observations),  # type: ignore
+                _set_derivatives(po, self.derivative_keys.observations),
                 self.vmap_in_axes + vmap_in_axes_params,
                 batch.obs_batch_dict["val"],
                 self.obs_slice,
@@ -564,31 +560,6 @@ class LossPDEStatio(_LossPDEAbstract):
         )
 
         return mses, grads
-
-    def evaluate(
-        self, params: Params[Array], batch: PDEStatioBatch
-    ) -> tuple[Float[Array, " "], PDEStatioComponents[Float[Array, " "] | None]]:
-        """
-        Evaluate the loss function at a batch of points for given parameters.
-
-        We retrieve the total value itself and a PyTree with loss values for each term
-
-        Parameters
-        ---------
-        params
-            Parameters at which the loss is evaluated
-        batch
-            Composed of a batch of points in the
-            domain, a batch of points in the domain
-            border and an optional additional batch of parameters (eg. for
-            metamodeling) and an optional additional batch of observed
-            inputs/outputs/parameters
-        """
-        loss_terms, _ = self.evaluate_by_terms(params, batch)
-
-        loss_val = self.ponderate_and_sum_loss(loss_terms)
-
-        return loss_val, loss_terms
 
 
 class LossPDENonStatio(LossPDEStatio):
@@ -672,7 +643,7 @@ class LossPDENonStatio(LossPDEStatio):
     obs_slice : slice, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
-    t0 : float | Float[Array, " 1"], default=None
+    t0 : Float[Array, " 1"], default=None
         The time at which to apply the initial condition. If None, the time
         is set to `0` by default.
     initial_condition_fun : Callable, default=None
@@ -687,10 +658,8 @@ class LossPDENonStatio(LossPDEStatio):
     dynamic_loss: PDENonStatio | None
     # NOTE static=True only for leaf attributes that are not valid JAX types
     # (ie. jax.Array cannot be static) and that we do not expect to change
-    initial_condition_fun: Callable | None = eqx.field(
-        kw_only=True, default=None, static=True
-    )
-    t0: float | Float[Array, " 1"] | None = eqx.field(kw_only=True, default=None)
+    initial_condition_fun: Callable = eqx.field(kw_only=True, default=None, static=True)
+    t0: Float[Array, " 1"] = eqx.field(kw_only=True, default=None)
 
     _max_norm_samples_omega: Int = eqx.field(init=False, static=True)
     _max_norm_time_slices: Int = eqx.field(init=False, static=True)
@@ -738,7 +707,7 @@ class LossPDENonStatio(LossPDEStatio):
     ]:
         return (
             batch.domain_batch[: self._max_norm_time_slices, 0:1],
-            self.norm_samples[: self._max_norm_samples_omega],  # type: ignore -> cannot narrow a class attr
+            self.norm_samples[: self._max_norm_samples_omega],
         )
 
     def _get_observations_loss_batch(
@@ -785,18 +754,24 @@ class LossPDENonStatio(LossPDEStatio):
         # For mse_dyn_loss, mse_norm_loss, mse_boundary_loss,
         # mse_observation_loss we use the evaluate from parent class
         # As well as for their gradients
-        partial_mses, partial_grads = super().evaluate_by_terms(params, batch)  # type: ignore
-        # ignore because batch is not PDEStatioBatch. We could use typing.cast though
+        partial_mses, partial_grads = super().evaluate_by_terms(
+            params, cast(PDEStatioBatch, batch)
+        )
 
         # initial condition
         if self.initial_condition_fun is not None:
             mse_initial_condition_fun = lambda p: initial_condition_apply(
                 self.u,
                 omega_batch,
-                _set_derivatives(p, self.derivative_keys.initial_condition),  # type: ignore
+                _set_derivatives(
+                    p,
+                    cast(
+                        DerivativeKeysPDENonStatio, self.derivative_keys
+                    ).initial_condition,
+                ),
                 (0,) + vmap_in_axes_params,
-                self.initial_condition_fun,  # type: ignore
-                self.t0,  # type: ignore can't get the narrowing in __post_init__
+                self.initial_condition_fun,
+                self.t0,
             )
             mse_initial_condition, grad_initial_condition = self.get_gradients(
                 mse_initial_condition_fun, params
@@ -822,24 +797,3 @@ class LossPDENonStatio(LossPDEStatio):
         )
 
         return mses, grads
-
-    def evaluate(
-        self, params: Params[Array], batch: PDENonStatioBatch
-    ) -> tuple[Float[Array, " "], PDENonStatioComponents[Float[Array, " "] | None]]:
-        """
-        Evaluate the loss function at a batch of points for given parameters.
-        We retrieve the total value itself and a PyTree with loss values for each term
-
-
-        Parameters
-        ---------
-        params
-            Parameters at which the loss is evaluated
-        batch
-            Composed of a batch of points in
-            the domain, a batch of points in the domain
-            border, a batch of time points and an optional additional batch
-            of parameters (eg. for metamodeling) and an optional additional batch of observed
-            inputs/outputs/parameters
-        """
-        return super().evaluate(params, batch)  # type: ignore

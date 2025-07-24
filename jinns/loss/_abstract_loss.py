@@ -3,7 +3,7 @@ from __future__ import annotations
 import abc
 from dataclasses import InitVar
 from typing import TYPE_CHECKING, Self, Literal, Callable, get_args
-from jaxtyping import Array, PyTree, Key
+from jaxtyping import Array, PyTree, Key, Float
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -127,6 +127,31 @@ class AbstractLoss(eqx.Module):
             *weighted_grads,
             is_leaf=eqx.is_inexact_array,
         )
+
+    def evaluate(
+        self, params: Params[Array], batch: AnyBatch
+    ) -> tuple[Float[Array, " "], AnyLossComponents]:
+        """
+        Evaluate the loss function at a batch of points for given parameters.
+
+        We retrieve the total value itself and a PyTree with loss values for each term
+
+        Parameters
+        ---------
+        params
+            Parameters at which the loss is evaluated
+        batch
+            Composed of a batch of points in the
+            domain, a batch of points in the domain
+            border and an optional additional batch of parameters (eg. for
+            metamodeling) and an optional additional batch of observed
+            inputs/outputs/parameters
+        """
+        loss_terms, _ = self.evaluate_by_terms(params, batch)
+
+        loss_val = self.ponderate_and_sum_loss(loss_terms)
+
+        return loss_val, loss_terms
 
     def update_weights(
         self: Self,

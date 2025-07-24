@@ -92,14 +92,14 @@ class _LossODEAbstract(AbstractLoss):
     # NOTE static=True only for leaf attributes that are not valid JAX types
     # (ie. jax.Array cannot be static) and that we do not expect to change
     # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
-    derivative_keys: DerivativeKeysODE | None = eqx.field(kw_only=True, default=None)
-    loss_weights: LossWeightsODE | None = eqx.field(kw_only=True, default=None)
+    derivative_keys: DerivativeKeysODE = eqx.field(kw_only=True, default=None)
+    loss_weights: LossWeightsODE = eqx.field(kw_only=True, default=None)
     initial_condition: (
         tuple[Float[Array, " n_cond 1"], Float[Array, " n_cond dim"]]
         | tuple[int | float | Float[Array, " "], int | float | Float[Array, " dim"]]
         | None
     ) = eqx.field(kw_only=True, default=None)
-    obs_slice: tuple[EllipsisType | slice, ...] | None = eqx.field(
+    obs_slice: tuple[EllipsisType | slice, ...] = eqx.field(
         kw_only=True, default=None, static=True
     )
 
@@ -210,7 +210,7 @@ class _LossODEAbstract(AbstractLoss):
     @abc.abstractmethod
     def evaluate(
         self: eqx.Module, params: Params[Array], batch: ODEBatch
-    ) -> tuple[Float[Array, " "], LossDictODE]:
+    ) -> tuple[Float[Array, " "], ODEComponents[Float[Array, " "] | None]]:
         raise NotImplementedError
 
 
@@ -279,7 +279,7 @@ class LossODE(_LossODEAbstract):
     # NOTE static=True only for leaf attributes that are not valid JAX types
     # (ie. jax.Array cannot be static) and that we do not expect to change
     u: AbstractPINN
-    dynamic_loss: ODE | tuple[ODE, ...] | None
+    dynamic_loss: ODE | tuple[ODE, ...]
 
     vmap_in_axes: tuple[int] = eqx.field(init=False, static=True)
 
@@ -338,10 +338,10 @@ class LossODE(_LossODEAbstract):
                 # we return a lambda function of the parameters only
                 dyn_loss_fun = jax.tree.map(
                     lambda d: lambda p: dynamic_loss_apply(
-                        d.evaluate,  # type: ignore
+                        d.evaluate,
                         self.u,
                         temporal_batch,
-                        _set_derivatives(p, self.derivative_keys.dyn_loss),  # type: ignore
+                        _set_derivatives(p, self.derivative_keys.dyn_loss),
                         self.vmap_in_axes + vmap_in_axes_params,
                     ),
                     self.dynamic_loss,
@@ -351,11 +351,12 @@ class LossODE(_LossODEAbstract):
             else:
                 # so far it is better not to default to the tuple computation
                 # above for retrocompatibility
+                _ = self.dynamic_loss
                 dyn_loss_fun = lambda p: dynamic_loss_apply(
-                    self.dynamic_loss.evaluate,  # type: ignore
+                    self.dynamic_loss.evaluate,
                     self.u,
                     temporal_batch,
-                    _set_derivatives(p, self.derivative_keys.dyn_loss),  # type: ignore
+                    _set_derivatives(p, self.derivative_keys.dyn_loss),
                     self.vmap_in_axes + vmap_in_axes_params,
                 )
         else:
@@ -373,7 +374,7 @@ class LossODE(_LossODEAbstract):
                         t,
                         _set_derivatives(
                             p,
-                            self.derivative_keys.initial_condition,  # type: ignore
+                            self.derivative_keys.initial_condition,
                         ),
                     )
                     - u
@@ -403,8 +404,7 @@ class LossODE(_LossODEAbstract):
             initial_condition_fun = None
 
         if batch.obs_batch_dict is not None:
-            # if isinstance(batch.obs_batch_dict, tuple):
-            if len(batch.obs_batch_dict) != len(self.obs_slice):  # type: ignore
+            if len(batch.obs_batch_dict) != len(self.obs_slice):
                 raise ValueError(
                     "There must be the same number of "
                     "observation datasets as the number of "
@@ -419,7 +419,7 @@ class LossODE(_LossODEAbstract):
                 lambda d, slice_: lambda po: observations_loss_apply(
                     self.u,
                     d["pinn_in"],
-                    _set_derivatives(po, self.derivative_keys.observations),  # type: ignore
+                    _set_derivatives(po, self.derivative_keys.observations),
                     self.vmap_in_axes + vmap_in_axes_params,
                     d["val"],
                     slice_,
@@ -428,21 +428,6 @@ class LossODE(_LossODEAbstract):
                 self.obs_slice,
                 is_leaf=lambda x: isinstance(x, dict),
             )
-            # else:
-            #    # update params with the batches of observed params
-            #    params_obs = _update_eq_params_dict(
-            #        params, batch.obs_batch_dict["eq_params"]
-            #    )
-
-            #    # MSE loss wrt to an observed batch
-            #    obs_loss_fun = lambda po: observations_loss_apply(
-            #        self.u,
-            #        batch.obs_batch_dict["pinn_in"],
-            #        _set_derivatives(po, self.derivative_keys.observations),  # type: ignore
-            #        self.vmap_in_axes + vmap_in_axes_params,
-            #        batch.obs_batch_dict["val"],
-            #        self.obs_slice,
-            #    )
         else:
             params_obs = None
             obs_loss_fun = None
@@ -480,28 +465,3 @@ class LossODE(_LossODEAbstract):
             and isinstance(x[1], Params),
         )
         return mses, grads
-
-    def evaluate(
-        self, params: Params[Array], batch: ODEBatch
-    ) -> tuple[Float[Array, " "], ODEComponents[Float[Array, " "] | None]]:
-        """
-        Evaluate the loss function at a batch of points for given parameters.
-
-        We retrieve the total value itself and a PyTree with loss values for each term
-
-        Parameters
-        ---------
-        params
-            Parameters at which the loss is evaluated
-        batch
-            Composed of a batch of points in the
-            domain, a batch of points in the domain
-            border and an optional additional batch of parameters (eg. for
-            metamodeling) and an optional additional batch of observed
-            inputs/outputs/parameters
-        """
-        loss_terms, _ = self.evaluate_by_terms(params, batch)
-
-        loss_val = self.ponderate_and_sum_loss(loss_terms)
-
-        return loss_val, loss_terms
