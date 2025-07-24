@@ -207,12 +207,6 @@ class _LossODEAbstract(AbstractLoss):
     def __call__(self, *_, **__):
         pass
 
-    @abc.abstractmethod
-    def evaluate(
-        self: eqx.Module, params: Params[Array], batch: ODEBatch
-    ) -> tuple[Float[Array, " "], ODEComponents[Float[Array, " "] | None]]:
-        raise NotImplementedError
-
 
 class LossODE(_LossODEAbstract):
     r"""Loss object for an ordinary differential equation
@@ -351,7 +345,6 @@ class LossODE(_LossODEAbstract):
             else:
                 # so far it is better not to default to the tuple computation
                 # above for retrocompatibility
-                _ = self.dynamic_loss
                 dyn_loss_fun = lambda p: dynamic_loss_apply(
                     self.dynamic_loss.evaluate,
                     self.u,
