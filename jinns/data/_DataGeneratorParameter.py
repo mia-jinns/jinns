@@ -73,14 +73,12 @@ class DataGeneratorParameter(AbstractDataGenerator):
     curr_param_idx: eqx.Module | None = eqx.field(init=False)
     param_n_samples: eqx.Module = eqx.field(init=False)
 
-    param_keys: set = eqx.field(init=False)
-
     def __post_init__(self):
         if self.user_data is None:
             self.user_data = {}
         if self.param_ranges is None:
             self.param_ranges = {}
-        self.param_keys = set().union(self.param_ranges, self.user_data)
+        param_keys = set().union(self.param_ranges, self.user_data)
         if self.param_batch_size is not None and self.n < self.param_batch_size:
             raise ValueError(
                 f"Number of data points ({self.n}) is smaller than the"
@@ -90,28 +88,30 @@ class DataGeneratorParameter(AbstractDataGenerator):
             all_keys = set().union(self.param_ranges, self.user_data)
             self.keys = dict(zip(all_keys, jax.random.split(self.keys, len(all_keys))))
 
-
         # The call to self.generate_data() creates
         # the dict self.param_n_samples and then we will only use this one
         # because it merges the scattered data between `user_data` and
         # `param_ranges`
         self.keys, self.param_n_samples = self.generate_data(self.keys)
-        
+
         # NOTE and from now on we will work with eqx.Module
         # because eq_params is not a dict anymore.
         # Note that we kept the dictionaries for the first part of the
         # __post_init__ for ease of initialization.
         # (this has changed from jinns>1.5.1)
-        DGParams = dict_to_eqxModule(self.keys, 'DGParams', instanciate=False)
+        DGParams = dict_to_eqxModule(self.keys, "DGParams", instanciate=False)
         self.keys = DGParams(**self.keys)
         self.param_n_samples = DGParams(**self.param_n_samples)
 
         if self.param_batch_size is None:
             self.curr_param_idx = None
         else:
-            param_keys_and_curr_idx = dict(zip(
-                    self.param_keys,
-                    tuple(self.n + self.param_batch_size for i in range(len(self.param_keys)))
+            param_keys_and_curr_idx = dict(
+                zip(
+                    param_keys,
+                    tuple(
+                        self.n + self.param_batch_size for i in range(len(param_keys))
+                    ),
                 )
             )
             self.curr_param_idx = DGParams(**param_keys_and_curr_idx)

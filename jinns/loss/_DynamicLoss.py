@@ -587,15 +587,15 @@ class NavierStokesMassConservation2DStatio(PDEStatio):
             # dynamic loss on x axis
             result_x = (
                 u_dot_nabla_x_u[0]
-                + 1 / params.eq_params["rho"] * jac_p[0, 0]
-                - params.eq_params["nu"] * vec_laplacian_u[0]
+                + 1 / params.eq_params.rho * jac_p[0, 0]
+                - params.eq_params.nu * vec_laplacian_u[0]
             )
 
             # dynamic loss on y axis
             result_y = (
                 u_dot_nabla_x_u[1]
-                + 1 / params.eq_params["rho"] * jac_p[0, 1]
-                - params.eq_params["nu"] * vec_laplacian_u[1]
+                + 1 / params.eq_params.rho * jac_p[0, 1]
+                - params.eq_params.nu * vec_laplacian_u[1]
             )
 
             # MASS CONVERVATION
@@ -626,14 +626,14 @@ class NavierStokesMassConservation2DStatio(PDEStatio):
             # dynamic loss on x axis
             result_x = (
                 u_dot_nabla_x_u[..., 0]
-                + 1 / params.eq_params["rho"] * dp_dx.squeeze()
-                - params.eq_params["nu"] * vec_laplacian_u[..., 0]
+                + 1 / params.eq_params.rho * dp_dx.squeeze()
+                - params.eq_params.nu * vec_laplacian_u[..., 0]
             )
             # dynamic loss on y axis
             result_y = (
                 u_dot_nabla_x_u[..., 1]
-                + 1 / params.eq_params["rho"] * dp_dy.squeeze()
-                - params.eq_params["nu"] * vec_laplacian_u[..., 1]
+                + 1 / params.eq_params.rho * dp_dy.squeeze()
+                - params.eq_params.nu * vec_laplacian_u[..., 1]
             )
 
             # MASS CONVERVATION

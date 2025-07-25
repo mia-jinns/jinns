@@ -91,7 +91,9 @@ def _subtract_with_check(
     return a - b
 
 
-def dict_to_eqxModule(d: dict, class_name: str, instanciate: bool = True) -> eqx.Module | Type[eqx.Module]:
+def dict_to_eqxModule(
+    d: dict, class_name: str, instanciate: bool = True
+) -> eqx.Module | Type[eqx.Module]:
     """
     This uses the fact that `type('Foo', (Bar, Baz), {})` is equivalent to
 

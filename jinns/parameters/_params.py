@@ -47,29 +47,26 @@ class Params(eqx.Module, Generic[T]):
     )
 
 
-def _update_eq_params_dict(
+def _update_eq_params(
     params: Params[Array],
-    param_batch_dict: PyTree[Array],
+    eq_param_batch: PyTree[Array],
 ) -> Params:
     """
     Update params.eq_params with a batch of eq_params for given key(s)
     """
-#
-#    # artificially "complete" `param_batch_dict` with None to match `params`
-#    # PyTree  structure
-#    param_batch_dict_ = param_batch_dict | {
-#        k: None for k in set(params.eq_params.keys()) - set(param_batch_dict.keys())
-#    }
 
+    param_names_to_update = tuple(f.name for f in fields(eq_param_batch))
     params = eqx.tree_at(
         lambda p: p.eq_params,
         params,
         eqx.tree_at(
-            lambda pt: tuple(getattr(pt, f.name) for f in fields(pt)
-                        if f in fields(param_batch_dict)),
+            lambda pt: tuple(
+                getattr(pt, f.name)
+                for f in fields(pt)
+                if f.name in param_names_to_update
+            ),
             params.eq_params,
-            tuple(getattr(param_batch_dict, f.name) for f in
-                  fields(param_batch_dict)),
+            tuple(getattr(eq_param_batch, f) for f in param_names_to_update),
         ),
     )
 
@@ -77,7 +74,7 @@ def _update_eq_params_dict(
 
 
 def _get_vmap_in_axes_params(
-    eq_params_batch_dict: dict[str, Array], params: Params[Array]
+    eq_param_batch: eqx.Module, params: Params[Array]
 ) -> tuple[Params[int | None] | None]:
     """
     Return the input vmap axes when there is batch(es) of parameters to vmap
@@ -88,19 +85,22 @@ def _get_vmap_in_axes_params(
     Note that we return a Params PyTree with an integer to designate the
     vmapped axis or None if there is not
     """
-    if eq_params_batch_dict is None:
+    if eq_param_batch is None:
         return (None,)
     # We use pytree indexing of vmapped axes and vmap on axis
     # 0 of the eq_parameters for which we have a batch
     # this is for a fine-grained vmaping
     # scheme over the params
+    param_names_to_vmap = tuple(f.name for f in fields(eq_param_batch))
+    vmap_axes_dict = {
+        k.name: (0 if k.name in param_names_to_vmap else None)
+        for k in fields(params.eq_params)
+    }
+    eq_param_vmap_axes = type(params.eq_params)(**vmap_axes_dict)
     vmap_in_axes_params = (
         Params(
             nn_params=None,
-            eq_params={
-                k: (0 if k in eq_params_batch_dict.keys() else None)
-                for k in params.eq_params.keys()
-            },
+            eq_params=eq_param_vmap_axes,
         ),
     )
     return vmap_in_axes_params

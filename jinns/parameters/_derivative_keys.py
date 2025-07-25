@@ -448,13 +448,16 @@ def _set_derivatives(params, derivative_keys):
         `Params(nn_params=True | False, eq_params={"alpha":True | False,
         "beta":True | False})`.
         """
-        return jax.tree.map(
-            lambda p, d: jax.lax.cond(d, lambda p: p, jax.lax.stop_gradient, p),
-            params_,
-            derivative_mask,
-            is_leaf=lambda x: isinstance(x, eqx.Module)
-            and not isinstance(x, Params),  # do not travers nn_params, more
-            # granularity could be imagined here, in the future
+        return eqx.tree_at(
+            lambda pt: pt.eq_params,
+            params,
+            jax.tree.map(
+                lambda p, d: jax.lax.cond(d, lambda p: p, jax.lax.stop_gradient, p),
+                params.eq_params,
+                derivative_mask.eq_params,
+            ),
         )
+        # NOTE that currently we do not travers nn_params, more
+        # granularity could be imagined here, in the future
 
     return _set_derivatives_(params, derivative_keys)
