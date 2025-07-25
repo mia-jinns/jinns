@@ -47,15 +47,15 @@ def create_DataGeneratorParameter_only_user_data():
 def test_get_batch(create_DataGeneratorParameter):
     data_generator_parameters = create_DataGeneratorParameter
     _, param_batch = data_generator_parameters.get_batch()
-    assert jnp.allclose(jnp.sort(jnp.unique(param_batch["nu"])), jnp.arange(n)) and (
-        jnp.all(param_batch["theta"] >= 10.0) and jnp.all(param_batch["theta"] <= 11.0)
+    assert jnp.allclose(jnp.sort(jnp.unique(param_batch.nu)), jnp.arange(n)) and (
+        jnp.all(param_batch.theta >= 10.0) and jnp.all(param_batch.theta <= 11.0)
     )
 
 
 def test_get_batch_only_user_data(create_DataGeneratorParameter_only_user_data):
     data_generator_parameters = create_DataGeneratorParameter_only_user_data
     _, param_batch = data_generator_parameters.get_batch()
-    assert jnp.allclose(jnp.sort(jnp.unique(param_batch["nu"])), jnp.arange(n))
+    assert jnp.allclose(jnp.sort(jnp.unique(param_batch.nu)), jnp.arange(n))
 
 
 def test_raise_error_with_wrong_shape_for_user_data():

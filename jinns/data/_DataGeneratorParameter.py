@@ -11,6 +11,7 @@ import jax.numpy as jnp
 from jaxtyping import Key, Array, Float
 from jinns.data._utils import _reset_or_increment
 from jinns.data._AbstractDataGenerator import AbstractDataGenerator
+from jinns.utils._utils import dict_to_eqxModule
 
 
 class DataGeneratorParameter(AbstractDataGenerator):
@@ -58,7 +59,7 @@ class DataGeneratorParameter(AbstractDataGenerator):
         Defaults to None.
     """
 
-    keys: Key | dict[str, Key]
+    keys: eqx.Module
     n: int = eqx.field(static=True)
     param_batch_size: int | None = eqx.field(static=True, default=None)
     param_ranges: dict[str, tuple[Float, Float]] = eqx.field(
@@ -69,14 +70,17 @@ class DataGeneratorParameter(AbstractDataGenerator):
         default_factory=lambda: {}
     )
 
-    curr_param_idx: dict[str, int] = eqx.field(init=False)
-    param_n_samples: dict[str, Array] = eqx.field(init=False)
+    curr_param_idx: eqx.Module | None = eqx.field(init=False)
+    param_n_samples: eqx.Module = eqx.field(init=False)
+
+    param_keys: set = eqx.field(init=False)
 
     def __post_init__(self):
         if self.user_data is None:
             self.user_data = {}
         if self.param_ranges is None:
             self.param_ranges = {}
+        self.param_keys = set().union(self.param_ranges, self.user_data)
         if self.param_batch_size is not None and self.n < self.param_batch_size:
             raise ValueError(
                 f"Number of data points ({self.n}) is smaller than the"
@@ -86,19 +90,31 @@ class DataGeneratorParameter(AbstractDataGenerator):
             all_keys = set().union(self.param_ranges, self.user_data)
             self.keys = dict(zip(all_keys, jax.random.split(self.keys, len(all_keys))))
 
-        if self.param_batch_size is None:
-            self.curr_param_idx = None  # type: ignore
-        else:
-            self.curr_param_idx = {}
-            for k in self.keys.keys():
-                self.curr_param_idx[k] = self.n + self.param_batch_size
-                # to be sure there is a shuffling at first get_batch()
 
         # The call to self.generate_data() creates
         # the dict self.param_n_samples and then we will only use this one
         # because it merges the scattered data between `user_data` and
         # `param_ranges`
         self.keys, self.param_n_samples = self.generate_data(self.keys)
+        
+        # NOTE and from now on we will work with eqx.Module
+        # because eq_params is not a dict anymore.
+        # Note that we kept the dictionaries for the first part of the
+        # __post_init__ for ease of initialization.
+        # (this has changed from jinns>1.5.1)
+        DGParams = dict_to_eqxModule(self.keys, 'DGParams', instanciate=False)
+        self.keys = DGParams(**self.keys)
+        self.param_n_samples = DGParams(**self.param_n_samples)
+
+        if self.param_batch_size is None:
+            self.curr_param_idx = None
+        else:
+            param_keys_and_curr_idx = dict(zip(
+                    self.param_keys,
+                    tuple(self.n + self.param_batch_size for i in range(len(self.param_keys)))
+                )
+            )
+            self.curr_param_idx = DGParams(**param_keys_and_curr_idx)
 
     def generate_data(
         self, keys: dict[str, Key]
@@ -141,17 +157,6 @@ class DataGeneratorParameter(AbstractDataGenerator):
 
         return keys, param_n_samples
 
-    def _get_param_operands(
-        self, k: str
-    ) -> tuple[Key, Float[Array, " n"], int, int | None, None]:
-        return (
-            self.keys[k],
-            self.param_n_samples[k],
-            self.curr_param_idx[k],
-            self.param_batch_size,
-            None,
-        )
-
     def param_batch(self):
         """
         Return a dictionary with batches of parameters
@@ -177,8 +182,9 @@ class DataGeneratorParameter(AbstractDataGenerator):
             self.curr_param_idx,
             self.keys,
         )
-        # we must transpose the pytrees because keys are merged in res
+        # we must transpose the pytrees because keys (params) are merged in res
         # https://jax.readthedocs.io/en/latest/jax-101/05.1-pytrees.html#transposing-trees
+
         new_attributes = jax.tree_util.tree_transpose(
             jax.tree_util.tree_structure(self.keys),
             jax.tree_util.tree_structure([0, 0, 0]),

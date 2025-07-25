@@ -2,10 +2,12 @@
 Implements various utility functions
 """
 
+from typing import Type
 import warnings
 import jax
 import jax.numpy as jnp
 from jaxtyping import PyTree, Array, Bool
+import equinox as eqx
 
 
 def _check_nan_in_pytree(pytree: PyTree) -> Bool[Array, " "]:
@@ -87,3 +89,34 @@ def _subtract_with_check(
 ) -> Array | float:
     a = _check_shape_and_type(a, b.shape, cause=cause, binop="-")
     return a - b
+
+
+def dict_to_eqxModule(d: dict, class_name: str, instanciate: bool = True) -> eqx.Module | Type[eqx.Module]:
+    """
+    This uses the fact that `type('Foo', (Bar, Baz), {})` is equivalent to
+
+    ```
+    class Foo(Bar, Baz):
+        pass
+    ```
+
+    and that
+
+    ```
+    class Foo:
+        foo: str
+        bar: int
+        baz: list
+    ```
+
+    populates the annotations field as
+    `Foo.__annotations__ = {'foo': str, 'bar': int, 'baz': list}`
+    """
+    cls = type(
+        class_name,
+        (eqx.Module,),
+        {"__annotations__": {k: type(v) for k, v in d.items()}},
+    )
+    if instanciate:
+        return cls(**d)
+    return cls

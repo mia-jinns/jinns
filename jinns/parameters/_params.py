@@ -2,10 +2,12 @@
 Formalize the data structure for the parameters
 """
 
+from dataclasses import fields
 from typing import Generic, TypeVar
-import jax
 import equinox as eqx
-from jaxtyping import Array, PyTree, Float
+from jaxtyping import Array, PyTree
+
+from jinns.utils._utils import dict_to_eqxModule
 
 T = TypeVar("T")  # the generic type for what is in the Params PyTree because we
 # have possibly Params of Arrays, boolean, ...
@@ -17,35 +19,6 @@ T = TypeVar("T")  # the generic type for what is in the Params PyTree because we
 ### jinns' Params modules.
 ### We currently have silenced the warning related to this (see jinns.__init__
 ### see https://github.com/patrick-kidger/equinox/pull/1043/commits/f88e62ab809140334c2f987ed13eff0d80b8be13
-
-
-def eq_params_dict_to_eqxModule(d: dict[str, T]) -> eqx.Module:
-    """
-    This uses the fact that `type('Foo', (Bar, Baz), {})` is equivalent to
-
-    ```
-    class Foo(Bar, Baz):
-        pass
-    ```
-
-    and that
-
-    ```
-    class Foo:
-        foo: str
-        bar: int
-        baz: list
-    ```
-
-    populates the annotations field as
-    `Foo.__annotations__ = {'foo': str, 'bar': int, 'baz': list}`
-    """
-    EqParams = type(
-        "EqParams",
-        (eqx.Module,),
-        {"__annotations__": {k: type(v) for k, v in d.items()}},
-    )
-    return EqParams(**d)
 
 
 class Params(eqx.Module, Generic[T]):
@@ -68,7 +41,7 @@ class Params(eqx.Module, Generic[T]):
     eq_params: PyTree[T] = eqx.field(
         kw_only=True,
         default=None,
-        converter=lambda x: eq_params_dict_to_eqxModule(x)
+        converter=lambda x: dict_to_eqxModule(x, "EqParams")
         if isinstance(x, dict)
         else x,
     )
@@ -76,26 +49,27 @@ class Params(eqx.Module, Generic[T]):
 
 def _update_eq_params_dict(
     params: Params[Array],
-    param_batch_dict: dict[str, Float[Array, " param_batch_size dim"]],
+    param_batch_dict: PyTree[Array],
 ) -> Params:
     """
     Update params.eq_params with a batch of eq_params for given key(s)
     """
+#
+#    # artificially "complete" `param_batch_dict` with None to match `params`
+#    # PyTree  structure
+#    param_batch_dict_ = param_batch_dict | {
+#        k: None for k in set(params.eq_params.keys()) - set(param_batch_dict.keys())
+#    }
 
-    # artificially "complete" `param_batch_dict` with None to match `params`
-    # PyTree  structure
-    param_batch_dict_ = param_batch_dict | {
-        k: None for k in set(params.eq_params.keys()) - set(param_batch_dict.keys())
-    }
-
-    # Replace at non None leafs
     params = eqx.tree_at(
         lambda p: p.eq_params,
         params,
-        jax.tree_util.tree_map(
-            lambda p, q: q if q is not None else p,
+        eqx.tree_at(
+            lambda pt: tuple(getattr(pt, f.name) for f in fields(pt)
+                        if f in fields(param_batch_dict)),
             params.eq_params,
-            param_batch_dict_,
+            tuple(getattr(param_batch_dict, f.name) for f in
+                  fields(param_batch_dict)),
         ),
     )
 
