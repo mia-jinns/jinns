@@ -19,6 +19,35 @@ T = TypeVar("T")  # the generic type for what is in the Params PyTree because we
 ### see https://github.com/patrick-kidger/equinox/pull/1043/commits/f88e62ab809140334c2f987ed13eff0d80b8be13
 
 
+def eq_params_dict_to_eqxModule(d: dict[str, T]) -> eqx.Module:
+    """
+    This uses the fact that `type('Foo', (Bar, Baz), {})` is equivalent to
+
+    ```
+    class Foo(Bar, Baz):
+        pass
+    ```
+
+    and that
+
+    ```
+    class Foo:
+        foo: str
+        bar: int
+        baz: list
+    ```
+
+    populates the annotations field as
+    `Foo.__annotations__ = {'foo': str, 'bar': int, 'baz': list}`
+    """
+    EqParams = type(
+        "EqParams",
+        (eqx.Module,),
+        {"__annotations__": {k: type(v) for k, v in d.items()}},
+    )
+    return EqParams(**d)
+
+
 class Params(eqx.Module, Generic[T]):
     """
     The equinox module for the parameters
@@ -28,13 +57,21 @@ class Params(eqx.Module, Generic[T]):
     nn_params : PyTree[T]
         A PyTree of the non-static part of the PINN eqx.Module, i.e., the
         parameters of the PINN
-    eq_params : dict[str, T]
-        A dictionary of the equation parameters. Keys are the parameter name,
+    eq_params : PyTree[T]
+        A PyTree of the equation parameters. For retrocompatibility and
+        verbosity issue this can be provided as formerly ie as
+        a dictionary of the equation parameters where keys are the parameter name,
         values are their corresponding value
     """
 
     nn_params: PyTree[T] = eqx.field(kw_only=True, default=None)
-    eq_params: dict[str, T] = eqx.field(kw_only=True, default=None)
+    eq_params: PyTree[T] = eqx.field(
+        kw_only=True,
+        default=None,
+        converter=lambda x: eq_params_dict_to_eqxModule(x)
+        if isinstance(x, dict)
+        else x,
+    )
 
 
 def _update_eq_params_dict(
