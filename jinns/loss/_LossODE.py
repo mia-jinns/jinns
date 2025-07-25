@@ -7,7 +7,7 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 from dataclasses import InitVar
-from typing import TYPE_CHECKING, TypedDict, Callable
+from typing import TYPE_CHECKING, Callable
 from types import EllipsisType
 import abc
 import warnings
@@ -36,11 +36,6 @@ if TYPE_CHECKING:
     # imports only used in type hints
     from jinns.data._Batchs import ODEBatch
     from jinns.nn._abstract_pinn import AbstractPINN
-
-    class LossDictODE(TypedDict):
-        dyn_loss: Float[Array, " "]
-        initial_condition: Float[Array, " "]
-        observations: Float[Array, " "]
 
 
 class _LossODEAbstract(AbstractLoss):
@@ -273,7 +268,9 @@ class LossODE(_LossODEAbstract):
     # NOTE static=True only for leaf attributes that are not valid JAX types
     # (ie. jax.Array cannot be static) and that we do not expect to change
     u: AbstractPINN
-    dynamic_loss: ODE | tuple[ODE, ...]
+    dynamic_loss: ODE | tuple[ODE, ...] = eqx.field(
+        converter=lambda x: (x,) if not isinstance(x, tuple) else x
+    )
 
     vmap_in_axes: tuple[int] = eqx.field(init=False, static=True)
 
@@ -326,32 +323,21 @@ class LossODE(_LossODEAbstract):
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
         ## dynamic part
-        if self.dynamic_loss is not None:
-            if isinstance(self.dynamic_loss, tuple):
-                # for each dynamic loss in the tuple self.dynamic_loss
-                # we return a lambda function of the parameters only
-                dyn_loss_fun = jax.tree.map(
-                    lambda d: lambda p: dynamic_loss_apply(
-                        d.evaluate,
-                        self.u,
-                        temporal_batch,
-                        _set_derivatives(p, self.derivative_keys.dyn_loss),
-                        self.vmap_in_axes + vmap_in_axes_params,
-                    ),
-                    self.dynamic_loss,
-                    is_leaf=lambda x: isinstance(x, ODE),  # do not traverse
-                    # further than first level
-                )
-            else:
-                # so far it is better not to default to the tuple computation
-                # above for retrocompatibility
-                dyn_loss_fun = lambda p: dynamic_loss_apply(
-                    self.dynamic_loss.evaluate,
+        if self.dynamic_loss != (None,):
+            # for each dynamic loss in the tuple self.dynamic_loss
+            # we return a lambda function of the parameters only
+            dyn_loss_fun = jax.tree.map(
+                lambda d: lambda p: dynamic_loss_apply(
+                    d.evaluate,
                     self.u,
                     temporal_batch,
                     _set_derivatives(p, self.derivative_keys.dyn_loss),
                     self.vmap_in_axes + vmap_in_axes_params,
-                )
+                ),
+                self.dynamic_loss,
+                is_leaf=lambda x: isinstance(x, ODE),  # do not traverse
+                # further than first level
+            )
         else:
             dyn_loss_fun = None
 
@@ -388,11 +374,16 @@ class LossODE(_LossODEAbstract):
                 # if there is no parameter batch to vmap over we cannot call
                 # vmap because calling vmap must be done with at least one non
                 # None in_axes or out_axes
-                initial_condition_fun = initial_condition_fun_
+                initial_condition_fun = (initial_condition_fun_,)
             else:
-                initial_condition_fun = lambda p: jnp.mean(
-                    vmap(initial_condition_fun_, vmap_in_axes_params)(p)
+                initial_condition_fun = (
+                    lambda p: jnp.mean(
+                        vmap(initial_condition_fun_, vmap_in_axes_params)(p)
+                    ),
                 )
+            # Note that initial_condition_fun_ is formed as a tuple for
+            # consistency with dynamic and observation
+            # losses and more modularity for later
         else:
             initial_condition_fun = None
 
@@ -425,14 +416,14 @@ class LossODE(_LossODEAbstract):
             params_obs = None
             obs_loss_fun = None
 
-        # NOTE TODO below dyn_loss_fun can now be a tuple of fun so update
-        # type hints please!
         # get the unweighted mses for each loss term as well as the gradients
-        all_funs: ODEComponents[Callable[[Params[Array]], Array] | None] = (
+        all_funs: ODEComponents[tuple[Callable[[Params[Array]], Array], ...] | None] = (
             ODEComponents(dyn_loss_fun, initial_condition_fun, obs_loss_fun)
         )
-        all_params: ODEComponents[Params[Array] | None] = ODEComponents(
-            jax.tree.map(lambda l: params, dyn_loss_fun), params, params_obs
+        all_params: ODEComponents[tuple[Params[Array], ...] | None] = ODEComponents(
+            jax.tree.map(lambda l: params, dyn_loss_fun),
+            jax.tree.map(lambda l: params, initial_condition_fun),
+            params_obs,
         )
         mses_grads = jax.tree.map(
             lambda fun, params: self.get_gradients(fun, params),
