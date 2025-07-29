@@ -7,7 +7,7 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 from dataclasses import InitVar
-from typing import TYPE_CHECKING, TypedDict, Callable
+from typing import TYPE_CHECKING, Callable
 from types import EllipsisType
 import abc
 import warnings
@@ -36,11 +36,6 @@ if TYPE_CHECKING:
     from jinns.data._Batchs import ODEBatch
     from jinns.nn._abstract_pinn import AbstractPINN
     from jinns.loss import ODE
-
-    class LossDictODE(TypedDict):
-        dyn_loss: Float[Array, " "]
-        initial_condition: Float[Array, " "]
-        observations: Float[Array, " "]
 
 
 class _LossODEAbstract(AbstractLoss):
@@ -191,7 +186,7 @@ class _LossODEAbstract(AbstractLoss):
     @abc.abstractmethod
     def evaluate(
         self: eqx.Module, params: Params[Array], batch: ODEBatch
-    ) -> tuple[Float[Array, " "], LossDictODE]:
+    ) -> tuple[Float[Array, " "], ODEComponents[Float[Array, " "] | None]]:
         raise NotImplementedError
 
 

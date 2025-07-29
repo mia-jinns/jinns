@@ -9,9 +9,11 @@ from __future__ import (
 import warnings
 import abc
 from functools import partial
-from typing import Callable, TYPE_CHECKING, ClassVar, Generic, TypeVar
+from dataclasses import InitVar
+from typing import Callable, TYPE_CHECKING, ClassVar, Generic, TypeVar, Any
 import equinox as eqx
-from jaxtyping import Float, Array
+from jaxtyping import Float, Array, PyTree
+import jax
 import jax.numpy as jnp
 
 
@@ -59,7 +61,7 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
         Tmax needs to be given when the PINN time input is normalized in
         [0, 1], ie. we have performed renormalization of the differential
         equation
-    eq_params_heterogeneity : dict[str, Callable | None], default=None
+    eq_params_heterogeneity : dict[str, Callable[[InputDim, AbstractPINN, Params[Array]], Array] | None], default=None
         A dict with the same keys as eq_params and the value being either None
         (no heterogeneity) or a function which encodes for the spatio-temporal
         heterogeneity of the parameter.
@@ -71,7 +73,10 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
         `eq_params` too.
         A value can be missing, in this case there is no heterogeneity (=None).
         Default None, meaning there is no heterogeneity in the equation
-        parameters.
+        parameters. Note that internally, this is handled as a
+        `PyTree[Callable[[InputDim, AbstractPINN, Params[Array]], Array] |
+        None] | None` since 1.6.0, (`Params.eq_params` not being a dict
+        anymore).
     vectorial_dyn_loss_ponderation : Float[Array, " dim"], default=None
         Add a different ponderation weight to each of the dimension to the
         dynamic loss. This array must have the same dimension as the output of
@@ -86,40 +91,49 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
 
     _eq_type = AbstractClassVar[str]  # class variable denoting the type of
     # differential equation
-    Tmax: Float = eqx.field(kw_only=True, default=1)
-    eq_params_heterogeneity: dict[str, Callable | None] | None = eqx.field(
-        kw_only=True, default=None, static=True
-    )
+    Tmax: float = eqx.field(kw_only=True, default=1)
+    eq_params_heterogeneity: (
+        PyTree[Callable[[InputDim, AbstractPINN, Params[Array]], Array] | None] | None
+    ) = eqx.field(kw_only=True, default=None, static=True)
     vectorial_dyn_loss_ponderation: Float[Array, " dim"] | None = eqx.field(
-        kw_only=True, default=None
+        kw_only=True, default_factory=jnp.array(1.0)
     )
+    params: InitVar[Params[Array]] = eqx.field(default=None)
 
-    def __post_init__(self):
-        if self.vectorial_dyn_loss_ponderation is None:
-            self.vectorial_dyn_loss_ponderation = jnp.array(1.0)
+    def __post_init__(self, params: Params[Array] | None = None):
+        if isinstance(self.eq_params_heterogeneity, dict):  # type: ignore
+            # we cannot use the same converter as in Params.eq_params
+            # we don't want to create a new type but use the same type as
+            # Params.eq_params which already exists.
+            if params is None:
+                raise ValueError(
+                    "When `self.eq_params_heterogeneity` is "
+                    "provided, `params` must be specified at init"
+                )
+            self.eq_params_heterogeneity = type(params.eq_params)(
+                **self.eq_params_heterogeneity  # type: ignore
+            )
 
     def _eval_heterogeneous_parameters(
         self,
         inputs: InputDim,
         u: AbstractPINN,
         params: Params[Array],
-        eq_params_heterogeneity: dict[str, Callable | None] | None = None,
-    ) -> dict[str, Array]:
+        eq_params_heterogeneity: PyTree[
+            Callable[[InputDim, AbstractPINN, Params[Array]], Array] | None
+        ]
+        | None = None,
+    ) -> PyTree[Array]:
         eq_params_ = {}
         if eq_params_heterogeneity is None:
             return params.eq_params
-
-        for k, p in params.eq_params.items():
-            try:
-                if eq_params_heterogeneity[k] is not None:
-                    eq_params_[k] = eq_params_heterogeneity[k](inputs, u, params)  # type: ignore don't know why pyright says
-                    # eq_params_heterogeneity[k] can be None here
-                else:
-                    eq_params_[k] = p
-            except KeyError:
-                # we authorize missing eq_params_heterogeneity key
-                # if its heterogeneity is None anyway
-                eq_params_[k] = p
+        eq_params_ = jax.tree.map(
+            lambda p, fun: (  # type: ignore
+                fun(inputs, u, params) if fun is not None else p
+            ),
+            params.eq_params,
+            eq_params_heterogeneity,
+        )
         return eq_params_
 
     @partial(_decorator_heteregeneous_params)
@@ -128,7 +142,7 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
         inputs: InputDim,
         u: AbstractPINN,
         params: Params[Array],
-    ) -> float:
+    ) -> Float[Array, " eq_dim"]:
         evaluation = self.vectorial_dyn_loss_ponderation * self.equation(
             inputs, u, params
         )
@@ -147,7 +161,7 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
         return evaluation
 
     @abc.abstractmethod
-    def equation(self, *args, **kwargs):
+    def equation(self, *args: Any, **kwargs: Any) -> Float[Array, " eq_dim"]:
         # TO IMPLEMENT
         # Point-wise evaluation of the differential equation N[u](.)
         raise NotImplementedError("You should implement your equation.")
@@ -183,7 +197,7 @@ class ODE(DynamicLoss[Float[Array, " 1"]]):
     @abc.abstractmethod
     def equation(
         self, t: Float[Array, " 1"], u: AbstractPINN, params: Params[Array]
-    ) -> float:
+    ) -> Float[Array, " eq_dim"]:
         r"""
         The differential operator defining the ODE.
 
@@ -202,7 +216,7 @@ class ODE(DynamicLoss[Float[Array, " 1"]]):
 
         Returns
         -------
-        float
+        Float[Array, "eq_dim"]
             The residual, *i.e.* the differential operator $\mathcal{N}_\theta[u_\nu](t)$ evaluated at point `t`.
 
         Raises
@@ -242,7 +256,7 @@ class PDEStatio(DynamicLoss[Float[Array, " dim"]]):
     @abc.abstractmethod
     def equation(
         self, x: Float[Array, " dim"], u: AbstractPINN, params: Params[Array]
-    ) -> float:
+    ) -> Float[Array, " eq_dim"]:
         r"""The differential operator defining the stationnary PDE.
 
         !!! warning
@@ -260,7 +274,7 @@ class PDEStatio(DynamicLoss[Float[Array, " dim"]]):
 
         Returns
         -------
-        float
+        Float[Array, "eq_dim"]
             The residual, *i.e.* the differential operator $\mathcal{N}_\theta[u_\nu](x)$ evaluated at point `x`.
 
         Raises
@@ -303,7 +317,7 @@ class PDENonStatio(DynamicLoss[Float[Array, " 1 + dim"]]):
         t_x: Float[Array, " 1 + dim"],
         u: AbstractPINN,
         params: Params[Array],
-    ) -> float:
+    ) -> Float[Array, " eq_dim"]:
         r"""The differential operator defining the non-stationnary PDE.
 
         !!! warning
@@ -320,7 +334,7 @@ class PDENonStatio(DynamicLoss[Float[Array, " 1 + dim"]]):
             The parameters of the equation and the networks, $\theta$ and $\nu$ respectively.
         Returns
         -------
-        float
+        Float[Array, "eq_dim"]
             The residual, *i.e.* the differential operator $\mathcal{N}_\theta[u_\nu](t, x)$ evaluated at point `(t, x)`.
 
 

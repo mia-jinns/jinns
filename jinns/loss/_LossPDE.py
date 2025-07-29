@@ -8,7 +8,7 @@ from __future__ import (
 
 import abc
 from dataclasses import InitVar
-from typing import TYPE_CHECKING, Callable, TypedDict
+from typing import TYPE_CHECKING, Callable
 from types import EllipsisType
 import warnings
 import jax
@@ -47,16 +47,6 @@ if TYPE_CHECKING:
     from jinns.nn._abstract_pinn import AbstractPINN
     from jinns.loss import PDENonStatio, PDEStatio
     from jinns.utils._types import BoundaryConditionFun
-
-    class LossDictPDEStatio(TypedDict):
-        dyn_loss: Float[Array, " "]
-        norm_loss: Float[Array, " "]
-        boundary_loss: Float[Array, " "]
-        observations: Float[Array, " "]
-
-    class LossDictPDENonStatio(LossDictPDEStatio):
-        initial_condition: Float[Array, " "]
-
 
 _IMPLEMENTED_BOUNDARY_CONDITIONS = [
     "dirichlet",
@@ -307,7 +297,11 @@ class _LossPDEAbstract(AbstractLoss):
         self: eqx.Module,
         params: Params[Array],
         batch: PDEStatioBatch | PDENonStatioBatch,
-    ) -> tuple[Float[Array, " "], LossDictPDEStatio | LossDictPDENonStatio]:
+    ) -> tuple[
+        Float[Array, " "],
+        PDEStatioComponents[Float[Array, " "] | None]
+        | PDENonStatioComponents[Float[Array, " "] | None],
+    ]:
         raise NotImplementedError
 
 
