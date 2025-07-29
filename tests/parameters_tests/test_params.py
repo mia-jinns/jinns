@@ -1,3 +1,4 @@
+import pytest
 from functools import partial
 import jax
 
@@ -44,3 +45,34 @@ def test_update_eq_params():
     params = _update_eq_params(params, param_batch)
 
     assert params.eq_params.nu.shape == (10, 1)
+
+
+def test_metaclass1():
+    """
+    Here we test the metaclass in its main role of providing a single EqParams
+    class template so that different instance of params really are of the same
+    class!
+    """
+    d_float = {"theta": 0.0, "beta": 1.0}
+    d_bool = {"theta": True, "beta": False}
+
+    tree1 = Params(nn_params=None, eq_params=d_float)
+    tree2 = Params(nn_params=None, eq_params=d_bool)
+
+    res = jax.tree.map(lambda p1, p2: p2 if p1 is True else None, tree2, tree1)
+    assert jax.tree.leaves(res) == [0.0]
+
+
+def test_metaclass2():
+    """
+    Here we test the metaclass in its main role of providing a single EqParams
+    class template so that different instance of params really are of the same
+    class!
+    """
+    d_float = {"theta": 0.0, "beta": 1.0}
+    d_bool = {"theta": True, "beta": False, "gamma": False}
+
+    _ = Params(nn_params=None, eq_params=d_float)
+    with pytest.raises(ValueError):
+        # this fails because it does not comply the EqParams of the problem!
+        _ = Params(nn_params=None, eq_params=d_bool)

@@ -11,7 +11,16 @@ import jax.numpy as jnp
 from jaxtyping import Key, Array, Float
 from jinns.data._utils import _reset_or_increment
 from jinns.data._AbstractDataGenerator import AbstractDataGenerator
-from jinns.utils._utils import dict_to_eqxModule
+from jinns.parameters._params import EqParamsMeta
+
+
+class DGParams(metaclass=EqParamsMeta):
+    """
+    Note that this definition inits a new EqParamsMeta. Not shared with
+    EqParams
+    """
+
+    pass
 
 
 class DataGeneratorParameter(AbstractDataGenerator):
@@ -99,9 +108,8 @@ class DataGeneratorParameter(AbstractDataGenerator):
         # Note that we kept the dictionaries for the first part of the
         # __post_init__ for ease of initialization.
         # (this has changed from jinns>1.5.1)
-        DGParams = dict_to_eqxModule(self.keys, "DGParams", instanciate=False)
-        self.keys = DGParams(**self.keys)
-        self.param_n_samples = DGParams(**self.param_n_samples)
+        self.keys = DGParams(self.keys, "DGParams")
+        self.param_n_samples = DGParams(self.param_n_samples)
 
         if self.param_batch_size is None:
             self.curr_param_idx = None
@@ -114,7 +122,7 @@ class DataGeneratorParameter(AbstractDataGenerator):
                     ),
                 )
             )
-            self.curr_param_idx = DGParams(**param_keys_and_curr_idx)
+            self.curr_param_idx = DGParams(param_keys_and_curr_idx)
 
     def generate_data(
         self, keys: dict[str, Key]

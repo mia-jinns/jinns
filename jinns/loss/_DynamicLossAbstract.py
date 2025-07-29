@@ -15,6 +15,7 @@ import equinox as eqx
 from jaxtyping import Float, Array, PyTree
 import jax
 import jax.numpy as jnp
+from jinns.parameters._params import EqParams
 
 
 # See : https://docs.kidger.site/equinox/api/module/advanced_fields/#equinox.AbstractClassVar--known-issues
@@ -96,7 +97,7 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
         PyTree[Callable[[InputDim, AbstractPINN, Params[Array]], Array] | None] | None
     ) = eqx.field(kw_only=True, default=None, static=True)
     vectorial_dyn_loss_ponderation: Float[Array, " dim"] | None = eqx.field(
-        kw_only=True, default_factory=jnp.array(1.0)
+        kw_only=True, default_factory=lambda: jnp.array(1.0)
     )
     params: InitVar[Params[Array]] = eqx.field(default=None)
 
@@ -110,8 +111,8 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
                     "When `self.eq_params_heterogeneity` is "
                     "provided, `params` must be specified at init"
                 )
-            self.eq_params_heterogeneity = type(params.eq_params)(
-                **self.eq_params_heterogeneity  # type: ignore
+            self.eq_params_heterogeneity = EqParams(
+                self.eq_params_heterogeneity  # type: ignore
             )
 
     def _eval_heterogeneous_parameters(

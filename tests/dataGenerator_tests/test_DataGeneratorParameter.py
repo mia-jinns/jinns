@@ -55,6 +55,8 @@ def test_get_batch(create_DataGeneratorParameter):
 def test_get_batch_only_user_data(create_DataGeneratorParameter_only_user_data):
     data_generator_parameters = create_DataGeneratorParameter_only_user_data
     _, param_batch = data_generator_parameters.get_batch()
+    print(data_generator_parameters)
+    print(param_batch)
     assert jnp.allclose(jnp.sort(jnp.unique(param_batch.nu)), jnp.arange(n))
 
 
@@ -68,9 +70,9 @@ def test_raise_error_with_wrong_shape_for_user_data():
     # user_data is not (n,) or (n,1)
     user_data = {"nu": jnp.ones((n, 1, 1))}
 
-    with pytest.raises(ValueError) as e_info:
+    with pytest.raises(ValueError) as _:
         # __init__ calls self.generate_data() that we are testing for
-        data_generator_parameters = jinns.data.DataGeneratorParameter(
+        _ = jinns.data.DataGeneratorParameter(
             subkey,
             n,
             param_batch_size,
