@@ -53,11 +53,14 @@ class Params(eqx.Module, Generic[T]):
 
 def _update_eq_params(
     params: Params[Array],
-    eq_param_batch: PyTree[Array],
+    eq_param_batch: PyTree[Array] | None,
 ) -> Params:
     """
     Update params.eq_params with a batch of eq_params for given key(s)
     """
+
+    if eq_param_batch is None:
+        return params
 
     param_names_to_update = tuple(f.name for f in fields(eq_param_batch))
     params = eqx.tree_at(
