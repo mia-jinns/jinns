@@ -24,6 +24,7 @@ def create_MLP_1():
     u, params = jinns.nn.PINN_MLP.create(
         key=subkey, eqx_list=eqx_list, eq_type="nonstatio_PDE"
     )
+    params = jinns.parameters.Params(nn_params=params, eq_params={})
 
     return u, params
 
@@ -37,6 +38,7 @@ def create_MLP_2():
     u, params = jinns.nn.PINN_MLP.create(
         eqx_network=eqx_network, eq_type="nonstatio_PDE"
     )
+    params = jinns.parameters.Params(nn_params=params, eq_params={})
 
     return u, params
 
@@ -50,7 +52,7 @@ def create_MLP_3():
 
     class MyPINN(jinns.nn.PINN):
         def __call__(self, inputs, params):
-            model = eqx.combine(params, self.static)
+            model = eqx.combine(params.nn_params, self.static)
             return model(inputs)
 
     key = random.PRNGKey(2)
@@ -68,6 +70,7 @@ def create_MLP_3():
 
     u = MyPINN(eqx_network=eqx_network, eq_type="nonstatio_PDE")
     params = u.init_params
+    params = jinns.parameters.Params(nn_params=params, eq_params={})
 
     return u, params
 
