@@ -12,6 +12,7 @@ from jaxtyping import Key, Int, Array, Float
 from jinns.data._Batchs import ObsBatchDict
 from jinns.data._utils import _reset_or_increment
 from jinns.data._AbstractDataGenerator import AbstractDataGenerator
+from jinns.parameters._params import EqParams
 
 
 class DataGeneratorObservations(AbstractDataGenerator):
@@ -39,7 +40,8 @@ class DataGeneratorObservations(AbstractDataGenerator):
     observed_eq_params : dict[str, Float[Array, " n_obs 1"]], default={}
         A dict with keys corresponding to
         the parameter name. The keys must match the keys in
-        `params["eq_params"]`. The values are jnp.array with 2 dimensions
+        `params["eq_params"]`, ie., if only some parameters are observed, other
+        keys **must still appear with None as value**. The values are jnp.array with 2 dimensions
         with values corresponding to the parameter value for which we also
         have observed_pinn_in and observed_values. Hence the first
         dimension must be aligned with observed_pinn_in and observed_values.
@@ -59,7 +61,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
     observed_pinn_in: Float[Array, " n_obs nb_pinn_in"]
     observed_values: Float[Array, " n_obs nb_pinn_out"]
     observed_eq_params: dict[str, Float[Array, " n_obs 1"]] = eqx.field(
-        static=True, default_factory=lambda: {}
+        static=True, default=None
     )
     sharding_device: jax.sharding.Sharding = eqx.field(static=True, default=None)
 
@@ -72,12 +74,6 @@ class DataGeneratorObservations(AbstractDataGenerator):
             raise ValueError(
                 "self.observed_pinn_in and self.observed_values must have same first axis"
             )
-        for _, v in self.observed_eq_params.items():
-            if v.shape[0] != self.observed_pinn_in.shape[0]:
-                raise ValueError(
-                    "self.observed_pinn_in and the values of"
-                    " self.observed_eq_params must have the same first axis"
-                )
         if len(self.observed_pinn_in.shape) == 1:
             self.observed_pinn_in = self.observed_pinn_in[:, None]
         if self.observed_pinn_in.ndim > 2:
@@ -86,13 +82,22 @@ class DataGeneratorObservations(AbstractDataGenerator):
             self.observed_values = self.observed_values[:, None]
         if self.observed_values.ndim > 2:
             raise ValueError("self.observed_values must have 2 dimensions")
-        for k, v in self.observed_eq_params.items():
-            if len(v.shape) == 1:
-                self.observed_eq_params[k] = v[:, None]
-            if len(v.shape) > 2:
-                raise ValueError(
-                    "Each value of observed_eq_params must have 2 dimensions"
-                )
+
+        if self.observed_eq_params is not None:
+            for _, v in self.observed_eq_params.items():
+                if v.shape[0] != self.observed_pinn_in.shape[0]:
+                    raise ValueError(
+                        "self.observed_pinn_in and the values of"
+                        " self.observed_eq_params must have the same first axis"
+                    )
+            for k, v in self.observed_eq_params.items():
+                if len(v.shape) == 1:
+                    self.observed_eq_params[k] = v[:, None]
+                if len(v.shape) > 2:
+                    raise ValueError(
+                        "Each value of observed_eq_params must have 2 dimensions"
+                    )
+            self.observed_eq_params = EqParams(self.observed_eq_params, "EqParams")
 
         self.n = self.observed_pinn_in.shape[0]
 

@@ -112,7 +112,8 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
                     "provided, `params` must be specified at init"
                 )
             self.eq_params_heterogeneity = EqParams(
-                self.eq_params_heterogeneity  # type: ignore
+                self.eq_params_heterogeneity,
+                "EqParams",  # type: ignore
             )
 
     def _eval_heterogeneous_parameters(
