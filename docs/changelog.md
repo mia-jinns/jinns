@@ -2,6 +2,7 @@
 
 * Unreleased (currently on `main`)
 
+    - `Params.eq_params` from `dict` to `eqx.Module` **internally** [!85](https://gitlab.com/mia_jinns/jinns/-/merge_requests/85). A list of (limited) breaking changes for the user is given at the MR link. Related issue [#22](https://gitlab.com/mia_jinns/jinns/-/issues/22)
     - Fix wrong imports in load/save demo notebooks. [See this issue on Github](https://github.com/mia-jinns/jinns/issues/1)
 
 
