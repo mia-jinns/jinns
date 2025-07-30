@@ -36,8 +36,11 @@ def pytest_configure(config):
 # affected to each test
 @pytest.fixture(autouse=True)
 def run_around_tests():
-    # code that would be run before each test
-    # XXX
+    # code to be run before each test: important to clear here cause there can
+    # be some remnants of previous aborted test sessions it looks
+    jinns.parameters.EqParams.clear()  # needed to reset the set of eq_params
+    # between tests as it is not automatically done
+    jinns.data.DGParams.clear()  # needed to reset the set of eq_params
     # yield indicates that the test function is now run
     yield
     # code that is run at the end

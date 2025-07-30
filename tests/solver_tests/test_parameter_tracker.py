@@ -102,9 +102,9 @@ def train_Burgers_10it(train_Burgers_init):
             tracked_params=tracked_params,
         )
     )
-    return tracked_params, params.eq_params["nu"]
+    return tracked_params, params.eq_params.nu
 
 
 def test_tracked_params_value(train_Burgers_10it):
     tracked_params, nu = train_Burgers_10it
-    assert jnp.array_equal(tracked_params.eq_params["nu"], jnp.ones((10,)) * nu)
+    assert jnp.array_equal(tracked_params.eq_params.nu, jnp.ones((10,)) * nu)
