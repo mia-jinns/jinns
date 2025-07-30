@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import InitVar
-from typing import Callable, Literal, Self, Union, Any, cast, overload
+from typing import Callable, Literal, Self, Union, Any, cast
 from math import prod
 import jax
 import jax.numpy as jnp
@@ -18,7 +18,6 @@ import numpy as onp
 from jinns.nn._pinn import PINN
 from jinns.nn._mlp import MLP
 from jinns.parameters._params import Params
-from jinns.nn._utils import _PyTree_to_Params
 
 
 def _get_param_nb(
@@ -145,17 +144,6 @@ class HyperPINN(PINN):
             is_leaf=lambda x: isinstance(x, jnp.ndarray),
         )
 
-    @overload
-    @_PyTree_to_Params
-    def __call__(
-        self,
-        inputs: Float[Array, " input_dim"],
-        params: PyTree,
-        *args,
-        **kwargs,
-    ) -> Float[Array, " output_dim"]: ...
-
-    @_PyTree_to_Params
     def __call__(
         self,
         inputs: Float[Array, "  input_dim"],
