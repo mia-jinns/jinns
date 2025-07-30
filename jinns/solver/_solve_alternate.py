@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import operator
+from dataclasses import fields
 from typing import TYPE_CHECKING
 import jax
 import jax.numpy as jnp
@@ -200,14 +201,14 @@ def solve_alternate(
     eq_params_masks = jax.tree.map(lambda l: replace_float(l), eq_params_masks)
 
     # derivative keys with only eq_params updates for the gradient steps over eq_params
-    # Again this is a dict for each eq_params
+    # Here we make a dict for simplicity
     eq_gd_steps_derivative_keys = {
-        eq_param: jax.tree.map(
-            lambda l: eq_params_mask,
+        f.name: jax.tree.map(
+            lambda l: getattr(eq_params_masks, f.name),
             loss.derivative_keys,
             is_leaf=lambda x: isinstance(x, Params),
         )
-        for eq_param, eq_params_mask in eq_params_masks.items()
+        for f in fields(eq_params_masks)
     }
 
     # we checked that it was OK up to there but TODO is to introduce unit tests
@@ -296,9 +297,13 @@ def solve_alternate(
     # that we will repeat many times. This gets the compilation cost out of the
     # loop
 
+    eq_param_eq_optim = tuple(
+        (f.name, getattr(eq_optimizers, f.name)) for f in fields(eq_optimizers)
+    )
+
     eq_params_train_fun_compiled = {}
-    for idx_params, (eq_param, eq_optim) in enumerate(eq_optimizers.items()):
-        n_iter_for_params = eq_n_iters[eq_param]
+    for idx_params, (eq_param, eq_optim) in enumerate(eq_param_eq_optim):
+        n_iter_for_params = getattr(eq_n_iters, eq_param)
 
         def eq_train_fun(n_iter, carry):
             i = carry[0]
@@ -331,12 +336,12 @@ def solve_alternate(
                     loss,
                     optimization.params,
                     optimization.last_non_nan_params,
-                    eq_opt_states[eq_param],
+                    getattr(eq_opt_states, eq_param),
                     eq_optim,
                     loss_container,
                     subkey,
-                    eq_params_masks[eq_param],
-                    eq_params_opt_state_field_for_accel[eq_param],
+                    getattr(eq_params_masks, eq_param),
+                    getattr(eq_params_opt_state_field_for_accel, eq_param),
                     with_loss_weight_update=True,
                 )
 
@@ -360,7 +365,11 @@ def solve_alternate(
                         last_non_nan_params,
                         (
                             nn_opt_state,
-                            eq_opt_states | {eq_param: eq_opt_state},
+                            eqx.tree_at(
+                                lambda pt: (getattr(pt, eq_param),),
+                                eq_opt_states,
+                                (eq_opt_state,),
+                            ),
                         ),
                     ),
                     carry[3],
@@ -385,9 +394,9 @@ def solve_alternate(
             )
             # 1 - some init
             loss_ = eqx.tree_at(
-                lambda pt: (pt.derivative_keys),
+                lambda pt: (pt.derivative_keys,),
                 carry[1],
-                (eq_gd_steps_derivative_keys[eq_param]),
+                (eq_gd_steps_derivative_keys[eq_param],),
             )
             # Reinit a loss container for this inner loop
             stored_loss_terms_ = jax.tree_util.tree_map(
@@ -676,7 +685,7 @@ def solve_alternate(
 
         ###### OPTIMIZATION ON EQ_PARAMS ###########
 
-        for eq_param, eq_optim in eq_optimizers.items():
+        for eq_param, _ in eq_param_eq_optim:
             carry = eq_params_train_fun_compiled[eq_param](carry)
 
         ###### OPTIMIZATION ON NN_PARAMS ###########
