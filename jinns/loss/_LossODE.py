@@ -7,7 +7,7 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 from dataclasses import InitVar
-from typing import TYPE_CHECKING, TypedDict, Callable
+from typing import TYPE_CHECKING, Callable
 from types import EllipsisType
 import abc
 import warnings
@@ -23,7 +23,7 @@ from jinns.loss._loss_utils import (
 )
 from jinns.parameters._params import (
     _get_vmap_in_axes_params,
-    _update_eq_params_dict,
+    _update_eq_params,
 )
 from jinns.parameters._derivative_keys import _set_derivatives, DerivativeKeysODE
 from jinns.loss._loss_weights import LossWeightsODE
@@ -36,11 +36,6 @@ if TYPE_CHECKING:
     from jinns.data._Batchs import ODEBatch
     from jinns.nn._abstract_pinn import AbstractPINN
     from jinns.loss import ODE
-
-    class LossDictODE(TypedDict):
-        dyn_loss: Float[Array, " "]
-        initial_condition: Float[Array, " "]
-        observations: Float[Array, " "]
 
 
 class _LossODEAbstract(AbstractLoss):
@@ -195,7 +190,7 @@ class _LossODEAbstract(AbstractLoss):
         batch: ODEBatch,
         *,
         non_opt_params: Params[Array] = None,
-    ) -> tuple[Float[Array, " "], LossDictODE]:
+    ) -> tuple[Float[Array, " "], ODEComponents[Float[Array, " "] | None]]:
         raise NotImplementedError
 
 
@@ -304,7 +299,7 @@ class LossODE(_LossODEAbstract):
         # and update vmap_in_axes
         if batch.param_batch_dict is not None:
             # update params with the batches of generated params
-            params = _update_eq_params_dict(params, batch.param_batch_dict)
+            params = _update_eq_params(params, batch.param_batch_dict)
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
@@ -363,9 +358,7 @@ class LossODE(_LossODEAbstract):
 
         if batch.obs_batch_dict is not None:
             # update params with the batches of observed params
-            params_obs = _update_eq_params_dict(
-                params, batch.obs_batch_dict["eq_params"]
-            )
+            params_obs = _update_eq_params(params, batch.obs_batch_dict["eq_params"])
 
             # MSE loss wrt to an observed batch
             obs_loss_fun = lambda po: observations_loss_apply(

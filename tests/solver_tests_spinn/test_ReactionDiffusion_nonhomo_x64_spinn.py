@@ -89,7 +89,7 @@ def train_ReacDiff_init():
         x = t_x[:, 1:]
         x = get_grid(x.squeeze())
         eq_params = params.eq_params
-        r1, r2, r3 = eq_params["r"]
+        r1, r2, r3 = eq_params.r
 
         # By default put r1 everywhere
         r_map_batch = jnp.full(x.shape[:2], r1)
@@ -114,7 +114,10 @@ def train_ReacDiff_init():
         return r_map_batch[None, ..., None]
 
     fisher_dynamic_loss = jinns.loss.FisherKPP(
-        Tmax=Tmax, eq_params_heterogeneity={"D": None, "r": r_fun, "g": None}, dim_x=2
+        Tmax=Tmax,
+        eq_params_heterogeneity={"D": None, "r": r_fun, "g": None},
+        dim_x=2,
+        params=init_params,
     )
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
         dyn_loss=1,

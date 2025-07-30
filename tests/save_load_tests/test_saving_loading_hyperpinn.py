@@ -86,12 +86,16 @@ def test_equality_save_reload(save_reload):
     key, params, u, params_reloaded, u_reloaded = save_reload
     key, subkey = jax.random.split(key, 2)
     test_points = jax.random.normal(subkey, shape=(10, 3))
-    vmap_axes_params = _get_vmap_in_axes_params({"D": None, "r": None}, params)
+    vmap_axes_params = _get_vmap_in_axes_params(
+        type(params.eq_params)(D=None, r=None), params
+    )
     v_u = jax.vmap(
         u,
         (0,) + vmap_axes_params,
     )
-    vmap_axes_params = _get_vmap_in_axes_params({"D": None, "r": None}, params_reloaded)
+    vmap_axes_params = _get_vmap_in_axes_params(
+        type(params.eq_params)(D=None, r=None), params_reloaded
+    )
     v_u_reloaded = jax.vmap(
         u_reloaded,
         (0,) + vmap_axes_params,

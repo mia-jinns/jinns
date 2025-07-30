@@ -181,7 +181,7 @@ class HyperPINN(PINN):
         #    hyper = eqx.combine(params, self.static_hyper)
 
         eq_params_batch = jnp.concatenate(
-            [params.eq_params[k].flatten() for k in self.hyperparams],
+            [getattr(params.eq_params, k).flatten() for k in self.hyperparams],
             axis=0,
         )
 

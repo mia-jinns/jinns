@@ -8,7 +8,7 @@ from __future__ import (
 
 import abc
 from dataclasses import InitVar
-from typing import TYPE_CHECKING, Callable, TypedDict
+from typing import TYPE_CHECKING, Callable
 from types import EllipsisType
 import warnings
 import jax
@@ -25,7 +25,7 @@ from jinns.loss._loss_utils import (
 )
 from jinns.parameters._params import (
     _get_vmap_in_axes_params,
-    _update_eq_params_dict,
+    _update_eq_params,
 )
 from jinns.parameters._derivative_keys import (
     _set_derivatives,
@@ -47,16 +47,6 @@ if TYPE_CHECKING:
     from jinns.nn._abstract_pinn import AbstractPINN
     from jinns.loss import PDENonStatio, PDEStatio
     from jinns.utils._types import BoundaryConditionFun
-
-    class LossDictPDEStatio(TypedDict):
-        dyn_loss: Float[Array, " "]
-        norm_loss: Float[Array, " "]
-        boundary_loss: Float[Array, " "]
-        observations: Float[Array, " "]
-
-    class LossDictPDENonStatio(LossDictPDEStatio):
-        initial_condition: Float[Array, " "]
-
 
 _IMPLEMENTED_BOUNDARY_CONDITIONS = [
     "dirichlet",
@@ -309,7 +299,11 @@ class _LossPDEAbstract(AbstractLoss):
         batch: PDEStatioBatch | PDENonStatioBatch,
         *,
         non_opt_params: Params[Array] | None = None,
-    ) -> tuple[Float[Array, " "], LossDictPDEStatio | LossDictPDENonStatio]:
+    ) -> tuple[
+        Float[Array, " "],
+        PDEStatioComponents[Float[Array, " "] | None]
+        | PDENonStatioComponents[Float[Array, " "] | None],
+    ]:
         raise NotImplementedError
 
 
@@ -476,7 +470,7 @@ class LossPDEStatio(_LossPDEAbstract):
         # and update vmap_in_axes
         if batch.param_batch_dict is not None:
             # update eq_params with the batches of generated params
-            params = _update_eq_params_dict(params, batch.param_batch_dict)
+            params = _update_eq_params(params, batch.param_batch_dict)
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
@@ -524,9 +518,7 @@ class LossPDEStatio(_LossPDEAbstract):
         # Observation mse
         if batch.obs_batch_dict is not None:
             # update params with the batches of observed params
-            params_obs = _update_eq_params_dict(
-                params, batch.obs_batch_dict["eq_params"]
-            )
+            params_obs = _update_eq_params(params, batch.obs_batch_dict["eq_params"])
 
             obs_loss_fun = lambda po: observations_loss_apply(
                 self.u,
@@ -785,7 +777,7 @@ class LossPDENonStatio(LossPDEStatio):
         # and update vmap_in_axes
         if batch.param_batch_dict is not None:
             # update eq_params with the batches of generated params
-            params = _update_eq_params_dict(params, batch.param_batch_dict)
+            params = _update_eq_params(params, batch.param_batch_dict)
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 

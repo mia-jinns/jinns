@@ -3,11 +3,12 @@ Formalize the data structure for the parameters
 """
 
 from __future__ import annotations
-
+from dataclasses import fields
 from typing import Generic, TypeVar
-import jax
 import equinox as eqx
-from jaxtyping import Array, PyTree, Float
+from jaxtyping import Array, PyTree
+
+from jinns.utils._DictToModuleMeta import DictToModuleMeta
 
 T = TypeVar("T")  # the generic type for what is in the Params PyTree because we
 # have possibly Params of Arrays, boolean, ...
@@ -21,6 +22,10 @@ T = TypeVar("T")  # the generic type for what is in the Params PyTree because we
 ### see https://github.com/patrick-kidger/equinox/pull/1043/commits/f88e62ab809140334c2f987ed13eff0d80b8be13
 
 
+class EqParams(metaclass=DictToModuleMeta):
+    pass
+
+
 class Params(eqx.Module, Generic[T]):
     """
     The equinox module for the parameters
@@ -30,13 +35,21 @@ class Params(eqx.Module, Generic[T]):
     nn_params : PyTree[T]
         A PyTree of the non-static part of the PINN eqx.Module, i.e., the
         parameters of the PINN
-    eq_params : dict[str, T]
-        A dictionary of the equation parameters. Keys are the parameter name,
+    eq_params : PyTree[T]
+        A PyTree of the equation parameters. For retrocompatibility and
+        verbosity issue this can be provided as formerly ie as
+        a dictionary of the equation parameters where keys are the parameter name,
         values are their corresponding value
     """
 
     nn_params: PyTree[T] = eqx.field(kw_only=True, default=None)
-    eq_params: dict[str, T] = eqx.field(kw_only=True, default=None)
+    eq_params: PyTree[T] = eqx.field(
+        kw_only=True,
+        default=None,
+        converter=lambda x: EqParams(x, "EqParams")
+        if isinstance(x, dict)
+        else x,  # the first call here is critical
+    )
 
     def partition(self, mask: Params[bool] | None):
         """
@@ -48,28 +61,26 @@ class Params(eqx.Module, Generic[T]):
             return self, None
 
 
-def _update_eq_params_dict(
+def _update_eq_params(
     params: Params[Array],
-    param_batch_dict: dict[str, Float[Array, " param_batch_size dim"]],
+    eq_param_batch: PyTree[Array],
 ) -> Params:
     """
     Update params.eq_params with a batch of eq_params for given key(s)
     """
 
-    # artificially "complete" `param_batch_dict` with None to match `params`
-    # PyTree  structure
-    param_batch_dict_ = param_batch_dict | {
-        k: None for k in set(params.eq_params.keys()) - set(param_batch_dict.keys())
-    }
-
-    # Replace at non None leafs
+    param_names_to_update = tuple(f.name for f in fields(eq_param_batch))
     params = eqx.tree_at(
         lambda p: p.eq_params,
         params,
-        jax.tree_util.tree_map(
-            lambda p, q: q if q is not None else p,
+        eqx.tree_at(
+            lambda pt: tuple(
+                getattr(pt, f.name)
+                for f in fields(pt)
+                if f.name in param_names_to_update
+            ),
             params.eq_params,
-            param_batch_dict_,
+            tuple(getattr(eq_param_batch, f) for f in param_names_to_update),
         ),
     )
 
@@ -77,7 +88,7 @@ def _update_eq_params_dict(
 
 
 def _get_vmap_in_axes_params(
-    eq_params_batch_dict: dict[str, Array], params: Params[Array]
+    eq_param_batch: eqx.Module, params: Params[Array]
 ) -> tuple[Params[int | None] | None]:
     """
     Return the input vmap axes when there is batch(es) of parameters to vmap
@@ -88,19 +99,22 @@ def _get_vmap_in_axes_params(
     Note that we return a Params PyTree with an integer to designate the
     vmapped axis or None if there is not
     """
-    if eq_params_batch_dict is None:
+    if eq_param_batch is None:
         return (None,)
     # We use pytree indexing of vmapped axes and vmap on axis
     # 0 of the eq_parameters for which we have a batch
     # this is for a fine-grained vmaping
     # scheme over the params
+    param_names_to_vmap = tuple(f.name for f in fields(eq_param_batch))
+    vmap_axes_dict = {
+        k.name: (0 if k.name in param_names_to_vmap else None)
+        for k in fields(params.eq_params)
+    }
+    eq_param_vmap_axes = type(params.eq_params)(**vmap_axes_dict)
     vmap_in_axes_params = (
         Params(
             nn_params=None,
-            eq_params={
-                k: (0 if k in eq_params_batch_dict.keys() else None)
-                for k in params.eq_params.keys()
-            },
+            eq_params=eq_param_vmap_axes,
         ),
     )
     return vmap_in_axes_params

@@ -71,7 +71,7 @@ def create_loss(tmin, Tmax, u, derivative_keys, init_params):
             # in log-space
             u_ = lambda t, p: u(t, p)[0]
             du_dt = jax.grad(u_, 0)(t, params)
-            return du_dt - params.eq_params["a"]
+            return du_dt - params.eq_params.a
 
     fo_loss = LinearFODE(Tmax=Tmax)
     loss_weights = jinns.loss.LossWeightsODE(dyn_loss=2.0, initial_condition=1.0)
@@ -101,7 +101,7 @@ def train(train_data, params, loss):
 
 
 def test_derivative_keys_via_Params_ValueError(initialize_parameters):
-    init_params = initialize_parameters
+    _ = initialize_parameters
     with pytest.raises(ValueError):
         # This should fail as `initial_condition=None` and params is not given
         _ = DerivativeKeysODE(dyn_loss=Params(nn_params=True, eq_params={"a": True}))
@@ -125,7 +125,7 @@ def test_derivative_keys_via_Params_values_updates1(
     assert not jnp.allclose(
         params.nn_params.layers[0].weight, end_params.nn_params.layers[0].weight
     )
-    assert not jnp.allclose(params.eq_params["a"], end_params.eq_params["a"])
+    assert not jnp.allclose(params.eq_params.a, end_params.eq_params.a)
 
 
 def test_derivative_keys_via_Params_values_updates2(
@@ -146,7 +146,7 @@ def test_derivative_keys_via_Params_values_updates2(
     assert not jnp.allclose(
         params.nn_params.layers[0].weight, end_params.nn_params.layers[0].weight
     )
-    assert jnp.allclose(params.eq_params["a"], end_params.eq_params["a"])
+    assert jnp.allclose(params.eq_params.a, end_params.eq_params.a)
 
 
 def test_derivative_keys_via_Params_values_updates3(
@@ -169,7 +169,7 @@ def test_derivative_keys_via_Params_values_updates3(
     assert not jnp.allclose(
         params.nn_params.layers[0].weight, end_params.nn_params.layers[0].weight
     )
-    assert not jnp.allclose(params.eq_params["a"], end_params.eq_params["a"])
+    assert not jnp.allclose(params.eq_params.a, end_params.eq_params.a)
 
 
 def test_derivative_keys_via_Params_values_updates4(
@@ -192,7 +192,7 @@ def test_derivative_keys_via_Params_values_updates4(
     assert not jnp.allclose(
         params.nn_params.layers[0].weight, end_params.nn_params.layers[0].weight
     )
-    assert jnp.allclose(params.eq_params["a"], end_params.eq_params["a"])
+    assert jnp.allclose(params.eq_params.a, end_params.eq_params.a)
 
 
 def test_derivative_keys_via_Params_values_updates5(
@@ -218,7 +218,7 @@ def test_derivative_keys_via_Params_values_updates5(
     )
     # a not expected to move since this parameter has no role in
     # initial_condition
-    assert jnp.allclose(params.eq_params["a"], end_params.eq_params["a"])
+    assert jnp.allclose(params.eq_params.a, end_params.eq_params.a)
 
 
 def test_derivative_keys_via_Str_values_updates1(
@@ -237,7 +237,7 @@ def test_derivative_keys_via_Str_values_updates1(
     assert not jnp.allclose(
         params.nn_params.layers[0].weight, end_params.nn_params.layers[0].weight
     )
-    assert jnp.allclose(params.eq_params["a"], end_params.eq_params["a"])
+    assert jnp.allclose(params.eq_params.a, end_params.eq_params.a)
 
 
 def test_derivative_keys_via_Str_values_updates2(
@@ -258,7 +258,7 @@ def test_derivative_keys_via_Str_values_updates2(
     assert not jnp.allclose(
         params.nn_params.layers[0].weight, end_params.nn_params.layers[0].weight
     )
-    assert not jnp.allclose(params.eq_params["a"], end_params.eq_params["a"])
+    assert not jnp.allclose(params.eq_params.a, end_params.eq_params.a)
 
 
 def test_derivative_keys_via_Str_values_updates3(
@@ -283,4 +283,4 @@ def test_derivative_keys_via_Str_values_updates3(
     assert jnp.allclose(
         params.nn_params.layers[0].weight, end_params.nn_params.layers[0].weight
     )
-    assert not jnp.allclose(params.eq_params["a"], end_params.eq_params["a"])
+    assert not jnp.allclose(params.eq_params.a, end_params.eq_params.a)
