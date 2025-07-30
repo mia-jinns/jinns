@@ -11,15 +11,10 @@ import jax.numpy as jnp
 from jaxtyping import Key, Array, Float
 from jinns.data._utils import _reset_or_increment
 from jinns.data._AbstractDataGenerator import AbstractDataGenerator
-from jinns.parameters._params import EqParamsMeta
+from jinns.utils._DictToModuleMeta import DictToModuleMeta
 
 
-class DGParams(metaclass=EqParamsMeta):
-    """
-    Note that this definition inits a new EqParamsMeta. Not shared with
-    EqParams
-    """
-
+class DGParams(metaclass=DictToModuleMeta):
     pass
 
 
