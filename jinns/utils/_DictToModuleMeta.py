@@ -7,7 +7,7 @@ class DictToModuleMeta(type):
     We came up with a Metaclass based solution to handle the fact that we only
     want one type to be created for EqParams.
     If we were to create a new **class type** (despite same name) each time we
-    create a new Params object, nothing would be broadcastble in terms of jax
+    create a new Params object, nothing would be broadcastable in terms of jax
     tree utils operations and this would be useless. The difficulty comes from
     the fact that we need to instanciate from this same class at different
     moments of the jinns workflow eg: parameter creation, derivative keys
