@@ -57,7 +57,7 @@ class DerivativeKeysODE(eqx.Module):
 
          1. For unspecified loss term, the default is to differentiate with
         respect to `"nn_params"` only.
-         2. No granularity inside `Params.nn_params` is currently supported.
+         2. No granularity inside `Params.nn_params` is currently supported. An easy way to do freeze part of a custom PINN module is to use `jax.lax.stop_gradient` as explained [here](https://docs.kidger.site/equinox/faq/#how-to-mark-arrays-as-non-trainable-like-pytorchs-buffers).
          3. Note that the main Params object of the problem is mandatory if initialization via `from_str()`.
 
     A typical specification is of the form:

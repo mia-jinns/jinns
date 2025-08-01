@@ -4,8 +4,8 @@ import equinox as eqx
 
 class DictToModuleMeta(type):
     """
-    We finally came up with a Metaclass pattern to handle the fact that we want
-    one and only one type to be created for EqParams.
+    We came up with a Metaclass based solution to handle the fact that we only
+    want one type to be created for EqParams.
     If we were to create a new **class type** (despite same name) each time we
     create a new Params object, nothing would be broadcastble in terms of jax
     tree utils operations and this would be useless. The difficulty comes from
@@ -18,7 +18,8 @@ class DictToModuleMeta(type):
     This is inspired by the Singleton pattern in Python
     (https://stackoverflow.com/a/10362179)
 
-    Here we need the call of a metaclass because (https://stackoverflow.com/a/45536640):
+    Here we need the call of a metaclass because as explained in
+     https://stackoverflow.com/a/45536640). To quote from the answer
     Metaclasses implement how the class will behave (not the instance). So when you look at the instance creation:
     `x = Foo()`
     This literally "calls" the class Foo. That's why __call__ of the metaclass
