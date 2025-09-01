@@ -3,7 +3,7 @@ from functools import partial
 import jax
 
 import jinns
-from jinns.parameters import Params, _update_eq_params
+from jinns.parameters import Params, update_eq_params
 
 
 def test_success():
@@ -42,7 +42,7 @@ def test_update_eq_params():
 
     param_train_data, param_batch = param_train_data.get_batch()
 
-    params = _update_eq_params(params, param_batch)
+    params = update_eq_params(params, param_batch)
 
     assert params.eq_params.nu.shape == (10, 1)
 

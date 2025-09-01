@@ -7,7 +7,7 @@ import equinox as eqx
 import optax
 import jinns
 
-from jinns.parameters._params import _update_eq_params
+from jinns.parameters._params import update_eq_params
 
 
 @pytest.fixture
@@ -116,7 +116,7 @@ def train_NSPipeFlow_init():
         nn_params=u_p_init_nn_params,
         eq_params={"rho": rho, "nu": None},
     )
-    init_params_hyper = _update_eq_params(init_params_hyper, param_batch)
+    init_params_hyper = update_eq_params(init_params_hyper, param_batch)
 
     dyn_loss = jinns.loss.NavierStokesMassConservation2DStatio()
 
