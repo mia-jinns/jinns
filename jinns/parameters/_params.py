@@ -66,11 +66,7 @@ def _update_eq_params(
         lambda p: p.eq_params,
         params,
         eqx.tree_at(
-            lambda pt: tuple(
-                getattr(pt, f.name)
-                for f in fields(pt)
-                if f.name in param_names_to_update
-            ),
+            lambda pt: tuple(getattr(pt, f) for f in param_names_to_update),
             params.eq_params,
             tuple(getattr(eq_param_batch, f) for f in param_names_to_update),
         ),
