@@ -50,10 +50,10 @@ class Params(eqx.Module, Generic[T]):
     )
 
 
-def _update_eq_params(
+def update_eq_params(
     params: Params[Array],
     eq_param_batch: PyTree[Array] | None,
-) -> Params:
+) -> Params[Array]:
     """
     Update params.eq_params with a batch of eq_params for given key(s)
     """
@@ -69,6 +69,7 @@ def _update_eq_params(
             lambda pt: tuple(getattr(pt, f) for f in param_names_to_update),
             params.eq_params,
             tuple(getattr(eq_param_batch, f) for f in param_names_to_update),
+            is_leaf=lambda x: x is None or eqx.is_inexact_array(x),
         ),
     )
 
