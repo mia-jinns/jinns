@@ -22,6 +22,12 @@ T = TypeVar("T")  # the generic type for what is in the Params PyTree because we
 
 
 class EqParams(metaclass=DictToModuleMeta):
+    """
+    Note that this is exposed to the user for the particular case where the
+    user, during its work, wants to change the equation parameters. In this
+    case, the user must import EqParams and call `EqParams.clear()`
+    """
+
     pass
 
 
