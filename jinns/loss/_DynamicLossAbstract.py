@@ -126,7 +126,6 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
         ]
         | None = None,
     ) -> PyTree[Array]:
-        eq_params_ = {}
         if eq_params_heterogeneity is None:
             return params.eq_params
         eq_params_ = jax.tree.map(
