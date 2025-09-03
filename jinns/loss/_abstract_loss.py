@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import abc
-from typing import TYPE_CHECKING, Self, Literal, Callable
+from typing import Self, Literal, Callable, TypeVar, Generic, Any
 from jaxtyping import Array, PyTree, Key
 import equinox as eqx
 import jax
@@ -10,30 +10,44 @@ import optax
 from jinns.loss._loss_weights import AbstractLossWeights
 from jinns.parameters._params import Params
 from jinns.loss._loss_weight_updates import soft_adapt, lr_annealing, ReLoBRaLo
+from jinns.utils._types import AnyLossComponents, AnyBatch
 
-if TYPE_CHECKING:
-    from jinns.utils._types import AnyLossComponents, AnyBatch
+T = TypeVar("T", bound=AbstractLossWeights)  # we want something that inherits
+# from AbstractLossWeights in subclasses of AbstractLoss, a correct way to do
+# that is https://stackoverflow.com/a/79534258 via `bound`
+
+B = TypeVar(
+    "B", bound=AnyBatch
+)  # The above comment also works with Unions (https://docs.python.org/3/library/typing.html#typing.TypeVar)
+# We then do the same TypeVar to be able to use one of the element of AnyBatch
+# in the evaluate_by_terms methods of child classes.
+C = TypeVar(
+    "C", bound=AnyLossComponents
+)  # The above comment also works with Unions (https://docs.python.org/3/library/typing.html#typing.TypeVar)
+
+# In the cases above, without the bound, we could not have covariance on
+# the type because it would break LSP. Note that covariance on the return type
+# is authorized in LSP hence we do not need the same TypeVar instruction for
+# the return types of evaluate_by_terms for example!
 
 
-class AbstractLoss(eqx.Module):
+class AbstractLoss(eqx.Module, Generic[T, B, C]):
     """
     About the call:
     https://github.com/patrick-kidger/equinox/issues/1002 + https://docs.kidger.site/equinox/pattern/
     """
 
-    loss_weights: AbstractLossWeights
+    loss_weights: eqx.AbstractVar[T]
     update_weight_method: Literal["soft_adapt", "lr_annealing", "ReLoBRaLo"] | None = (
         eqx.field(kw_only=True, default=None, static=True)
     )
 
     @abc.abstractmethod
-    def __call__(self, *_, **__) -> Array:
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         pass
 
     @abc.abstractmethod
-    def evaluate_by_terms(
-        self, params: Params[Array], batch: AnyBatch
-    ) -> tuple[AnyLossComponents, AnyLossComponents]:
+    def evaluate_by_terms(self, params: Params[Array], batch: B) -> tuple[C, C]:
         pass
 
     def get_gradients(
@@ -48,7 +62,7 @@ class AbstractLoss(eqx.Module):
         loss_val, grads = value_grad_loss(params)
         return loss_val, grads
 
-    def ponderate_and_sum_loss(self, terms):
+    def ponderate_and_sum_loss(self, terms: C) -> Array:
         """
         Get total loss from individual loss terms and weights
 
@@ -70,7 +84,7 @@ class AbstractLoss(eqx.Module):
                 f" got {len(weights)} and {len(terms)}"
             )
 
-    def ponderate_and_sum_gradient(self, terms):
+    def ponderate_and_sum_gradient(self, terms: C) -> C:
         """
         Get total gradients from individual loss gradients and weights
         for each parameter

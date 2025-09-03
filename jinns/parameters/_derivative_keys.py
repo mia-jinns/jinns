@@ -92,33 +92,38 @@ class DerivativeKeysODE(eqx.Module):
         infer the content of `Params.eq_params`.
     """
 
-    dyn_loss: Params[bool] | None = eqx.field(kw_only=True, default=None)
-    observations: Params[bool] | None = eqx.field(kw_only=True, default=None)
-    initial_condition: Params[bool] | None = eqx.field(kw_only=True, default=None)
+    dyn_loss: Params[bool]
+    observations: Params[bool]
+    initial_condition: Params[bool]
 
-    params: InitVar[Params[Array] | None] = eqx.field(kw_only=True, default=None)
+    params: InitVar[Params[Array] | None]
 
-    def __post_init__(self, params: Params[Array] | None = None):
+    def __init__(
+        self,
+        *,
+        dyn_loss: Params[bool] | None = None,
+        observations: Params[bool] | None = None,
+        initial_condition: Params[bool] | None = None,
+        params: Params[Array] | None = None,
+    ):
         if params is None and (
-            self.dyn_loss is None
-            or self.observations is None
-            or self.initial_condition is None
+            dyn_loss is None or observations is None or initial_condition is None
         ):
             raise ValueError(
                 "params cannot be None since at least one loss "
                 "term has an undefined derivative key Params PyTree"
             )
-        if self.dyn_loss is None:
+        if dyn_loss is None:
             if params is None:
                 raise ValueError("self.dyn_loss is None, hence params should be passed")
             self.dyn_loss = _get_masked_parameters("nn_params", params)
-        if self.observations is None:
+        if observations is None:
             if params is None:
                 raise ValueError(
                     "self.observations is None, hence params should be passed"
                 )
             self.observations = _get_masked_parameters("nn_params", params)
-        if self.initial_condition is None:
+        if initial_condition is None:
             if params is None:
                 raise ValueError(
                     "self.initial_condition is None, hence params should be passed"
@@ -429,7 +434,9 @@ class DerivativeKeysPDENonStatio(DerivativeKeysPDEStatio):
         )
 
 
-def _set_derivatives(params, derivative_keys):
+def _set_derivatives(
+    params: Params[Array], derivative_keys: Params[bool]
+) -> Params[Array]:
     """
     We construct an eqx.Module with the fields of derivative_keys, each field
     has a copy of the params with appropriate derivatives set

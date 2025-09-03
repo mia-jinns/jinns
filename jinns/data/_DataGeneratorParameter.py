@@ -15,6 +15,11 @@ from jinns.utils._DictToModuleMeta import DictToModuleMeta
 
 
 class DGParams(metaclass=DictToModuleMeta):
+    """
+    However, static type checkers cannot know that DGParams inherit from
+    eqx.Module and explicit casting to the latter class will be needed
+    """
+
     pass
 
 
