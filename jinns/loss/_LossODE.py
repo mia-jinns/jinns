@@ -325,7 +325,7 @@ class LossODE(_LossODEAbstract):
         ## dynamic part
         if self.dynamic_loss is not None:
             dyn_loss_eval = self.dynamic_loss.evaluate
-            dyn_loss_fun: Callable[[Params[Array]], Array] = (
+            dyn_loss_fun: Callable[[Params[Array]], Array] | None = (
                 lambda p: dynamic_loss_apply(
                     dyn_loss_eval,
                     self.u,
@@ -335,7 +335,7 @@ class LossODE(_LossODEAbstract):
                 )
             )
         else:
-            dyn_loss_fun = None  # type: ignore
+            dyn_loss_fun = None
 
         if self.initial_condition is not None:
             # initial condition
@@ -375,13 +375,13 @@ class LossODE(_LossODEAbstract):
                 # None in_axes or out_axes
                 initial_condition_fun = initial_condition_fun_
             else:
-                initial_condition_fun: Callable[[Params[Array]], Array] = (
+                initial_condition_fun: Callable[[Params[Array]], Array] | None = (
                     lambda p: jnp.mean(
                         vmap(initial_condition_fun_, vmap_in_axes_params)(p)
                     )
                 )
         else:
-            initial_condition_fun = None  # type: ignore
+            initial_condition_fun = None
 
         if batch.obs_batch_dict is not None:
             # update params with the batches of observed params
@@ -393,7 +393,7 @@ class LossODE(_LossODEAbstract):
             )  # the reason for this intruction is https://github.com/microsoft/pyright/discussions/8340
 
             # MSE loss wrt to an observed batch
-            obs_loss_fun: Callable[[Params[Array]], Array] = (
+            obs_loss_fun: Callable[[Params[Array]], Array] | None = (
                 lambda po: observations_loss_apply(
                     self.u,
                     pinn_in,
@@ -405,7 +405,7 @@ class LossODE(_LossODEAbstract):
             )
         else:
             params_obs = None
-            obs_loss_fun = None  # type: ignore
+            obs_loss_fun = None
 
         # get the unweighted mses for each loss term as well as the gradients
         all_funs: ODEComponents[Callable[[Params[Array]], Array] | None] = (
@@ -421,7 +421,6 @@ class LossODE(_LossODEAbstract):
         # before hand: this is not practical, let us not get mad at this
         mses_grads = jax.tree.map(
             self.get_gradients,
-            # lambda fun, params: self.get_gradients(fun, params), # type: ignore
             all_funs,
             all_params,
             is_leaf=lambda x: x is None,
