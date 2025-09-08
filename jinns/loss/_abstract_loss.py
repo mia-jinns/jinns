@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import abc
 from typing import Self, Literal, Callable, TypeVar, Generic, Any
-from jaxtyping import Array, PyTree, Key
+from jaxtyping import Array, PyTree, Key, Float
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -22,7 +22,7 @@ B = TypeVar(
 # We then do the same TypeVar to be able to use one of the element of AnyBatch
 # in the evaluate_by_terms methods of child classes.
 C = TypeVar(
-    "C", bound=AnyLossComponents
+    "C", bound=AnyLossComponents[Array | None]
 )  # The above comment also works with Unions (https://docs.python.org/3/library/typing.html#typing.TypeVar)
 
 # In the cases above, without the bound, we could not have covariance on
@@ -44,11 +44,34 @@ class AbstractLoss(eqx.Module, Generic[T, B, C]):
 
     @abc.abstractmethod
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        pass
+        return self.evaluate(*args, **kwargs)
 
     @abc.abstractmethod
     def evaluate_by_terms(self, params: Params[Array], batch: B) -> tuple[C, C]:
         pass
+
+    def evaluate(self, params: Params[Array], batch: B) -> tuple[Float[Array, " "], C]:
+        """
+        Evaluate the loss function at a batch of points for given parameters.
+
+        We retrieve the total value itself and a PyTree with loss values for each term
+
+        Parameters
+        ---------
+        params
+            Parameters at which the loss is evaluated
+        batch
+            Composed of a batch of points in the
+            domain, a batch of points in the domain
+            border and an optional additional batch of parameters (eg. for
+            metamodeling) and an optional additional batch of observed
+            inputs/outputs/parameters
+        """
+        loss_terms, _ = self.evaluate_by_terms(params, batch)
+
+        loss_val = self.ponderate_and_sum_loss(loss_terms)
+
+        return loss_val, loss_terms
 
     def get_gradients(
         self, fun: Callable[[Params[Array]], Array], params: Params[Array]

@@ -285,9 +285,6 @@ class LossODE(_LossODEAbstract):
         self.dynamic_loss = dynamic_loss
         self.vmap_in_axes = (0,)
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        return self.evaluate(*args, **kwargs)
-
     def evaluate_by_terms(
         self, params: Params[Array], batch: ODEBatch
     ) -> tuple[
@@ -438,28 +435,3 @@ class LossODE(_LossODEAbstract):
         )
 
         return mses, grads
-
-    def evaluate(
-        self, params: Params[Array], batch: ODEBatch
-    ) -> tuple[Float[Array, " "], ODEComponents[Float[Array, " "] | None]]:
-        """
-        Evaluate the loss function at a batch of points for given parameters.
-
-        We retrieve the total value itself and a PyTree with loss values for each term
-
-        Parameters
-        ---------
-        params
-            Parameters at which the loss is evaluated
-        batch
-            Composed of a batch of points in the
-            domain, a batch of points in the domain
-            border and an optional additional batch of parameters (eg. for
-            metamodeling) and an optional additional batch of observed
-            inputs/outputs/parameters
-        """
-        loss_terms, _ = self.evaluate_by_terms(params, batch)
-
-        loss_val = self.ponderate_and_sum_loss(loss_terms)
-
-        return loss_val, loss_terms

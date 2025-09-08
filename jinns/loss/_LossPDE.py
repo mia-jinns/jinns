@@ -6,9 +6,8 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-import abc
 from dataclasses import InitVar
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, cast
 from types import EllipsisType
 import warnings
 import jax
@@ -213,96 +212,82 @@ class _LossPDEAbstract(AbstractLoss):
                         f"implemented yet. Try one of :"
                         f"{_IMPLEMENTED_BOUNDARY_CONDITIONS}."
                     )
-                if isinstance(self.omega_boundary_fun, dict) and isinstance(
-                    self.omega_boundary_condition, dict
+            if isinstance(omega_boundary_fun, dict) and isinstance(
+                omega_boundary_condition, dict
+            ):
+                keys_omega_boundary_fun: str = cast(str, omega_boundary_fun.keys())
+                if (
+                    not (
+                        list(keys_omega_boundary_fun) == ["xmin", "xmax"]
+                        and list(omega_boundary_condition.keys()) == ["xmin", "xmax"]
+                    )
+                ) or (
+                    not (
+                        list(keys_omega_boundary_fun)
+                        == ["xmin", "xmax", "ymin", "ymax"]
+                        and list(omega_boundary_condition.keys())
+                        == ["xmin", "xmax", "ymin", "ymax"]
+                    )
                 ):
-                    if (
-                        not (
-                            list(self.omega_boundary_fun.keys()) == ["xmin", "xmax"]
-                            and list(self.omega_boundary_condition.keys())
-                            == ["xmin", "xmax"]
-                        )
-                    ) or (
-                        not (
-                            list(self.omega_boundary_fun.keys())
-                            == ["xmin", "xmax", "ymin", "ymax"]
-                            and list(self.omega_boundary_condition.keys())
-                            == ["xmin", "xmax", "ymin", "ymax"]
-                        )
-                    ):
-                        raise ValueError(
-                            "The key order (facet order) in the "
-                            "boundary condition dictionaries is incorrect"
-                        )
+                    raise ValueError(
+                        "The key order (facet order) in the "
+                        "boundary condition dictionaries is incorrect"
+                    )
 
-        if isinstance(self.omega_boundary_fun, dict):
-            if not isinstance(self.omega_boundary_dim, dict):
+        if isinstance(omega_boundary_fun, dict):
+            keys_omega_boundary_fun: str = cast(str, omega_boundary_fun.keys())
+            if omega_boundary_dim is None:
+                self.omega_boundary_dim = {
+                    k: jnp.s_[::] for k in keys_omega_boundary_fun
+                }
+            if not isinstance(omega_boundary_dim, dict):
                 raise ValueError(
                     "If omega_boundary_fun is a dict then"
                     " omega_boundary_dim should also be a dict"
                 )
-            if self.omega_boundary_dim is None:
-                self.omega_boundary_dim = {
-                    k: jnp.s_[::] for k in self.omega_boundary_fun.keys()
-                }
-            if list(self.omega_boundary_dim.keys()) != list(
-                self.omega_boundary_fun.keys()
-            ):
+            if list(omega_boundary_dim.keys()) != list(keys_omega_boundary_fun):
                 raise ValueError(
                     "If omega_boundary_fun is a dict,"
                     " omega_boundary_dim should be a dict with the same keys"
                 )
-            for k, v in self.omega_boundary_dim.items():
+            self.omega_boundary_dim = {}
+            for k, v in omega_boundary_dim.items():
                 if isinstance(v, int):
                     # rewrite it as a slice to ensure that axis does not disappear when
                     # indexing
                     self.omega_boundary_dim[k] = jnp.s_[v : v + 1]
 
         else:
-            if self.omega_boundary_dim is None:
+            if omega_boundary_dim is None:
                 self.omega_boundary_dim = jnp.s_[::]
-            if isinstance(self.omega_boundary_dim, int):
+            if isinstance(omega_boundary_dim, int):
                 # rewrite it as a slice to ensure that axis does not disappear when
                 # indexing
                 self.omega_boundary_dim = jnp.s_[
-                    self.omega_boundary_dim : self.omega_boundary_dim + 1
+                    omega_boundary_dim : omega_boundary_dim + 1
                 ]
-            if not isinstance(self.omega_boundary_dim, slice):
+            if not isinstance(omega_boundary_dim, slice):
                 raise ValueError("self.omega_boundary_dim must be a jnp.s_ object")
 
-        if self.norm_samples is not None:
-            if self.norm_weights is None:
+        if norm_samples is not None:
+            self.norm_samples = norm_samples
+            if norm_weights is None:
                 raise ValueError(
                     "`norm_weights` must be provided when `norm_samples` is used!"
                 )
-            if isinstance(self.norm_weights, (int, float)):
-                self.norm_weights = self.norm_weights * jnp.ones(
+            if isinstance(norm_weights, (int, float)):
+                self.norm_weights = norm_weights * jnp.ones(
                     (self.norm_samples.shape[0],)
                 )
-            if isinstance(self.norm_weights, Array):
-                if not (self.norm_weights.shape[0] == self.norm_samples.shape[0]):
+            if isinstance(norm_weights, Array):
+                if not (norm_weights.shape[0] == norm_samples.shape[0]):
                     raise ValueError(
                         "self.norm_weights and "
                         "self.norm_samples must have the same leading dimension"
                     )
+                self.norm_weights = norm_weights
             else:
                 raise ValueError("Wrong type for self.norm_weights")
-
-    @abc.abstractmethod
-    def __call__(self, *_, **__):
-        pass
-
-    @abc.abstractmethod
-    def evaluate(
-        self: eqx.Module,
-        params: Params[Array],
-        batch: PDEStatioBatch | PDENonStatioBatch,
-    ) -> tuple[
-        Float[Array, " "],
-        PDEStatioComponents[Float[Array, " "] | None]
-        | PDENonStatioComponents[Float[Array, " "] | None],
-    ]:
-        raise NotImplementedError
 
 
 class LossPDEStatio(_LossPDEAbstract):
@@ -432,9 +417,6 @@ class LossPDEStatio(_LossPDEAbstract):
     ) -> Float[Array, " batch_size obs_dim"]:
         return batch.obs_batch_dict["pinn_in"]
 
-    def __call__(self, *args, **kwargs):
-        return self.evaluate(*args, **kwargs)
-
     def evaluate_by_terms(
         self, params: Params[Array], batch: PDEStatioBatch
     ) -> tuple[PDEStatioComponents[Array | None], PDEStatioComponents[Array | None]]:
@@ -544,31 +526,6 @@ class LossPDEStatio(_LossPDEAbstract):
         )
 
         return mses, grads
-
-    def evaluate(
-        self, params: Params[Array], batch: PDEStatioBatch
-    ) -> tuple[Float[Array, " "], PDEStatioComponents[Float[Array, " "] | None]]:
-        """
-        Evaluate the loss function at a batch of points for given parameters.
-
-        We retrieve the total value itself and a PyTree with loss values for each term
-
-        Parameters
-        ---------
-        params
-            Parameters at which the loss is evaluated
-        batch
-            Composed of a batch of points in the
-            domain, a batch of points in the domain
-            border and an optional additional batch of parameters (eg. for
-            metamodeling) and an optional additional batch of observed
-            inputs/outputs/parameters
-        """
-        loss_terms, _ = self.evaluate_by_terms(params, batch)
-
-        loss_val = self.ponderate_and_sum_loss(loss_terms)
-
-        return loss_val, loss_terms
 
 
 class LossPDENonStatio(LossPDEStatio):
@@ -725,9 +682,6 @@ class LossPDENonStatio(LossPDEStatio):
     ) -> Float[Array, " batch_size 1+dim"]:
         return batch.obs_batch_dict["pinn_in"]
 
-    def __call__(self, *args, **kwargs):
-        return self.evaluate(*args, **kwargs)
-
     def evaluate_by_terms(
         self, params: Params[Array], batch: PDENonStatioBatch
     ) -> tuple[
@@ -801,24 +755,3 @@ class LossPDENonStatio(LossPDEStatio):
         )
 
         return mses, grads
-
-    def evaluate(
-        self, params: Params[Array], batch: PDENonStatioBatch
-    ) -> tuple[Float[Array, " "], PDENonStatioComponents[Float[Array, " "] | None]]:
-        """
-        Evaluate the loss function at a batch of points for given parameters.
-        We retrieve the total value itself and a PyTree with loss values for each term
-
-
-        Parameters
-        ---------
-        params
-            Parameters at which the loss is evaluated
-        batch
-            Composed of a batch of points in
-            the domain, a batch of points in the domain
-            border, a batch of time points and an optional additional batch
-            of parameters (eg. for metamodeling) and an optional additional batch of observed
-            inputs/outputs/parameters
-        """
-        return super().evaluate(params, batch)  # type: ignore

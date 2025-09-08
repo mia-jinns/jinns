@@ -2,7 +2,7 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-from typing import TypeAlias, TYPE_CHECKING, Callable
+from typing import TypeAlias, TYPE_CHECKING, Callable, TypeVar
 from jaxtyping import Float, Array
 
 from jinns.data._Batchs import ODEBatch, PDEStatioBatch, PDENonStatioBatch
@@ -14,11 +14,10 @@ from jinns.loss._loss_components import (
 
 AnyBatch: TypeAlias = ODEBatch | PDENonStatioBatch | PDEStatioBatch
 
-# here we would like a type from 3.12
-# (https://typing.python.org/en/latest/spec/aliases.html#type-statement) so
-# that we could have a generic AnyLossComponents
+# Note that syntax change starting from 3.12
+_T = TypeVar("_T")
 AnyLossComponents: TypeAlias = (
-    ODEComponents | PDEStatioComponents | PDENonStatioComponents
+    ODEComponents[_T] | PDEStatioComponents[_T] | PDENonStatioComponents[_T]
 )
 
 if TYPE_CHECKING:
