@@ -4,7 +4,7 @@ import equinox as eqx
 
 class DictToModuleMeta(type):
     """
-    We came up with a Metaclass based solution to handle the fact that we only
+    A Metaclass based solution to handle the fact that we only
     want one type to be created for EqParams.
     If we were to create a new **class type** (despite same name) each time we
     create a new Params object, nothing would be broadcastable in terms of jax
@@ -58,7 +58,9 @@ class DictToModuleMeta(type):
 
     def clear(cls) -> None:
         """
-        Mainly for pytest where stuff is not complety reset after tests
+        The current Metaclass implementation freezes the list of equation parameters inside a Python session;
+        only one EqParams annotation can exist at a given time. Use `EqParams.clear()`  to reset.
+        Also useful for pytest where stuff is not complety reset after tests
         Taken from https://stackoverflow.com/a/50065732
         """
         cls._class = None
