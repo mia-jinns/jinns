@@ -117,8 +117,8 @@ class _LossODEAbstract(
             # by default we only take gradient wrt nn_params
             if params is None:
                 raise ValueError(
-                    "Problem at self.derivative_keys initialization "
-                    f"received {self.derivative_keys=} and {params=}"
+                    "Problem at derivative_keys initialization "
+                    f"received {derivative_keys=} and {params=}"
                 )
             self.derivative_keys = DerivativeKeysODE(params=params)
         else:
@@ -134,7 +134,7 @@ class _LossODEAbstract(
             if len(initial_condition) != 2:
                 raise ValueError(
                     "Initial condition should be a tuple of len 2 with (t0, u0), "
-                    f"{self.initial_condition} was passed."
+                    f"{initial_condition} was passed."
                 )
             # some checks/reshaping for t0 and u0
             t0, u0 = initial_condition
@@ -196,11 +196,6 @@ class _LossODEAbstract(
             self.obs_slice = jnp.s_[...]
         else:
             self.obs_slice = obs_slice
-
-        if loss_weights is None:
-            self.loss_weights = LossWeightsODE()
-        else:
-            self.loss_weights = loss_weights
 
     @abc.abstractmethod
     def evaluate(
