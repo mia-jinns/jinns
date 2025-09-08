@@ -12,7 +12,7 @@ from jinns.parameters._params import Params
 from jinns.loss._loss_weight_updates import soft_adapt, lr_annealing, ReLoBRaLo
 from jinns.utils._types import AnyLossComponents, AnyBatch
 
-T = TypeVar("T", bound=AbstractLossWeights)  # we want something that inherits
+L = TypeVar("L", bound=AbstractLossWeights)  # we want something that inherits
 # from AbstractLossWeights in subclasses of AbstractLoss, a correct way to do
 # that is https://stackoverflow.com/a/79534258 via `bound`
 
@@ -31,18 +31,17 @@ C = TypeVar(
 # the return types of evaluate_by_terms for example!
 
 
-class AbstractLoss(eqx.Module, Generic[T, B, C]):
+class AbstractLoss(eqx.Module, Generic[L, B, C]):
     """
     About the call:
     https://github.com/patrick-kidger/equinox/issues/1002 + https://docs.kidger.site/equinox/pattern/
     """
 
-    loss_weights: eqx.AbstractVar[T]
+    loss_weights: eqx.AbstractVar[L]
     update_weight_method: Literal["soft_adapt", "lr_annealing", "ReLoBRaLo"] | None = (
         eqx.field(kw_only=True, default=None, static=True)
     )
 
-    @abc.abstractmethod
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self.evaluate(*args, **kwargs)
 

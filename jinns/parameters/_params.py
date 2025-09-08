@@ -83,7 +83,7 @@ def update_eq_params(
 
 
 def _get_vmap_in_axes_params(
-    eq_param_batch: eqx.Module, params: Params[Array]
+    eq_param_batch: eqx.Module | None, params: Params[Array]
 ) -> tuple[Params[int | None] | None]:
     """
     Return the input vmap axes when there is batch(es) of parameters to vmap

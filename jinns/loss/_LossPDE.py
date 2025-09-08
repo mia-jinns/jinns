@@ -6,14 +6,15 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
+import abc
 from dataclasses import InitVar
-from typing import TYPE_CHECKING, Callable, cast, Any
+from typing import TYPE_CHECKING, Callable, cast, Any, TypeVar, Generic
 from types import EllipsisType
 import warnings
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-from jaxtyping import Float, Array, Key, Int
+from jaxtyping import Float, Array, Key
 from jinns.loss._loss_utils import (
     dynamic_loss_apply,
     boundary_condition_apply,
@@ -39,12 +40,12 @@ from jinns.loss._loss_weights import (
 )
 from jinns.data._Batchs import PDEStatioBatch, PDENonStatioBatch
 from jinns.parameters._params import Params
+from jinns.loss import PDENonStatio, PDEStatio
 
 
 if TYPE_CHECKING:
     # imports for type hints only
     from jinns.nn._abstract_pinn import AbstractPINN
-    from jinns.loss import PDENonStatio, PDEStatio
     from jinns.utils._types import BoundaryConditionFun
 
 _IMPLEMENTED_BOUNDARY_CONDITIONS = [
@@ -54,13 +55,24 @@ _IMPLEMENTED_BOUNDARY_CONDITIONS = [
 ]
 
 
-class _LossPDEAbstract(
-    AbstractLoss[
-        LossWeightsPDEStatio | LossWeightsPDENonStatio,
-        PDEStatioBatch | PDENonStatioBatch,
-        PDEStatioComponents[Array | None] | PDENonStatioComponents[Array | None],
-    ]
-):
+# For the same reason that we have the TypeVar in _abstract_loss.py, we have them
+# here, because _LossPDEAbstract is abtract and we cannot decide for several
+# types between their statio and non-statio version.
+# Assigning the type where it can be decide seems a better practice than
+# assigning a type at a higher level depending on a child class type. This is
+# why we now assign LossWeights and DerivativeKeys in the child class where
+# they really can be decided.
+
+L = TypeVar("L", bound=LossWeightsPDEStatio | LossWeightsPDENonStatio)
+B = TypeVar("B", bound=PDEStatioBatch | PDENonStatioBatch)
+C = TypeVar(
+    "C", bound=PDEStatioComponents[Array | None] | PDENonStatioComponents[Array | None]
+)
+D = TypeVar("D", bound=DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio)
+Y = TypeVar("Y", bound=PDEStatio | PDENonStatio | None)
+
+
+class _LossPDEAbstract(AbstractLoss[L, B, C], Generic[L, B, C, D, Y]):
     r"""
     Parameters
     ----------
@@ -124,8 +136,8 @@ class _LossPDEAbstract(
     # NOTE static=True only for leaf attributes that are not valid JAX types
     # (ie. jax.Array cannot be static) and that we do not expect to change
     # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
-    derivative_keys: DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio
-    loss_weights: LossWeightsPDEStatio | LossWeightsPDENonStatio
+    u: eqx.AbstractVar[AbstractPINN]
+    dynamic_loss: eqx.AbstractVar[Y]
     omega_boundary_fun: (
         BoundaryConditionFun | dict[str, BoundaryConditionFun] | None
     ) = eqx.field(static=True)
@@ -136,16 +148,11 @@ class _LossPDEAbstract(
     norm_samples: Float[Array, " nb_norm_samples dimension"] | None
     norm_weights: Float[Array, " nb_norm_samples"] | None
     obs_slice: EllipsisType | slice = eqx.field(static=True)
-
-    params: InitVar[Params[Array] | None]
+    key: Key[Array, ""] | None
 
     def __init__(
         self,
         *,
-        loss_weights: LossWeightsPDEStatio | LossWeightsPDENonStatio | None = None,
-        derivative_keys: DerivativeKeysPDEStatio
-        | DerivativeKeysPDENonStatio
-        | None = None,
         omega_boundary_fun: BoundaryConditionFun
         | dict[str, BoundaryConditionFun]
         | None = None,
@@ -154,35 +161,10 @@ class _LossPDEAbstract(
         norm_samples: Float[Array, " nb_norm_samples dimension"] | None = None,
         norm_weights: Float[Array, " nb_norm_samples"] | float | int | None = None,
         obs_slice: EllipsisType | slice | None = None,
-        params: Params[Array] | None = None,
+        key: Key[Array, ""] | None = None,
         **kwargs: Any,  # for arguments for super()
     ):
-        if loss_weights is None:
-            self.loss_weights = (
-                LossWeightsPDENonStatio()
-                if isinstance(self, LossPDENonStatio)
-                else LossWeightsPDEStatio()
-            )
-        else:
-            self.loss_weights = loss_weights
-
-        super().__init__(self.loss_weights, **kwargs)
-
-        if derivative_keys is None:
-            # be default we only take gradient wrt nn_params
-            try:
-                self.derivative_keys = (
-                    DerivativeKeysPDENonStatio(params=params)
-                    if isinstance(self, LossPDENonStatio)
-                    else DerivativeKeysPDEStatio(params=params)
-                )
-            except ValueError as exc:
-                raise ValueError(
-                    "Problem at derivative_keys initialization "
-                    f"received {derivative_keys=} and {params=}"
-                ) from exc
-        else:
-            self.derivative_keys = derivative_keys
+        super().__init__(**kwargs)
 
         if obs_slice is None:
             self.obs_slice = jnp.s_[...]
@@ -304,8 +286,118 @@ class _LossPDEAbstract(
             else:
                 raise ValueError("Wrong type for self.norm_weights")
 
+        self.key = key
 
-class LossPDEStatio(_LossPDEAbstract):
+    @abc.abstractmethod
+    def _get_dynamic_loss_batch(self, batch: B) -> Array:
+        pass
+
+    @abc.abstractmethod
+    def _get_normalization_loss_batch(self, batch: B) -> tuple[Array | None, ...]:
+        pass
+
+    def _get_dyn_loss_fun(
+        self, batch: B, vmap_in_axes_params: tuple[Params[int | None] | None]
+    ) -> Callable[[Params[Array]], Array] | None:
+        if self.dynamic_loss is not None:
+            dyn_loss_eval = self.dynamic_loss.evaluate
+            dyn_loss_fun: Callable[[Params[Array]], Array] | None = (
+                lambda p: dynamic_loss_apply(
+                    dyn_loss_eval,
+                    self.u,
+                    self._get_dynamic_loss_batch(batch),
+                    _set_derivatives(p, self.derivative_keys.dyn_loss),  # type: ignore
+                    self.vmap_in_axes + vmap_in_axes_params,
+                )
+            )
+        else:
+            dyn_loss_fun = None
+
+        return dyn_loss_fun
+
+    def _get_norm_loss_fun(
+        self, batch: B, vmap_in_axes_params: tuple[Params[int | None] | None]
+    ) -> Callable[[Params[Array]], Array] | None:
+        if self.norm_samples is not None:
+            norm_loss_fun: Callable[[Params[Array]], Array] | None = (
+                lambda p: normalization_loss_apply(
+                    self.u,
+                    cast(
+                        tuple[Array, Array], self._get_normalization_loss_batch(batch)
+                    ),
+                    _set_derivatives(p, self.derivative_keys.norm_loss),  # type: ignore
+                    vmap_in_axes_params,
+                    self.norm_weights,  # type: ignore -> can't get the __post_init__ narrowing here
+                )
+            )
+        else:
+            norm_loss_fun = None
+        return norm_loss_fun
+
+    def _get_boundary_loss_fun(
+        self, batch: B
+    ) -> Callable[[Params[Array]], Array] | None:
+        if (
+            self.omega_boundary_condition is not None
+            and self.omega_boundary_dim is not None
+            and self.omega_boundary_fun is not None
+        ):
+            boundary_loss_fun: Callable[[Params[Array]], Array] | None = (
+                lambda p: boundary_condition_apply(
+                    self.u,
+                    batch,
+                    _set_derivatives(p, self.derivative_keys.boundary_loss),  # type: ignore
+                    self.omega_boundary_fun,  # type: ignore (we are in lambda)
+                    self.omega_boundary_condition,  # type: ignore
+                    self.omega_boundary_dim,  # type: ignore
+                )
+            )
+        else:
+            boundary_loss_fun = None
+
+        return boundary_loss_fun
+
+    def _get_obs_params_and_obs_loss_fun(
+        self,
+        batch: B,
+        vmap_in_axes_params: tuple[Params[int | None] | None],
+        params: Params[Array],
+    ) -> tuple[Params[Array] | None, Callable[[Params[Array]], Array] | None]:
+        if batch.obs_batch_dict is not None:
+            # update params with the batches of observed params
+            params_obs = update_eq_params(params, batch.obs_batch_dict["eq_params"])
+
+            pinn_in, val = (
+                batch.obs_batch_dict["pinn_in"],
+                batch.obs_batch_dict["val"],
+            )
+
+            obs_loss_fun: Callable[[Params[Array]], Array] | None = (
+                lambda po: observations_loss_apply(
+                    self.u,
+                    pinn_in,
+                    _set_derivatives(po, self.derivative_keys.observations),  # type: ignore
+                    self.vmap_in_axes + vmap_in_axes_params,
+                    val,
+                    self.obs_slice,
+                )
+            )
+        else:
+            params_obs = None
+            obs_loss_fun = None
+
+        return params_obs, obs_loss_fun
+
+
+class LossPDEStatio(
+    _LossPDEAbstract[
+        LossWeightsPDEStatio,
+        PDEStatioBatch,
+        PDEStatioComponents[Array | None],
+        DerivativeKeysPDEStatio,
+        PDEStatio | None,
+    ]
+):
     r"""Loss object for a stationary partial differential equation
 
     $$
@@ -399,21 +491,48 @@ class LossPDEStatio(_LossPDEAbstract):
 
     u: AbstractPINN
     dynamic_loss: PDEStatio | None
-    key: Key | None = eqx.field(kw_only=True, default=None)
+    loss_weights: LossWeightsPDEStatio
+    vmap_in_axes: tuple[int] = eqx.field(static=True)
 
-    vmap_in_axes: tuple[Int] = eqx.field(init=False, static=True)
+    params: InitVar[Params[Array] | None]
 
-    def __post_init__(self, params: Params[Array] | None = None):
-        """
-        Note that neither __init__ or __post_init__ are called when udating a
-        Module with eqx.tree_at!
-        """
-        super().__post_init__(
-            params=params
-        )  # because __init__ or __post_init__ of Base
-        # class is not automatically called
+    def __init__(
+        self,
+        *,
+        u: AbstractPINN,
+        dynamic_loss: PDEStatio | None,
+        loss_weights: LossWeightsPDEStatio | None = None,
+        derivative_keys: DerivativeKeysPDEStatio | None = None,
+        params: Params[Array] | None = None,
+        **kwargs: Any,
+    ):
+        self.u = u
+        if loss_weights is None:
+            self.loss_weights = LossWeightsPDEStatio()
+        else:
+            self.loss_weights = loss_weights
+        self.dynamic_loss = dynamic_loss
 
-        self.vmap_in_axes = (0,)  # for x only here
+        super().__init__(
+            u=self.u,
+            dynamic_loss=self.dynamic_loss,
+            loss_weights=self.loss_weights,
+            **kwargs,
+        )
+
+        if derivative_keys is None:
+            # be default we only take gradient wrt nn_params
+            try:
+                self.derivative_keys = DerivativeKeysPDEStatio(params=params)
+            except ValueError as exc:
+                raise ValueError(
+                    "Problem at derivative_keys initialization "
+                    f"received {derivative_keys=} and {params=}"
+                ) from exc
+        else:
+            self.derivative_keys = derivative_keys
+
+        self.vmap_in_axes = (0,)
 
     def _get_dynamic_loss_batch(
         self, batch: PDEStatioBatch
@@ -421,20 +540,18 @@ class LossPDEStatio(_LossPDEAbstract):
         return batch.domain_batch
 
     def _get_normalization_loss_batch(
-        self, _
-    ) -> tuple[Float[Array, " nb_norm_samples dimension"]]:
-        return (self.norm_samples,)  # type: ignore -> cannot narrow a class attr
+        self, batch: PDEStatioBatch
+    ) -> tuple[Float[Array, " nb_norm_samples dimension"] | None,]:
+        return (self.norm_samples,)
 
     # we could have used typing.cast though
 
-    def _get_observations_loss_batch(
-        self, batch: PDEStatioBatch
-    ) -> Float[Array, " batch_size obs_dim"]:
-        return batch.obs_batch_dict["pinn_in"]
-
     def evaluate_by_terms(
         self, params: Params[Array], batch: PDEStatioBatch
-    ) -> tuple[PDEStatioComponents[Array | None], PDEStatioComponents[Array | None]]:
+    ) -> tuple[
+        PDEStatioComponents[Float[Array, ""] | None],
+        PDEStatioComponents[Float[Array, ""] | None],
+    ]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -461,62 +578,18 @@ class LossPDEStatio(_LossPDEAbstract):
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
         # dynamic part
-        if self.dynamic_loss is not None:
-            dyn_loss_fun = lambda p: dynamic_loss_apply(
-                self.dynamic_loss.evaluate,  # type: ignore
-                self.u,
-                self._get_dynamic_loss_batch(batch),
-                _set_derivatives(p, self.derivative_keys.dyn_loss),  # type: ignore
-                self.vmap_in_axes + vmap_in_axes_params,
-            )
-        else:
-            dyn_loss_fun = None
+        dyn_loss_fun = self._get_dyn_loss_fun(batch, vmap_in_axes_params)
 
         # normalization part
-        if self.norm_samples is not None:
-            norm_loss_fun = lambda p: normalization_loss_apply(
-                self.u,
-                self._get_normalization_loss_batch(batch),
-                _set_derivatives(p, self.derivative_keys.norm_loss),  # type: ignore
-                vmap_in_axes_params,
-                self.norm_weights,  # type: ignore -> can't get the __post_init__ narrowing here
-            )
-        else:
-            norm_loss_fun = None
+        norm_loss_fun = self._get_norm_loss_fun(batch, vmap_in_axes_params)
 
         # boundary part
-        if (
-            self.omega_boundary_condition is not None
-            and self.omega_boundary_dim is not None
-            and self.omega_boundary_fun is not None
-        ):  # pyright cannot narrow down the three None otherwise as it is class attribute
-            boundary_loss_fun = lambda p: boundary_condition_apply(
-                self.u,
-                batch,
-                _set_derivatives(p, self.derivative_keys.boundary_loss),  # type: ignore
-                self.omega_boundary_fun,  # type: ignore
-                self.omega_boundary_condition,  # type: ignore
-                self.omega_boundary_dim,  # type: ignore
-            )
-        else:
-            boundary_loss_fun = None
+        boundary_loss_fun = self._get_boundary_loss_fun(batch)
 
         # Observation mse
-        if batch.obs_batch_dict is not None:
-            # update params with the batches of observed params
-            params_obs = update_eq_params(params, batch.obs_batch_dict["eq_params"])
-
-            obs_loss_fun = lambda po: observations_loss_apply(
-                self.u,
-                self._get_observations_loss_batch(batch),
-                _set_derivatives(po, self.derivative_keys.observations),  # type: ignore
-                self.vmap_in_axes + vmap_in_axes_params,
-                batch.obs_batch_dict["val"],
-                self.obs_slice,
-            )
-        else:
-            params_obs = None
-            obs_loss_fun = None
+        params_obs, obs_loss_fun = self._get_obs_params_and_obs_loss_fun(
+            batch, vmap_in_axes_params, params
+        )
 
         # get the unweighted mses for each loss term as well as the gradients
         all_funs: PDEStatioComponents[Callable[[Params[Array]], Array] | None] = (
@@ -528,22 +601,34 @@ class LossPDEStatio(_LossPDEAbstract):
             params, params, params, params_obs
         )
         mses_grads = jax.tree.map(
-            lambda fun, params: self.get_gradients(fun, params),
+            self.get_gradients,
             all_funs,
             all_params,
             is_leaf=lambda x: x is None,
         )
         mses = jax.tree.map(
-            lambda leaf: leaf[0], mses_grads, is_leaf=lambda x: isinstance(x, tuple)
+            lambda leaf: leaf[0],  # type: ignore
+            mses_grads,
+            is_leaf=lambda x: isinstance(x, tuple),
         )
         grads = jax.tree.map(
-            lambda leaf: leaf[1], mses_grads, is_leaf=lambda x: isinstance(x, tuple)
+            lambda leaf: leaf[1],  # type: ignore
+            mses_grads,
+            is_leaf=lambda x: isinstance(x, tuple),
         )
 
         return mses, grads
 
 
-class LossPDENonStatio(LossPDEStatio):
+class LossPDENonStatio(
+    _LossPDEAbstract[
+        LossWeightsPDENonStatio,
+        PDENonStatioBatch,
+        PDENonStatioComponents[Array | None],
+        DerivativeKeysPDENonStatio,
+        PDENonStatio | None,
+    ]
+):
     r"""Loss object for a stationary partial differential equation
 
     $$
@@ -636,26 +721,60 @@ class LossPDENonStatio(LossPDEStatio):
 
     """
 
+    u: AbstractPINN
     dynamic_loss: PDENonStatio | None
-    # NOTE static=True only for leaf attributes that are not valid JAX types
-    # (ie. jax.Array cannot be static) and that we do not expect to change
-    initial_condition_fun: Callable | None = eqx.field(
-        kw_only=True, default=None, static=True
+    loss_weights: LossWeightsPDENonStatio
+    params: InitVar[Params[Array] | None]
+    t0: Float[Array, " "] | None
+    initial_condition_fun: Callable[[Float[Array, " dimension"]], Array] | None = (
+        eqx.field(static=True)
     )
-    t0: float | Float[Array, " 1"] | None = eqx.field(kw_only=True, default=None)
+    vmap_in_axes: tuple[int] = eqx.field(static=True)
+    _max_norm_samples_omega: int = eqx.field(static=True)
+    _max_norm_time_slices: int = eqx.field(static=True)
 
-    _max_norm_samples_omega: Int = eqx.field(init=False, static=True)
-    _max_norm_time_slices: Int = eqx.field(init=False, static=True)
+    params: InitVar[Params[Array] | None]
 
-    def __post_init__(self, params=None):
-        """
-        Note that neither __init__ or __post_init__ are called when udating a
-        Module with eqx.tree_at!
-        """
-        super().__post_init__(
-            params=params
-        )  # because __init__ or __post_init__ of Base
-        # class is not automatically called
+    def __init__(
+        self,
+        *,
+        u: AbstractPINN,
+        dynamic_loss: PDENonStatio | None,
+        loss_weights: LossWeightsPDENonStatio | None = None,
+        derivative_keys: DerivativeKeysPDENonStatio | None = None,
+        initial_condition_fun: Callable[[Float[Array, " dimension"]], Array]
+        | None = None,
+        t0: int | float | Float[Array, " "] | None = None,
+        _max_norm_time_slices: int | None = None,
+        _max_norm_samples_omega: int | None = None,
+        params: Params[Array] | None = None,
+        **kwargs: Any,
+    ):
+        self.u = u
+        if loss_weights is None:
+            self.loss_weights = LossWeightsPDENonStatio()
+        else:
+            self.loss_weights = loss_weights
+        self.dynamic_loss = dynamic_loss
+
+        super().__init__(
+            u=self.u,
+            dynamic_loss=self.dynamic_loss,
+            loss_weights=self.loss_weights,
+            **kwargs,
+        )
+
+        if derivative_keys is None:
+            # be default we only take gradient wrt nn_params
+            try:
+                self.derivative_keys = DerivativeKeysPDEStatio(params=params)
+            except ValueError as exc:
+                raise ValueError(
+                    "Problem at derivative_keys initialization "
+                    f"received {derivative_keys=} and {params=}"
+                ) from exc
+        else:
+            self.derivative_keys = derivative_keys
 
         self.vmap_in_axes = (0,)  # for t_x
 
@@ -665,17 +784,24 @@ class LossPDENonStatio(LossPDEStatio):
                 "case (e.g by. hardcoding it into the PINN output)."
             )
         # some checks for t0
-        t0 = self.t0
         if t0 is None:
-            t0 = jnp.array([0])
+            self.t0 = jnp.array([0])
         else:
-            t0 = initial_condition_check(t0, dim_size=1)
-        self.t0 = t0
+            self.t0 = initial_condition_check(t0, dim_size=1)
+
+        self.initial_condition_fun = initial_condition_fun
 
         # witht the variables below we avoid memory overflow since a cartesian
         # product is taken
-        self._max_norm_time_slices = 100
-        self._max_norm_samples_omega = 1000
+        if _max_norm_time_slices is None:
+            self._max_norm_time_slices = 100
+        else:
+            self._max_norm_time_slices = _max_norm_time_slices
+
+        if _max_norm_samples_omega is None:
+            self._max_norm_samples_omega = 1000
+        else:
+            self._max_norm_samples_omega = _max_norm_samples_omega
 
     def _get_dynamic_loss_batch(
         self, batch: PDENonStatioBatch
@@ -691,11 +817,6 @@ class LossPDENonStatio(LossPDEStatio):
             batch.domain_batch[: self._max_norm_time_slices, 0:1],
             self.norm_samples[: self._max_norm_samples_omega],  # type: ignore -> cannot narrow a class attr
         )
-
-    def _get_observations_loss_batch(
-        self, batch: PDENonStatioBatch
-    ) -> Float[Array, " batch_size 1+dim"]:
-        return batch.obs_batch_dict["pinn_in"]
 
     def evaluate_by_terms(
         self, params: Params[Array], batch: PDENonStatioBatch
@@ -730,43 +851,63 @@ class LossPDENonStatio(LossPDEStatio):
 
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
-        # For mse_dyn_loss, mse_norm_loss, mse_boundary_loss,
-        # mse_observation_loss we use the evaluate from parent class
-        # As well as for their gradients
-        partial_mses, partial_grads = super().evaluate_by_terms(params, batch)  # type: ignore
-        # ignore because batch is not PDEStatioBatch. We could use typing.cast though
+        # dynamic part
+        dyn_loss_fun = self._get_dyn_loss_fun(batch, vmap_in_axes_params)
+
+        # normalization part
+        norm_loss_fun = self._get_norm_loss_fun(batch, vmap_in_axes_params)
+
+        # boundary part
+        boundary_loss_fun = self._get_boundary_loss_fun(batch)
+
+        # Observation mse
+        params_obs, obs_loss_fun = self._get_obs_params_and_obs_loss_fun(
+            batch, vmap_in_axes_params, params
+        )
 
         # initial condition
         if self.initial_condition_fun is not None:
-            mse_initial_condition_fun = lambda p: initial_condition_apply(
-                self.u,
-                omega_batch,
-                _set_derivatives(p, self.derivative_keys.initial_condition),  # type: ignore
-                (0,) + vmap_in_axes_params,
-                self.initial_condition_fun,  # type: ignore
-                self.t0,  # type: ignore can't get the narrowing in __post_init__
-            )
-            mse_initial_condition, grad_initial_condition = self.get_gradients(
-                mse_initial_condition_fun, params
+            mse_initial_condition_fun: Callable[[Params[Array]], Array] | None = (
+                lambda p: initial_condition_apply(
+                    self.u,
+                    omega_batch,
+                    _set_derivatives(p, self.derivative_keys.initial_condition),  # type: ignore
+                    (0,) + vmap_in_axes_params,
+                    self.initial_condition_fun,  # type: ignore
+                    self.t0,  # type: ignore can't get the narrowing in __post_init__
+                )
             )
         else:
-            mse_initial_condition = None
-            grad_initial_condition = None
+            mse_initial_condition_fun = None
 
-        mses = PDENonStatioComponents(
-            partial_mses.dyn_loss,
-            partial_mses.norm_loss,
-            partial_mses.boundary_loss,
-            partial_mses.observations,
-            mse_initial_condition,
+        # get the unweighted mses for each loss term as well as the gradients
+        all_funs: PDENonStatioComponents[Callable[[Params[Array]], Array] | None] = (
+            PDENonStatioComponents(
+                dyn_loss_fun,
+                norm_loss_fun,
+                boundary_loss_fun,
+                obs_loss_fun,
+                mse_initial_condition_fun,
+            )
         )
-
-        grads = PDENonStatioComponents(
-            partial_grads.dyn_loss,
-            partial_grads.norm_loss,
-            partial_grads.boundary_loss,
-            partial_grads.observations,
-            grad_initial_condition,
+        all_params: PDENonStatioComponents[Params[Array] | None] = (
+            PDENonStatioComponents(params, params, params, params_obs, params)
+        )
+        mses_grads = jax.tree.map(
+            self.get_gradients,
+            all_funs,
+            all_params,
+            is_leaf=lambda x: x is None,
+        )
+        mses = jax.tree.map(
+            lambda leaf: leaf[0],  # type: ignore
+            mses_grads,
+            is_leaf=lambda x: isinstance(x, tuple),
+        )
+        grads = jax.tree.map(
+            lambda leaf: leaf[1],  # type: ignore
+            mses_grads,
+            is_leaf=lambda x: isinstance(x, tuple),
         )
 
         return mses, grads
