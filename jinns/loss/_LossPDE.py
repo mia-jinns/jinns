@@ -7,7 +7,7 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 from dataclasses import InitVar
-from typing import TYPE_CHECKING, Callable, cast
+from typing import TYPE_CHECKING, Callable, cast, Any
 from types import EllipsisType
 import warnings
 import jax
@@ -54,7 +54,13 @@ _IMPLEMENTED_BOUNDARY_CONDITIONS = [
 ]
 
 
-class _LossPDEAbstract(AbstractLoss):
+class _LossPDEAbstract(
+    AbstractLoss[
+        LossWeightsPDEStatio | LossWeightsPDENonStatio,
+        PDEStatioBatch | PDENonStatioBatch,
+        PDEStatioComponents[Array | None] | PDENonStatioComponents[Array | None],
+    ]
+):
     r"""
     Parameters
     ----------
@@ -77,7 +83,7 @@ class _LossPDEAbstract(AbstractLoss):
          The function to be matched in the border condition (can be None) or a
          dictionary of such functions as values and keys as described
          in `omega_boundary_condition`.
-    omega_boundary_condition : str | dict[str, str], default=None
+    omega_boundary_condition : str | dict[str, str | None], default=None
         Either None (no condition, by default), or a string defining
         the boundary condition (Dirichlet or Von Neumann),
         or a dictionary with such strings as values. In this case,
@@ -118,39 +124,51 @@ class _LossPDEAbstract(AbstractLoss):
     # NOTE static=True only for leaf attributes that are not valid JAX types
     # (ie. jax.Array cannot be static) and that we do not expect to change
     # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
-    derivative_keys: DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio | None = (
-        eqx.field(kw_only=True, default=None)
-    )
-    loss_weights: LossWeightsPDEStatio | LossWeightsPDENonStatio | None = eqx.field(
-        kw_only=True, default=None
-    )
+    derivative_keys: DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio
+    loss_weights: LossWeightsPDEStatio | LossWeightsPDENonStatio
     omega_boundary_fun: (
         BoundaryConditionFun | dict[str, BoundaryConditionFun] | None
-    ) = eqx.field(kw_only=True, default=None, static=True)
-    omega_boundary_condition: str | dict[str, str] | None = eqx.field(
-        kw_only=True, default=None, static=True
+    ) = eqx.field(static=True)
+    omega_boundary_condition: str | dict[str, str | None] | None = eqx.field(
+        static=True
     )
-    omega_boundary_dim: slice | dict[str, slice] | None = eqx.field(
-        kw_only=True, default=None, static=True
-    )
-    norm_samples: Float[Array, " nb_norm_samples dimension"] | None = eqx.field(
-        kw_only=True, default=None
-    )
-    norm_weights: Float[Array, " nb_norm_samples"] | float | int | None = eqx.field(
-        kw_only=True, default=None
-    )
-    obs_slice: EllipsisType | slice | None = eqx.field(
-        kw_only=True, default=None, static=True
-    )
+    omega_boundary_dim: slice | dict[str, slice] | None = eqx.field(static=True)
+    norm_samples: Float[Array, " nb_norm_samples dimension"] | None
+    norm_weights: Float[Array, " nb_norm_samples"] | None
+    obs_slice: EllipsisType | slice = eqx.field(static=True)
 
-    params: InitVar[Params[Array]] = eqx.field(kw_only=True, default=None)
+    params: InitVar[Params[Array] | None]
 
-    def __post_init__(self, params: Params[Array] | None = None):
-        """
-        Note that neither __init__ or __post_init__ are called when udating a
-        Module with eqx.tree_at
-        """
-        if self.derivative_keys is None:
+    def __init__(
+        self,
+        *,
+        loss_weights: LossWeightsPDEStatio | LossWeightsPDENonStatio | None = None,
+        derivative_keys: DerivativeKeysPDEStatio
+        | DerivativeKeysPDENonStatio
+        | None = None,
+        omega_boundary_fun: BoundaryConditionFun
+        | dict[str, BoundaryConditionFun]
+        | None = None,
+        omega_boundary_condition: str | dict[str, str | None] | None = None,
+        omega_boundary_dim: int | slice | dict[str, int | slice] | None = None,
+        norm_samples: Float[Array, " nb_norm_samples dimension"] | None = None,
+        norm_weights: Float[Array, " nb_norm_samples"] | float | int | None = None,
+        obs_slice: EllipsisType | slice | None = None,
+        params: Params[Array] | None = None,
+        **kwargs: Any,  # for arguments for super()
+    ):
+        if loss_weights is None:
+            self.loss_weights = (
+                LossWeightsPDENonStatio()
+                if isinstance(self, LossPDENonStatio)
+                else LossWeightsPDEStatio()
+            )
+        else:
+            self.loss_weights = loss_weights
+
+        super().__init__(self.loss_weights, **kwargs)
+
+        if derivative_keys is None:
             # be default we only take gradient wrt nn_params
             try:
                 self.derivative_keys = (
@@ -160,40 +178,37 @@ class _LossPDEAbstract(AbstractLoss):
                 )
             except ValueError as exc:
                 raise ValueError(
-                    "Problem at self.derivative_keys initialization "
-                    f"received {self.derivative_keys=} and {params=}"
+                    "Problem at derivative_keys initialization "
+                    f"received {derivative_keys=} and {params=}"
                 ) from exc
+        else:
+            self.derivative_keys = derivative_keys
 
-        if self.loss_weights is None:
-            self.loss_weights = (
-                LossWeightsPDENonStatio()
-                if isinstance(self, LossPDENonStatio)
-                else LossWeightsPDEStatio()
-            )
-
-        if self.obs_slice is None:
+        if obs_slice is None:
             self.obs_slice = jnp.s_[...]
+        else:
+            self.obs_slice = obs_slice
 
         if (
-            isinstance(self.omega_boundary_fun, dict)
-            and not isinstance(self.omega_boundary_condition, dict)
+            isinstance(omega_boundary_fun, dict)
+            and not isinstance(omega_boundary_condition, dict)
         ) or (
-            not isinstance(self.omega_boundary_fun, dict)
-            and isinstance(self.omega_boundary_condition, dict)
+            not isinstance(omega_boundary_fun, dict)
+            and isinstance(omega_boundary_condition, dict)
         ):
             raise ValueError(
                 "if one of self.omega_boundary_fun or "
                 "self.omega_boundary_condition is dict, the other should be too."
             )
 
-        if self.omega_boundary_condition is None or self.omega_boundary_fun is None:
+        if omega_boundary_condition is None or omega_boundary_fun is None:
             warnings.warn(
                 "Missing boundary function or no boundary condition."
                 "Boundary function is thus ignored."
             )
         else:
-            if isinstance(self.omega_boundary_condition, dict):
-                for _, v in self.omega_boundary_condition.items():
+            if isinstance(omega_boundary_condition, dict):
+                for _, v in omega_boundary_condition.items():
                     if v is not None and not any(
                         v.lower() in s for s in _IMPLEMENTED_BOUNDARY_CONDITIONS
                     ):
@@ -204,7 +219,7 @@ class _LossPDEAbstract(AbstractLoss):
                         )
             else:
                 if not any(
-                    self.omega_boundary_condition.lower() in s
+                    omega_boundary_condition.lower() in s
                     for s in _IMPLEMENTED_BOUNDARY_CONDITIONS
                 ):
                     raise NotImplementedError(
