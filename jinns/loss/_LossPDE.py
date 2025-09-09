@@ -85,12 +85,6 @@ class _LossPDEAbstract(AbstractLoss[L, B, C], Generic[L, B, C, D, Y]):
         `update_weight_method`
     update_weight_method : Literal['soft_adapt', 'lr_annealing', 'ReLoBRaLo'], default=None
         Default is None meaning no update for loss weights. Otherwise a string
-    derivative_keys : DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio, default=None
-        Specify which field of `params` should be differentiated for each
-        composant of the total loss. Particularily useful for inverse problems.
-        Fields can be "nn_params", "eq_params" or "both". Those that should not
-        be updated will have a `jax.lax.stop_gradient` called on them. Default
-        is `"nn_params"` for each composant of the loss.
     omega_boundary_fun : BoundaryConditionFun | dict[str, BoundaryConditionFun], default=None
          The function to be matched in the border condition (can be None) or a
          dictionary of such functions as values and keys as described
@@ -106,7 +100,7 @@ class _LossPDEAbstract(AbstractLoss[L, B, C], Generic[L, B, C, D, Y]):
         a particular boundary condition on this facet.
         The facet called “xmin”, resp. “xmax” etc., in 2D,
         refers to the set of 2D points with fixed “xmin”, resp. “xmax”, etc.
-    omega_boundary_dim : slice | dict[str, slice], default=None
+    omega_boundary_dim : int | slice | dict[str, slice], default=None
         Either None, or a slice object or a dictionary of slice objects as
         values and keys as described in `omega_boundary_condition`.
         `omega_boundary_dim` indicates which dimension(s) of the PINN
@@ -128,9 +122,12 @@ class _LossPDEAbstract(AbstractLoss[L, B, C], Generic[L, B, C, D, Y]):
     obs_slice : EllipsisType | slice, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
-    params : InitVar[Params[Array]], default=None
-        The main Params object of the problem needed to instanciate the
-        DerivativeKeysODE if the latter is not specified.
+    key : Key | None
+        A JAX PRNG Key for the loss class treated as an attribute. Default is
+        None. This field is provided for future developments and additional
+        losses that might need some randomness. Note that special care must be
+        taken when splitting the key because in-place updates are forbidden in
+        eqx.Modules.
     """
 
     # NOTE static=True only for leaf attributes that are not valid JAX types
@@ -412,32 +409,30 @@ class LossPDEStatio(
     ----------
     u : AbstractPINN
         the PINN
-    dynamic_loss : PDEStatio
+    dynamic_loss : PDEStatio | None
         the stationary PDE dynamic part of the loss, basically the differential
         operator $\mathcal{N}[u](x)$. Should implement a method
         `dynamic_loss.evaluate(x, u, params)`.
         Can be None in order to access only some part of the evaluate call
         results.
-    key : Key
-        A JAX PRNG Key for the loss class treated as an attribute. Default is
-        None. This field is provided for future developments and additional
-        losses that might need some randomness. Note that special care must be
-        taken when splitting the key because in-place updates are forbidden in
-        eqx.Modules.
     loss_weights : LossWeightsPDEStatio, default=None
         The loss weights for the differents term : dynamic loss,
         boundary conditions if any, normalization loss if any and
         observations if any.
         Can be updated according to a specific algorithm. See
         `update_weight_method`
-    update_weight_method : Literal['soft_adapt', 'lr_annealing', 'ReLoBRaLo'], default=None
-        Default is None meaning no update for loss weights. Otherwise a string
     derivative_keys : DerivativeKeysPDEStatio, default=None
         Specify which field of `params` should be differentiated for each
         composant of the total loss. Particularily useful for inverse problems.
         Fields can be "nn_params", "eq_params" or "both". Those that should not
         be updated will have a `jax.lax.stop_gradient` called on them. Default
         is `"nn_params"` for each composant of the loss.
+    params : InitVar[Params[Array]], default=None
+        The main Params object of the problem needed to instanciate the
+        DerivativeKeysODE if the latter is not specified.
+
+    update_weight_method : Literal['soft_adapt', 'lr_annealing', 'ReLoBRaLo'], default=None
+        Default is None meaning no update for loss weights. Otherwise a string
     omega_boundary_fun : BoundaryConditionFun | dict[str, BoundaryConditionFun], default=None
          The function to be matched in the border condition (can be None) or a
          dictionary of such functions as values and keys as described
@@ -453,7 +448,7 @@ class LossPDEStatio(
         a particular boundary condition on this facet.
         The facet called “xmin”, resp. “xmax” etc., in 2D,
         refers to the set of 2D points with fixed “xmin”, resp. “xmax”, etc.
-    omega_boundary_dim : slice | dict[str, slice], default=None
+    omega_boundary_dim : int | slice | dict[str, slice], default=None
         Either None, or a slice object or a dictionary of slice objects as
         values and keys as described in `omega_boundary_condition`.
         `omega_boundary_dim` indicates which dimension(s) of the PINN
@@ -474,10 +469,6 @@ class LossPDEStatio(
     obs_slice : slice, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
-    params : InitVar[Params[Array]], default=None
-        The main Params object of the problem needed to instanciate the
-        DerivativeKeysODE if the latter is not specified.
-
 
     Raises
     ------
@@ -652,27 +643,37 @@ class LossPDENonStatio(
         `dynamic_loss.evaluate(t, x, u, params)`.
         Can be None in order to access only some part of the evaluate call
         results.
-    key : Key
-        A JAX PRNG Key for the loss class treated as an attribute. Default is
-        None. This field is provided for future developments and additional
-        losses that might need some randomness. Note that special care must be
-        taken when splitting the key because in-place updates are forbidden in
-        eqx.Modules.
-        reason
     loss_weights : LossWeightsPDENonStatio, default=None
         The loss weights for the differents term : dynamic loss,
         boundary conditions if any, initial condition, normalization loss if any and
         observations if any.
         Can be updated according to a specific algorithm. See
         `update_weight_method`
-    update_weight_method : Literal['soft_adapt', 'lr_annealing', 'ReLoBRaLo'], default=None
-        Default is None meaning no update for loss weights. Otherwise a string
     derivative_keys : DerivativeKeysPDENonStatio, default=None
         Specify which field of `params` should be differentiated for each
         composant of the total loss. Particularily useful for inverse problems.
         Fields can be "nn_params", "eq_params" or "both". Those that should not
         be updated will have a `jax.lax.stop_gradient` called on them. Default
         is `"nn_params"` for each composant of the loss.
+    initial_condition_fun : Callable, default=None
+        A function representing the initial condition at `t0`. If None
+        (default) then no initial condition is applied.
+    t0 : float | Float[Array, " 1"], default=None
+        The time at which to apply the initial condition. If None, the time
+        is set to `0` by default.
+    max_norm_time_slices : int, default=100
+        The maximum number of time points in the Cartesian product with the
+        omega points to create the set of collocation points upon which the
+        normalization constant is computed.
+    max_norm_samples_omega : int, default=1000
+        The maximum number of omega points in the Cartesian product with the
+        time points to create the set of collocation points upon which the
+        normalization constant is computed.
+    params : InitVar[Params[Array]], default=None
+        The main `Params` object of the problem needed to instanciate the
+        `DerivativeKeysODE` if the latter is not specified.
+    update_weight_method : Literal['soft_adapt', 'lr_annealing', 'ReLoBRaLo'], default=None
+        Default is None meaning no update for loss weights. Otherwise a string
     omega_boundary_fun : BoundaryConditionFun | dict[str, BoundaryConditionFun], default=None
          The function to be matched in the border condition (can be None) or a
          dictionary of such functions as values and keys as described
@@ -709,15 +710,6 @@ class LossPDENonStatio(
     obs_slice : slice, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
-    t0 : float | Float[Array, " 1"], default=None
-        The time at which to apply the initial condition. If None, the time
-        is set to `0` by default.
-    initial_condition_fun : Callable, default=None
-        A function representing the initial condition at `t0`. If None
-        (default) then no initial condition is applied.
-    params : InitVar[Params[Array]], default=None
-        The main `Params` object of the problem needed to instanciate the
-        `DerivativeKeysODE` if the latter is not specified.
 
     """
 
@@ -730,8 +722,8 @@ class LossPDENonStatio(
         eqx.field(static=True)
     )
     vmap_in_axes: tuple[int] = eqx.field(static=True)
-    _max_norm_samples_omega: int = eqx.field(static=True)
-    _max_norm_time_slices: int = eqx.field(static=True)
+    max_norm_samples_omega: int = eqx.field(static=True)
+    max_norm_time_slices: int = eqx.field(static=True)
 
     params: InitVar[Params[Array] | None]
 
@@ -745,8 +737,8 @@ class LossPDENonStatio(
         initial_condition_fun: Callable[[Float[Array, " dimension"]], Array]
         | None = None,
         t0: int | float | Float[Array, " "] | None = None,
-        _max_norm_time_slices: int | None = None,
-        _max_norm_samples_omega: int | None = None,
+        max_norm_time_slices: int = 100,
+        max_norm_samples_omega: int = 1000,
         params: Params[Array] | None = None,
         **kwargs: Any,
     ):
@@ -791,17 +783,10 @@ class LossPDENonStatio(
 
         self.initial_condition_fun = initial_condition_fun
 
-        # witht the variables below we avoid memory overflow since a cartesian
+        # with the variables below we avoid memory overflow since a cartesian
         # product is taken
-        if _max_norm_time_slices is None:
-            self._max_norm_time_slices = 100
-        else:
-            self._max_norm_time_slices = _max_norm_time_slices
-
-        if _max_norm_samples_omega is None:
-            self._max_norm_samples_omega = 1000
-        else:
-            self._max_norm_samples_omega = _max_norm_samples_omega
+        self.max_norm_time_slices = max_norm_time_slices
+        self.max_norm_samples_omega = max_norm_samples_omega
 
     def _get_dynamic_loss_batch(
         self, batch: PDENonStatioBatch
@@ -814,8 +799,8 @@ class LossPDENonStatio(
         Float[Array, " nb_norm_time_slices 1"], Float[Array, " nb_norm_samples dim"]
     ]:
         return (
-            batch.domain_batch[: self._max_norm_time_slices, 0:1],
-            self.norm_samples[: self._max_norm_samples_omega],  # type: ignore -> cannot narrow a class attr
+            batch.domain_batch[: self.max_norm_time_slices, 0:1],
+            self.norm_samples[: self.max_norm_samples_omega],  # type: ignore -> cannot narrow a class attr
         )
 
     def evaluate_by_terms(
