@@ -72,7 +72,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
     obs_batch_size: int | None = eqx.field(static=True)
     observed_pinn_in: Float[Array, " n_obs nb_pinn_in"]
     observed_values: Float[Array, " n_obs nb_pinn_out"]
-    observed_eq_params: eqx.Module  # = eqx.field(static=True)
+    observed_eq_params: eqx.Module | None  # = eqx.field(static=True)
     sharding_device: jax.sharding.Sharding | None  # = eqx.field(static=True)
 
     n: int = eqx.field(init=False, static=True)
@@ -86,7 +86,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
         obs_batch_size: int | None = None,
         observed_pinn_in: Float[Array, " n_obs nb_pinn_in"],
         observed_values: Float[Array, " n_obs nb_pinn_out"],
-        observed_eq_params: InputEqParams,
+        observed_eq_params: InputEqParams | None = None,
         sharding_device: jax.sharding.Sharding | None = None,
     ) -> None:
         super().__init__()
@@ -127,6 +127,8 @@ class DataGeneratorObservations(AbstractDataGenerator):
             # Convert the dict of observed parameters to the internal `EqParams`
             # class used by Jinns.
             self.observed_eq_params = EqParams(observed_eq_params, "EqParams")
+        else:
+            self.observed_eq_params = observed_eq_params
 
         self.n = self.observed_pinn_in.shape[0]
 
