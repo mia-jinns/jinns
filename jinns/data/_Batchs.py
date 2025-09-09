@@ -18,7 +18,7 @@ class ObsBatchDict(TypedDict):
 
     pinn_in: Float[Array, "  obs_batch_size input_dim"]
     val: Float[Array, "  obs_batch_size output_dim"]
-    eq_params: dict[str, Float[Array, "  obs_batch_size 1"]]
+    eq_params: eqx.Module
 
 
 class ODEBatch(eqx.Module):
