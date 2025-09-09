@@ -11,7 +11,7 @@ import jax
 import numpy as np
 import jax.numpy as jnp
 from scipy.stats import qmc
-from jaxtyping import Key, Array, Float
+from jaxtyping import PRNGKeyArray, Array, Float
 from typing import Literal
 from jinns.data._Batchs import PDEStatioBatch
 from jinns.data._utils import _check_and_set_rar_parameters, _reset_or_increment
@@ -25,7 +25,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
 
     Parameters
     ----------
-    key : Key
+    key : PRNGKeyArray
         Jax random key to sample new time points and to shuffle batches
     n : int
         The number of total $\Omega$ points that will be divided in
@@ -81,7 +81,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
     """
 
     # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
-    key: Key = eqx.field(kw_only=True)
+    key: PRNGKeyArray = eqx.field(kw_only=True)
     n: int = eqx.field(kw_only=True, static=True)
     nb: int | None = eqx.field(kw_only=True, static=True, default=None)
     omega_batch_size: int | None = eqx.field(
@@ -195,7 +195,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         self.key, self.omega_border = self.generate_omega_border_data(self.key)
 
     def sample_in_omega_domain(
-        self, keys: Key, sample_size: int
+        self, keys: PRNGKeyArray, sample_size: int
     ) -> Float[Array, " n dim"]:
         if self.method == "uniform":
             if self.dim == 1:
@@ -220,7 +220,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
             return self._qmc_in_omega_domain(keys, sample_size)
 
     def _qmc_in_omega_domain(
-        self, subkey: Key, sample_size: int
+        self, subkey: PRNGKeyArray, sample_size: int
     ) -> Float[Array, "n dim"]:
         qmc_generator = qmc.Sobol if self.method == "sobol" else qmc.Halton
         if self.dim == 1:
@@ -241,7 +241,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         return jnp.array(samples)
 
     def sample_in_omega_border_domain(
-        self, keys: Key, sample_size: int | None = None
+        self, keys: PRNGKeyArray, sample_size: int | None = None
     ) -> Float[Array, " 1 2"] | Float[Array, " (nb//4) 2 4"] | None:
         sample_size = self.nb if sample_size is None else sample_size
         if sample_size is None:
@@ -306,7 +306,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         )
 
     def qmc_in_omega_border_domain(
-        self, keys: Key, sample_size: int | None = None
+        self, keys: PRNGKeyArray, sample_size: int | None = None
     ) -> Float[Array, " 1 2"] | Float[Array, " (nb//4) 2 4"] | None:
         qmc_generator = qmc.Sobol if self.method == "sobol" else qmc.Halton
         sample_size = self.nb if sample_size is None else sample_size
@@ -362,9 +362,9 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         )
 
     def generate_omega_data(
-        self, key: Key, data_size: int | None = None
+        self, key: PRNGKeyArray, data_size: int | None = None
     ) -> tuple[
-        Key,
+        PRNGKeyArray,
         Float[Array, " n dim"],
     ]:
         r"""
@@ -402,9 +402,9 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         return key, omega
 
     def generate_omega_border_data(
-        self, key: Key, data_size: int | None = None
+        self, key: PRNGKeyArray, data_size: int | None = None
     ) -> tuple[
-        Key,
+        PRNGKeyArray,
         Float[Array, " 1 2"] | Float[Array, " (nb//4) 2 4"] | None,
     ]:
         r"""
@@ -433,7 +433,9 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
 
     def _get_omega_operands(
         self,
-    ) -> tuple[Key, Float[Array, " n dim"], int, int | None, Float[Array, " n"] | None]:
+    ) -> tuple[
+        PRNGKeyArray, Float[Array, " n dim"], int, int | None, Float[Array, " n"] | None
+    ]:
         return (
             self.key,
             self.omega,
@@ -487,7 +489,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
     def _get_omega_border_operands(
         self,
     ) -> tuple[
-        Key,
+        PRNGKeyArray,
         Float[Array, " 1 2"] | Float[Array, " (nb//4) 2 4"] | None,
         int,
         int | None,

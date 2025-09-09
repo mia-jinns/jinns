@@ -14,7 +14,7 @@ import warnings
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-from jaxtyping import Float, Array, Key
+from jaxtyping import PRNGKeyArray, Float, Array
 from jinns.loss._loss_utils import (
     dynamic_loss_apply,
     boundary_condition_apply,
@@ -145,7 +145,7 @@ class _LossPDEAbstract(AbstractLoss[L, B, C], Generic[L, B, C, D, Y]):
     norm_samples: Float[Array, " nb_norm_samples dimension"] | None
     norm_weights: Float[Array, " nb_norm_samples"] | None
     obs_slice: EllipsisType | slice = eqx.field(static=True)
-    key: Key[Array, ""] | None
+    key: PRNGKeyArray | None
 
     def __init__(
         self,
@@ -158,7 +158,7 @@ class _LossPDEAbstract(AbstractLoss[L, B, C], Generic[L, B, C, D, Y]):
         norm_samples: Float[Array, " nb_norm_samples dimension"] | None = None,
         norm_weights: Float[Array, " nb_norm_samples"] | float | int | None = None,
         obs_slice: EllipsisType | slice | None = None,
-        key: Key[Array, ""] | None = None,
+        key: PRNGKeyArray | None = None,
         **kwargs: Any,  # for arguments for super()
     ):
         super().__init__(loss_weights=self.loss_weights, **kwargs)
@@ -423,6 +423,12 @@ class LossPDEStatio(
         `dynamic_loss.evaluate(x, u, params)`.
         Can be None in order to access only some part of the evaluate call
         results.
+    key : PRNGKeyArray
+        A JAX PRNG Key for the loss class treated as an attribute. Default is
+        None. This field is provided for future developments and additional
+        losses that might need some randomness. Note that special care must be
+        taken when splitting the key because in-place updates are forbidden in
+        eqx.Modules.
     loss_weights : LossWeightsPDEStatio, default=None
         The loss weights for the differents term : dynamic loss,
         boundary conditions if any, normalization loss if any and
@@ -649,6 +655,13 @@ class LossPDENonStatio(
         `dynamic_loss.evaluate(t, x, u, params)`.
         Can be None in order to access only some part of the evaluate call
         results.
+    key : PRNGKeyArray
+        A JAX PRNG Key for the loss class treated as an attribute. Default is
+        None. This field is provided for future developments and additional
+        losses that might need some randomness. Note that special care must be
+        taken when splitting the key because in-place updates are forbidden in
+        eqx.Modules.
+        reason
     loss_weights : LossWeightsPDENonStatio, default=None
         The loss weights for the differents term : dynamic loss,
         boundary conditions if any, initial condition, normalization loss if any and

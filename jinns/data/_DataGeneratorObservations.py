@@ -9,7 +9,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 from typing import TYPE_CHECKING
-from jaxtyping import Key, Int, Array, Float
+from jaxtyping import PRNGKeyArray, Int, Array, Float
 from jinns.data._Batchs import ObsBatchDict
 from jinns.data._utils import _reset_or_increment
 from jinns.data._AbstractDataGenerator import AbstractDataGenerator
@@ -34,7 +34,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
 
     Parameters
     ----------
-    key : Key
+    key : PRNGKeyArray
         Jax random key to shuffle batches
     obs_batch_size : int | None
         The size of the batch of randomly selected points among
@@ -68,7 +68,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
         arguments of `jinns.solve()`. Read `jinns.solve()` doc for more info.
     """
 
-    key: Key
+    key: PRNGKeyArray
     obs_batch_size: int | None = eqx.field(static=True)
     observed_pinn_in: Float[Array, " n_obs nb_pinn_in"]
     observed_values: Float[Array, " n_obs nb_pinn_out"]
@@ -82,7 +82,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
     def __init__(
         self,
         *,
-        key: Key,
+        key: PRNGKeyArray,
         obs_batch_size: int | None = None,
         observed_pinn_in: Float[Array, " n_obs nb_pinn_in"],
         observed_values: Float[Array, " n_obs nb_pinn_out"],
@@ -161,7 +161,9 @@ class DataGeneratorObservations(AbstractDataGenerator):
         self.key, _ = jax.random.split(self.key, 2)  # to make it equivalent to
         # the call to _reset_batch_idx_and_permute in legacy DG
 
-    def _get_operands(self) -> tuple[Key, Int[Array, " n"], int, int | None, None]:
+    def _get_operands(
+        self,
+    ) -> tuple[PRNGKeyArray, Int[Array, " n"], int, int | None, None]:
         return (
             self.key,
             self.indices,

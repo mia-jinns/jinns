@@ -4,7 +4,7 @@ A collection of specific weight update schemes in jinns
 
 from __future__ import annotations
 from typing import TYPE_CHECKING
-from jaxtyping import Array, Key
+from jaxtyping import Array, PRNGKeyArray
 import jax.numpy as jnp
 import jax
 import equinox as eqx
@@ -62,7 +62,7 @@ def ReLoBRaLo(
     iteration_nb: int,
     loss_terms: AnyLossComponents,
     stored_loss_terms: AnyLossComponents,
-    key: Key,
+    key: PRNGKeyArray,
     decay_factor: float = 0.9,
     tau: float = 1,  ## referred to as temperature in the article
     p: float = 0.9,

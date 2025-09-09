@@ -14,7 +14,7 @@ import optax
 import jax
 from jax import jit
 import jax.numpy as jnp
-from jaxtyping import Float, Array, PyTree, Key
+from jaxtyping import Float, Array, PyTree, PRNGKeyArray
 import equinox as eqx
 from jinns.solver._rar import init_rar, trigger_rar
 from jinns.utils._utils import _check_nan_in_pytree
@@ -47,7 +47,7 @@ if TYPE_CHECKING:
         LossContainer,
         StoredObjectContainer,
         Float[Array, " n_iter"] | None,
-        Key | None,
+        PRNGKeyArray | None,
     ]
 
 
@@ -66,7 +66,7 @@ def solve(
     obs_batch_sharding: jax.sharding.Sharding | None = None,
     verbose: bool = True,
     ahead_of_time: bool = True,
-    key: Key = None,
+    key: PRNGKeyArray = None,
 ) -> tuple[
     Params[Array],
     Float[Array, " n_iter"],

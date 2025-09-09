@@ -11,7 +11,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 from scipy.stats import qmc
-from jaxtyping import Key, Array, Float
+from jaxtyping import PRNGKeyArray, Array, Float
 from jinns.data._Batchs import PDENonStatioBatch
 from jinns.data._utils import (
     make_cartesian_product,
@@ -29,7 +29,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
     Parameters
     ----------
-    key : Key
+    key : PRNGKeyArray
         Jax random key to sample new time points and to shuffle batches
     n : int
         The number of total $I\times \Omega$ points that will be divided in
@@ -264,8 +264,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         self.omega_border = None
 
     def generate_time_data(
-        self, key: Key, nt: int
-    ) -> tuple[Key, Float[Array, " nt 1"]]:
+        self, key: PRNGKeyArray, nt: int
+    ) -> tuple[PRNGKeyArray, Float[Array, " nt 1"]]:
         """
         Construct a complete set of `nt` time points according to the
         specified `self.method`
@@ -278,12 +278,14 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             return key, self.sample_in_time_domain(subkey, nt)
         raise ValueError("Method " + self.method + " is not implemented.")
 
-    def sample_in_time_domain(self, key: Key, nt: int) -> Float[Array, " nt 1"]:
+    def sample_in_time_domain(
+        self, key: PRNGKeyArray, nt: int
+    ) -> Float[Array, " nt 1"]:
         return jax.random.uniform(key, (nt, 1), minval=self.tmin, maxval=self.tmax)
 
     def qmc_in_time_omega_domain(
-        self, key: Key, sample_size: int
-    ) -> tuple[Key, Float[Array, "n 1+dim"]]:
+        self, key: PRNGKeyArray, sample_size: int
+    ) -> tuple[PRNGKeyArray, Float[Array, "n 1+dim"]]:
         """
         Because in Quasi-Monte Carlo sampling we cannot concatenate two vectors generated independently
         We generate time and omega samples jointly
@@ -300,8 +302,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         return key, jnp.array(samples)
 
     def qmc_in_time_omega_border_domain(
-        self, key: Key, sample_size: int | None = None
-    ) -> tuple[Key, Float[Array, "n 1+dim"]] | None:
+        self, key: PRNGKeyArray, sample_size: int | None = None
+    ) -> tuple[PRNGKeyArray, Float[Array, "n 1+dim"]] | None:
         """
         For each facet of the border we generate Quasi-MonteCarlo sequences jointy with time.
 
@@ -387,7 +389,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
     def _get_domain_operands(
         self,
-    ) -> tuple[Key, Float[Array, " n 1+dim"], int, int | None, Array | None]:
+    ) -> tuple[PRNGKeyArray, Float[Array, " n 1+dim"], int, int | None, Array | None]:
         return (
             self.key,
             self.domain,
@@ -437,7 +439,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
     def _get_border_operands(
         self,
     ) -> tuple[
-        Key,
+        PRNGKeyArray,
         Float[Array, " nb 1+1 2"] | Float[Array, " (nb//4) 2+1 4"] | None,
         int,
         int | None,
@@ -500,7 +502,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
     def _get_initial_operands(
         self,
-    ) -> tuple[Key, Float[Array, " ni dim"] | None, int, int | None, None]:
+    ) -> tuple[PRNGKeyArray, Float[Array, " ni dim"] | None, int, int | None, None]:
         return (
             self.key,
             self.initial,

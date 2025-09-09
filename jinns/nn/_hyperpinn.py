@@ -11,7 +11,7 @@ from typing import Callable, Literal, Self, Union, Any, cast
 from math import prod
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array, Float, PyTree, Key
+from jaxtyping import PRNGKeyArray, Array, Float, PyTree
 import equinox as eqx
 import numpy as onp
 
@@ -195,7 +195,7 @@ class HyperPINN(PINN):
         hypernet_input_size: int,
         eqx_network: eqx.nn.MLP | MLP | None = None,
         eqx_hyper_network: eqx.nn.MLP | MLP | None = None,
-        key: Key = None,
+        key: PRNGKeyArray = None,
         eqx_list: tuple[tuple[Callable, int, int] | tuple[Callable], ...] | None = None,
         eqx_list_hyper: (
             tuple[tuple[Callable, int, int] | tuple[Callable], ...] | None

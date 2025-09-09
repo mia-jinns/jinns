@@ -8,7 +8,7 @@ from __future__ import (
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jaxtyping import Key, Array, Float
+from jaxtyping import PRNGKeyArray, Array, Float
 from jinns.data._utils import _reset_or_increment
 from jinns.data._AbstractDataGenerator import AbstractDataGenerator
 from jinns.utils._DictToModuleMeta import DictToModuleMeta
@@ -31,7 +31,7 @@ class DataGeneratorParameter(AbstractDataGenerator):
 
     Parameters
     ----------
-    keys : Key | dict[str, Key]
+    keys : PRNGKeyArray | dict[str, PRNGKeyArray]
         Jax random key to sample new time points and to shuffle batches
         or a dict of Jax random keys with key entries from param_ranges
     n : int
@@ -125,8 +125,8 @@ class DataGeneratorParameter(AbstractDataGenerator):
             self.curr_param_idx = DGParams(param_keys_and_curr_idx)
 
     def generate_data(
-        self, keys: dict[str, Key]
-    ) -> tuple[dict[str, Key], dict[str, Float[Array, " n"]]]:
+        self, keys: dict[str, PRNGKeyArray]
+    ) -> tuple[dict[str, PRNGKeyArray], dict[str, Float[Array, " n"]]]:
         """
         Generate parameter samples, either through generation
         or using user-provided data.

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import abc
 from typing import Self, Literal, Callable, TypeVar, Generic, Any
-from jaxtyping import Array, PyTree, Key, Float
+from jaxtyping import PRNGKeyArray, Array, PyTree, Float
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -138,7 +138,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C]):
         loss_terms: PyTree,
         stored_loss_terms: PyTree,
         grad_terms: PyTree,
-        key: Key,
+        key: PRNGKeyArray,
     ) -> Self:
         """
         Update the loss weights according to a predefined scheme

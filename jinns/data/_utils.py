@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jaxtyping import Key, Array, Float
+from jaxtyping import PRNGKeyArray, Array, Float
 
 if TYPE_CHECKING:
     from jinns.utils._types import AnyBatch
@@ -53,8 +53,10 @@ def make_cartesian_product(
 
 
 def _reset_batch_idx_and_permute(
-    operands: tuple[Key, Float[Array, " n dimension"], int, None, Float[Array, " n"]],
-) -> tuple[Key, Float[Array, " n dimension"], int]:
+    operands: tuple[
+        PRNGKeyArray, Float[Array, " n dimension"], int, None, Float[Array, " n"]
+    ],
+) -> tuple[PRNGKeyArray, Float[Array, " n dimension"], int]:
     key, domain, curr_idx, _, p = operands
     # resetting counter
     curr_idx = 0
@@ -77,8 +79,10 @@ def _reset_batch_idx_and_permute(
 
 
 def _increment_batch_idx(
-    operands: tuple[Key, Float[Array, " n dimension"], int, int, Float[Array, " n"]],
-) -> tuple[Key, Float[Array, " n dimension"], int]:
+    operands: tuple[
+        PRNGKeyArray, Float[Array, " n dimension"], int, int, Float[Array, " n"]
+    ],
+) -> tuple[PRNGKeyArray, Float[Array, " n dimension"], int]:
     key, domain, curr_idx, batch_size, _ = operands
     # simply increases counter and get the batch
     curr_idx += batch_size
@@ -88,8 +92,10 @@ def _increment_batch_idx(
 def _reset_or_increment(
     bend: int,
     n_eff: int,
-    operands: tuple[Key, Float[Array, " n dimension"], int, int, Float[Array, " n"]],
-) -> tuple[Key, Float[Array, " n dimension"], int]:
+    operands: tuple[
+        PRNGKeyArray, Float[Array, " n dimension"], int, int, Float[Array, " n"]
+    ],
+) -> tuple[PRNGKeyArray, Float[Array, " n dimension"], int]:
     """
     Factorize the code of the jax.lax.cond which checks if we have seen all the
     batches in an epoch

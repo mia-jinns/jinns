@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jaxtyping import Key, Array, Float
+from jaxtyping import PRNGKeyArray, Array, Float
 from jinns.data._Batchs import ODEBatch
 from jinns.data._utils import _check_and_set_rar_parameters, _reset_or_increment
 from jinns.data._AbstractDataGenerator import AbstractDataGenerator
@@ -24,7 +24,7 @@ class DataGeneratorODE(AbstractDataGenerator):
 
     Parameters
     ----------
-    key : Key
+    key : PRNGKeyArray
         Jax random key to sample new time points and to shuffle batches
     nt : int
         The number of total time points that will be divided in
@@ -54,7 +54,7 @@ class DataGeneratorODE(AbstractDataGenerator):
         then corresponds to the initial number of points we train the PINN.
     """
 
-    key: Key = eqx.field(kw_only=True)
+    key: PRNGKeyArray = eqx.field(kw_only=True)
     nt: int = eqx.field(kw_only=True, static=True)
     tmin: Float = eqx.field(kw_only=True)
     tmax: Float = eqx.field(kw_only=True)
@@ -97,7 +97,7 @@ class DataGeneratorODE(AbstractDataGenerator):
         # above way for the key.
 
     def sample_in_time_domain(
-        self, key: Key, sample_size: int | None = None
+        self, key: PRNGKeyArray, sample_size: int | None = None
     ) -> Float[Array, " nt 1"]:
         return jax.random.uniform(
             key,
@@ -106,7 +106,9 @@ class DataGeneratorODE(AbstractDataGenerator):
             maxval=self.tmax,
         )
 
-    def generate_time_data(self, key: Key) -> tuple[Key, Float[Array, " nt"]]:
+    def generate_time_data(
+        self, key: PRNGKeyArray
+    ) -> tuple[PRNGKeyArray, Float[Array, " nt"]]:
         """
         Construct a complete set of `self.nt` time points according to the
         specified `self.method`
@@ -125,7 +127,11 @@ class DataGeneratorODE(AbstractDataGenerator):
     def _get_time_operands(
         self,
     ) -> tuple[
-        Key, Float[Array, " nt 1"], int, int | None, Float[Array, " nt 1"] | None
+        PRNGKeyArray,
+        Float[Array, " nt 1"],
+        int,
+        int | None,
+        Float[Array, " nt 1"] | None,
     ]:
         return (
             self.key,

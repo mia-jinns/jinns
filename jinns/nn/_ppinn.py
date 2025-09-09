@@ -10,7 +10,7 @@ import jax
 import jax.numpy as jnp
 import equinox as eqx
 
-from jaxtyping import Array, Key, Float
+from jaxtyping import Array, Float, PRNGKeyArray
 
 from jinns.parameters._params import Params
 from jinns.nn._pinn import PINN
@@ -125,7 +125,7 @@ class PPINN_MLP(PINN):
         cls,
         eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"],
         eqx_network_list: list[eqx.nn.MLP | MLP] | None = None,
-        key: Key = None,
+        key: PRNGKeyArray = None,
         eqx_list_list: (
             list[tuple[tuple[Callable, int, int] | tuple[Callable], ...]] | None
         ) = None,
