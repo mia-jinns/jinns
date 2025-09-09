@@ -131,7 +131,7 @@ class LossODE(AbstractLoss[LossWeightsODE, ODEBatch, ODEComponents[Array | None]
         else:
             self.loss_weights = loss_weights
 
-        super().__init__(self.loss_weights, **kwargs)
+        super().__init__(loss_weights=self.loss_weights, **kwargs)
         self.u = u
         self.dynamic_loss = dynamic_loss
         self.vmap_in_axes = (0,)

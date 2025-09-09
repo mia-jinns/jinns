@@ -117,18 +117,26 @@ class DerivativeKeysODE(eqx.Module):
             if params is None:
                 raise ValueError("self.dyn_loss is None, hence params should be passed")
             self.dyn_loss = _get_masked_parameters("nn_params", params)
+        else:
+            self.dyn_loss = dyn_loss
+
         if observations is None:
             if params is None:
                 raise ValueError(
                     "self.observations is None, hence params should be passed"
                 )
             self.observations = _get_masked_parameters("nn_params", params)
+        else:
+            self.observations = observations
+
         if initial_condition is None:
             if params is None:
                 raise ValueError(
                     "self.initial_condition is None, hence params should be passed"
                 )
             self.initial_condition = _get_masked_parameters("nn_params", params)
+        else:
+            self.initial_condition = initial_condition
 
     @classmethod
     def from_str(
@@ -218,12 +226,14 @@ class DerivativeKeysPDEStatio(eqx.Module):
         content of `Params.eq_params`.
     """
 
-    dyn_loss: Params[bool] | None = eqx.field(kw_only=True, default=None)
-    observations: Params[bool] | None = eqx.field(kw_only=True, default=None)
-    boundary_loss: Params[bool] | None = eqx.field(kw_only=True, default=None)
-    norm_loss: Params[bool] | None = eqx.field(kw_only=True, default=None)
+    dyn_loss: Params[bool] = eqx.field(kw_only=True, default=None)
+    observations: Params[bool] = eqx.field(kw_only=True, default=None)
+    boundary_loss: Params[bool] = eqx.field(kw_only=True, default=None)
+    norm_loss: Params[bool] = eqx.field(kw_only=True, default=None)
 
     params: InitVar[Params[Array] | None] = eqx.field(kw_only=True, default=None)
+
+    # TODO write the init here
 
     def __post_init__(self, params: Params[Array] | None = None):
         if self.dyn_loss is None:
@@ -346,7 +356,7 @@ class DerivativeKeysPDENonStatio(DerivativeKeysPDEStatio):
         content of `Params.eq_params`.
     """
 
-    initial_condition: Params[bool] | None = eqx.field(kw_only=True, default=None)
+    initial_condition: Params[bool] = eqx.field(kw_only=True, default=None)
 
     def __post_init__(self, params: Params[Array] | None = None):
         super().__post_init__(params=params)
