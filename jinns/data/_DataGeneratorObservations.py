@@ -8,7 +8,7 @@ from __future__ import (
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
 from jaxtyping import PRNGKeyArray, Int, Array, Float
 from jinns.data._Batchs import ObsBatchDict
 from jinns.data._utils import _reset_or_increment
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     # before hand: this is not practical, let us not get mad at this
 
 
-class DataGeneratorObservations(AbstractDataGenerator):
+class DataGeneratorObservations(AbstractDataGenerator[ObsBatchDict]):
     r"""
     Despite the class name, it is rather a dataloader for user-provided
     observations which will are used in the observations loss.
@@ -176,7 +176,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
 
     def obs_batch(
         self,
-    ) -> tuple[DataGeneratorObservations, ObsBatchDict]:
+    ) -> tuple[Self, ObsBatchDict]:
         """
         Return an update DataGeneratorObservations instance and an ObsBatchDict
         """
@@ -198,7 +198,9 @@ class DataGeneratorObservations(AbstractDataGenerator):
             # handled above
         )
         new = eqx.tree_at(
-            lambda m: (m.key, m.indices, m.curr_idx), self, new_attributes
+            lambda m: (m.key, m.indices, m.curr_idx),  # type: ignore
+            self,
+            new_attributes,
         )
 
         minib_indices = jax.lax.dynamic_slice(
@@ -215,7 +217,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
                 new.observed_values, minib_indices, unique_indices=True, axis=0
             ),
             "eq_params": jax.tree_util.tree_map(
-                lambda a: jnp.take(a, minib_indices, unique_indices=True, axis=0),
+                lambda a: jnp.take(a, minib_indices, unique_indices=True, axis=0),  # type: ignore
                 new.observed_eq_params,
             ),
         }
@@ -223,7 +225,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
 
     def get_batch(
         self,
-    ) -> tuple[DataGeneratorObservations, ObsBatchDict]:
+    ) -> tuple[Self, ObsBatchDict]:
         """
         Generic method to return a batch
         """

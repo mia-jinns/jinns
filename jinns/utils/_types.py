@@ -5,14 +5,14 @@ from __future__ import (
 from typing import TypeAlias, TYPE_CHECKING, Callable, TypeVar
 from jaxtyping import Float, Array
 
-from jinns.data._Batchs import ODEBatch, PDEStatioBatch, PDENonStatioBatch
+from jinns.data._Batchs import ODEBatch, PDEStatioBatch, PDENonStatioBatch, ObsBatchDict
 from jinns.loss._loss_components import (
     ODEComponents,
     PDEStatioComponents,
     PDENonStatioComponents,
 )
 
-AnyBatch: TypeAlias = ODEBatch | PDENonStatioBatch | PDEStatioBatch
+AnyBatch: TypeAlias = ODEBatch | PDENonStatioBatch | PDEStatioBatch | ObsBatchDict
 
 # Note that syntax change starting from 3.12
 _T = TypeVar("_T")
