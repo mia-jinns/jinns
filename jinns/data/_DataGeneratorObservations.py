@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     # before hand: this is not practical, let us not get mad at this
 
 
-class DataGeneratorObservations(AbstractDataGenerator[ObsBatchDict]):
+class DataGeneratorObservations(AbstractDataGenerator):
     r"""
     Despite the class name, it is rather a dataloader for user-provided
     observations which will are used in the observations loss.
