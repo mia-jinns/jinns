@@ -41,19 +41,24 @@ class Params(eqx.Module, Generic[T]):
         A PyTree of the non-static part of the PINN eqx.Module, i.e., the
         parameters of the PINN
     eq_params : PyTree[T]
-        A PyTree of the equation parameters. For retrocompatibility it can be
+        A PyTree of the equation parameters. For retrocompatibility it us
         provided as a dictionary of the equation parameters where keys are the parameter names, and values are their corresponding values. Internally,
         it will be transformed to a custom instance of `EqParams`.
     """
 
-    nn_params: PyTree[T] = eqx.field(kw_only=True, default=None)
-    eq_params: PyTree[T] = eqx.field(
-        kw_only=True,
-        default=None,
-        converter=lambda x: EqParams(x, "EqParams")
-        if isinstance(x, dict)
-        else x,  # the first call here is critical
-    )
+    nn_params: PyTree[T]
+    eq_params: PyTree[T]
+
+    def __init__(
+        self,
+        nn_params: PyTree[T] | None = None,
+        eq_params: dict[str, T] | None = None,
+    ):
+        self.nn_params = nn_params
+        if isinstance(eq_params, dict):
+            self.eq_params = EqParams(eq_params, "EqParams")
+        else:
+            self.eq_params = eq_params
 
 
 def update_eq_params(
