@@ -66,7 +66,7 @@ def solve(
     obs_batch_sharding: jax.sharding.Sharding | None = None,
     verbose: bool = True,
     ahead_of_time: bool = True,
-    key: PRNGKeyArray = None,
+    key: PRNGKeyArray | None = None,
 ) -> tuple[
     Params[Array],
     Float[Array, " n_iter"],

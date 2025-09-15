@@ -5,6 +5,7 @@ Define the DataGenerators modules
 from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
+from typing import Self
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -95,21 +96,25 @@ class DataGeneratorParameter(AbstractDataGenerator):
             )
         if not isinstance(self.keys, dict):
             all_keys = set().union(self.param_ranges, self.user_data)
-            self.keys = dict(zip(all_keys, jax.random.split(self.keys, len(all_keys))))
+            keys = dict(
+                zip(all_keys, jax.random.split(self.keys, len(all_keys)))
+            )  # The
+            # self.keys here will become keys after we write the __init__
+            # method
 
         # The call to self.generate_data() creates
         # the dict self.param_n_samples and then we will only use this one
         # because it merges the scattered data between `user_data` and
         # `param_ranges`
-        self.keys, self.param_n_samples = self.generate_data(self.keys)
+        keys, param_n_samples = self.generate_data(keys)
 
         # NOTE and from now on we will work with eqx.Module
         # because eq_params is not a dict anymore.
         # Note that we kept the dictionaries for the first part of the
         # __post_init__ for ease of initialization.
         # (this has changed from jinns>1.5.1)
-        self.keys = DGParams(self.keys, "DGParams")
-        self.param_n_samples = DGParams(self.param_n_samples)
+        self.keys = DGParams(keys, "DGParams")
+        self.param_n_samples = DGParams(param_n_samples)
 
         if self.param_batch_size is None:
             self.curr_param_idx = None
@@ -165,7 +170,7 @@ class DataGeneratorParameter(AbstractDataGenerator):
 
         return keys, param_n_samples
 
-    def param_batch(self):
+    def param_batch(self) -> tuple[Self, eqx.Module]:
         """
         Return a dictionary with batches of parameters
         If all the batches have been seen, we reshuffle them,
@@ -213,7 +218,7 @@ class DataGeneratorParameter(AbstractDataGenerator):
             new.curr_param_idx,
         )
 
-    def get_batch(self):
+    def get_batch(self) -> tuple[Self, eqx.Module]:
         """
         Generic method to return a batch
         """

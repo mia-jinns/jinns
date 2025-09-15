@@ -94,9 +94,10 @@ class PINN_MLP(PINN):
     @classmethod
     def create(
         cls,
+        *,
         eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"],
+        key: PRNGKeyArray | None = None,
         eqx_network: eqx.nn.MLP | MLP | None = None,
-        key: PRNGKeyArray = None,
         eqx_list: tuple[tuple[Callable, int, int] | tuple[Callable], ...] | None = None,
         input_transform: (
             Callable[

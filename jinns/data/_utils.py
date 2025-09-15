@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from jinns.data._Batchs import ObsBatchDict
 
 
-def append_param_batch(batch: AnyBatch, param_batch_dict: dict[str, Array]) -> AnyBatch:
+def append_param_batch(batch: AnyBatch, param_batch_dict: eqx.Module) -> AnyBatch:
     """
     Utility function that fills the field `batch.param_batch_dict` of a batch object.
     """

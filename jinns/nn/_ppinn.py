@@ -123,9 +123,10 @@ class PPINN_MLP(PINN):
     @classmethod
     def create(
         cls,
+        *,
+        key: PRNGKeyArray | None = None,
         eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"],
         eqx_network_list: list[eqx.nn.MLP | MLP] | None = None,
-        key: PRNGKeyArray = None,
         eqx_list_list: (
             list[tuple[tuple[Callable, int, int] | tuple[Callable], ...]] | None
         ) = None,
@@ -213,7 +214,7 @@ class PPINN_MLP(PINN):
 
             eqx_network_list = []
             for eqx_list in eqx_list_list:
-                key, subkey = jax.random.split(key, 2)
+                key, subkey = jax.random.split(key, 2)  # type: ignore
                 eqx_network_list.append(MLP(key=subkey, eqx_list=eqx_list))
 
         ppinn = cls(

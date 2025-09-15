@@ -195,13 +195,13 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         self.key, self.omega_border = self.generate_omega_border_data(self.key)
 
     def sample_in_omega_domain(
-        self, keys: PRNGKeyArray, sample_size: int
+        self, keys: list[PRNGKeyArray], sample_size: int
     ) -> Float[Array, " n dim"]:
         if self.method == "uniform":
             if self.dim == 1:
                 xmin, xmax = self.min_pts[0], self.max_pts[0]
                 return jax.random.uniform(
-                    keys, shape=(sample_size, 1), minval=xmin, maxval=xmax
+                    *keys, shape=(sample_size, 1), minval=xmin, maxval=xmax
                 )
 
             return jnp.concatenate(
@@ -217,7 +217,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
                 axis=-1,
             )
         else:
-            return self._qmc_in_omega_domain(keys, sample_size)
+            return self._qmc_in_omega_domain(keys[0], sample_size)
 
     def _qmc_in_omega_domain(
         self, subkey: PRNGKeyArray, sample_size: int
@@ -241,7 +241,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         return jnp.array(samples)
 
     def sample_in_omega_border_domain(
-        self, keys: PRNGKeyArray, sample_size: int | None = None
+        self, keys: list[PRNGKeyArray] | None, sample_size: int | None = None
     ) -> Float[Array, " 1 2"] | Float[Array, " (nb//4) 2 4"] | None:
         sample_size = self.nb if sample_size is None else sample_size
         if sample_size is None:
@@ -251,6 +251,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
             xmax = self.max_pts[0]
             return jnp.array([xmin, xmax]).astype(float)
         if self.dim == 2:
+            assert keys is not None
             # currently hard-coded the 4 edges for d==2
             # TODO : find a general & efficient way to sample from the border
             # (facets) of the hypercube in general dim.
@@ -306,7 +307,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         )
 
     def qmc_in_omega_border_domain(
-        self, keys: PRNGKeyArray, sample_size: int | None = None
+        self, keys: list[PRNGKeyArray] | None, sample_size: int | None = None
     ) -> Float[Array, " 1 2"] | Float[Array, " (nb//4) 2 4"] | None:
         qmc_generator = qmc.Sobol if self.method == "sobol" else qmc.Halton
         sample_size = self.nb if sample_size is None else sample_size
@@ -317,6 +318,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
             xmax = self.max_pts[0]
             return jnp.array([xmin, xmax]).astype(float)
         if self.dim == 2:
+            assert keys is not None
             # currently hard-coded the 4 edges for d==2
             # TODO : find a general & efficient way to sample from the border
             # (facets) of the hypercube in general dim.
@@ -393,10 +395,11 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
                 omega = jnp.concatenate(xyz_, axis=-1)
         elif self.method in ["uniform", "sobol", "halton"]:
             if self.dim == 1 or self.method in ["sobol", "halton"]:
-                key, subkeys = jax.random.split(key, 2)
+                key, subkey = jax.random.split(key, 2)
+                omega = self.sample_in_omega_domain([subkey], sample_size=data_size)
             else:
                 key, *subkeys = jax.random.split(key, self.dim + 1)
-            omega = self.sample_in_omega_domain(subkeys, sample_size=data_size)
+                omega = self.sample_in_omega_domain(subkeys, sample_size=data_size)
         else:
             raise ValueError("Method " + self.method + " is not implemented.")
         return key, omega
