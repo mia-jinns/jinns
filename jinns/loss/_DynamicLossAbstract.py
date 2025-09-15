@@ -92,32 +92,17 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
 
     _eq_type = AbstractClassVar[str]  # class variable denoting the type of
     # differential equation
-    Tmax: float
+    Tmax: float = eqx.field(kw_only=True, default=1)
     eq_params_heterogeneity: (
         PyTree[Callable[[InputDim, AbstractPINN, Params[Array]], Array] | None] | None
-    ) = eqx.field(static=True)
-    vectorial_dyn_loss_ponderation: Float[Array, " dim"]
-    params: InitVar[Params[Array]]
+    ) = eqx.field(kw_only=True, default=None, static=True)
+    vectorial_dyn_loss_ponderation: Float[Array, " dim"] | None = eqx.field(
+        kw_only=True, default_factory=lambda: jnp.array(1.0)
+    )
+    params: InitVar[Params[Array]] = eqx.field(default=None)
 
-    def __init__(
-        self,
-        Tmax: float = 1,
-        eq_params_heterogeneity: dict[
-            str, Callable[[InputDim, AbstractPINN, Params[Array]], Array] | None
-        ]
-        | None = None,
-        vectorial_dyn_loss_ponderation: Float[Array, " dim"] | None = None,
-        params: Params[Array] | None = None,
-    ):
-        super().__init__()
-        self.Tmax = Tmax
-        if vectorial_dyn_loss_ponderation is None:
-            self.vectorial_dyn_loss_ponderation = jnp.array(1.0)
-        else:
-            self.vectorial_dyn_loss_ponderation = vectorial_dyn_loss_ponderation
-        if eq_params_heterogeneity is None:
-            self.eq_params_heterogeneity = None
-        else:
+    def __post_init__(self, params: Params[Array] | None = None):
+        if isinstance(self.eq_params_heterogeneity, dict):  # type: ignore
             # we cannot use the same converter as in Params.eq_params
             # we don't want to create a new type but use the same type as
             # Params.eq_params which already exists.
@@ -127,8 +112,8 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
                     "provided, `params` must be specified at init"
                 )
             self.eq_params_heterogeneity = EqParams(
-                eq_params_heterogeneity,
-                "EqParams",
+                self.eq_params_heterogeneity,
+                "EqParams",  # type: ignore
             )
 
     def _eval_heterogeneous_parameters(
