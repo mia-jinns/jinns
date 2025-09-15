@@ -274,7 +274,7 @@ class DerivativeKeysPDEStatio(eqx.Module):
                 raise ValueError(
                     "self.norm_loss is None, hence params should be passed"
                 )
-            norm_loss = _get_masked_parameters("nn_params", params)
+            self.norm_loss = _get_masked_parameters("nn_params", params)
         else:
             self.norm_loss = norm_loss
 
