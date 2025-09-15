@@ -18,5 +18,5 @@ class PDEStatioComponents(ItemizableModule, Generic[T]):
     observations: T
 
 
-class PDENonStatioComponents(ItemizableModule, Generic[T]):
+class PDENonStatioComponents(PDEStatioComponents[T]):
     initial_condition: T
