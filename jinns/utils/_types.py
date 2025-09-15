@@ -6,6 +6,11 @@ from typing import TypeAlias, TYPE_CHECKING, Callable, TypeVar
 from jaxtyping import Float, Array
 
 from jinns.data._Batchs import ODEBatch, PDEStatioBatch, PDENonStatioBatch, ObsBatchDict
+from jinns.loss._loss_weights import (
+    LossWeightsODE,
+    LossWeightsPDEStatio,
+    LossWeightsPDENonStatio,
+)
 from jinns.loss._loss_components import (
     ODEComponents,
     PDEStatioComponents,
@@ -13,6 +18,10 @@ from jinns.loss._loss_components import (
 )
 
 AnyBatch: TypeAlias = ODEBatch | PDENonStatioBatch | PDEStatioBatch | ObsBatchDict
+
+AnyLossWeights: TypeAlias = (
+    LossWeightsODE | LossWeightsPDEStatio | LossWeightsPDENonStatio
+)
 
 # Note that syntax change starting from 3.12
 _T = TypeVar("_T")

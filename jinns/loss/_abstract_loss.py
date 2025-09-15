@@ -7,13 +7,13 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import optax
-from jinns.loss._loss_weights import AbstractLossWeights
 from jinns.parameters._params import Params
 from jinns.loss._loss_weight_updates import soft_adapt, lr_annealing, ReLoBRaLo
-from jinns.utils._types import AnyLossComponents, AnyBatch
+from jinns.utils._types import AnyLossComponents, AnyBatch, AnyLossWeights
 
-L = TypeVar("L", bound=AbstractLossWeights)  # we want something that inherits
-# from AbstractLossWeights in subclasses of AbstractLoss, a correct way to do
+L = TypeVar(
+    "L", bound=AnyLossWeights
+)  # we want to be able to use one of the element of AnyLossWeights
 # that is https://stackoverflow.com/a/79534258 via `bound`
 
 B = TypeVar(
