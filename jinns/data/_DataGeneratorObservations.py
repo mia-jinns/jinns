@@ -72,7 +72,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
     obs_batch_size: int | None = eqx.field(static=True)
     observed_pinn_in: Float[Array, " n_obs nb_pinn_in"]
     observed_values: Float[Array, " n_obs nb_pinn_out"]
-    observed_eq_params: eqx.Module | None  # = eqx.field(static=True)
+    observed_eq_params: eqx.Module | None
     sharding_device: jax.sharding.Sharding | None  # = eqx.field(static=True)
 
     n: int = eqx.field(init=False, static=True)

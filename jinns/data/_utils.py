@@ -125,7 +125,7 @@ def _reset_or_increment(
 
 
 def _check_and_set_rar_parameters(
-    rar_parameters: dict, n: int, n_start: int
+    rar_parameters: None | dict, n: int, n_start: None | int
 ) -> tuple[int, Float[Array, " n"] | None, int | None, int | None]:
     if rar_parameters is not None and n_start is None:
         raise ValueError(

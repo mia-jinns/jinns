@@ -42,10 +42,10 @@ class DataGeneratorODE(AbstractDataGenerator):
         The method that generates the `nt` time points. `grid` means
         regularly spaced points over the domain. `uniform` means uniformly
         sampled points over the domain
-    rar_parameters : RarParameterDict, default=None
+    rar_parameters : None | RarParameterDict, default=None
        A TypedDict to specify the Residual Adaptative Resampling procedure. See
        the docstring from RarParameterDict
-    n_start : int, default=None
+    n_start : None | int, default=None
         Defaults to None. The effective size of nt used at start time.
         This value must be
         provided when rar_parameters is not None. Otherwise we set internally
@@ -54,16 +54,14 @@ class DataGeneratorODE(AbstractDataGenerator):
         then corresponds to the initial number of points we train the PINN.
     """
 
-    key: PRNGKeyArray = eqx.field(kw_only=True)
-    nt: int = eqx.field(kw_only=True, static=True)
-    tmin: Float = eqx.field(kw_only=True)
-    tmax: Float = eqx.field(kw_only=True)
-    temporal_batch_size: int | None = eqx.field(static=True, default=None, kw_only=True)
-    method: str = eqx.field(
-        static=True, kw_only=True, default_factory=lambda: "uniform"
-    )
-    rar_parameters: dict[str, int] = eqx.field(default=None, kw_only=True)
-    n_start: int = eqx.field(static=True, default=None, kw_only=True)
+    key: PRNGKeyArray
+    nt: int
+    tmin: Float
+    tmax: Float
+    temporal_batch_size: int | None = eqx.field(static=True)
+    method: str = eqx.field(static=True)
+    rar_parameters: None | dict[str, int]
+    n_start: None | int
 
     # all the init=False fields are set in __post_init__
     p: Float[Array, " nt 1"] | None = eqx.field(init=False)
@@ -72,7 +70,27 @@ class DataGeneratorODE(AbstractDataGenerator):
     curr_time_idx: int = eqx.field(init=False)
     times: Float[Array, " nt 1"] = eqx.field(init=False)
 
-    def __post_init__(self):
+    def __init__(
+        self,
+        *,
+        key: PRNGKeyArray,
+        nt: int,
+        tmin: Float,
+        tmax: Float,
+        temporal_batch_size: int | None,
+        method: str = "uniform",
+        rar_parameters: None | dict[str, int] = None,
+        n_start: None | int = None,
+    ):
+        self.key = key
+        self.nt = nt
+        self.tmin = tmin
+        self.tmax = tmax
+        self.temporal_batch_size = temporal_batch_size
+        self.method = method
+        self.n_start = n_start
+        self.rar_parameters = rar_parameters
+
         (
             self.n_start,
             self.p,
@@ -156,7 +174,7 @@ class DataGeneratorODE(AbstractDataGenerator):
         bend = bstart + self.temporal_batch_size
 
         # Compute the effective number of used collocation points
-        if self.rar_parameters is not None:
+        if self.rar_parameters is not None and self.n_start is not None:
             nt_eff = (
                 self.n_start
                 + self.rar_iter_nb  # type: ignore
