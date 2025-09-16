@@ -163,10 +163,7 @@ class HyperPINN(PINN):
             # DataGenerators)
             inputs = inputs[None]
 
-        # try:
         hyper = eqx.combine(params.nn_params, self.static_hyper)
-        # except (KeyError, AttributeError, TypeError) as e:  # give more flexibility
-        #    hyper = eqx.combine(params, self.static_hyper)
 
         eq_params_batch = jnp.concatenate(
             [getattr(params.eq_params, k).flatten() for k in self.hyperparams],
