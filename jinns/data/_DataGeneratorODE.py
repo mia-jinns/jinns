@@ -56,8 +56,8 @@ class DataGeneratorODE(AbstractDataGenerator):
 
     key: PRNGKeyArray
     nt: int
-    tmin: Float
-    tmax: Float
+    tmin: float
+    tmax: float
     temporal_batch_size: int | None = eqx.field(static=True)
     method: str = eqx.field(static=True)
     rar_parameters: None | dict[str, int]
@@ -75,8 +75,8 @@ class DataGeneratorODE(AbstractDataGenerator):
         *,
         key: PRNGKeyArray,
         nt: int,
-        tmin: Float,
-        tmax: Float,
+        tmin: float,
+        tmax: float,
         temporal_batch_size: int | None,
         method: str = "uniform",
         rar_parameters: None | dict[str, int] = None,
@@ -191,7 +191,9 @@ class DataGeneratorODE(AbstractDataGenerator):
             # handled above
         )
         new = eqx.tree_at(
-            lambda m: (m.key, m.times, m.curr_time_idx), self, new_attributes
+            lambda m: (m.key, m.times, m.curr_time_idx),  # type: ignore
+            self,
+            new_attributes,
         )
 
         # commands below are equivalent to
