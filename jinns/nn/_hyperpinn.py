@@ -137,6 +137,32 @@ class HyperPINN(PINN):
             jnp.split(hyper_output, self.pinn_params_cumsum[:-1]),
         )
 
+        # For the record. We exhibited that the jnp.split was a serious time
+        # bottleneck. However none of the approaches below improved the speed.
+        # Moreover, this operation is not well implemented by a triton kernel
+        # apparently so such an optim is not an option.
+        # 1)
+        # pinn_params_flat = jax.tree.unflatten(self.pinn_params_struct,
+        #    jnp.split(hyper_output, self.pinn_params_cumsum[:-1]),
+        # )
+        # 2)
+        # pinn_params_flat = jax.tree.unflatten(self.pinn_params_struct,
+        #    [jax.lax.slice(hyper_output, (s,), (e,)).reshape(r) for s, e, r in
+        #     zip(self.pinn_params_cumsum_start, self.pinn_params_cumsum,
+        #         self.pinn_params_shapes)]
+        # )
+        # 3)
+        # pinn_params_flat = jax.tree.unflatten(self.pinn_params_struct,
+        #    [hyper_output[s:e].reshape(r) for s, e, r in
+        #     zip(self.pinn_params_cumsum_start, self.pinn_params_cumsum,
+        #         self.pinn_params_shapes)]
+        # )
+        # 4)
+        # pinn_params_flat = jax.tree.unflatten(self.pinn_params_struct,
+        #    [jax.lax.dynamic_slice(hyper_output, (s,), (size,)) for s, size in
+        #     zip(self.pinn_params_cumsum_start, self.pinn_params_cumsum_size)]
+        # )
+
         return jax.tree.map(
             lambda a, b: a.reshape(b.shape),
             pinn_params_flat,
