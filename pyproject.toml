@@ -12,7 +12,7 @@ dynamic = ["version"]
 description = "Physics Informed Neural Network with JAX"
 readme = "README.md"
 license = {text = "Apache License 2.0"}
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 keywords = []
 authors = [
   {name = "Hugo Gangloff", email = "hugo.gangloff@inrae.fr"},
