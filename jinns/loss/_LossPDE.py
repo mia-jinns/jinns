@@ -132,7 +132,6 @@ class _LossPDEAbstract(AbstractLoss[L, B, C], Generic[L, B, C, D, Y]):
 
     # NOTE static=True only for leaf attributes that are not valid JAX types
     # (ie. jax.Array cannot be static) and that we do not expect to change
-    # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
     u: eqx.AbstractVar[AbstractPINN]
     dynamic_loss: eqx.AbstractVar[Y]
     omega_boundary_fun: (
@@ -737,7 +736,7 @@ class LossPDENonStatio(
     loss_weights: LossWeightsPDENonStatio
     derivative_keys: DerivativeKeysPDENonStatio
     params: InitVar[Params[Array] | None]
-    t0: Float[Array, " "] | None
+    t0: Float[Array, " "]
     initial_condition_fun: Callable[[Float[Array, " dimension"]], Array] | None = (
         eqx.field(static=True)
     )
@@ -841,8 +840,8 @@ class LossPDENonStatio(
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
         """
-        omega_batch = batch.initial_batch
-        assert omega_batch is not None
+        omega_initial_batch = batch.initial_batch
+        assert omega_initial_batch is not None
 
         # Retrieve the optional eq_params_batch
         # and update eq_params with the latter
@@ -872,11 +871,11 @@ class LossPDENonStatio(
             mse_initial_condition_fun: Callable[[Params[Array]], Array] | None = (
                 lambda p: initial_condition_apply(
                     self.u,
-                    omega_batch,
+                    omega_initial_batch,
                     _set_derivatives(p, self.derivative_keys.initial_condition),
                     (0,) + vmap_in_axes_params,
                     self.initial_condition_fun,  # type: ignore
-                    self.t0,  # type: ignore can't get the narrowing in __post_init__
+                    self.t0,
                 )
             )
         else:
