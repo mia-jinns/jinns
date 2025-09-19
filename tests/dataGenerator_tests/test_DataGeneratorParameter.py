@@ -17,9 +17,9 @@ def create_DataGeneratorParameter():
     user_data = {"nu": jnp.arange(n)}
 
     return jinns.data.DataGeneratorParameter(
-        subkey,
-        n,
-        param_batch_size,
+        key=subkey,
+        n=n,
+        param_batch_size=param_batch_size,
         param_ranges=param_ranges,
         method=method,
         user_data=user_data,
@@ -36,9 +36,9 @@ def create_DataGeneratorParameter_only_user_data():
     user_data = {"nu": jnp.arange(n)}
 
     return jinns.data.DataGeneratorParameter(
-        subkey,
-        n,
-        param_batch_size,
+        key=subkey,
+        n=n,
+        param_batch_size=param_batch_size,
         method=method,
         user_data=user_data,
     )
@@ -73,9 +73,9 @@ def test_raise_error_with_wrong_shape_for_user_data():
     with pytest.raises(ValueError) as _:
         # __init__ calls self.generate_data() that we are testing for
         _ = jinns.data.DataGeneratorParameter(
-            subkey,
-            n,
-            param_batch_size,
+            key=subkey,
+            n=n,
+            param_batch_size=param_batch_size,
             param_ranges=param_ranges,
             method=method,
             user_data=user_data,
