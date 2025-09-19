@@ -29,16 +29,16 @@ class ODEBatch(eqx.Module):
     obs_batch_dict: ObsBatchDict | None = eqx.field(default=None)
 
 
-class PDENonStatioBatch(eqx.Module):
-    domain_batch: Float[Array, "  batch_size 1+dimension"]
+class PDEStatioBatch(eqx.Module):
+    domain_batch: Float[Array, "  batch_size dimension"]
     border_batch: Float[Array, "  batch_size dimension n_facets"] | None
-    initial_batch: Float[Array, "  batch_size dimension"] | None
     param_batch_dict: eqx.Module | None = eqx.field(default=None)
     obs_batch_dict: ObsBatchDict | None = eqx.field(default=None)
 
 
-class PDEStatioBatch(eqx.Module):
-    domain_batch: Float[Array, "  batch_size dimension"]
+class PDENonStatioBatch(eqx.Module):
+    domain_batch: Float[Array, "  batch_size 1+dimension"]
     border_batch: Float[Array, "  batch_size dimension n_facets"] | None
+    initial_batch: Float[Array, "  batch_size dimension"] | None
     param_batch_dict: eqx.Module | None = eqx.field(default=None)
     obs_batch_dict: ObsBatchDict | None = eqx.field(default=None)
