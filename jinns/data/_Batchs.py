@@ -46,6 +46,7 @@ class PDEStatioBatch(eqx.Module):
         param_batch_dict: eqx.Module | None = None,
         obs_batch_dict: ObsBatchDict | None = None,
     ):
+        # TODO: document this ?
         self.domain_batch = domain_batch
         self.border_batch = border_batch
         self.param_batch_dict = param_batch_dict
@@ -53,8 +54,11 @@ class PDEStatioBatch(eqx.Module):
 
 
 class PDENonStatioBatch(PDEStatioBatch):
-    domain_batch: Float[Array, "  batch_size 1+dimension"]  # re-type
-    initial_batch: Float[Array, "  batch_size dimension"] | None
+    # TODO: document this ?
+    domain_batch: Float[Array, "  batch_size 1+dimension"]  # Override type
+    initial_batch: (
+        Float[Array, "  batch_size dimension"] | None
+    )  # why can it be None ? Examples?
 
     def __init__(
         self,
