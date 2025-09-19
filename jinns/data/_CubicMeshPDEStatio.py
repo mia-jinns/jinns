@@ -146,7 +146,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
             self.p,
             self.rar_iter_from_last_sampling,
             self.rar_iter_nb,
-        ) = _check_and_set_rar_parameters(self.rar_parameters, self.n, self.n_start)
+        ) = _check_and_set_rar_parameters(self.rar_parameters, self.n, n_start)
 
         if self.method == "grid" and self.dim == 2:
             perfect_sq = int(jnp.round(jnp.sqrt(self.n)) ** 2)

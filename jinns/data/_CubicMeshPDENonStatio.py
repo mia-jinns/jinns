@@ -163,7 +163,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             )
             self.domain = make_cartesian_product(half_domain_times, half_domain_omega)
 
-            # NOTE below re-do CubicMeshPDE.__init__()
+            # NOTE below re-do CubicMeshPDE.__init__() ? Maybe useless?
             (
                 self.n_start,
                 self.p,
