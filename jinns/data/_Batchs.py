@@ -32,13 +32,41 @@ class ODEBatch(eqx.Module):
 class PDEStatioBatch(eqx.Module):
     domain_batch: Float[Array, "  batch_size dimension"]
     border_batch: Float[Array, "  batch_size dimension n_facets"] | None
-    param_batch_dict: eqx.Module | None = eqx.field(default=None)
-    obs_batch_dict: ObsBatchDict | None = eqx.field(default=None)
+    param_batch_dict: eqx.Module | None
+    obs_batch_dict: ObsBatchDict | None
+
+    # rewrite __init__ to be able to use inheritance for the NonStatio case
+    # below. That way PDENonStatioBatch is a subtype of PDEStatioBatch which
+    # 1) makes more sense and 2) CubicMeshPDENonStatio.get_batch passes pyright.
+    def __init__(
+        self,
+        *,
+        domain_batch: Float[Array, "  batch_size dimension"],
+        border_batch: Float[Array, "  batch_size dimension n_facets"] | None,
+        param_batch_dict: eqx.Module | None = None,
+        obs_batch_dict: ObsBatchDict | None = None,
+    ):
+        self.domain_batch = domain_batch
+        self.border_batch = border_batch
+        self.param_batch_dict = param_batch_dict
+        self.obs_batch_dict = obs_batch_dict
 
 
-class PDENonStatioBatch(eqx.Module):
-    domain_batch: Float[Array, "  batch_size 1+dimension"]
-    border_batch: Float[Array, "  batch_size dimension n_facets"] | None
+class PDENonStatioBatch(PDEStatioBatch):
+    domain_batch: Float[Array, "  batch_size 1+dimension"]  # re-type
     initial_batch: Float[Array, "  batch_size dimension"] | None
-    param_batch_dict: eqx.Module | None = eqx.field(default=None)
-    obs_batch_dict: ObsBatchDict | None = eqx.field(default=None)
+
+    def __init__(
+        self,
+        *,
+        domain_batch: Float[Array, "  batch_size 1+dimension"],
+        border_batch: Float[Array, "  batch_size dimension n_facets"] | None,
+        initial_batch: Float[Array, "  batch_size dimension"] | None,
+        param_batch_dict: eqx.Module | None = None,
+        obs_batch_dict: ObsBatchDict | None = None,
+    ):
+        self.domain_batch = domain_batch
+        self.border_batch = border_batch
+        self.initial_batch = initial_batch
+        self.param_batch_dict = param_batch_dict
+        self.obs_batch_dict = obs_batch_dict
