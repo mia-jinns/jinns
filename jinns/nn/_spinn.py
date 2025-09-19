@@ -82,10 +82,7 @@ class SPINN(AbstractPINN):
         Note that that thanks to the decorator, params can also directly be the
         PyTree (SPINN, PINN_MLP, ...) that we get out of eqx.combine
         """
-        # try:
         spinn = eqx.combine(params.nn_params, self.static)
-        # except (KeyError, AttributeError, TypeError) as e:
-        #    spinn = eqx.combine(params, self.static)
         v_model = jax.vmap(spinn)
         res = v_model(t_x)  # type: ignore
 
