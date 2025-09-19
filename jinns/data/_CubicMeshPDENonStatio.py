@@ -50,9 +50,8 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         among the `nb` points. If None, `domain_batch_size` no
         mini-batches are used.
     initial_batch_size : int | None, default=None
-        The size of the batch of randomly selected points among
-        the `ni` points. If None no
-        mini-batches are used.
+        The number of randomly selected points among the `ni` initial spatial
+        points used for initial condition. If None, no mini-batches are used.
     dim : int
         An integer. Dimension of $\Omega$ domain.
     min_pts : tuple[tuple[Float, Float], ...]
@@ -94,13 +93,14 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         then corresponds to the initial number of omega points we train the PINN.
     """
 
-    tmin: Float = eqx.field(kw_only=True)
-    tmax: Float = eqx.field(kw_only=True)
-    ni: int = eqx.field(kw_only=True, static=True)
-    domain_batch_size: int | None = eqx.field(kw_only=True, static=True, default=None)
-    initial_batch_size: int | None = eqx.field(kw_only=True, static=True, default=None)
-    border_batch_size: int | None = eqx.field(kw_only=True, static=True, default=None)
+    tmin: float
+    tmax: float
+    ni: int = eqx.field(static=True)
+    domain_batch_size: int | None = eqx.field(static=True)
+    initial_batch_size: int | None = eqx.field(static=True)
+    border_batch_size: int | None = eqx.field(static=True)
 
+    # --- Below fields are not passed as arguments to __init__
     curr_domain_idx: int = eqx.field(init=False)
     curr_initial_idx: int = eqx.field(init=False)
     curr_border_idx: int = eqx.field(init=False)
@@ -110,13 +110,32 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
     )
     initial: Float[Array, " ni dim"] | None = eqx.field(init=False)
 
-    def __post_init__(self):
+    def __init__(
+        self,
+        tmin: float,
+        tmax: float,
+        ni: int,
+        domain_batch_size: int | None = None,
+        initial_batch_size: int | None = None,
+        border_batch_size: int | None = None,
+        **kwargs,  # kwargs for CubicMeshPDEStatio.__init__
+    ):
         """
         Note that neither __init__ or __post_init__ are called when udating a
         Module with eqx.tree_at!
         """
-        super().__post_init__()  # because __init__ or __post_init__ of Base
-        # class is not automatically called
+        # sanity check
+        if ni is None:
+            raise ValueError("`ni` cannot be None.")
+
+        super().__init__(**kwargs)
+        self.tmin = tmin
+        self.tmax = tmax
+        self.ni = ni
+
+        self.domain_batch_size = domain_batch_size
+        self.initial_batch_size = initial_batch_size
+        self.border_batch_size = border_batch_size
 
         if self.method == "grid":
             # NOTE we must redo the sampling with the square root number of samples
@@ -178,7 +197,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
                     " a multiple of 2xd (the # of faces of a d-dimensional cube)"
                 )
             # the check below concern omega_border_batch_size for dim > 1 in
-            # super.__post_init__. Here it concerns all dim values since our
+            # super.__init__. Here it concerns all dim values since our
             # border_batch is the concatenation or cartesian product with times
             if (
                 self.border_batch_size is not None
@@ -221,7 +240,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.border_batch_size = None
             self.curr_border_idx = 0
 
-        if self.ni is not None:
+        if ni is not None:
             if self.method == "grid":
                 perfect_sq = int(jnp.round(jnp.sqrt(self.ni)) ** 2)
                 if self.ni != perfect_sq:
@@ -235,17 +254,17 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
                 log2_n = jnp.log2(self.ni)
                 lower_pow = 2 ** jnp.floor(log2_n)
                 higher_pow = 2 ** jnp.ceil(log2_n)
-                closest_two_power = (
+                closest_power_of_two = (
                     lower_pow
                     if (self.ni - lower_pow) < (higher_pow - self.ni)
                     else higher_pow
                 )
-                if self.n != closest_two_power:
+                if self.n != closest_power_of_two:
                     warnings.warn(
                         f"QuasiMonteCarlo sampling with {self.method} requires sample size to be a power fo 2."
-                        f"Modfiying self.n from {self.ni} to {closest_two_power}.",
+                        f"Modfiying self.n from {self.ni} to {closest_power_of_two}.",
                     )
-                self.ni = int(closest_two_power)
+                self.ni = int(closest_power_of_two)
             self.key, self.initial = self.generate_omega_data(
                 self.key, data_size=self.ni
             )
@@ -426,7 +445,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             # handled above
         )
         new = eqx.tree_at(
-            lambda m: (m.key, m.domain, m.curr_domain_idx),
+            lambda m: (m.key, m.domain, m.curr_domain_idx),  # type: ignore
             self,
             new_attributes,
         )
@@ -485,7 +504,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             # handled above
         )
         new = eqx.tree_at(
-            lambda m: (m.key, m.border, m.curr_border_idx),
+            lambda m: (m.key, m.border, m.curr_border_idx),  # type: ignore
             self,
             new_attributes,
         )
@@ -531,7 +550,7 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             # handled above
         )
         new = eqx.tree_at(
-            lambda m: (m.key, m.initial, m.curr_initial_idx),
+            lambda m: (m.key, m.initial, m.curr_initial_idx),  # type: ignore
             self,
             new_attributes,
         )

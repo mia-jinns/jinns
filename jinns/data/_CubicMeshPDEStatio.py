@@ -80,32 +80,28 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         then corresponds to the initial number of points we train the PINN on.
     """
 
-    # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
-    key: PRNGKeyArray = eqx.field(kw_only=True)
-    n: int = eqx.field(kw_only=True, static=True)
+    key: PRNGKeyArray
+    n: int = eqx.field(static=True)
     nb: int | None = eqx.field(kw_only=True, static=True, default=None)
     omega_batch_size: int | None = eqx.field(
-        kw_only=True,
         static=True,
-        default=None,  # can be None as
+        # can be None as
         # CubicMeshPDENonStatio inherits but also if omega_batch_size=n
     )  # static cause used as a
     # shape in jax.lax.dynamic_slice
     omega_border_batch_size: int | None = eqx.field(
-        kw_only=True, static=True, default=None
+        static=True,
     )  # static cause used as a
     # shape in jax.lax.dynamic_slice
-    dim: int = eqx.field(kw_only=True, static=True)  # static cause used as a
+    dim: int = eqx.field(static=True)  # static cause used as a
     # shape in jax.lax.dynamic_slice
-    min_pts: tuple[float, ...] = eqx.field(kw_only=True)
-    max_pts: tuple[float, ...] = eqx.field(kw_only=True)
-    method: Literal["grid", "uniform", "sobol", "halton"] = eqx.field(
-        kw_only=True, static=True, default_factory=lambda: "uniform"
-    )
-    rar_parameters: dict[str, int] = eqx.field(kw_only=True, default=None)
-    n_start: int = eqx.field(kw_only=True, default=None, static=True)
+    min_pts: tuple[float, ...]
+    max_pts: tuple[float, ...]
+    method: Literal["grid", "uniform", "sobol", "halton"] = eqx.field(static=True)
+    rar_parameters: None | dict[str, int]
+    n_start: None | int = eqx.field(static=True)
 
-    # all the init=False fields are set in __post_init__
+    # --- Below fields are not passed as arguments to __init__
     p: Float[Array, " n"] | None = eqx.field(init=False)
     rar_iter_from_last_sampling: int | None = eqx.field(init=False)
     rar_iter_nb: int | None = eqx.field(init=False)
@@ -116,7 +112,33 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         eqx.field(init=False)
     )
 
-    def __post_init__(self):
+    def __init__(
+        self,
+        *,
+        key: PRNGKeyArray,
+        n: int,
+        nb: int | None = None,
+        omega_batch_size: int | None = None,
+        omega_border_batch_size: int | None = None,
+        dim: int,
+        min_pts: tuple[float, ...],
+        max_pts: tuple[float, ...],
+        method: Literal["grid", "uniform", "sobol", "halton"] = "uniform",
+        rar_parameters: dict[str, int] | None = None,
+        n_start: int | None = None,
+    ):
+        self.key = key
+        self.n = n
+        self.nb = nb
+        self.omega_batch_size = omega_batch_size
+        self.omega_border_batch_size = omega_border_batch_size
+        self.dim = dim
+        self.min_pts = min_pts
+        self.max_pts = max_pts
+        self.method = method
+        self.n_start = n_start
+        self.rar_parameters = rar_parameters
+
         assert self.dim == len(self.min_pts) and isinstance(self.min_pts, tuple)
         assert self.dim == len(self.max_pts) and isinstance(self.max_pts, tuple)
 
@@ -480,7 +502,9 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
             # handled above
         )
         new = eqx.tree_at(
-            lambda m: (m.key, m.omega, m.curr_omega_idx), self, new_attributes
+            lambda m: (m.key, m.omega, m.curr_omega_idx),  # type: ignore
+            self,
+            new_attributes,
         )
 
         return new, jax.lax.dynamic_slice(
@@ -556,7 +580,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
             # handled above
         )
         new = eqx.tree_at(
-            lambda m: (m.key, m.omega_border, m.curr_omega_border_idx),
+            lambda m: (m.key, m.omega_border, m.curr_omega_border_idx),  # type: ignore
             self,
             new_attributes,
         )

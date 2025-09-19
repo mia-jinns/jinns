@@ -63,7 +63,7 @@ class DataGeneratorODE(AbstractDataGenerator):
     rar_parameters: None | dict[str, int]
     n_start: None | int
 
-    # all the init=False fields are set in __post_init__
+    # --- Below fields are not passed as arguments to __init__
     p: Float[Array, " nt 1"] | None = eqx.field(init=False)
     rar_iter_from_last_sampling: int | None = eqx.field(init=False)
     rar_iter_nb: int | None = eqx.field(init=False)
