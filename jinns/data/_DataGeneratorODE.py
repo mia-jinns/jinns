@@ -55,7 +55,7 @@ class DataGeneratorODE(AbstractDataGenerator):
     """
 
     key: PRNGKeyArray
-    nt: int
+    nt: int = eqx.field(static=True)
     tmin: float
     tmax: float
     temporal_batch_size: int | None = eqx.field(static=True)
