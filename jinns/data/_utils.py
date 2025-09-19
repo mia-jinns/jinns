@@ -3,7 +3,7 @@ Utility functions for DataGenerators
 """
 
 from __future__ import annotations
-
+import warnings
 from typing import TYPE_CHECKING
 import equinox as eqx
 import jax
@@ -133,6 +133,12 @@ def _check_and_set_rar_parameters(
         )
 
     if rar_parameters is not None:
+        if n_start is None:
+            n_start = 0
+            warnings.warn(
+                "You asked for RAR sampling but didn't provide"
+                f"a proper `n_start` {n_start=}. Setting it to 0."
+            )
         # Default p is None. However, in the RAR sampling scheme we use 0
         # probability to specify non-used collocation points (i.e. points
         # above n_start). Thus, p is a vector of probability of shape (nt, 1).

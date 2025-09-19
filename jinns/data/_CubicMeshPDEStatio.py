@@ -99,7 +99,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
     max_pts: tuple[float, ...]
     method: Literal["grid", "uniform", "sobol", "halton"] = eqx.field(static=True)
     rar_parameters: None | dict[str, int]
-    n_start: None | int = eqx.field(static=True)
+    n_start: int = eqx.field(static=True)
 
     # --- Below fields are not passed as arguments to __init__
     p: Float[Array, " n"] | None = eqx.field(init=False)
@@ -136,7 +136,6 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         self.min_pts = min_pts
         self.max_pts = max_pts
         self.method = method
-        self.n_start = n_start
         self.rar_parameters = rar_parameters
 
         assert self.dim == len(self.min_pts) and isinstance(self.min_pts, tuple)
