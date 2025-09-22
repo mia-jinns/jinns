@@ -11,7 +11,7 @@ import jax
 import numpy as np
 import jax.numpy as jnp
 from scipy.stats import qmc
-from jaxtyping import Key, Array, Float
+from jaxtyping import PRNGKeyArray, Array, Float
 from typing import Literal
 from jinns.data._Batchs import PDEStatioBatch
 from jinns.data._utils import _check_and_set_rar_parameters, _reset_or_increment
@@ -25,7 +25,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
 
     Parameters
     ----------
-    key : Key
+    key : PRNGKeyArray
         Jax random key to sample new time points and to shuffle batches
     n : int
         The number of total $\Omega$ points that will be divided in
@@ -80,32 +80,28 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         then corresponds to the initial number of points we train the PINN on.
     """
 
-    # kw_only in base class is motivated here: https://stackoverflow.com/a/69822584
-    key: Key = eqx.field(kw_only=True)
-    n: int = eqx.field(kw_only=True, static=True)
+    key: PRNGKeyArray
+    n: int = eqx.field(static=True)
     nb: int | None = eqx.field(kw_only=True, static=True, default=None)
     omega_batch_size: int | None = eqx.field(
-        kw_only=True,
         static=True,
-        default=None,  # can be None as
+        # can be None as
         # CubicMeshPDENonStatio inherits but also if omega_batch_size=n
     )  # static cause used as a
     # shape in jax.lax.dynamic_slice
     omega_border_batch_size: int | None = eqx.field(
-        kw_only=True, static=True, default=None
+        static=True,
     )  # static cause used as a
     # shape in jax.lax.dynamic_slice
-    dim: int = eqx.field(kw_only=True, static=True)  # static cause used as a
+    dim: int = eqx.field(static=True)  # static cause used as a
     # shape in jax.lax.dynamic_slice
-    min_pts: tuple[float, ...] = eqx.field(kw_only=True)
-    max_pts: tuple[float, ...] = eqx.field(kw_only=True)
-    method: Literal["grid", "uniform", "sobol", "halton"] = eqx.field(
-        kw_only=True, static=True, default_factory=lambda: "uniform"
-    )
-    rar_parameters: dict[str, int] = eqx.field(kw_only=True, default=None)
-    n_start: int = eqx.field(kw_only=True, default=None, static=True)
+    min_pts: tuple[float, ...]
+    max_pts: tuple[float, ...]
+    method: Literal["grid", "uniform", "sobol", "halton"] = eqx.field(static=True)
+    rar_parameters: None | dict[str, int]
+    n_start: int = eqx.field(static=True)
 
-    # all the init=False fields are set in __post_init__
+    # --- Below fields are not passed as arguments to __init__
     p: Float[Array, " n"] | None = eqx.field(init=False)
     rar_iter_from_last_sampling: int | None = eqx.field(init=False)
     rar_iter_nb: int | None = eqx.field(init=False)
@@ -116,7 +112,32 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         eqx.field(init=False)
     )
 
-    def __post_init__(self):
+    def __init__(
+        self,
+        *,
+        key: PRNGKeyArray,
+        n: int,
+        nb: int | None = None,
+        omega_batch_size: int | None = None,
+        omega_border_batch_size: int | None = None,
+        dim: int,
+        min_pts: tuple[float, ...],
+        max_pts: tuple[float, ...],
+        method: Literal["grid", "uniform", "sobol", "halton"] = "uniform",
+        rar_parameters: dict[str, int] | None = None,
+        n_start: int | None = None,
+    ):
+        self.key = key
+        self.n = n
+        self.nb = nb
+        self.omega_batch_size = omega_batch_size
+        self.omega_border_batch_size = omega_border_batch_size
+        self.dim = dim
+        self.min_pts = min_pts
+        self.max_pts = max_pts
+        self.method = method
+        self.rar_parameters = rar_parameters
+
         assert self.dim == len(self.min_pts) and isinstance(self.min_pts, tuple)
         assert self.dim == len(self.max_pts) and isinstance(self.max_pts, tuple)
 
@@ -125,7 +146,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
             self.p,
             self.rar_iter_from_last_sampling,
             self.rar_iter_nb,
-        ) = _check_and_set_rar_parameters(self.rar_parameters, self.n, self.n_start)
+        ) = _check_and_set_rar_parameters(self.rar_parameters, self.n, n_start)
 
         if self.method == "grid" and self.dim == 2:
             perfect_sq = int(jnp.round(jnp.sqrt(self.n)) ** 2)
@@ -195,13 +216,13 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         self.key, self.omega_border = self.generate_omega_border_data(self.key)
 
     def sample_in_omega_domain(
-        self, keys: Key, sample_size: int
+        self, keys: list[PRNGKeyArray], sample_size: int
     ) -> Float[Array, " n dim"]:
         if self.method == "uniform":
             if self.dim == 1:
                 xmin, xmax = self.min_pts[0], self.max_pts[0]
                 return jax.random.uniform(
-                    keys, shape=(sample_size, 1), minval=xmin, maxval=xmax
+                    *keys, shape=(sample_size, 1), minval=xmin, maxval=xmax
                 )
 
             return jnp.concatenate(
@@ -217,10 +238,10 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
                 axis=-1,
             )
         else:
-            return self._qmc_in_omega_domain(keys, sample_size)
+            return self._qmc_in_omega_domain(keys[0], sample_size)
 
     def _qmc_in_omega_domain(
-        self, subkey: Key, sample_size: int
+        self, subkey: PRNGKeyArray, sample_size: int
     ) -> Float[Array, "n dim"]:
         qmc_generator = qmc.Sobol if self.method == "sobol" else qmc.Halton
         if self.dim == 1:
@@ -241,7 +262,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         return jnp.array(samples)
 
     def sample_in_omega_border_domain(
-        self, keys: Key, sample_size: int | None = None
+        self, keys: list[PRNGKeyArray] | None, sample_size: int | None = None
     ) -> Float[Array, " 1 2"] | Float[Array, " (nb//4) 2 4"] | None:
         sample_size = self.nb if sample_size is None else sample_size
         if sample_size is None:
@@ -251,6 +272,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
             xmax = self.max_pts[0]
             return jnp.array([xmin, xmax]).astype(float)
         if self.dim == 2:
+            assert keys is not None
             # currently hard-coded the 4 edges for d==2
             # TODO : find a general & efficient way to sample from the border
             # (facets) of the hypercube in general dim.
@@ -306,7 +328,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         )
 
     def qmc_in_omega_border_domain(
-        self, keys: Key, sample_size: int | None = None
+        self, keys: list[PRNGKeyArray] | None, sample_size: int | None = None
     ) -> Float[Array, " 1 2"] | Float[Array, " (nb//4) 2 4"] | None:
         qmc_generator = qmc.Sobol if self.method == "sobol" else qmc.Halton
         sample_size = self.nb if sample_size is None else sample_size
@@ -317,6 +339,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
             xmax = self.max_pts[0]
             return jnp.array([xmin, xmax]).astype(float)
         if self.dim == 2:
+            assert keys is not None
             # currently hard-coded the 4 edges for d==2
             # TODO : find a general & efficient way to sample from the border
             # (facets) of the hypercube in general dim.
@@ -362,9 +385,9 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         )
 
     def generate_omega_data(
-        self, key: Key, data_size: int | None = None
+        self, key: PRNGKeyArray, data_size: int | None = None
     ) -> tuple[
-        Key,
+        PRNGKeyArray,
         Float[Array, " n dim"],
     ]:
         r"""
@@ -393,18 +416,19 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
                 omega = jnp.concatenate(xyz_, axis=-1)
         elif self.method in ["uniform", "sobol", "halton"]:
             if self.dim == 1 or self.method in ["sobol", "halton"]:
-                key, subkeys = jax.random.split(key, 2)
+                key, subkey = jax.random.split(key, 2)
+                omega = self.sample_in_omega_domain([subkey], sample_size=data_size)
             else:
                 key, *subkeys = jax.random.split(key, self.dim + 1)
-            omega = self.sample_in_omega_domain(subkeys, sample_size=data_size)
+                omega = self.sample_in_omega_domain(subkeys, sample_size=data_size)
         else:
             raise ValueError("Method " + self.method + " is not implemented.")
         return key, omega
 
     def generate_omega_border_data(
-        self, key: Key, data_size: int | None = None
+        self, key: PRNGKeyArray, data_size: int | None = None
     ) -> tuple[
-        Key,
+        PRNGKeyArray,
         Float[Array, " 1 2"] | Float[Array, " (nb//4) 2 4"] | None,
     ]:
         r"""
@@ -433,7 +457,9 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
 
     def _get_omega_operands(
         self,
-    ) -> tuple[Key, Float[Array, " n dim"], int, int | None, Float[Array, " n"] | None]:
+    ) -> tuple[
+        PRNGKeyArray, Float[Array, " n dim"], int, int | None, Float[Array, " n"] | None
+    ]:
         return (
             self.key,
             self.omega,
@@ -475,7 +501,9 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
             # handled above
         )
         new = eqx.tree_at(
-            lambda m: (m.key, m.omega, m.curr_omega_idx), self, new_attributes
+            lambda m: (m.key, m.omega, m.curr_omega_idx),  # type: ignore
+            self,
+            new_attributes,
         )
 
         return new, jax.lax.dynamic_slice(
@@ -487,7 +515,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
     def _get_omega_border_operands(
         self,
     ) -> tuple[
-        Key,
+        PRNGKeyArray,
         Float[Array, " 1 2"] | Float[Array, " (nb//4) 2 4"] | None,
         int,
         int | None,
@@ -551,7 +579,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
             # handled above
         )
         new = eqx.tree_at(
-            lambda m: (m.key, m.omega_border, m.curr_omega_border_idx),
+            lambda m: (m.key, m.omega_border, m.curr_omega_border_idx),  # type: ignore
             self,
             new_attributes,
         )

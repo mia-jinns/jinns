@@ -8,7 +8,7 @@ from typing import Callable, Literal, Self, Union, Any, TypeGuard
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-from jaxtyping import Key, Array, Float, PyTree
+from jaxtyping import PRNGKeyArray, Array, Float, PyTree
 
 from jinns.nn._mlp import MLP
 from jinns.nn._spinn import SPINN
@@ -20,7 +20,7 @@ class SMLP(eqx.Module):
 
     Parameters
     ----------
-    key : InitVar[Key]
+    key : InitVar[PRNGKeyArray]
         A jax random key for the layer initializations.
     d : int
         The number of dimensions to treat separately, including time `t` if
@@ -42,7 +42,7 @@ class SMLP(eqx.Module):
         )`.
     """
 
-    key: InitVar[Key] = eqx.field(kw_only=True)
+    key: InitVar[PRNGKeyArray] = eqx.field(kw_only=True)
     eqx_list: InitVar[tuple[tuple[Callable, int, int] | tuple[Callable], ...]] = (
         eqx.field(kw_only=True)
     )
@@ -74,7 +74,7 @@ class SPINN_MLP(SPINN):
     @classmethod
     def create(
         cls,
-        key: Key,
+        key: PRNGKeyArray,
         d: int,
         r: int,
         eqx_list: tuple[tuple[Callable, int, int] | tuple[Callable], ...],
@@ -93,7 +93,7 @@ class SPINN_MLP(SPINN):
 
         Parameters
         ----------
-        key : Key
+        key : PRNGKeyArray
             A JAX random key that will be used to initialize the network parameters
         d : int
             The number of dimensions to treat separately.

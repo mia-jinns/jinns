@@ -42,6 +42,7 @@ def create_PPINN_MLP():
     u, params = jinns.nn.PPINN_MLP.create(
         key=subkey, eqx_list_list=eqx_list_list, eq_type="nonstatio_PDE"
     )
+    params = jinns.parameters.Params(nn_params=params, eq_params={})
 
     return u, params
 

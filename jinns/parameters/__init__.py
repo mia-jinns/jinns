@@ -1,4 +1,4 @@
-from ._params import Params
+from ._params import EqParams, Params, update_eq_params
 from ._derivative_keys import (
     DerivativeKeysODE,
     DerivativeKeysPDEStatio,
@@ -6,8 +6,10 @@ from ._derivative_keys import (
 )
 
 __all__ = [
+    "EqParams",
     "Params",
     "DerivativeKeysODE",
     "DerivativeKeysPDEStatio",
     "DerivativeKeysPDENonStatio",
+    "update_eq_params",
 ]

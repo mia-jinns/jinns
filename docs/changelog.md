@@ -2,10 +2,14 @@
 
 * Unreleased (currently on `main`)
 
+* v1.6.0
+
+    - `Params.eq_params` from `dict` to `eqx.Module` **internally** [!85](https://gitlab.com/mia_jinns/jinns/-/merge_requests/85). A list of (limited) breaking changes for the user is given at the MR link. Related issue [#22](https://gitlab.com/mia_jinns/jinns/-/issues/22)
+    - Improve type hints for dataclasses by writing `__init__` methods when needed [!87](https://gitlab.com/mia_jinns/jinns/-/merge_requests/87)
     - Fix wrong imports in load/save demo notebooks. [See this issue on Github](https://github.com/mia-jinns/jinns/issues/1)
 
 
-* 1.5.1
+* v1.5.1
 
     - More (initial) conditions for LossODE. Add the possibility to handle for example a condition at t0 and tmax [!77](https://gitlab.com/mia_jinns/jinns/-/merge_requests/77)
     - Fix [inconsistent timings](https://gitlab.com/mia_jinns/jinns/-/issues?show=eyJpaWQiOiIxOCIsImZ1bGxfcGF0aCI6Im1pYV9qaW5ucy9qaW5ucyIsImlkIjoxNzAwMjcyNzh9) in `jinns.solve()`: the total elapsed time could previously be far off the sum of compilation + training time. This was due to a waste call to (non-JIT) `loss.evaluate` in the initialization. We now don't waste compute time to init the training loop and print the additional "initialization time" in order to have consistent timing with respect to user's elapsed time.

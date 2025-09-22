@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Union, Callable, Any, Literal, overload
+from typing import Union, Callable, Any, Literal
 from dataclasses import InitVar
 from jaxtyping import PyTree, Float, Array
 import jax
@@ -8,7 +8,6 @@ import equinox as eqx
 
 from jinns.parameters._params import Params
 from jinns.nn._abstract_pinn import AbstractPINN
-from jinns.nn._utils import _PyTree_to_Params
 
 
 class SPINN(AbstractPINN):
@@ -72,17 +71,6 @@ class SPINN(AbstractPINN):
             eqx_spinn_network, self.filter_spec
         )
 
-    @overload
-    @_PyTree_to_Params
-    def __call__(
-        self,
-        inputs: Float[Array, " input_dim"],
-        params: PyTree,
-        *args,
-        **kwargs,
-    ) -> Float[Array, " output_dim"]: ...
-
-    @_PyTree_to_Params
     def __call__(
         self,
         t_x: Float[Array, "  batch_size 1+dim"],
@@ -94,10 +82,7 @@ class SPINN(AbstractPINN):
         Note that that thanks to the decorator, params can also directly be the
         PyTree (SPINN, PINN_MLP, ...) that we get out of eqx.combine
         """
-        # try:
         spinn = eqx.combine(params.nn_params, self.static)
-        # except (KeyError, AttributeError, TypeError) as e:
-        #    spinn = eqx.combine(params, self.static)
         v_model = jax.vmap(spinn)
         res = v_model(t_x)  # type: ignore
 

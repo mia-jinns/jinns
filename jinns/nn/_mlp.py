@@ -9,7 +9,7 @@ from dataclasses import InitVar
 import jax
 import equinox as eqx
 from typing import Protocol
-from jaxtyping import Array, Key, PyTree, Float
+from jaxtyping import Array, PRNGKeyArray, PyTree, Float
 
 from jinns.parameters._params import Params
 from jinns.nn._pinn import PINN
@@ -33,7 +33,7 @@ class MLP(eqx.Module):
 
     Parameters
     ----------
-    key : InitVar[Key]
+    key : InitVar[PRNGKeyArray]
         A jax random key for the layer initializations.
     eqx_list : InitVar[tuple[tuple[Callable, int, int] | tuple[Callable], ...]]
         A tuple of tuples of successive equinox modules and activation functions to
@@ -52,7 +52,7 @@ class MLP(eqx.Module):
         )`.
     """
 
-    key: InitVar[Key] = eqx.field(kw_only=True)
+    key: InitVar[PRNGKeyArray] = eqx.field(kw_only=True)
     eqx_list: InitVar[tuple[tuple[Callable, int, int] | tuple[Callable], ...]] = (
         eqx.field(kw_only=True)
     )
@@ -94,9 +94,10 @@ class PINN_MLP(PINN):
     @classmethod
     def create(
         cls,
+        *,
         eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"],
+        key: PRNGKeyArray | None = None,
         eqx_network: eqx.nn.MLP | MLP | None = None,
-        key: Key = None,
         eqx_list: tuple[tuple[Callable, int, int] | tuple[Callable], ...] | None = None,
         input_transform: (
             Callable[

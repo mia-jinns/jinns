@@ -19,13 +19,10 @@ def _get_masked_parameters(
     """
     # start with a params object with True everywhere. We will update to False
     # for parameters wrt which we do want not to differentiate the loss
-    diff_params = jax.tree.map(
-        lambda x: True,
-        params,
-        is_leaf=lambda x: isinstance(x, eqx.Module)
-        and not isinstance(x, Params),  # do not travers nn_params, more
-        # granularity could be imagined here, in the future
-    )
+    diff_params = Params(
+        nn_params=True, eq_params=jax.tree.map(lambda _: True, params.eq_params)
+    )  # do not travers nn_params, more
+    # granularity could be imagined here, in the future
     if derivative_mask_str == "both":
         return diff_params
     if derivative_mask_str == "eq_params":
@@ -60,7 +57,7 @@ class DerivativeKeysODE(eqx.Module):
 
          1. For unspecified loss term, the default is to differentiate with
         respect to `"nn_params"` only.
-         2. No granularity inside `Params.nn_params` is currently supported.
+         2. No granularity inside `Params.nn_params` is currently supported. An easy way to do freeze part of a custom PINN module is to use `jax.lax.stop_gradient` as explained [here](https://docs.kidger.site/equinox/faq/#how-to-mark-arrays-as-non-trainable-like-pytorchs-buffers).
          3. Note that the main Params object of the problem is mandatory if initialization via `from_str()`.
 
     A typical specification is of the form:
@@ -95,38 +92,52 @@ class DerivativeKeysODE(eqx.Module):
         infer the content of `Params.eq_params`.
     """
 
-    dyn_loss: Params[bool] | None = eqx.field(kw_only=True, default=None)
-    observations: Params[bool] | None = eqx.field(kw_only=True, default=None)
-    initial_condition: Params[bool] | None = eqx.field(kw_only=True, default=None)
+    dyn_loss: Params[bool]
+    observations: Params[bool]
+    initial_condition: Params[bool]
 
-    params: InitVar[Params[Array] | None] = eqx.field(kw_only=True, default=None)
+    params: InitVar[Params[Array] | None]
 
-    def __post_init__(self, params: Params[Array] | None = None):
+    def __init__(
+        self,
+        *,
+        dyn_loss: Params[bool] | None = None,
+        observations: Params[bool] | None = None,
+        initial_condition: Params[bool] | None = None,
+        params: Params[Array] | None = None,
+    ):
+        super().__init__()
         if params is None and (
-            self.dyn_loss is None
-            or self.observations is None
-            or self.initial_condition is None
+            dyn_loss is None or observations is None or initial_condition is None
         ):
             raise ValueError(
                 "params cannot be None since at least one loss "
                 "term has an undefined derivative key Params PyTree"
             )
-        if self.dyn_loss is None:
+        if dyn_loss is None:
             if params is None:
                 raise ValueError("self.dyn_loss is None, hence params should be passed")
             self.dyn_loss = _get_masked_parameters("nn_params", params)
-        if self.observations is None:
+        else:
+            self.dyn_loss = dyn_loss
+
+        if observations is None:
             if params is None:
                 raise ValueError(
                     "self.observations is None, hence params should be passed"
                 )
             self.observations = _get_masked_parameters("nn_params", params)
-        if self.initial_condition is None:
+        else:
+            self.observations = observations
+
+        if initial_condition is None:
             if params is None:
                 raise ValueError(
                     "self.initial_condition is None, hence params should be passed"
                 )
             self.initial_condition = _get_masked_parameters("nn_params", params)
+        else:
+            self.initial_condition = initial_condition
 
     @classmethod
     def from_str(
@@ -216,36 +227,56 @@ class DerivativeKeysPDEStatio(eqx.Module):
         content of `Params.eq_params`.
     """
 
-    dyn_loss: Params[bool] | None = eqx.field(kw_only=True, default=None)
-    observations: Params[bool] | None = eqx.field(kw_only=True, default=None)
-    boundary_loss: Params[bool] | None = eqx.field(kw_only=True, default=None)
-    norm_loss: Params[bool] | None = eqx.field(kw_only=True, default=None)
+    dyn_loss: Params[bool] = eqx.field(kw_only=True, default=None)
+    observations: Params[bool] = eqx.field(kw_only=True, default=None)
+    boundary_loss: Params[bool] = eqx.field(kw_only=True, default=None)
+    norm_loss: Params[bool] = eqx.field(kw_only=True, default=None)
 
     params: InitVar[Params[Array] | None] = eqx.field(kw_only=True, default=None)
 
-    def __post_init__(self, params: Params[Array] | None = None):
-        if self.dyn_loss is None:
+    def __init__(
+        self,
+        *,
+        dyn_loss: Params[bool] | None = None,
+        observations: Params[bool] | None = None,
+        boundary_loss: Params[bool] | None = None,
+        norm_loss: Params[bool] | None = None,
+        params: Params[Array] | None = None,
+    ):
+        super().__init__()
+        if dyn_loss is None:
             if params is None:
                 raise ValueError("self.dyn_loss is None, hence params should be passed")
             self.dyn_loss = _get_masked_parameters("nn_params", params)
-        if self.observations is None:
+        else:
+            self.dyn_loss = dyn_loss
+
+        if observations is None:
             if params is None:
                 raise ValueError(
                     "self.observations is None, hence params should be passed"
                 )
             self.observations = _get_masked_parameters("nn_params", params)
-        if self.boundary_loss is None:
+        else:
+            self.observations = observations
+
+        if boundary_loss is None:
             if params is None:
                 raise ValueError(
                     "self.boundary_loss is None, hence params should be passed"
                 )
             self.boundary_loss = _get_masked_parameters("nn_params", params)
-        if self.norm_loss is None:
+        else:
+            self.boundary_loss = boundary_loss
+
+        if norm_loss is None:
             if params is None:
                 raise ValueError(
                     "self.norm_loss is None, hence params should be passed"
                 )
             self.norm_loss = _get_masked_parameters("nn_params", params)
+        else:
+            self.norm_loss = norm_loss
 
     @classmethod
     def from_str(
@@ -344,16 +375,33 @@ class DerivativeKeysPDENonStatio(DerivativeKeysPDEStatio):
         content of `Params.eq_params`.
     """
 
-    initial_condition: Params[bool] | None = eqx.field(kw_only=True, default=None)
+    initial_condition: Params[bool] = eqx.field(kw_only=True, default=None)
 
-    def __post_init__(self, params: Params[Array] | None = None):
-        super().__post_init__(params=params)
-        if self.initial_condition is None:
+    def __init__(
+        self,
+        *,
+        dyn_loss: Params[bool] | None = None,
+        observations: Params[bool] | None = None,
+        boundary_loss: Params[bool] | None = None,
+        norm_loss: Params[bool] | None = None,
+        initial_condition: Params[bool] | None = None,
+        params: Params[Array] | None = None,
+    ):
+        super().__init__(
+            dyn_loss=dyn_loss,
+            observations=observations,
+            boundary_loss=boundary_loss,
+            norm_loss=norm_loss,
+            params=params,
+        )
+        if initial_condition is None:
             if params is None:
                 raise ValueError(
                     "self.initial_condition is None, hence params should be passed"
                 )
             self.initial_condition = _get_masked_parameters("nn_params", params)
+        else:
+            self.initial_condition = initial_condition
 
     @classmethod
     def from_str(
@@ -432,7 +480,9 @@ class DerivativeKeysPDENonStatio(DerivativeKeysPDEStatio):
         )
 
 
-def _set_derivatives(params, derivative_keys):
+def _set_derivatives(
+    params: Params[Array], derivative_keys: Params[bool]
+) -> Params[Array]:
     """
     We construct an eqx.Module with the fields of derivative_keys, each field
     has a copy of the params with appropriate derivatives set
@@ -448,13 +498,21 @@ def _set_derivatives(params, derivative_keys):
         `Params(nn_params=True | False, eq_params={"alpha":True | False,
         "beta":True | False})`.
         """
-        return jax.tree.map(
-            lambda p, d: jax.lax.cond(d, lambda p: p, jax.lax.stop_gradient, p),
-            params_,
-            derivative_mask,
-            is_leaf=lambda x: isinstance(x, eqx.Module)
-            and not isinstance(x, Params),  # do not travers nn_params, more
-            # granularity could be imagined here, in the future
+
+        return Params(
+            nn_params=jax.lax.cond(
+                derivative_mask.nn_params,
+                lambda p: p,
+                jax.lax.stop_gradient,
+                params_.nn_params,
+            ),
+            eq_params=jax.tree.map(
+                lambda p, d: jax.lax.cond(d, lambda p: p, jax.lax.stop_gradient, p),
+                params_.eq_params,
+                derivative_mask.eq_params,
+            ),
         )
+        # NOTE that currently we do not travers nn_params, more
+        # granularity could be imagined here, in the future
 
     return _set_derivatives_(params, derivative_keys)

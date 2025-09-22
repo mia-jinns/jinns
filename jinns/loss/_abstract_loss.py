@@ -1,40 +1,76 @@
 from __future__ import annotations
 
 import abc
-from typing import TYPE_CHECKING, Self, Literal, Callable
-from jaxtyping import Array, PyTree, Key
+from typing import Self, Literal, Callable, TypeVar, Generic, Any
+from jaxtyping import PRNGKeyArray, Array, PyTree, Float
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import optax
-from jinns.loss._loss_weights import AbstractLossWeights
 from jinns.parameters._params import Params
 from jinns.loss._loss_weight_updates import soft_adapt, lr_annealing, ReLoBRaLo
+from jinns.utils._types import AnyLossComponents, AnyBatch, AnyLossWeights
 
-if TYPE_CHECKING:
-    from jinns.utils._types import AnyLossComponents, AnyBatch
+L = TypeVar(
+    "L", bound=AnyLossWeights
+)  # we want to be able to use one of the element of AnyLossWeights
+# that is https://stackoverflow.com/a/79534258 via `bound`
+
+B = TypeVar(
+    "B", bound=AnyBatch
+)  # The above comment also works with Unions (https://docs.python.org/3/library/typing.html#typing.TypeVar)
+# We then do the same TypeVar to be able to use one of the element of AnyBatch
+# in the evaluate_by_terms methods of child classes.
+C = TypeVar(
+    "C", bound=AnyLossComponents[Array | None]
+)  # The above comment also works with Unions (https://docs.python.org/3/library/typing.html#typing.TypeVar)
+
+# In the cases above, without the bound, we could not have covariance on
+# the type because it would break LSP. Note that covariance on the return type
+# is authorized in LSP hence we do not need the same TypeVar instruction for
+# the return types of evaluate_by_terms for example!
 
 
-class AbstractLoss(eqx.Module):
+class AbstractLoss(eqx.Module, Generic[L, B, C]):
     """
     About the call:
     https://github.com/patrick-kidger/equinox/issues/1002 + https://docs.kidger.site/equinox/pattern/
     """
 
-    loss_weights: AbstractLossWeights
+    loss_weights: eqx.AbstractVar[L]
     update_weight_method: Literal["soft_adapt", "lr_annealing", "ReLoBRaLo"] | None = (
         eqx.field(kw_only=True, default=None, static=True)
     )
 
-    @abc.abstractmethod
-    def __call__(self, *_, **__) -> Array:
-        pass
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        return self.evaluate(*args, **kwargs)
 
     @abc.abstractmethod
-    def evaluate_by_terms(
-        self, params: Params[Array], batch: AnyBatch
-    ) -> tuple[AnyLossComponents, AnyLossComponents]:
+    def evaluate_by_terms(self, params: Params[Array], batch: B) -> tuple[C, C]:
         pass
+
+    def evaluate(self, params: Params[Array], batch: B) -> tuple[Float[Array, " "], C]:
+        """
+        Evaluate the loss function at a batch of points for given parameters.
+
+        We retrieve the total value itself and a PyTree with loss values for each term
+
+        Parameters
+        ---------
+        params
+            Parameters at which the loss is evaluated
+        batch
+            Composed of a batch of points in the
+            domain, a batch of points in the domain
+            border and an optional additional batch of parameters (eg. for
+            metamodeling) and an optional additional batch of observed
+            inputs/outputs/parameters
+        """
+        loss_terms, _ = self.evaluate_by_terms(params, batch)
+
+        loss_val = self.ponderate_and_sum_loss(loss_terms)
+
+        return loss_val, loss_terms
 
     def get_gradients(
         self, fun: Callable[[Params[Array]], Array], params: Params[Array]
@@ -48,7 +84,7 @@ class AbstractLoss(eqx.Module):
         loss_val, grads = value_grad_loss(params)
         return loss_val, grads
 
-    def ponderate_and_sum_loss(self, terms):
+    def ponderate_and_sum_loss(self, terms: C) -> Array:
         """
         Get total loss from individual loss terms and weights
 
@@ -58,19 +94,18 @@ class AbstractLoss(eqx.Module):
             self.loss_weights,
             is_leaf=lambda x: eqx.is_inexact_array(x) and x is not None,
         )
-        terms = jax.tree.leaves(
+        terms_list = jax.tree.leaves(
             terms, is_leaf=lambda x: eqx.is_inexact_array(x) and x is not None
         )
-        if len(weights) == len(terms):
-            return jnp.sum(jnp.array(weights) * jnp.array(terms))
-        else:
-            raise ValueError(
-                "The numbers of declared loss weights and "
-                "declared loss terms do not concord "
-                f" got {len(weights)} and {len(terms)}"
-            )
+        if len(weights) == len(terms_list):
+            return jnp.sum(jnp.array(weights) * jnp.array(terms_list))
+        raise ValueError(
+            "The numbers of declared loss weights and "
+            "declared loss terms do not concord "
+            f" got {len(weights)} and {len(terms_list)}"
+        )
 
-    def ponderate_and_sum_gradient(self, terms):
+    def ponderate_and_sum_gradient(self, terms: C) -> C:
         """
         Get total gradients from individual loss gradients and weights
         for each parameter
@@ -102,7 +137,7 @@ class AbstractLoss(eqx.Module):
         loss_terms: PyTree,
         stored_loss_terms: PyTree,
         grad_terms: PyTree,
-        key: Key,
+        key: PRNGKeyArray,
     ) -> Self:
         """
         Update the loss weights according to a predefined scheme

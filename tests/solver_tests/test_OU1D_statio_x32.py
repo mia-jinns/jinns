@@ -78,9 +78,9 @@ def train_OU_init():
     class OUStatio1DLoss(jinns.loss.PDEStatio):
         def equation(self, x, u, params):
             u_ = lambda x: u(x, params)
-            return jax.grad(lambda x: ((x - params.eq_params["mu"]) * u_(x)).squeeze())(
+            return jax.grad(lambda x: ((x - params.eq_params.mu) * u_(x)).squeeze())(
                 x
-            ) + params.eq_params["gamma"] ** 2 / 2 * jax.grad(
+            ) + params.eq_params.gamma**2 / 2 * jax.grad(
                 lambda x: jax.grad(lambda x: u_(x).squeeze())(x).squeeze()
             )(x)
 
