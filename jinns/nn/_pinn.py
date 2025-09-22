@@ -4,14 +4,13 @@ Implement abstract class for PINN architectures
 
 from __future__ import annotations
 
-from typing import Callable, Union, Any, Literal, overload
+from typing import Callable, Union, Any, Literal
 from dataclasses import InitVar
 import equinox as eqx
 from jaxtyping import Float, Array, PyTree
 import jax.numpy as jnp
 from jinns.parameters._params import Params
 from jinns.nn._abstract_pinn import AbstractPINN
-from jinns.nn._utils import _PyTree_to_Params
 
 
 class PINN(AbstractPINN):
@@ -157,17 +156,6 @@ class PINN(AbstractPINN):
 
         return network(inputs)
 
-    @overload
-    @_PyTree_to_Params
-    def __call__(
-        self,
-        inputs: Float[Array, " input_dim"],
-        params: PyTree,
-        *args,
-        **kwargs,
-    ) -> Float[Array, " output_dim"]: ...
-
-    @_PyTree_to_Params
     def __call__(
         self,
         inputs: Float[Array, " input_dim"],
@@ -180,9 +168,6 @@ class PINN(AbstractPINN):
         `params` and `self.static` to recreate the callable eqx.Module
         architecture. The rest of the content of this function is dependent on
         the network.
-
-        Note that that thanks to the decorator, params can also directly be the
-        PyTree (SPINN, PINN_MLP, ...) that we get out of eqx.combine
         """
 
         if len(inputs.shape) == 0:

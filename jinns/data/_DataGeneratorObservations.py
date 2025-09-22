@@ -8,10 +8,23 @@ from __future__ import (
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jaxtyping import Key, Int, Array, Float
+from typing import TYPE_CHECKING, Self
+from jaxtyping import PRNGKeyArray, Int, Array, Float
 from jinns.data._Batchs import ObsBatchDict
 from jinns.data._utils import _reset_or_increment
 from jinns.data._AbstractDataGenerator import AbstractDataGenerator
+from jinns.parameters._params import EqParams
+
+if TYPE_CHECKING:
+    # imports only used in type hints
+    InputEqParams = (
+        dict[str, Float[Array, "  n_obs"]] | dict[str, Float[Array, " n_obs 1"]]
+    ) | None
+
+    # Note that the lambda functions used below are with type: ignore just
+    # because the lambda are not type annotated, but there is no proper way
+    # to do this and we should assign the lambda to a type hinted variable
+    # before hand: this is not practical, let us not get mad at this
 
 
 class DataGeneratorObservations(AbstractDataGenerator):
@@ -21,7 +34,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
 
     Parameters
     ----------
-    key : Key
+    key : PRNGKeyArray
         Jax random key to shuffle batches
     obs_batch_size : int | None
         The size of the batch of randomly selected points among
@@ -39,7 +52,8 @@ class DataGeneratorObservations(AbstractDataGenerator):
     observed_eq_params : dict[str, Float[Array, " n_obs 1"]], default={}
         A dict with keys corresponding to
         the parameter name. The keys must match the keys in
-        `params["eq_params"]`. The values are jnp.array with 2 dimensions
+        `params["eq_params"]`, ie., if only some parameters are observed, other
+        keys **must still appear with None as value**. The values are jnp.array with 2 dimensions
         with values corresponding to the parameter value for which we also
         have observed_pinn_in and observed_values. Hence the first
         dimension must be aligned with observed_pinn_in and observed_values.
@@ -54,30 +68,37 @@ class DataGeneratorObservations(AbstractDataGenerator):
         arguments of `jinns.solve()`. Read `jinns.solve()` doc for more info.
     """
 
-    key: Key
+    key: PRNGKeyArray
     obs_batch_size: int | None = eqx.field(static=True)
     observed_pinn_in: Float[Array, " n_obs nb_pinn_in"]
     observed_values: Float[Array, " n_obs nb_pinn_out"]
-    observed_eq_params: dict[str, Float[Array, " n_obs 1"]] = eqx.field(
-        static=True, default_factory=lambda: {}
-    )
-    sharding_device: jax.sharding.Sharding = eqx.field(static=True, default=None)
+    observed_eq_params: eqx.Module | None
+    sharding_device: jax.sharding.Sharding | None  # = eqx.field(static=True)
 
     n: int = eqx.field(init=False, static=True)
     curr_idx: int = eqx.field(init=False)
     indices: Array = eqx.field(init=False)
 
-    def __post_init__(self):
+    def __init__(
+        self,
+        *,
+        key: PRNGKeyArray,
+        obs_batch_size: int | None = None,
+        observed_pinn_in: Float[Array, " n_obs nb_pinn_in"],
+        observed_values: Float[Array, " n_obs nb_pinn_out"],
+        observed_eq_params: InputEqParams | None = None,
+        sharding_device: jax.sharding.Sharding | None = None,
+    ) -> None:
+        super().__init__()
+        self.key = key
+        self.obs_batch_size = obs_batch_size
+        self.observed_pinn_in = observed_pinn_in
+        self.observed_values = observed_values
+
         if self.observed_pinn_in.shape[0] != self.observed_values.shape[0]:
             raise ValueError(
                 "self.observed_pinn_in and self.observed_values must have same first axis"
             )
-        for _, v in self.observed_eq_params.items():
-            if v.shape[0] != self.observed_pinn_in.shape[0]:
-                raise ValueError(
-                    "self.observed_pinn_in and the values of"
-                    " self.observed_eq_params must have the same first axis"
-                )
         if len(self.observed_pinn_in.shape) == 1:
             self.observed_pinn_in = self.observed_pinn_in[:, None]
         if self.observed_pinn_in.ndim > 2:
@@ -86,16 +107,32 @@ class DataGeneratorObservations(AbstractDataGenerator):
             self.observed_values = self.observed_values[:, None]
         if self.observed_values.ndim > 2:
             raise ValueError("self.observed_values must have 2 dimensions")
-        for k, v in self.observed_eq_params.items():
-            if len(v.shape) == 1:
-                self.observed_eq_params[k] = v[:, None]
-            if len(v.shape) > 2:
-                raise ValueError(
-                    "Each value of observed_eq_params must have 2 dimensions"
-                )
+
+        if observed_eq_params is not None:
+            for _, v in observed_eq_params.items():
+                if v.shape[0] != self.observed_pinn_in.shape[0]:
+                    raise ValueError(
+                        "self.observed_pinn_in and the values of"
+                        " self.observed_eq_params must have the same first axis"
+                    )
+            for k, v in observed_eq_params.items():
+                if len(v.shape) == 1:
+                    # Reshape to add an axis for 1-d Array
+                    observed_eq_params[k] = v[:, None]
+                if len(v.shape) > 2:
+                    raise ValueError(
+                        f"Each key of observed_eq_params must have 2"
+                        f"dimensions, key {k} had shape {v.shape}."
+                    )
+            # Convert the dict of observed parameters to the internal `EqParams`
+            # class used by Jinns.
+            self.observed_eq_params = EqParams(observed_eq_params, "EqParams")
+        else:
+            self.observed_eq_params = observed_eq_params
 
         self.n = self.observed_pinn_in.shape[0]
 
+        self.sharding_device = sharding_device
         if self.sharding_device is not None:
             self.observed_pinn_in = jax.lax.with_sharding_constraint(
                 self.observed_pinn_in, self.sharding_device
@@ -126,7 +163,9 @@ class DataGeneratorObservations(AbstractDataGenerator):
         self.key, _ = jax.random.split(self.key, 2)  # to make it equivalent to
         # the call to _reset_batch_idx_and_permute in legacy DG
 
-    def _get_operands(self) -> tuple[Key, Int[Array, " n"], int, int | None, None]:
+    def _get_operands(
+        self,
+    ) -> tuple[PRNGKeyArray, Int[Array, " n"], int, int | None, None]:
         return (
             self.key,
             self.indices,
@@ -137,17 +176,19 @@ class DataGeneratorObservations(AbstractDataGenerator):
 
     def obs_batch(
         self,
-    ) -> tuple[DataGeneratorObservations, ObsBatchDict]:
+    ) -> tuple[Self, ObsBatchDict]:
         """
         Return an update DataGeneratorObservations instance and an ObsBatchDict
         """
         if self.obs_batch_size is None or self.obs_batch_size == self.n:
             # Avoid unnecessary reshuffling
-            return self, {
-                "pinn_in": self.observed_pinn_in,
-                "val": self.observed_values,
-                "eq_params": self.observed_eq_params,
-            }
+            return self, ObsBatchDict(
+                {
+                    "pinn_in": self.observed_pinn_in,
+                    "val": self.observed_values,
+                    "eq_params": self.observed_eq_params,
+                }
+            )
 
         new_attributes = _reset_or_increment(
             self.curr_idx + self.obs_batch_size,
@@ -157,7 +198,9 @@ class DataGeneratorObservations(AbstractDataGenerator):
             # handled above
         )
         new = eqx.tree_at(
-            lambda m: (m.key, m.indices, m.curr_idx), self, new_attributes
+            lambda m: (m.key, m.indices, m.curr_idx),  # type: ignore
+            self,
+            new_attributes,
         )
 
         minib_indices = jax.lax.dynamic_slice(
@@ -174,7 +217,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
                 new.observed_values, minib_indices, unique_indices=True, axis=0
             ),
             "eq_params": jax.tree_util.tree_map(
-                lambda a: jnp.take(a, minib_indices, unique_indices=True, axis=0),
+                lambda a: jnp.take(a, minib_indices, unique_indices=True, axis=0),  # type: ignore
                 new.observed_eq_params,
             ),
         }
@@ -182,7 +225,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
 
     def get_batch(
         self,
-    ) -> tuple[DataGeneratorObservations, ObsBatchDict]:
+    ) -> tuple[Self, ObsBatchDict]:
         """
         Generic method to return a batch
         """

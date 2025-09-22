@@ -23,6 +23,7 @@ def create_u_statio():
 
 def test_divergence_rev_statio(create_u_statio):
     u_statio, params = create_u_statio
+    params = jinns.parameters.Params(nn_params=params, eq_params={})
     x = jnp.array([0.4, 1.5])
     divergence = (
         jax.grad(lambda x: u_statio(x, params)[0])(x)[0]
@@ -51,6 +52,7 @@ def create_u_nonstatio():
 
 def test_divergence_rev_nonstatio(create_u_nonstatio):
     u_nonstatio, params = create_u_nonstatio
+    params = jinns.parameters.Params(nn_params=params, eq_params={})
     t_x = jnp.array([0.5, 0.4, 1.5])
     divergence = (
         jax.grad(lambda t_x: u_nonstatio(t_x, params)[1])(t_x)[1]

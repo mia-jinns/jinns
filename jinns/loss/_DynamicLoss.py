@@ -85,9 +85,9 @@ class FisherKPP(PDENonStatio):
             lap = laplacian_rev(t_x, u, params)[..., None]
 
             return du_dt + self.Tmax * (
-                -params.eq_params["D"] * lap
+                -params.eq_params.D * lap
                 - u(t_x, params)
-                * (params.eq_params["r"] - params.eq_params["g"] * u(t_x, params))
+                * (params.eq_params.r - params.eq_params.g * u(t_x, params))
             )
         if isinstance(u, SPINN):
             s = jnp.zeros((1, self.dim_x + 1))
@@ -101,8 +101,8 @@ class FisherKPP(PDENonStatio):
             lap = laplacian_fwd(t_x, u, params)
 
             return du_dt + self.Tmax * (
-                -params.eq_params["D"] * lap
-                - u_tx * (params.eq_params["r"] - params.eq_params["g"] * u_tx)
+                -params.eq_params.D * lap
+                - u_tx * (params.eq_params.r - params.eq_params.g * u_tx)
             )
         raise ValueError("u is not among the recognized types (PINN or SPINN)")
 
@@ -164,17 +164,17 @@ class GeneralizedLotkaVolterra(ODE):
             The parameters in a Params object
         """
         du_dt = jax.jacrev(lambda t: jnp.log(u(t, params)))(t)
-        carrying_term = params.eq_params["carrying_capacities"] * jnp.sum(u(t, params))
+        carrying_term = params.eq_params.carrying_capacities * jnp.sum(u(t, params))
         interactions_terms = jax.tree.map(
             lambda interactions_for_i: jnp.sum(
                 interactions_for_i * u(t, params).squeeze()
             ),
-            params.eq_params["interactions"],
+            params.eq_params.interactions,
             is_leaf=eqx.is_array,
         )
         interactions_terms = jnp.array([*(interactions_terms)])
         return du_dt.squeeze() + self.Tmax * (
-            -params.eq_params["growth_rates"] + interactions_terms + carrying_term
+            -params.eq_params.growth_rates + interactions_terms + carrying_term
         )
 
 
@@ -229,7 +229,7 @@ class BurgersEquation(PDENonStatio):
 
             return du_dtx_values[0:1] + self.Tmax * (
                 u_(t_x) * du_dtx_values[1:2]
-                - params.eq_params["nu"] * d2u_dx_dtx(t_x)[1:2]
+                - params.eq_params.nu * d2u_dx_dtx(t_x)[1:2]
             )
 
         if isinstance(u, SPINN):
@@ -258,7 +258,7 @@ class BurgersEquation(PDENonStatio):
             )[1]
             _, d2u_dx2 = jax.jvp(du_dx_fun, (t_x,), (v1,))
             # Note that ones_like(x) works because x is Bx1 !
-            return du_dt + self.Tmax * (u_tx * du_dx - params.eq_params["nu"] * d2u_dx2)
+            return du_dt + self.Tmax * (u_tx * du_dx - params.eq_params.nu * d2u_dx2)
         raise ValueError("u is not among the recognized types (PINN or SPINN)")
 
 
@@ -458,7 +458,7 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
         eq_params
             A dictionary containing the equation parameters
         """
-        return eq_params["alpha"] * (eq_params["mu"] - x)
+        return eq_params.alpha * (eq_params.mu - x)
 
     def sigma_mat(self, x, eq_params):
         r"""
@@ -473,7 +473,7 @@ class OU_FPENonStatioLoss2D(FPENonStatioLoss2D):
             A dictionary containing the equation parameters
         """
 
-        return jnp.diag(eq_params["sigma"])
+        return jnp.diag(eq_params.sigma)
 
     def diffusion(self, x, eq_params, i=None, j=None):
         r"""
@@ -587,15 +587,15 @@ class NavierStokesMassConservation2DStatio(PDEStatio):
             # dynamic loss on x axis
             result_x = (
                 u_dot_nabla_x_u[0]
-                + 1 / params.eq_params["rho"] * jac_p[0, 0]
-                - params.eq_params["nu"] * vec_laplacian_u[0]
+                + 1 / params.eq_params.rho * jac_p[0, 0]
+                - params.eq_params.nu * vec_laplacian_u[0]
             )
 
             # dynamic loss on y axis
             result_y = (
                 u_dot_nabla_x_u[1]
-                + 1 / params.eq_params["rho"] * jac_p[0, 1]
-                - params.eq_params["nu"] * vec_laplacian_u[1]
+                + 1 / params.eq_params.rho * jac_p[0, 1]
+                - params.eq_params.nu * vec_laplacian_u[1]
             )
 
             # MASS CONVERVATION
@@ -605,7 +605,8 @@ class NavierStokesMassConservation2DStatio(PDEStatio):
             # output is 3D
             if mc.ndim == 0 and not result_x.ndim == 0:
                 mc = mc[None]
-            return jnp.stack([result_x, result_y, mc], axis=-1)
+
+            return jnp.stack([result_x, result_y, mc], axis=-1).squeeze()
 
         if isinstance(u_p, SPINN):
             u = lambda x, params: u_p(x, params)[..., 0:2]
@@ -626,14 +627,14 @@ class NavierStokesMassConservation2DStatio(PDEStatio):
             # dynamic loss on x axis
             result_x = (
                 u_dot_nabla_x_u[..., 0]
-                + 1 / params.eq_params["rho"] * dp_dx.squeeze()
-                - params.eq_params["nu"] * vec_laplacian_u[..., 0]
+                + 1 / params.eq_params.rho * dp_dx.squeeze()
+                - params.eq_params.nu * vec_laplacian_u[..., 0]
             )
             # dynamic loss on y axis
             result_y = (
                 u_dot_nabla_x_u[..., 1]
-                + 1 / params.eq_params["rho"] * dp_dy.squeeze()
-                - params.eq_params["nu"] * vec_laplacian_u[..., 1]
+                + 1 / params.eq_params.rho * dp_dy.squeeze()
+                - params.eq_params.nu * vec_laplacian_u[..., 1]
             )
 
             # MASS CONVERVATION

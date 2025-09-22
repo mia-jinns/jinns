@@ -7,18 +7,17 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import InitVar
-from typing import Callable, Literal, Self, Union, Any, cast, overload
+from typing import Callable, Literal, Self, Union, Any, cast
 from math import prod
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array, Float, PyTree, Key
+from jaxtyping import PRNGKeyArray, Array, Float, PyTree
 import equinox as eqx
 import numpy as onp
 
 from jinns.nn._pinn import PINN
 from jinns.nn._mlp import MLP
 from jinns.parameters._params import Params
-from jinns.nn._utils import _PyTree_to_Params
 
 
 def _get_param_nb(
@@ -138,6 +137,32 @@ class HyperPINN(PINN):
             jnp.split(hyper_output, self.pinn_params_cumsum[:-1]),
         )
 
+        # For the record. We exhibited that the jnp.split was a serious time
+        # bottleneck. However none of the approaches below improved the speed.
+        # Moreover, this operation is not well implemented by a triton kernel
+        # apparently so such an optim is not an option.
+        # 1)
+        # pinn_params_flat = jax.tree.unflatten(self.pinn_params_struct,
+        #    jnp.split(hyper_output, self.pinn_params_cumsum[:-1]),
+        # )
+        # 2)
+        # pinn_params_flat = jax.tree.unflatten(self.pinn_params_struct,
+        #    [jax.lax.slice(hyper_output, (s,), (e,)).reshape(r) for s, e, r in
+        #     zip(self.pinn_params_cumsum_start, self.pinn_params_cumsum,
+        #         self.pinn_params_shapes)]
+        # )
+        # 3)
+        # pinn_params_flat = jax.tree.unflatten(self.pinn_params_struct,
+        #    [hyper_output[s:e].reshape(r) for s, e, r in
+        #     zip(self.pinn_params_cumsum_start, self.pinn_params_cumsum,
+        #         self.pinn_params_shapes)]
+        # )
+        # 4)
+        # pinn_params_flat = jax.tree.unflatten(self.pinn_params_struct,
+        #    [jax.lax.dynamic_slice(hyper_output, (s,), (size,)) for s, size in
+        #     zip(self.pinn_params_cumsum_start, self.pinn_params_cumsum_size)]
+        # )
+
         return jax.tree.map(
             lambda a, b: a.reshape(b.shape),
             pinn_params_flat,
@@ -145,17 +170,6 @@ class HyperPINN(PINN):
             is_leaf=lambda x: isinstance(x, jnp.ndarray),
         )
 
-    @overload
-    @_PyTree_to_Params
-    def __call__(
-        self,
-        inputs: Float[Array, " input_dim"],
-        params: PyTree,
-        *args,
-        **kwargs,
-    ) -> Float[Array, " output_dim"]: ...
-
-    @_PyTree_to_Params
     def __call__(
         self,
         inputs: Float[Array, "  input_dim"],
@@ -175,13 +189,10 @@ class HyperPINN(PINN):
             # DataGenerators)
             inputs = inputs[None]
 
-        # try:
         hyper = eqx.combine(params.nn_params, self.static_hyper)
-        # except (KeyError, AttributeError, TypeError) as e:  # give more flexibility
-        #    hyper = eqx.combine(params, self.static_hyper)
 
         eq_params_batch = jnp.concatenate(
-            [params.eq_params[k].flatten() for k in self.hyperparams],
+            [getattr(params.eq_params, k).flatten() for k in self.hyperparams],
             axis=0,
         )
 
@@ -202,12 +213,13 @@ class HyperPINN(PINN):
     @classmethod
     def create(
         cls,
+        *,
         eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"],
         hyperparams: list[str],
         hypernet_input_size: int,
+        key: PRNGKeyArray | None = None,
         eqx_network: eqx.nn.MLP | MLP | None = None,
         eqx_hyper_network: eqx.nn.MLP | MLP | None = None,
-        key: Key = None,
         eqx_list: tuple[tuple[Callable, int, int] | tuple[Callable], ...] | None = None,
         eqx_list_hyper: (
             tuple[tuple[Callable, int, int] | tuple[Callable], ...] | None
@@ -359,10 +371,10 @@ class HyperPINN(PINN):
 
             ### Now we finetune the hypernetwork architecture
 
-            key, subkey = jax.random.split(key, 2)
+            subkey1, subkey2 = jax.random.split(key, 2)
             # with warnings.catch_warnings():
             #    warnings.filterwarnings("ignore", message="A JAX array is being set as static!")
-            eqx_network = MLP(key=subkey, eqx_list=eqx_list)
+            eqx_network = MLP(key=subkey1, eqx_list=eqx_list)
             # quick partitioning to get the params to get the correct number of neurons
             # for the last layer of hyper network
             params_mlp, _ = eqx.partition(eqx_network, eqx.is_inexact_array)
@@ -405,10 +417,9 @@ class HyperPINN(PINN):
                         + eqx_list_hyper[2:]
                     ),
                 )
-            key, subkey = jax.random.split(key, 2)
             # with warnings.catch_warnings():
             #    warnings.filterwarnings("ignore", message="A JAX array is being set as static!")
-            eqx_hyper_network = cast(MLP, MLP(key=subkey, eqx_list=eqx_list_hyper))
+            eqx_hyper_network = cast(MLP, MLP(key=subkey2, eqx_list=eqx_list_hyper))
 
             ### End of finetuning the hypernetwork architecture
 
