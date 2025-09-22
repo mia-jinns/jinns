@@ -92,38 +92,52 @@ class DerivativeKeysODE(eqx.Module):
         infer the content of `Params.eq_params`.
     """
 
-    dyn_loss: Params[bool] | None = eqx.field(kw_only=True, default=None)
-    observations: Params[bool] | None = eqx.field(kw_only=True, default=None)
-    initial_condition: Params[bool] | None = eqx.field(kw_only=True, default=None)
+    dyn_loss: Params[bool]
+    observations: Params[bool]
+    initial_condition: Params[bool]
 
-    params: InitVar[Params[Array] | None] = eqx.field(kw_only=True, default=None)
+    params: InitVar[Params[Array] | None]
 
-    def __post_init__(self, params: Params[Array] | None = None):
+    def __init__(
+        self,
+        *,
+        dyn_loss: Params[bool] | None = None,
+        observations: Params[bool] | None = None,
+        initial_condition: Params[bool] | None = None,
+        params: Params[Array] | None = None,
+    ):
+        super().__init__()
         if params is None and (
-            self.dyn_loss is None
-            or self.observations is None
-            or self.initial_condition is None
+            dyn_loss is None or observations is None or initial_condition is None
         ):
             raise ValueError(
                 "params cannot be None since at least one loss "
                 "term has an undefined derivative key Params PyTree"
             )
-        if self.dyn_loss is None:
+        if dyn_loss is None:
             if params is None:
                 raise ValueError("self.dyn_loss is None, hence params should be passed")
             self.dyn_loss = _get_masked_parameters("nn_params", params)
-        if self.observations is None:
+        else:
+            self.dyn_loss = dyn_loss
+
+        if observations is None:
             if params is None:
                 raise ValueError(
                     "self.observations is None, hence params should be passed"
                 )
             self.observations = _get_masked_parameters("nn_params", params)
-        if self.initial_condition is None:
+        else:
+            self.observations = observations
+
+        if initial_condition is None:
             if params is None:
                 raise ValueError(
                     "self.initial_condition is None, hence params should be passed"
                 )
             self.initial_condition = _get_masked_parameters("nn_params", params)
+        else:
+            self.initial_condition = initial_condition
 
     @classmethod
     def from_str(
@@ -213,36 +227,56 @@ class DerivativeKeysPDEStatio(eqx.Module):
         content of `Params.eq_params`.
     """
 
-    dyn_loss: Params[bool] | None = eqx.field(kw_only=True, default=None)
-    observations: Params[bool] | None = eqx.field(kw_only=True, default=None)
-    boundary_loss: Params[bool] | None = eqx.field(kw_only=True, default=None)
-    norm_loss: Params[bool] | None = eqx.field(kw_only=True, default=None)
+    dyn_loss: Params[bool] = eqx.field(kw_only=True, default=None)
+    observations: Params[bool] = eqx.field(kw_only=True, default=None)
+    boundary_loss: Params[bool] = eqx.field(kw_only=True, default=None)
+    norm_loss: Params[bool] = eqx.field(kw_only=True, default=None)
 
     params: InitVar[Params[Array] | None] = eqx.field(kw_only=True, default=None)
 
-    def __post_init__(self, params: Params[Array] | None = None):
-        if self.dyn_loss is None:
+    def __init__(
+        self,
+        *,
+        dyn_loss: Params[bool] | None = None,
+        observations: Params[bool] | None = None,
+        boundary_loss: Params[bool] | None = None,
+        norm_loss: Params[bool] | None = None,
+        params: Params[Array] | None = None,
+    ):
+        super().__init__()
+        if dyn_loss is None:
             if params is None:
                 raise ValueError("self.dyn_loss is None, hence params should be passed")
             self.dyn_loss = _get_masked_parameters("nn_params", params)
-        if self.observations is None:
+        else:
+            self.dyn_loss = dyn_loss
+
+        if observations is None:
             if params is None:
                 raise ValueError(
                     "self.observations is None, hence params should be passed"
                 )
             self.observations = _get_masked_parameters("nn_params", params)
-        if self.boundary_loss is None:
+        else:
+            self.observations = observations
+
+        if boundary_loss is None:
             if params is None:
                 raise ValueError(
                     "self.boundary_loss is None, hence params should be passed"
                 )
             self.boundary_loss = _get_masked_parameters("nn_params", params)
-        if self.norm_loss is None:
+        else:
+            self.boundary_loss = boundary_loss
+
+        if norm_loss is None:
             if params is None:
                 raise ValueError(
                     "self.norm_loss is None, hence params should be passed"
                 )
             self.norm_loss = _get_masked_parameters("nn_params", params)
+        else:
+            self.norm_loss = norm_loss
 
     @classmethod
     def from_str(
@@ -341,16 +375,33 @@ class DerivativeKeysPDENonStatio(DerivativeKeysPDEStatio):
         content of `Params.eq_params`.
     """
 
-    initial_condition: Params[bool] | None = eqx.field(kw_only=True, default=None)
+    initial_condition: Params[bool] = eqx.field(kw_only=True, default=None)
 
-    def __post_init__(self, params: Params[Array] | None = None):
-        super().__post_init__(params=params)
-        if self.initial_condition is None:
+    def __init__(
+        self,
+        *,
+        dyn_loss: Params[bool] | None = None,
+        observations: Params[bool] | None = None,
+        boundary_loss: Params[bool] | None = None,
+        norm_loss: Params[bool] | None = None,
+        initial_condition: Params[bool] | None = None,
+        params: Params[Array] | None = None,
+    ):
+        super().__init__(
+            dyn_loss=dyn_loss,
+            observations=observations,
+            boundary_loss=boundary_loss,
+            norm_loss=norm_loss,
+            params=params,
+        )
+        if initial_condition is None:
             if params is None:
                 raise ValueError(
                     "self.initial_condition is None, hence params should be passed"
                 )
             self.initial_condition = _get_masked_parameters("nn_params", params)
+        else:
+            self.initial_condition = initial_condition
 
     @classmethod
     def from_str(
@@ -429,7 +480,9 @@ class DerivativeKeysPDENonStatio(DerivativeKeysPDEStatio):
         )
 
 
-def _set_derivatives(params, derivative_keys):
+def _set_derivatives(
+    params: Params[Array], derivative_keys: Params[bool]
+) -> Params[Array]:
     """
     We construct an eqx.Module with the fields of derivative_keys, each field
     has a copy of the params with appropriate derivatives set

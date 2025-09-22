@@ -46,7 +46,7 @@ class DictToModuleMeta(type):
                 {"__annotations__": {k: type(v) for k, v in d.items()}},
             )
         try:
-            return self._class(**d)
+            return self._class(**d)  # type: ignore
         except TypeError as _:
             print(
                 "DictToModuleMeta has been created with the fields"
