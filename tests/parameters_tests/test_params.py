@@ -33,10 +33,10 @@ def test_update_eq_params():
     np = 100
     param_batch_size = 10  # must be equal to batch size of the main DataGenerator
     param_train_data = jinns.data.DataGeneratorParameter(
-        subkey,
-        np,
-        param_batch_size,
-        {"nu": (2e-4, 1.9e-3)},
+        key=subkey,
+        n=np,
+        param_batch_size=param_batch_size,
+        param_ranges={"nu": (2e-4, 1.9e-3)},
         method="grid",
     )
 

@@ -53,11 +53,11 @@ def train_NSPipeFlow_init():
     np = 1000
     param_batch_size = 128  # must be equal to batch size of the main DataGenerator
     param_train_data = jinns.data.DataGeneratorParameter(
-        subkey,
-        np,
-        param_batch_size,
-        {"nu": (2e-4, 1.9e-3)},
-        method,
+        key=subkey,
+        n=np,
+        param_batch_size=param_batch_size,
+        param_ranges={"nu": (2e-4, 1.9e-3)},
+        method=method,
     )
 
     def u_p_output_transform(pinn_in, pinn_out, params):
