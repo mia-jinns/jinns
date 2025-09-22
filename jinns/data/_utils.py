@@ -54,7 +54,7 @@ def make_cartesian_product(
 
 def _reset_batch_idx_and_permute(
     operands: tuple[
-        PRNGKeyArray, Float[Array, " n dimension"], int, None, Float[Array, " n"]
+        PRNGKeyArray, Float[Array, " n dimension"], int, None, Float[Array, " n"] | None
     ],
 ) -> tuple[PRNGKeyArray, Float[Array, " n dimension"], int]:
     key, domain, curr_idx, _, p = operands
@@ -80,7 +80,7 @@ def _reset_batch_idx_and_permute(
 
 def _increment_batch_idx(
     operands: tuple[
-        PRNGKeyArray, Float[Array, " n dimension"], int, int, Float[Array, " n"]
+        PRNGKeyArray, Float[Array, " n dimension"], int, int, Float[Array, " n"] | None
     ],
 ) -> tuple[PRNGKeyArray, Float[Array, " n dimension"], int]:
     key, domain, curr_idx, batch_size, _ = operands
@@ -93,7 +93,7 @@ def _reset_or_increment(
     bend: int,
     n_eff: int,
     operands: tuple[
-        PRNGKeyArray, Float[Array, " n dimension"], int, int, Float[Array, " n"]
+        PRNGKeyArray, Float[Array, " n dimension"], int, int, Float[Array, " n"] | None
     ],
 ) -> tuple[PRNGKeyArray, Float[Array, " n dimension"], int]:
     """

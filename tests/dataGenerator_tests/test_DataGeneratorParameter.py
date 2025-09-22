@@ -68,9 +68,9 @@ def test_raise_error_with_wrong_shape_for_user_data():
     method = "uniform"
     param_ranges = {"theta": (10.0, 11.0)}
     # user_data is not (n,) or (n,1)
-    user_data = {"nu": jnp.ones((n, 1, 1))}
+    user_data = {"nu": jnp.ones((n, 2))}
 
-    with pytest.raises(ValueError) as _:
+    with pytest.raises(TypeError) as _:
         # __init__ calls self.generate_data() that we are testing for
         _ = jinns.data.DataGeneratorParameter(
             key=subkey,
