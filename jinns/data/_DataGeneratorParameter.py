@@ -11,6 +11,8 @@ import jax.numpy as jnp
 from jaxtyping import Key, Array, Float
 from jinns.data._utils import _reset_or_increment
 from jinns.data._AbstractDataGenerator import AbstractDataGenerator
+from scipy.stats import qmc
+import numpy as np
 
 
 class DataGeneratorParameter(AbstractDataGenerator):
@@ -44,7 +46,7 @@ class DataGeneratorParameter(AbstractDataGenerator):
         **Note** that we currently only support unidimensional parameters.
         This argument can be None if we use `user_data`.
     method : str, default="uniform"
-        Either `grid` or `uniform`, default is `uniform`. `grid` means
+        Either `grid` or `uniform` or `sobol` or `halton`, default is `uniform`. `grid` means
         regularly spaced points over the domain. `uniform` means uniformly
         sampled points over the domain
     user_data : dict[str, Float[Array, " n"]] | None, default={}
@@ -113,6 +115,16 @@ class DataGeneratorParameter(AbstractDataGenerator):
             self.param_ranges,
             self.user_data,  # type: ignore this has been handled in post_init
         )
+        if self.method in ["sobol", "halton"]:
+            idx = 0
+            k = list(keys.keys())[0]
+            keys[k], subkey = jax.random.split(keys[k], 2)
+            qmc_generator = qmc.Sobol if self.method == "sobol" else qmc.Halton
+            sampler = qmc_generator(
+                d=len(all_keys), scramble=True, rng=self._get_numpy_rng(subkey)
+            )
+            samples = sampler.random(n=self.n)
+
         for k in all_keys:
             if self.user_data and k in self.user_data.keys():
                 if self.user_data[k].shape == (self.n, 1):
@@ -136,6 +148,16 @@ class DataGeneratorParameter(AbstractDataGenerator):
                     param_n_samples[k] = jax.random.uniform(
                         subkey, shape=(self.n, 1), minval=xmin, maxval=xmax
                     )
+                elif self.method in ["sobol", "halton"]:
+                    param_n_samples[k] = jnp.array(
+                        qmc.scale(
+                            samples[:, idx].reshape(-1, 1),
+                            l_bounds=self.param_ranges[k][0],
+                            u_bounds=self.param_ranges[k][1],
+                        )
+                    )  # We scale omega domain to be in (min_pts, max_pts)
+                    assert param_n_samples[k].shape == (self.n, 1)
+                    idx = idx + 1
                 else:
                     raise ValueError("Method " + self.method + " is not implemented.")
 
@@ -204,3 +226,10 @@ class DataGeneratorParameter(AbstractDataGenerator):
         Generic method to return a batch
         """
         return self.param_batch()
+
+    def _get_numpy_rng(self, key: Key) -> np.random.Generator:
+        """
+        Convert JAX key to NumPy RNG.
+        """
+
+        return np.random.default_rng(np.uint32(key))

@@ -29,7 +29,7 @@ class ACMPDENonStatio(AbstractDataGenerator):
     ni: int
     dim : int
     min_pts :
-    max_pts : 65538
+    max_pts :
     tmin :
     tmax :
     method : Literal["uniform", "sobol", "halton"]
@@ -45,7 +45,12 @@ class ACMPDENonStatio(AbstractDataGenerator):
     method: Literal["uniform", "sobol", "halton"] = eqx.field(
         kw_only=True, static=True, default_factory=lambda: "uniform"
     )
+
+    ## For Residual Adaptative Sampling
     rar_parameters: dict[str, int] = eqx.field(kw_only=True, default=None)
+    rar_k: float = eqx.field(kw_only=True, default=None)
+    rar_c: float = eqx.field(kw_only=True, default=None)
+    residuals: Float[Array, "n 1+dim"] = eqx.field(kw_only=True, default=None)
 
     tmin: Float = eqx.field(kw_only=True, static=True)
     tmax: Float = eqx.field(kw_only=True, static=True)
@@ -63,6 +68,8 @@ class ACMPDENonStatio(AbstractDataGenerator):
                 f"for dimension {self.dim}"
             )
         self.key, domain_key, border_key, initial_key = jax.random.split(self.key, 4)
+
+        # If RAR sampling
 
         # Domain sampling (same for uniform and QMC)
         if self.method == "uniform":
@@ -123,7 +130,7 @@ class ACMPDENonStatio(AbstractDataGenerator):
             if self.initial is not None:
                 assert self.initial.shape == (self.ni, self.dim)
 
-    ## Sampling methods: all non-jax
+    ## Sampling methods
     def sample_in_domain(self, key: Key) -> Float[Array, "n 1+dim"]:
         """ """
         key, subkey = jax.random.split(key, 2)
@@ -298,6 +305,19 @@ class ACMPDENonStatio(AbstractDataGenerator):
             samples, l_bounds=self.min_pts, u_bounds=self.max_pts
         )  # We scale omega domain to be in (min_pts, max_pts)
         return jnp.array(samples)
+
+    def update_residuals(self, residuals: Array):
+        """
+        Update the current residuals of RAR sampling
+        """
+        self.residuals = jnp.abs(residuals)
+
+    def sample_with_rar(self, key: Key, n_samples: int) -> Array:
+        """ """
+        # Compute weights based on residuals
+        # Get current domain points (or generate new ones)
+        # Sample according to weights
+        pass
 
     ## Batch generation
 

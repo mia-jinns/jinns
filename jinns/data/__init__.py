@@ -2,6 +2,8 @@ from ._DataGeneratorODE import DataGeneratorODE
 from ._CubicMeshPDEStatio import CubicMeshPDEStatio
 from ._CubicMeshPDENonStatio import CubicMeshPDENonStatio
 from ._ACMPDENonStatio import ACMPDENonStatio
+from ._RarDataGenerator import RarDataGenerator
+from ._SobolMetaDataGenerator import SobolMetaDataGenerator
 from ._DataGeneratorObservations import DataGeneratorObservations
 from ._DataGeneratorParameter import DataGeneratorParameter
 from ._Batchs import ODEBatch, PDEStatioBatch, PDENonStatioBatch
@@ -13,6 +15,8 @@ __all__ = [
     "CubicMeshPDEStatio",
     "CubicMeshPDENonStatio",
     "ACMPDENonStatio",
+    "RarDataGenerator",
+    "SobolMetaDataGenerator",
     "DataGeneratorParameter",
     "DataGeneratorObservations",
     "ODEBatch",
