@@ -2,6 +2,10 @@
 
 * Unreleased (currently on `main`)
 
+* v1.6.1
+
+    - Fix instanciation error because the `EqParams` object should not be used in `DataGeneratorObservations` [!88](https://gitlab.com/mia_jinns/jinns/-/merge_requests/88)
+
 * v1.6.0
 
     - `Params.eq_params` from `dict` to `eqx.Module` **internally** [!85](https://gitlab.com/mia_jinns/jinns/-/merge_requests/85). A list of (limited) breaking changes for the user is given at the MR link. Related issue [#22](https://gitlab.com/mia_jinns/jinns/-/issues/22)
