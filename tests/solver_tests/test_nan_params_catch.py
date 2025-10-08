@@ -66,7 +66,7 @@ def train_init():
             # in log-space
             u_ = lambda t, p: u(t, p)[0]
             du_dt = jax.grad(u_, 0)(t, params)
-            return du_dt - params.eq_params["a"]
+            return du_dt - params.eq_params.a
 
     fo_loss = LinearFODE(Tmax=Tmax)
 

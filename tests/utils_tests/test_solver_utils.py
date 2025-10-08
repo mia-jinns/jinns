@@ -7,7 +7,6 @@ import pytest
 import jinns
 import jax.numpy as jnp
 import jax
-import equinox as eqx
 import jinns.data
 from jinns.solver._utils import _check_batch_size
 
@@ -32,7 +31,7 @@ obs_data = jinns.data.DataGeneratorObservations(
 n_param = 12
 param_batch_size = 12
 param_data = jinns.data.DataGeneratorParameter(
-    keys=key,
+    key=key,
     n=n_param,
     param_ranges={"param1": (-1, 1)},
     param_batch_size=param_batch_size,
@@ -47,7 +46,6 @@ def test_wrong_obs_batch_size_ode():
         key=key, nt=nt, tmin=tmin, tmax=tmax, temporal_batch_size=None
     )
     with pytest.raises(ValueError):
-
         # -- observations
         _check_batch_size(obs_data, dg_ode_with_batch, "obs_batch_size")  # 11 != 8
         _check_batch_size(obs_data, dg_ode_without_batch, "n")
@@ -58,7 +56,6 @@ def test_wrong_obs_batch_size_ode():
 
 
 def test_wrong_batch_size_pde_statio():
-
     dg_pde_with_batch = jinns.data.CubicMeshPDEStatio(
         key=key,
         n=n,
@@ -80,7 +77,6 @@ def test_wrong_batch_size_pde_statio():
         dim=2,
     )
     with pytest.raises(ValueError):
-
         # -- observations
         _check_batch_size(obs_data, dg_pde_with_batch, "obs_batch_size")  # 11 != 8
         _check_batch_size(obs_data, dg_pde_without_batch, "n")
@@ -137,7 +133,6 @@ def test_wrong_batch_size_pde_statio():
 
 
 def test_wrong_batch_size_pde_nonstatio():
-
     # TODO
 
     assert 1 == 1

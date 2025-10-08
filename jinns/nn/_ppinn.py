@@ -4,18 +4,17 @@ Implements utility function to create PINNs
 
 from __future__ import annotations
 
-from typing import Callable, Literal, Self, cast, overload
+from typing import Callable, Literal, Self, cast
 from dataclasses import InitVar
 import jax
 import jax.numpy as jnp
 import equinox as eqx
 
-from jaxtyping import Array, Key, Float, PyTree
+from jaxtyping import Array, Float, PRNGKeyArray
 
 from jinns.parameters._params import Params
 from jinns.nn._pinn import PINN
 from jinns.nn._mlp import MLP
-from jinns.nn._utils import _PyTree_to_Params
 
 
 class PPINN_MLP(PINN):
@@ -85,17 +84,6 @@ class PPINN_MLP(PINN):
             self.init_params = self.init_params + (params,)
             self.static = self.static + (static,)
 
-    @overload
-    @_PyTree_to_Params
-    def __call__(
-        self,
-        inputs: Float[Array, " input_dim"],
-        params: PyTree,
-        *args,
-        **kwargs,
-    ) -> Float[Array, " output_dim"]: ...
-
-    @_PyTree_to_Params
     def __call__(
         self,
         inputs: Float[Array, " 1"] | Float[Array, " dim"] | Float[Array, " 1+dim"],
@@ -135,9 +123,10 @@ class PPINN_MLP(PINN):
     @classmethod
     def create(
         cls,
+        *,
+        key: PRNGKeyArray | None = None,
         eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"],
         eqx_network_list: list[eqx.nn.MLP | MLP] | None = None,
-        key: Key = None,
         eqx_list_list: (
             list[tuple[tuple[Callable, int, int] | tuple[Callable], ...]] | None
         ) = None,
@@ -225,7 +214,7 @@ class PPINN_MLP(PINN):
 
             eqx_network_list = []
             for eqx_list in eqx_list_list:
-                key, subkey = jax.random.split(key, 2)
+                key, subkey = jax.random.split(key, 2)  # type: ignore
                 eqx_network_list.append(MLP(key=subkey, eqx_list=eqx_list))
 
         ppinn = cls(

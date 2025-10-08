@@ -7,6 +7,8 @@ import equinox as eqx
 import optax
 import jinns
 
+from jinns.parameters._params import update_eq_params
+
 
 @pytest.fixture
 def train_NSPipeFlow_init():
@@ -51,11 +53,11 @@ def train_NSPipeFlow_init():
     np = 1000
     param_batch_size = 128  # must be equal to batch size of the main DataGenerator
     param_train_data = jinns.data.DataGeneratorParameter(
-        subkey,
-        np,
-        param_batch_size,
-        {"nu": (2e-4, 1.9e-3)},
-        method,
+        key=subkey,
+        n=np,
+        param_batch_size=param_batch_size,
+        param_ranges={"nu": (2e-4, 1.9e-3)},
+        method=method,
     )
 
     def u_p_output_transform(pinn_in, pinn_out, params):
@@ -112,8 +114,9 @@ def train_NSPipeFlow_init():
     param_train_data, param_batch = param_train_data.get_batch()
     init_params_hyper = jinns.parameters.Params(
         nn_params=u_p_init_nn_params,
-        eq_params={"rho": rho, **param_batch},
+        eq_params={"rho": rho, "nu": None},
     )
+    init_params_hyper = update_eq_params(init_params_hyper, param_batch)
 
     dyn_loss = jinns.loss.NavierStokesMassConservation2DStatio()
 

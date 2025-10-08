@@ -3,14 +3,19 @@ Formalize the loss weights data structure
 """
 
 from __future__ import annotations
-from dataclasses import fields
 
 from jaxtyping import Array
 import jax.numpy as jnp
 import equinox as eqx
 
+from jinns.loss._loss_components import (
+    ODEComponents,
+    PDEStatioComponents,
+    PDENonStatioComponents,
+)
 
-def lw_converter(x):
+
+def lw_converter(x: Array | None) -> Array | None:
     if x is None:
         return x
     elif isinstance(x, tuple):
@@ -21,79 +26,61 @@ def lw_converter(x):
         return jnp.asarray(x)
 
 
-class AbstractLossWeights(eqx.Module):
+class LossWeightsODE(ODEComponents[Array | None]):
     """
-    An abstract class, currently only useful for type hints
-
-    TODO in the future maybe loss weights could be subclasses of
-    XDEComponentsAbstract?
+    Value given at initialization is converted to a jnp.array orunmodified if None.
+    This means that at initialization, the user can pass a float or int
     """
 
-    def items(self):
-        """
-        For the dataclass to be iterated like a dictionary.
-        Practical and retrocompatible with old code when loss components were
-        dictionaries
-
-        condition: if it is not a tuple it should not be None. It it is a tuple
-        it should not be only Nones
-        """
-        return {
-            field.name: getattr(self, field.name)
-            for field in fields(self)
-            if (
-                (
-                    not isinstance(getattr(self, field.name), tuple)
-                    and getattr(self, field.name) is not None
-                )
-                or (
-                    isinstance(getattr(self, field.name), tuple)
-                    and not all(item is None for item in getattr(self, field.name))
-                )
-            )
-        }.items()
-
-
-class LossWeightsODE(AbstractLossWeights):
-    dyn_loss: Array | float | None = eqx.field(
+    dyn_loss: Array | None = eqx.field(
         kw_only=True, default=None, converter=lw_converter
     )
-    initial_condition: Array | float | None = eqx.field(
+    initial_condition: Array | None = eqx.field(
         kw_only=True, default=None, converter=lw_converter
     )
-    observations: Array | float | None = eqx.field(
+    observations: Array | None = eqx.field(
         kw_only=True, default=None, converter=lw_converter
     )
 
 
-class LossWeightsPDEStatio(AbstractLossWeights):
-    dyn_loss: Array | float | None = eqx.field(
+class LossWeightsPDEStatio(PDEStatioComponents[Array | None]):
+    """
+    Value given at initialization is converted to a jnp.array orunmodified if None.
+    This means that at initialization, the user can pass a float or int
+    """
+
+    dyn_loss: Array | None = eqx.field(
         kw_only=True, default=None, converter=lw_converter
     )
-    norm_loss: Array | float | None = eqx.field(
+    norm_loss: Array | None = eqx.field(
         kw_only=True, default=None, converter=lw_converter
     )
-    boundary_loss: Array | float | None = eqx.field(
+    boundary_loss: Array | None = eqx.field(
         kw_only=True, default=None, converter=lw_converter
     )
-    observations: Array | float | None = eqx.field(
+    observations: Array | None = eqx.field(
         kw_only=True, default=None, converter=lw_converter
     )
 
 
-class LossWeightsPDENonStatio(AbstractLossWeights):
-    dyn_loss: Array | float | None = eqx.field(
+class LossWeightsPDENonStatio(PDENonStatioComponents[Array | None]):
+    """
+    Value given at initialization is converted to a jnp.array orunmodified if None.
+    This means that at initialization, the user can pass a float or int
+    """
+
+    dyn_loss: Array | None = eqx.field(
         kw_only=True, default=None, converter=lw_converter
     )
-    norm_loss: Array | float | None = eqx.field(
+    norm_loss: Array | None = eqx.field(
         kw_only=True, default=None, converter=lw_converter
     )
-    boundary_loss: Array | float | None = eqx.field(
+    boundary_loss: Array | None = eqx.field(
         kw_only=True, default=None, converter=lw_converter
     )
-    observations: Array | float | None = eqx.field(
+    observations: Array | None = eqx.field(
         kw_only=True, default=None, converter=lw_converter
     )
-    initial_condition: Array | float | None = eqx.field(
+    initial_condition: Array | None = eqx.field(
         kw_only=True, default=None, converter=lw_converter
     )

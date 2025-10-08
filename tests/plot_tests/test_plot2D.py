@@ -7,8 +7,6 @@ import jax.numpy as jnp
 import jinns
 import jinns.parameters
 import jinns.plot
-import matplotlib.pyplot as plt
-import matplotlib as mpl
 
 import jinns.utils
 
@@ -23,7 +21,6 @@ val_times = jnp.linspace(tmin, tmax, ntime)
 
 
 def test_plot2d_statio():
-
     jinns.plot.plot2d(
         fun=u_statio,
         xy_data=val_xy_data,
@@ -33,7 +30,6 @@ def test_plot2d_statio():
 def test_plot2d_statio_with_spinn():
     import equinox as eqx
     import jax
-    from functools import partial
 
     d = 2
     r = 1
@@ -43,9 +39,10 @@ def test_plot2d_statio_with_spinn():
     u_spinn, init_nn_params_spinn = jinns.nn.SPINN_MLP.create(
         subkey, d, r, eqx_list, "statio_PDE"
     )
+    params = jinns.parameters.Params(nn_params=init_nn_params_spinn, eq_params={})
 
     jinns.plot.plot2d(
-        fun=lambda x: u_spinn(x, init_nn_params_spinn),
+        fun=lambda x: u_spinn(x, params),
         xy_data=val_xy_data,
         cmap="viridis",
         spinn=True,
@@ -57,7 +54,6 @@ def test_plot2d_nonstatio():
 
 
 def test_plot2d_nonstatio_raise_error_for_wrong_xy_data():
-
     with pytest.raises(ValueError):
         # xy_data of len !=2
         jinns.plot.plot2d(fun=u_nonstatio, xy_data=[1, 2, 3], times=val_times)
@@ -67,6 +63,5 @@ def test_plot2d_nonstatio_raise_error_for_wrong_xy_data():
 
 
 def test_plot2d_nonstatio_raise_error_for_wrong_times():
-
     with pytest.raises(ValueError):
         jinns.plot.plot2d(fun=u_nonstatio, xy_data=val_xy_data, times=(1, 2))

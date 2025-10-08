@@ -3,6 +3,7 @@ Implements save and load functions
 """
 
 from typing import Callable, Literal
+from dataclasses import fields
 import pickle
 import jax
 import equinox as eqx
@@ -130,8 +131,14 @@ def save_pinn(
         u = eqx.tree_at(lambda m: m.init_params, u, params)
     eqx.tree_serialise_leaves(filename + "-module.eqx", u)
 
+    # The class EqParams is malformed for pickling, hence we pickle it under
+    # its dictionary form
+    eq_params_as_dict = {
+        k.name: getattr(params.eq_params, k.name) for k in fields(params.eq_params)
+    }
+
     with open(filename + "-eq_params.pkl", "wb") as f:
-        pickle.dump(params.eq_params, f)
+        pickle.dump(eq_params_as_dict, f)
 
     kwargs_creation = kwargs_creation.copy()  # avoid side-effect that would be
     # very probably harmless anyway
@@ -187,9 +194,9 @@ def load_pinn(
     try:
         with open(filename + "-eq_params.pkl", "rb") as f:
             eq_params_reloaded = pickle.load(f)
-    except FileNotFoundError:
-        eq_params_reloaded = {}
-        print("No pickle file for equation parameters found!")
+    except FileNotFoundError as e:
+        raise e
+
     kwargs_reloaded["eqx_list"] = string_to_function(kwargs_reloaded["eqx_list"])
     if type_ == "pinn_mlp":
         # next line creates a shallow model, the jax arrays are just shapes and
