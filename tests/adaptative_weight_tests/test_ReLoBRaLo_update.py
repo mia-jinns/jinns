@@ -45,6 +45,7 @@ def test_weight_update_value():
         loss_weights=loss_weights,
         update_weight_method="ReLoBRaLo",
         params=jinns.parameters.Params(eq_params={"a": jnp.array(0)}),
+        keep_initial_loss_weight_scales=False,
     )
     if loss.update_weight_method is not None:
         key = jax.random.PRNGKey(0)

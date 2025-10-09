@@ -229,9 +229,10 @@ class LossODE(AbstractLoss[LossWeightsODE, ODEBatch, ODEComponents[Array | None]
 
         if obs_slice is None:
             self.obs_slice = (jnp.s_[...],)
-
-        if not isinstance(obs_slice, tuple):
-            self.obs_slice = (self.obs_slice,)
+        elif not isinstance(obs_slice, tuple):
+            self.obs_slice = (obs_slice,)
+        else:
+            self.obs_slice = obs_slice
 
         if self.loss_weights is None:
             self.loss_weights = LossWeightsODE()

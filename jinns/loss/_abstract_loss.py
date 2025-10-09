@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import abc
-from typing import Self, Literal, Callable, TypeVar, Generic, Any, get_args, InitVar
+import warnings
+from typing import Self, Literal, Callable, TypeVar, Generic, Any, get_args
+from dataclasses import InitVar
 from jaxtyping import Array, PyTree, Float, PRNGKeyArray
 import equinox as eqx
 import jax
@@ -37,7 +39,7 @@ C = TypeVar(
 
 
 AvailableUpdateWeightMethods = Literal[
-    "soft_adapt", "prior_loss", "lr_annealing", "ReLoBRaLo"
+    "softadapt", "soft_adapt", "prior_loss", "lr_annealing", "ReLoBRaLo"
 ]
 
 
@@ -61,9 +63,16 @@ class AbstractLoss(eqx.Module, Generic[L, B, C]):
             self.update_weight_method is not None
             and self.update_weight_method not in get_args(AvailableUpdateWeightMethods)
         ):
-            raise ValueError("update_weight_method is not a valid method")
+            raise ValueError(
+                f"update_weight_method={self.update_weight_method} is not a valid method"
+            )
         if keep_initial_loss_weight_scales:
             self.loss_weight_scales = self.loss_weights
+            if self.update_weight_method is not None:
+                warnings.warn(
+                    "Loss weights out from update_weight_method will still be"
+                    " multiplied by the initial input loss_weights"
+                )
         else:
             self.loss_weight_scales = optax.tree_utils.tree_ones_like(self.loss_weights)
             # self.loss_weight_scales will contain None where self.loss_weights

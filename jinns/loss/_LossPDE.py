@@ -369,6 +369,8 @@ class _LossPDEAbstract(AbstractLoss[L, B, C], Generic[L, B, C, D, Y]):
     ) -> tuple[Params[Array] | None, Callable[[Params[Array]], Array] | None]:
         if batch.obs_batch_dict is not None:
             # update params with the batches of observed params
+            # NOTE UPDATE THIS PART WHICH IS FORCED TO FAIL WITH NEW DGOBS
+            # WHERE batch.obs_batch_dict WILL ALWAYS BE A TUPLE
             params_obs = update_eq_params(params, batch.obs_batch_dict["eq_params"])
 
             pinn_in, val = (

@@ -60,7 +60,7 @@ def test_weight_update_value():
 
 def test_weight_update_value_dyn_and_obs_loss_are_tuples():
     """
-    Note that the process should automatically exclude observation field to be
+    Note that the process should automatically include observation field to be
     correct with the formula
     """
     loss_weights = jinns.loss.LossWeightsPDEStatio(
@@ -114,7 +114,7 @@ def test_weight_update_value_dyn_and_obs_loss_are_tuples():
 
 def test_weight_update_value_dyn_and_obs_loss_are_tuples_init_reweighting():
     """
-    Note that the process should automatically exclude observation field to be
+    Note that the process should automatically include observation field to be
     correct with the formula
     """
     loss_weights = jinns.loss.LossWeightsPDEStatio(

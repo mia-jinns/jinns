@@ -105,8 +105,6 @@ class DataGeneratorObservations(AbstractDataGenerator):
         super().__init__()
         self.key = key
 
-        if not isinstance(obs_batch_size, tuple):
-            obs_batch_size = (obs_batch_size,)
         if not isinstance(observed_pinn_in, tuple):
             observed_pinn_in = (observed_pinn_in,)
         if not isinstance(observed_values, tuple):
@@ -118,27 +116,27 @@ class DataGeneratorObservations(AbstractDataGenerator):
                     "Each matching elements of self.observed_pinn_in and self.observed_values must have same first axis"
                 )
 
-        jax.tree.map(check_first_axis, self.observed_pinn_in, self.observed_values)
+        jax.tree.map(check_first_axis, observed_pinn_in, observed_values)
 
-        def check_first_axis2(a, b):
-            for _, v in a.items():
-                if v.shape[0] != b.shape[0]:
-                    raise ValueError(
-                        "Each matching elements of self.observed_pinn_in and self.observed_eq_params must have the same first axis"
-                    )
-
-        jax.tree.map(
-            check_first_axis2,
-            observed_eq_params,
-            observed_pinn_in,
-            is_leaf=lambda x: isinstance(x, dict),
-        )
-
-        self.obs_batch_size = obs_batch_size
         self.observed_pinn_in = observed_pinn_in
         self.observed_values = observed_values
 
         if observed_eq_params is not None:
+
+            def check_first_axis2(a, b):
+                for _, v in a.items():
+                    if v.shape[0] != b.shape[0]:
+                        raise ValueError(
+                            "Each matching elements of self.observed_pinn_in and self.observed_eq_params must have the same first axis"
+                        )
+
+            jax.tree.map(
+                check_first_axis2,
+                observed_eq_params,
+                observed_pinn_in,
+                is_leaf=lambda x: isinstance(x, dict),
+            )
+
             if not isinstance(observed_eq_params, tuple):
                 observed_eq_params = (observed_eq_params,)
             observed_eq_params = jax.tree.map(
@@ -176,11 +174,12 @@ class DataGeneratorObservations(AbstractDataGenerator):
                 raise ValueError(
                     "Each element of self.observed_values must have 2 dimensions"
                 )
-            for _, v in c.items():
-                if v.ndim > 2:
-                    raise ValueError(
-                        "Each value of observed_eq_params must have 2 dimensions"
-                    )
+            if c is not None:
+                for _, v in c.items():
+                    if v.ndim > 2:
+                        raise ValueError(
+                            "Each value of observed_eq_params must have 2 dimensions"
+                        )
 
         jax.tree.map(
             check_ndim,
@@ -194,12 +193,14 @@ class DataGeneratorObservations(AbstractDataGenerator):
             self.observed_pinn_in,
         )
 
-        if isinstance(self.obs_batch_size, int) or self.obs_batch_size is None:
+        if isinstance(obs_batch_size, int) or obs_batch_size is None:
             self.obs_batch_size = jax.tree.map(
-                lambda _: self.obs_batch_size, self.observed_pinn_in
+                lambda _: obs_batch_size,
+                self.observed_pinn_in,
             )
 
         # NOTE currently disabled
+        self.sharding_device = None
         # self.sharding_device = sharding_device
         # if self.sharding_device is not None:
         #     self.observed_pinn_in = jax.lax.with_sharding_constraint(
@@ -214,6 +215,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
 
         # When self.obs_batch_size leaf is None we will have self.curr_idx leaf
         # to None. (Previous behaviour would put an unused self.curr_idx to 0)
+        print(self.obs_batch_size)
         self.curr_idx = jax.tree.map(
             lambda bs, n: bs + n if bs is not None else None,
             self.obs_batch_size,
@@ -238,8 +240,8 @@ class DataGeneratorObservations(AbstractDataGenerator):
             )
         # recall post_init is the only place with _init_ where we can set
         # self attribute in a in-place way
-        self.key, _ = jax.random.split(self.key, 2)  # to make it equivalent to
-        # the call to _reset_batch_idx_and_permute in legacy DG
+        ###self.key, _ = jax.random.split(self.key, 2)  # to make it equivalent to
+        #### the call to _reset_batch_idx_and_permute in legacy DG
 
     def _get_operands(
         self,

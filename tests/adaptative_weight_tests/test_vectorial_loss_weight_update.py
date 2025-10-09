@@ -11,6 +11,7 @@ import jax
 import jax.numpy as jnp
 from jax import random
 import equinox as eqx
+import optax
 
 import jinns
 from jinns.data._DataGeneratorODE import DataGeneratorODE
@@ -82,20 +83,16 @@ def train_GLV_init():
         def equation(self, t, u, params):
             u1 = lambda t: jnp.log(u(t, params))[0]
             du1_dt = jax.grad(u1)(t).squeeze()
-            carrying_term = params.eq_params["carrying_capacities"][0] * jnp.sum(
+            carrying_term = params.eq_params.carrying_capacities[0] * jnp.sum(
                 u(t, params)
             )
             interaction_term = jnp.sum(
-                params.eq_params["interactions"][0] * u(t, params).squeeze()
+                params.eq_params.interactions[0] * u(t, params).squeeze()
             )
             return (
                 du1_dt.squeeze()
                 + self.Tmax
-                * (
-                    -params.eq_params["growth_rates"][0]
-                    + interaction_term
-                    + carrying_term
-                )
+                * (-params.eq_params.growth_rates[0] + interaction_term + carrying_term)
             )[None]
 
     class GLV_eq2(ODE):
@@ -104,20 +101,16 @@ def train_GLV_init():
         def equation(self, t, u, params):
             u2 = lambda t: jnp.log(u(t, params))[1]
             du2_dt = jax.grad(u2)(t).squeeze()
-            carrying_term = params.eq_params["carrying_capacities"][1] * jnp.sum(
+            carrying_term = params.eq_params.carrying_capacities[1] * jnp.sum(
                 u(t, params)
             )
             interaction_term = jnp.sum(
-                params.eq_params["interactions"][1] * u(t, params).squeeze()
+                params.eq_params.interactions[1] * u(t, params).squeeze()
             )
             return (
                 du2_dt.squeeze()
                 + self.Tmax
-                * (
-                    -params.eq_params["growth_rates"][1]
-                    + interaction_term
-                    + carrying_term
-                )
+                * (-params.eq_params.growth_rates[1] + interaction_term + carrying_term)
             )[None]
 
     class GLV_eq3(ODE):
@@ -126,20 +119,16 @@ def train_GLV_init():
         def equation(self, t, u, params):
             u3 = lambda t: jnp.log(u(t, params))[2]
             du3_dt = jax.grad(u3)(t).squeeze()
-            carrying_term = params.eq_params["carrying_capacities"][2] * jnp.sum(
+            carrying_term = params.eq_params.carrying_capacities[2] * jnp.sum(
                 u(t, params)
             )
             interaction_term = jnp.sum(
-                params.eq_params["interactions"][2] * u(t, params).squeeze()
+                params.eq_params.interactions[2] * u(t, params).squeeze()
             )
             return (
                 du3_dt.squeeze()
                 + self.Tmax
-                * (
-                    -params.eq_params["growth_rates"][2]
-                    + interaction_term
-                    + carrying_term
-                )
+                * (-params.eq_params.growth_rates[2] + interaction_term + carrying_term)
             )[None]
 
     dyn_loss_eq1 = GLV_eq1(Tmax=Tmax)
@@ -156,7 +145,7 @@ def train_GLV_init():
         dynamic_loss=(dyn_loss_eq1, dyn_loss_eq2, dyn_loss_eq3),
         initial_condition=(float(tmin), jnp.array([N_0[0], N_0[1], N_0[2]])),
         params=init_params,
-        # update_weight_method="soft_adapt"
+        update_weight_method="soft_adapt",
     )
 
     return init_params, loss, train_data
@@ -167,45 +156,47 @@ def test_initial_loss_GLV(train_GLV_init):
     _, batch = train_data.get_batch()
     assert jnp.allclose(
         loss.evaluate(init_params, batch)[0],
-        4932.596,  # NOTE that here we compare to the value attained in the
+        4928.112,  # NOTE that here we compare to the value attained in the
         # classical case, since at init there is no loss weight update yet
         atol=1e-1,
     )
 
 
-# @pytest.fixture
-# def train_GLV_10it(train_GLV_init):
-#    """
-#    Fixture that requests a fixture
-#    """
-#    init_params, loss, train_data = train_GLV_init
-#
-#    # NOTE we need to waste one get_batch() here to stay synchronized with the
-#    # notebook
-#    train_data, batch = train_data.get_batch()
-#    _ = loss.evaluate(init_params, batch)[0]
-#    # NOTE the following line is not accurate as it skips one batch
-#    # but this is to comply with behaviour of 1st gen of DataGenerator
-#    # (which had this bug see issue #5) so that we can keep old tests values to
-#    # know we are doing the same
-#    train_data = eqx.tree_at(
-#        lambda m: m.curr_time_idx, train_data, train_data.temporal_batch_size
-#    )
-#
-#    params = init_params
-#
-#    tx = optax.adam(learning_rate=1e-3)
-#    n_iter = 10
-#    params, total_loss_list, loss_by_term_dict, data, _, _, _, _, _, _ = jinns.solve(
-#        n_iter=n_iter,
-#        loss=loss,
-#        optimizer=tx,
-#        init_params=params,
-#        data=train_data,
-#    )
-#    return total_loss_list[9]
+@pytest.fixture
+def train_GLV_10it(train_GLV_init):
+    """
+    Fixture that requests a fixture
+    """
+    init_params, loss, train_data = train_GLV_init
+
+    # NOTE we need to waste one get_batch() here to stay synchronized with the
+    # notebook
+    train_data, batch = train_data.get_batch()
+    _ = loss.evaluate(init_params, batch)[0]
+    # NOTE the following line is not accurate as it skips one batch
+    # but this is to comply with behaviour of 1st gen of DataGenerator
+    # (which had this bug see issue #5) so that we can keep old tests values to
+    # know we are doing the same
+    train_data = eqx.tree_at(
+        lambda m: m.curr_time_idx, train_data, train_data.temporal_batch_size
+    )
+
+    params = init_params
+
+    key = jax.random.PRNGKey(0)
+    tx = optax.adam(learning_rate=1e-3)
+    n_iter = 10
+    params, total_loss_list, loss_by_term_dict, data, _, _, _, _, _, _ = jinns.solve(
+        n_iter=n_iter,
+        loss=loss,
+        optimizer=tx,
+        init_params=params,
+        data=train_data,
+        key=key,
+    )
+    return total_loss_list[9]
 
 
-# def test_10it_GLV(train_GLV_10it):
-#    total_loss_val = train_GLV_10it
-#    assert jnp.allclose(total_loss_val, 4694.7, atol=1e-1)
+def test_10it_GLV(train_GLV_10it):
+    total_loss_val = train_GLV_10it
+    assert jnp.allclose(total_loss_val, 1184.3315, atol=1e-1)
