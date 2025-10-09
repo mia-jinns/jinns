@@ -122,36 +122,17 @@ class DataGeneratorObservations(AbstractDataGenerator):
         self.observed_values = observed_values
 
         if observed_eq_params is not None:
-
-            def check_first_axis2(a, b):
-                for _, v in a.items():
-                    if v.shape[0] != b.shape[0]:
-                        raise ValueError(
-                            "Each matching elements of self.observed_pinn_in and self.observed_eq_params must have the same first axis"
-                        )
-
-            jax.tree.map(
-                check_first_axis2,
-                observed_eq_params,
-                observed_pinn_in,
-                is_leaf=lambda x: isinstance(x, dict),
-            )
-
             if not isinstance(observed_eq_params, tuple):
                 observed_eq_params = (observed_eq_params,)
-            observed_eq_params = jax.tree.map(
+
+            self.observed_eq_params = jax.tree.map(
                 lambda d: {
                     k: v[:, None] if len(v.shape) == 1 else v for k, v in d.items()
                 },
                 observed_eq_params,
+                is_leaf=lambda x: isinstance(x, dict),
             )
 
-            # Convert the dict of observed parameters to the internal
-            # `DGObservedParams`
-            # class used by Jinns.
-            self.observed_eq_params = tuple(
-                DGObservedParams(o_, "DGObservedParams") for o_ in observed_eq_params
-            )
         else:
             self.observed_eq_params = tuple(
                 None for _ in range(len(self.observed_pinn_in))
@@ -164,6 +145,22 @@ class DataGeneratorObservations(AbstractDataGenerator):
         self.observed_values = jax.tree.map(
             lambda x: x[:, None] if len(x.shape) == 1 else x, self.observed_values
         )
+
+        if self.observed_eq_params is not None:
+
+            def check_first_axis2(a, b):
+                for _, v in a.items():
+                    if v.shape[0] != b.shape[0]:
+                        raise ValueError(
+                            "Each matching elements of self.observed_pinn_in and self.observed_eq_params must have the same first axis"
+                        )
+
+            jax.tree.map(
+                check_first_axis2,
+                self.observed_eq_params,
+                self.observed_pinn_in,
+                is_leaf=lambda x: isinstance(x, dict),
+            )
 
         def check_ndim(a, b, c):
             if a.ndim > 2:
@@ -198,6 +195,14 @@ class DataGeneratorObservations(AbstractDataGenerator):
                 lambda _: obs_batch_size,
                 self.observed_pinn_in,
             )
+
+        # After all the checks
+        # Convert the dict of observed parameters to the internal
+        # `DGObservedParams`
+        # class used by Jinns.
+        self.observed_eq_params = tuple(
+            DGObservedParams(o_, "DGObservedParams") for o_ in self.observed_eq_params
+        )
 
         # NOTE currently disabled
         self.sharding_device = None
