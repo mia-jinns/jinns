@@ -105,10 +105,16 @@ class DataGeneratorObservations(AbstractDataGenerator):
         super().__init__()
         self.key = key
 
-        if not isinstance(observed_pinn_in, tuple):
-            observed_pinn_in = (observed_pinn_in,)
         if not isinstance(observed_values, tuple):
             observed_values = (observed_values,)
+
+        if not isinstance(observed_pinn_in, tuple):
+            observed_pinn_in = tuple(
+                observed_pinn_in for _ in range(len(observed_values))
+            )  # observed_values is the reference tuple and the only one that can be a
+            # real tuple while obs_pinn_in and obs_eq_params are just copies
+            # because all the logic of using a "vectorial" DGObs is if we have
+            # several *observation* channels
 
         def check_first_axis(a, b):
             if a.shape[0] != b.shape[0]:
@@ -123,7 +129,12 @@ class DataGeneratorObservations(AbstractDataGenerator):
 
         if observed_eq_params is not None:
             if not isinstance(observed_eq_params, tuple):
-                observed_eq_params = (observed_eq_params,)
+                observed_eq_params = tuple(
+                    observed_eq_params for _ in range(len(observed_values))
+                )  # observed_values is the reference tuple and the only one that can be a
+                # real tuple while obs_pinn_in and obs_eq_params are just copies
+                # because all the logic of using a "vectorial" DGObs is if we have
+                # several *observation* channels
 
             self.observed_eq_params = jax.tree.map(
                 lambda d: {
@@ -135,7 +146,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
 
         else:
             self.observed_eq_params = tuple(
-                None for _ in range(len(self.observed_pinn_in))
+                None for _ in range(len(self.observed_values))
             )
 
         self.observed_pinn_in = jax.tree.map(
