@@ -13,7 +13,7 @@ from jaxtyping import PRNGKeyArray, Int, Array, Float
 from jinns.data._Batchs import ObsBatchDict
 from jinns.data._utils import _reset_or_increment
 from jinns.data._AbstractDataGenerator import AbstractDataGenerator
-from jinns.parameters._params import EqParams
+from jinns.utils._DictToModuleMeta import DictToModuleMeta
 
 if TYPE_CHECKING:
     # imports only used in type hints
@@ -25,6 +25,15 @@ if TYPE_CHECKING:
     # because the lambda are not type annotated, but there is no proper way
     # to do this and we should assign the lambda to a type hinted variable
     # before hand: this is not practical, let us not get mad at this
+
+
+class DGObservedParams(metaclass=DictToModuleMeta):
+    """
+    However, static type checkers cannot know that DGObservedParams inherit from
+    eqx.Module and explicit casting to the latter class will be needed
+    """
+
+    pass
 
 
 class DataGeneratorObservations(AbstractDataGenerator):
@@ -126,7 +135,9 @@ class DataGeneratorObservations(AbstractDataGenerator):
                     )
             # Convert the dict of observed parameters to the internal `EqParams`
             # class used by Jinns.
-            self.observed_eq_params = EqParams(observed_eq_params, "EqParams")
+            self.observed_eq_params = DGObservedParams(
+                observed_eq_params, "DGObservedParams"
+            )
         else:
             self.observed_eq_params = observed_eq_params
 
