@@ -3,19 +3,19 @@ Utility functions for DataGenerators
 """
 
 from __future__ import annotations
-
+import warnings
 from typing import TYPE_CHECKING
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jaxtyping import Key, Array, Float
+from jaxtyping import PRNGKeyArray, Array, Float
 
 if TYPE_CHECKING:
     from jinns.utils._types import AnyBatch
     from jinns.data._Batchs import ObsBatchDict
 
 
-def append_param_batch(batch: AnyBatch, param_batch_dict: dict[str, Array]) -> AnyBatch:
+def append_param_batch(batch: AnyBatch, param_batch_dict: eqx.Module) -> AnyBatch:
     """
     Utility function that fills the field `batch.param_batch_dict` of a batch object.
     """
@@ -53,8 +53,10 @@ def make_cartesian_product(
 
 
 def _reset_batch_idx_and_permute(
-    operands: tuple[Key, Float[Array, " n dimension"], int, None, Float[Array, " n"]],
-) -> tuple[Key, Float[Array, " n dimension"], int]:
+    operands: tuple[
+        PRNGKeyArray, Float[Array, " n dimension"], int, None, Float[Array, " n"] | None
+    ],
+) -> tuple[PRNGKeyArray, Float[Array, " n dimension"], int]:
     key, domain, curr_idx, _, p = operands
     # resetting counter
     curr_idx = 0
@@ -77,8 +79,10 @@ def _reset_batch_idx_and_permute(
 
 
 def _increment_batch_idx(
-    operands: tuple[Key, Float[Array, " n dimension"], int, int, Float[Array, " n"]],
-) -> tuple[Key, Float[Array, " n dimension"], int]:
+    operands: tuple[
+        PRNGKeyArray, Float[Array, " n dimension"], int, int, Float[Array, " n"] | None
+    ],
+) -> tuple[PRNGKeyArray, Float[Array, " n dimension"], int]:
     key, domain, curr_idx, batch_size, _ = operands
     # simply increases counter and get the batch
     curr_idx += batch_size
@@ -88,8 +92,10 @@ def _increment_batch_idx(
 def _reset_or_increment(
     bend: int,
     n_eff: int,
-    operands: tuple[Key, Float[Array, " n dimension"], int, int, Float[Array, " n"]],
-) -> tuple[Key, Float[Array, " n dimension"], int]:
+    operands: tuple[
+        PRNGKeyArray, Float[Array, " n dimension"], int, int, Float[Array, " n"] | None
+    ],
+) -> tuple[PRNGKeyArray, Float[Array, " n dimension"], int]:
     """
     Factorize the code of the jax.lax.cond which checks if we have seen all the
     batches in an epoch
@@ -119,7 +125,7 @@ def _reset_or_increment(
 
 
 def _check_and_set_rar_parameters(
-    rar_parameters: dict, n: int, n_start: int
+    rar_parameters: None | dict, n: int, n_start: None | int
 ) -> tuple[int, Float[Array, " n"] | None, int | None, int | None]:
     if rar_parameters is not None and n_start is None:
         raise ValueError(
@@ -127,6 +133,12 @@ def _check_and_set_rar_parameters(
         )
 
     if rar_parameters is not None:
+        if n_start is None:
+            n_start = 0
+            warnings.warn(
+                "You asked for RAR sampling but didn't provide"
+                f"a proper `n_start` {n_start=}. Setting it to 0."
+            )
         # Default p is None. However, in the RAR sampling scheme we use 0
         # probability to specify non-used collocation points (i.e. points
         # above n_start). Thus, p is a vector of probability of shape (nt, 1).

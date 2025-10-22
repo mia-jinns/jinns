@@ -4,18 +4,17 @@ A collection of specific weight update schemes in jinns
 
 from __future__ import annotations
 from typing import TYPE_CHECKING
-from jaxtyping import Array, Key
+from jaxtyping import Array, PRNGKeyArray
 import jax.numpy as jnp
 import jax
 import equinox as eqx
 
 if TYPE_CHECKING:
-    from jinns.loss._loss_weights import AbstractLossWeights
-    from jinns.utils._types import AnyLossComponents
+    from jinns.utils._types import AnyLossComponents, AnyLossWeights
 
 
 def soft_adapt(
-    loss_weights: AbstractLossWeights,
+    loss_weights: AnyLossWeights,
     iteration_nb: int,
     loss_terms: AnyLossComponents,
     stored_loss_terms: AnyLossComponents,
@@ -58,11 +57,11 @@ def soft_adapt(
 
 
 def ReLoBRaLo(
-    loss_weights: AbstractLossWeights,
+    loss_weights: AnyLossWeights,
     iteration_nb: int,
     loss_terms: AnyLossComponents,
     stored_loss_terms: AnyLossComponents,
-    key: Key,
+    key: PRNGKeyArray,
     decay_factor: float = 0.9,
     tau: float = 1,  ## referred to as temperature in the article
     p: float = 0.9,
@@ -146,7 +145,7 @@ def ReLoBRaLo(
 
 
 def lr_annealing(
-    loss_weights: AbstractLossWeights,
+    loss_weights: AnyLossWeights,
     grad_terms: AnyLossComponents,
     decay_factor: float = 0.9,  # 0.9 is the recommended value from the article
     eps: float = 1e-6,

@@ -3,7 +3,7 @@ from functools import partial
 import jax
 
 import jinns
-from jinns.parameters import Params, _update_eq_params
+from jinns.parameters import Params, update_eq_params
 
 
 def test_success():
@@ -33,16 +33,16 @@ def test_update_eq_params():
     np = 100
     param_batch_size = 10  # must be equal to batch size of the main DataGenerator
     param_train_data = jinns.data.DataGeneratorParameter(
-        subkey,
-        np,
-        param_batch_size,
-        {"nu": (2e-4, 1.9e-3)},
+        key=subkey,
+        n=np,
+        param_batch_size=param_batch_size,
+        param_ranges={"nu": (2e-4, 1.9e-3)},
         method="grid",
     )
 
     param_train_data, param_batch = param_train_data.get_batch()
 
-    params = _update_eq_params(params, param_batch)
+    params = update_eq_params(params, param_batch)
 
     assert params.eq_params.nu.shape == (10, 1)
 

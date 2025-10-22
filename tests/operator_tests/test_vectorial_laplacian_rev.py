@@ -23,6 +23,7 @@ def create_u_statio():
 
 def test_laplacian_rev_statio(create_u_statio):
     u_statio, params = create_u_statio
+    params = jinns.parameters.Params(nn_params=params, eq_params={})
     x = jnp.array([0.4, 1.5])
     vec_lap = jnp.array(
         [
@@ -77,6 +78,7 @@ def create_u_nonstatio():
 
 def test_laplacian_rev_nonstatio(create_u_nonstatio):
     u_nonstatio, params = create_u_nonstatio
+    params = jinns.parameters.Params(nn_params=params, eq_params={})
     t_x = jnp.array([0.5, 0.4, 1.5])
     vec_lap = jnp.array(
         [

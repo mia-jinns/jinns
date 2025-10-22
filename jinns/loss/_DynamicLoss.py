@@ -605,7 +605,8 @@ class NavierStokesMassConservation2DStatio(PDEStatio):
             # output is 3D
             if mc.ndim == 0 and not result_x.ndim == 0:
                 mc = mc[None]
-            return jnp.stack([result_x, result_y, mc], axis=-1)
+
+            return jnp.stack([result_x, result_y, mc], axis=-1).squeeze()
 
         if isinstance(u_p, SPINN):
             u = lambda x, params: u_p(x, params)[..., 0:2]

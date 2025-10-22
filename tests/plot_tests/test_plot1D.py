@@ -21,7 +21,6 @@ val_times = jnp.linspace(tmin, tmax, ntime)
 
 
 def test_plot1d_image():
-
     fig, ax = jinns.plot.plot1d_image(
         fun=u,
         xdata=val_xdata,
@@ -79,9 +78,10 @@ def test_plot1d_slice_with_spinn():
     u_spinn, init_nn_params_spinn = jinns.nn.SPINN_MLP.create(
         subkey, d, r, eqx_list, "nonstatio_PDE"
     )
+    params = jinns.parameters.Params(nn_params=init_nn_params_spinn, eq_params={})
 
     jinns.plot.plot1d_slice(
-        partial(u_spinn, params=init_nn_params_spinn),
+        partial(u_spinn, params=params),
         xdata=val_xdata,
         time_slices=[0, 1],
         spinn=True,

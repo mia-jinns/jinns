@@ -74,9 +74,9 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
         `eq_params` too.
         A value can be missing, in this case there is no heterogeneity (=None).
         Default None, meaning there is no heterogeneity in the equation
-        parameters. Note that internally, this is handled as a
+        parameters. Note that since 1.6.0, this is handled inernally as a
         `PyTree[Callable[[InputDim, AbstractPINN, Params[Array]], Array] |
-        None] | None` since 1.6.0, (`Params.eq_params` not being a dict
+        None] | None` (`Params.eq_params` is not a dict
         anymore).
     vectorial_dyn_loss_ponderation : Float[Array, " dim"], default=None
         Add a different ponderation weight to each of the dimension to the
@@ -126,7 +126,6 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
         ]
         | None = None,
     ) -> PyTree[Array]:
-        eq_params_ = {}
         if eq_params_heterogeneity is None:
             return params.eq_params
         eq_params_ = jax.tree.map(

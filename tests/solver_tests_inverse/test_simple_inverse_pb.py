@@ -64,7 +64,10 @@ def create_problem():
     )
     key, subkey = jax.random.split(key)
     obs_data = jinns.data.DataGeneratorObservations(
-        subkey, 32, observed_pinn_in=obs_batch[:, :2], observed_values=obs_batch[:, 2:3]
+        key=subkey,
+        obs_batch_size=32,
+        observed_pinn_in=obs_batch[:, :2],
+        observed_values=obs_batch[:, 2:3],
     )
     eqx_list = (
         (eqx.nn.Linear, 2, 10),

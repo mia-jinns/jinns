@@ -15,5 +15,5 @@ class AbstractDataGenerator(eqx.Module):
     """
 
     @abc.abstractmethod
-    def get_batch(self) -> tuple[type[Self], AnyBatch]:  # type: ignore
+    def get_batch(self) -> tuple[Self, AnyBatch]:
         pass

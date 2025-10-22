@@ -14,7 +14,7 @@ import optax
 import jax
 from jax import jit
 import jax.numpy as jnp
-from jaxtyping import Float, Array, PyTree, Key
+from jaxtyping import Float, Array, PyTree, PRNGKeyArray
 import equinox as eqx
 from jinns.solver._rar import init_rar, trigger_rar
 from jinns.utils._utils import _check_nan_in_pytree
@@ -48,7 +48,7 @@ if TYPE_CHECKING:
         LossContainer,
         StoredObjectContainer,
         Float[Array, " n_iter"] | None,
-        Key | None,
+        PRNGKeyArray | None,
     ]
 
 
@@ -69,7 +69,7 @@ def solve(
     opt_state_field_for_acceleration: str | None = None,
     verbose: bool = True,
     ahead_of_time: bool = True,
-    key: Key = None,
+    key: PRNGKeyArray | None = None,
 ) -> tuple[
     Params[Array],
     Float[Array, " n_iter"],
@@ -590,7 +590,7 @@ def _loss_evaluate_and_gradient_step(
     opt_state: optax.OptState,
     optimizer: optax.GradientTransformation,
     loss_container: LossContainer,
-    key: Key,
+    key: PRNGKeyArray,
     params_mask: Params[bool] | None = None,
     opt_state_field_for_acceleration: str | None = None,
     with_loss_weight_update: bool = True,

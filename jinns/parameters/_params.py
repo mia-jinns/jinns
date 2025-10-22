@@ -23,6 +23,12 @@ T = TypeVar("T")  # the generic type for what is in the Params PyTree because we
 
 
 class EqParams(metaclass=DictToModuleMeta):
+    """
+    Note that this is exposed to the user for the particular case where the
+    user, during its work, wants to change the equation parameters. In this
+    case, the user must import EqParams and call `EqParams.clear()`
+    """
+
     pass
 
 
@@ -36,20 +42,24 @@ class Params(eqx.Module, Generic[T]):
         A PyTree of the non-static part of the PINN eqx.Module, i.e., the
         parameters of the PINN
     eq_params : PyTree[T]
-        A PyTree of the equation parameters. For retrocompatibility and
-        verbosity issue this can be provided as formerly ie as
-        a dictionary of the equation parameters where keys are the parameter name,
-        values are their corresponding value
+        A PyTree of the equation parameters. For retrocompatibility it us
+        provided as a dictionary of the equation parameters where keys are the parameter names, and values are their corresponding values. Internally,
+        it will be transformed to a custom instance of `EqParams`.
     """
 
-    nn_params: PyTree[T] = eqx.field(kw_only=True, default=None)
-    eq_params: PyTree[T] = eqx.field(
-        kw_only=True,
-        default=None,
-        converter=lambda x: EqParams(x, "EqParams")
-        if isinstance(x, dict)
-        else x,  # the first call here is critical
-    )
+    nn_params: PyTree[T]
+    eq_params: PyTree[T]
+
+    def __init__(
+        self,
+        nn_params: PyTree[T] | None = None,
+        eq_params: dict[str, T] | None = None,
+    ):
+        self.nn_params = nn_params
+        if isinstance(eq_params, dict):
+            self.eq_params = EqParams(eq_params, "EqParams")
+        else:
+            self.eq_params = eq_params
 
     def partition(self, mask: Params[bool] | None):
         """
@@ -61,10 +71,10 @@ class Params(eqx.Module, Generic[T]):
             return self, None
 
 
-def _update_eq_params(
+def update_eq_params(
     params: Params[Array],
     eq_param_batch: PyTree[Array] | None,
-) -> Params:
+) -> Params[Array]:
     """
     Update params.eq_params with a batch of eq_params for given key(s)
     """
@@ -77,13 +87,10 @@ def _update_eq_params(
         lambda p: p.eq_params,
         params,
         eqx.tree_at(
-            lambda pt: tuple(
-                getattr(pt, f.name)
-                for f in fields(pt)
-                if f.name in param_names_to_update
-            ),
+            lambda pt: tuple(getattr(pt, f) for f in param_names_to_update),
             params.eq_params,
             tuple(getattr(eq_param_batch, f) for f in param_names_to_update),
+            is_leaf=lambda x: x is None or eqx.is_inexact_array(x),
         ),
     )
 
@@ -91,7 +98,7 @@ def _update_eq_params(
 
 
 def _get_vmap_in_axes_params(
-    eq_param_batch: eqx.Module, params: Params[Array]
+    eq_param_batch: eqx.Module | None, params: Params[Array]
 ) -> tuple[Params[int | None] | None]:
     """
     Return the input vmap axes when there is batch(es) of parameters to vmap

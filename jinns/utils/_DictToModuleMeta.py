@@ -4,10 +4,10 @@ import equinox as eqx
 
 class DictToModuleMeta(type):
     """
-    We finally came up with a Metaclass pattern to handle the fact that we want
-    one and only one type to be created for EqParams.
+    A Metaclass based solution to handle the fact that we only
+    want one type to be created for EqParams.
     If we were to create a new **class type** (despite same name) each time we
-    create a new Params object, nothing would be broadcastble in terms of jax
+    create a new Params object, nothing would be broadcastable in terms of jax
     tree utils operations and this would be useless. The difficulty comes from
     the fact that we need to instanciate from this same class at different
     moments of the jinns workflow eg: parameter creation, derivative keys
@@ -18,7 +18,8 @@ class DictToModuleMeta(type):
     This is inspired by the Singleton pattern in Python
     (https://stackoverflow.com/a/10362179)
 
-    Here we need the call of a metaclass because (https://stackoverflow.com/a/45536640):
+    Here we need the call of a metaclass because as explained in
+     https://stackoverflow.com/a/45536640). To quote from the answer
     Metaclasses implement how the class will behave (not the instance). So when you look at the instance creation:
     `x = Foo()`
     This literally "calls" the class Foo. That's why __call__ of the metaclass
@@ -45,7 +46,7 @@ class DictToModuleMeta(type):
                 {"__annotations__": {k: type(v) for k, v in d.items()}},
             )
         try:
-            return self._class(**d)
+            return self._class(**d)  # type: ignore
         except TypeError as _:
             print(
                 "DictToModuleMeta has been created with the fields"
@@ -57,7 +58,9 @@ class DictToModuleMeta(type):
 
     def clear(cls) -> None:
         """
-        Mainly for pytest where stuff is not complety reset after tests
+        The current Metaclass implementation freezes the list of equation parameters inside a Python session;
+        only one EqParams annotation can exist at a given time. Use `EqParams.clear()`  to reset.
+        Also useful for pytest where stuff is not complety reset after tests
         Taken from https://stackoverflow.com/a/50065732
         """
         cls._class = None
