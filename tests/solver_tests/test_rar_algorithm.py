@@ -7,9 +7,14 @@ import jax.random as random
 import jax.numpy as jnp
 import jax
 from jax import vmap
+import optax
 import jinns
 import equinox as eqx
 from jax.scipy.stats import multivariate_normal
+
+# because we did not write a fixture
+jinns.parameters.EqParams.clear()
+jinns.data.DGParams.clear()
 
 key = random.PRNGKey(1)
 n = 117
@@ -94,9 +99,6 @@ with pytest.warns(UserWarning):
         params=init_params,
     )
 
-
-# Optimizer
-import optax
 
 tx = optax.adamw(learning_rate=1e-3)
 

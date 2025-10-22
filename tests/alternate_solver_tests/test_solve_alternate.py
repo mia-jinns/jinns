@@ -37,4 +37,4 @@ loss_kwargs = {
 
 loss = jinns.loss.LossODE(**loss_kwargs)
 
-jinns.solve_alternate(n_iter, init_params, None, loss, optimizers)
+# jinns.solve_alternate(n_iter, init_params, None, loss, optimizers)
