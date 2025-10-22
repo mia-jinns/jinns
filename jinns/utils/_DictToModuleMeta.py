@@ -1,6 +1,8 @@
 from typing import Any
 import equinox as eqx
 
+from jinns.utils._ItemizableModule import ItemizableModule
+
 
 class DictToModuleMeta(type):
     """
@@ -42,7 +44,7 @@ class DictToModuleMeta(type):
         if self._class is None and class_name is not None:
             self._class = type(
                 class_name,
-                (eqx.Module,),
+                (ItemizableModule,),
                 {"__annotations__": {k: type(v) for k, v in d.items()}},
             )
         try:
