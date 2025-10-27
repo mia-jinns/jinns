@@ -702,4 +702,9 @@ def solve_alternate(
     while main_break_fun(carry):
         carry = _one_alternate_iteration(carry)
 
-    return carry[2].params, carry[5].train_loss_values, carry[5].stored_loss_terms
+    return (
+        carry[2].params,
+        carry[5].train_loss_values,
+        carry[5].stored_loss_terms,
+        carry[5].stored_weights_terms,
+    )
