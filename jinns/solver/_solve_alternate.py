@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import time
 import operator
 from dataclasses import fields
 from typing import TYPE_CHECKING
@@ -150,6 +151,10 @@ def solve_alternate(
         The `jinns.data.DataGeneratorParameter` object passed as input or
         `None`.
     """
+    initialization_time = time.time()
+    if n_iter < 1:
+        raise ValueError("Cannot run jinns.solve for n_iter<1")
+
     main_break_fun = _get_break_fun(
         n_iter, verbose, conditions_str=("bool_max_iter", "bool_nan_in_params")
     )
@@ -794,6 +799,9 @@ def solve_alternate(
 
     nn_params_train_fun_compiled = jax.jit(nn_train_fun).lower(carry).compile()
 
+    if verbose:
+        print("Initialization time:", time.time() - initialization_time)
+
     def _one_alternate_iteration(carry):
         (
             i,
@@ -823,10 +831,15 @@ def solve_alternate(
         i += 1
         return (i, carry[1], carry[2], carry[3], carry[4], carry[5], carry[6], carry[7])
 
+    start = time.time()
     # jax.lax.while_loop jits its content so cannot be used when we try to
     # precompile what is inside. JAX tranformations are not compatible with AOT
     while main_break_fun(carry):
         carry = _one_alternate_iteration(carry)
+    jax.block_until_ready(carry)
+    end = time.time()
+    if verbose:
+        print("\nTraining took\n", end - start, "\n")
 
     return (
         carry[2].params,
