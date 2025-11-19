@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import jax
 import jax.numpy as jnp
 import optax
-from jaxtyping import Array, Key
+from jaxtyping import Array, PRNGKeyArray, Float
 import equinox as eqx
 
 from jinns.parameters._params import Params
@@ -29,6 +29,8 @@ from jinns.utils._containers import (
 )
 
 if TYPE_CHECKING:
+    from typing import Any
+    from jinns.utils._types import AnyLossComponents
     from jinns.loss._abstract_loss import AbstractLoss
     from jinns.data._AbstractDataGenerator import AbstractDataGenerator
     from jinns.data._DataGeneratorObservations import DataGeneratorObservations
@@ -36,69 +38,117 @@ if TYPE_CHECKING:
 
 
 def solve_alternate(
+    *,
     n_iter: int,
+    optimizers: Params[optax.GradientTransformation],
     n_iter_by_solver: Params[int],
     init_params: Params[Array],
     data: AbstractDataGenerator,
     loss: AbstractLoss,
-    optimizers: Params[optax.GradientTransformation],
+    tracked_params: Params[Any | None] | None = None,
     verbose: bool = True,
-    param_data: DataGeneratorParameter | None = None,
     obs_data: DataGeneratorObservations | None = None,
+    param_data: DataGeneratorParameter | None = None,
     opt_state_fields_for_acceleration: Params[str] | None = None,
-    key: Key = None,
-):
+    key: PRNGKeyArray | None = None,
+) -> tuple[
+    Params[Array],
+    Float[Array, " n_iter_total"],
+    AnyLossComponents[Float[Array, " n_iter_total"]],
+    AbstractDataGenerator,
+    AbstractLoss,
+    optax.OptState,
+    Params[Array | None],
+    AnyLossComponents[Float[Array, " n_iter_total"]],
+    DataGeneratorObservations | None,
+    DataGeneratorParameter | None,
+]:
     """
-    Solve alternatively between nn_params and eq_params. In this functions both
+    Solve alternatively between `Params.nn_params` and `Params.eq_params`. In this functions both
     set of parameters, all gradient updates, all opt_states, etc. are
     explicitly handled separately. This approach becomes more efficient than
-    relying on optax masked transforms and jinns DerivativeKeys when nn_params
-    is big while eq_params is very small. The former do not prevent all
+    relying on optax masked transforms and `jinns.parameters.DerivativeKeys` when
+    `Params.nn_params`
+    is big while `Params.eq_params` is much smaller. The former do not prevent all
     computations from being done (for example, we still have a big opt_state when updating
-    only eq_params, jinns DerivativeKeys only consists in putting
+    only `Params.eq_params`, jinns' `DerivativeKeys` only consists in putting
     stop gradients, etc. -- see for example Inverse problem tutorial on Burgers
-    in jinns documentation) and hence is suboptimal.
+    in jinns documentation), it is then suboptimal.
 
     With `jinns.solve_alternate` we want to address efficiently inverse
-    problems where nn_optimizer is arbitrarily big, but eq_params prepresents
-    only a few physical parameters.
+    problems where `Params.nn_params` is arbitrarily big, but
+    `Params.eq_params` prepresents only a few physical parameters.
 
     Parameters
     ----------
     n_iter
         The maximum number of cyles of alternate iterations.
-    n_iter_by_solver
-        A Params object, where for each leaves (`nn_params` and each
-        `eq_params` keys) we find the number of iterations
-        inside one alternate cycle.
+    optimizers
+        A `jinns.parameters.Params` object, where each leave is an optax optimizer
+    n_iter_by_optimizer
+        A Params object, where each leaves gives the number of iteration of the
+        corresponding optimizer, within one alternate cycle.
     init_params
-        The initial jinns.parameters.Params object.
+        The initial `jinns.parameters.Params` object.
     data
-        A DataGenerator object to retrieve batches of collocation points.
+        A `jinns.data.AbstractDataGenerator` object to retrieve batches of collocation points.
     loss
         The loss function to minimize.
-    optimizers
-        A Params object, where for each leaves (`nn_params` and each
-        `eq_params` keys) we find an optimizer
+    tracked_params
+        Default `None`. A `jinns.parameters.Params` object with non-`None` values for
+        parameters that needs to be tracked along the iterations.
+        The user can provide something like `tracked_params = jinns.parameters.Params(
+        nn_params=None, eq_params={"nu": True})` while `init_params.nn_params`
+        being a complex data structure.
     verbose
-        Default True. If False, no std output (loss or cause of
+        Default `True`. If `False`, no output (loss or cause of
         exiting the optimization loop) will be produced.
-    param_data
-        Default None. A DataGeneratorParameter object which can be used to
-        sample equation parameters.
     obs_data
-        Default None. A DataGeneratorObservations
+        Default `None`. A `jinns.data.DataGeneratorObservations`
         object which can be used to sample minibatches of observations.
+    param_data
+        Default `None`. A `jinns.data.DataGeneratorParameter` object which can be used to
+        sample equation parameters.
     opt_state_fields_for_acceleration
-        A Params object, where for each leaves (`nn_params` and each
-        `eq_params` keys) we find an `opt_state_field_for_acceleration` as
+        A `jinns.parameters.Params` object, where leave
+        is an `opt_state_field_for_acceleration` as
         described in `jinns.solve`.
     key
-        Default None. A JAX random key that can be used for diverse purpose in
+        Default `None`. A JAX random key that can be used for diverse purpose in
         the main iteration loop.
 
     Returns
     -------
+
+    params
+        The last non-NaN value of the params at then end of the
+        optimization process.
+    total_loss_values
+        An array of the total loss term along the gradient steps.
+    stored_loss_terms
+        A PyTree with attributes being arrays of all the values for each loss
+        term.
+    data
+        The data generator object passed as input, possibly modified.
+    loss
+        The loss object passed as input, possibly modified.
+    opt_state
+        The final `jinns.parameters.Params` PyTree with opt_state as leaves.
+    stored_params
+        A object with the stored values of the desired parameters (as
+        signified in `tracked_params` argument).
+    stored_weights_terms
+        A PyTree with leaves being arrays of all the values for each loss
+        weight. Note that if `Loss.update_weight_method is None`, we return
+        `None`,
+        because loss weights are never updated and we can then save some
+        computations.
+    obs_data
+        The `jinns.data.DataGeneratorObservations` object passed as input or
+        `None`.
+    param_data
+        The `jinns.data.DataGeneratorParameter` object passed as input or
+        `None`.
     """
     main_break_fun = _get_break_fun(
         n_iter, verbose, conditions_str=("bool_max_iter", "bool_nan_in_params")
@@ -220,14 +270,30 @@ def solve_alternate(
     # SOME INITIALIZATIONS FOR CONTAINERS #
     #######################################
 
+    # initialize the PyTree for stored loss values
+    total_iter_all_solvers = jax.tree.reduce(operator.add, n_iter_by_solver, 0)
+
+    # initialize parameter tracking
+    if tracked_params is None:
+        tracked_params = jax.tree.map(lambda p: None, init_params)
+    stored_params = jax.tree_util.tree_map(
+        lambda tracked_param, param: (
+            jnp.zeros((n_iter * total_iter_all_solvers,) + jnp.asarray(param).shape)
+            if tracked_param is not None
+            else None
+        ),
+        tracked_params,
+        init_params,
+        is_leaf=lambda x: x is None,
+    )
+
     # initialize the dict for stored parameter values
     # we need to get a loss_term to init stuff
     # NOTE: we use jax.eval_shape to avoid FLOPS since we only need the tree
     # structure
     batch_ini, data, param_data, obs_data = get_batch(data, param_data, obs_data)
     _, loss_terms = jax.eval_shape(loss, init_params, batch_ini)
-    # initialize the PyTree for stored loss values
-    total_iter_all_solvers = jax.tree.reduce(operator.add, n_iter_by_solver, 0)
+
     stored_loss_terms = jax.tree_util.tree_map(
         lambda _: jnp.zeros((n_iter * total_iter_all_solvers)), loss_terms
     )
@@ -277,7 +343,7 @@ def solve_alternate(
         stored_weights_terms=stored_weights_terms,
     )
     stored_objects = StoredObjectContainer(
-        stored_params=None,
+        stored_params=stored_params,
     )
 
     # Main carry defined here
@@ -308,9 +374,19 @@ def solve_alternate(
         def eq_train_fun(n_iter, carry):
             i = carry[0]
             loss_container = carry[5]
+            stored_objects = carry[6]
 
             def _eq_params_one_iteration(carry):
-                (i, loss, optimization, _, train_data, loss_container, _, key) = carry
+                (
+                    i,
+                    loss,
+                    optimization,
+                    _,
+                    train_data,
+                    loss_container,
+                    stored_objects,
+                    key,
+                ) = carry
 
                 (nn_opt_state, eq_opt_states) = optimization.opt_state
 
@@ -346,15 +422,15 @@ def solve_alternate(
                 )
 
                 # save loss value and selected parameters
-                _, loss_container_ = _store_loss_and_params(
+                stored_objects_, loss_container_ = _store_loss_and_params(
                     i,
-                    None,  # params,
-                    None,  # stored_objects.stored_params,
+                    params,
+                    stored_objects.stored_params,
                     loss_container,
                     train_loss_value,
                     loss_terms,
                     loss.loss_weights,
-                    None,  # tracked_params,
+                    tracked_params,
                 )
 
                 carry = (
@@ -377,7 +453,7 @@ def solve_alternate(
                         data=data, param_data=param_data, obs_data=obs_data
                     ),
                     loss_container_,
-                    carry[6],
+                    stored_objects_,
                     carry[7],
                 )
 
@@ -390,7 +466,7 @@ def solve_alternate(
             )
 
             start_idx = i * (sum(n_iter_list_eq_params) + nn_n_iter) + sum(
-                n_iter_list_eq_params[: idx_params - 1]
+                n_iter_list_eq_params[:idx_params]
             )
             # 1 - some init
             loss_ = eqx.tree_at(
@@ -423,6 +499,8 @@ def solve_alternate(
                     ),
                 )
                 # ensure continuity between steps for loss weights
+                # this is important for update weight methods which requires
+                # previous weight values
                 stored_weights_terms_ = jax.tree_util.tree_map(
                     lambda st_, st: st_.at[-1].set(st[start_idx - 1]),
                     stored_weights_terms_,
@@ -430,12 +508,24 @@ def solve_alternate(
                 )
             else:
                 stored_weights_terms_ = None
-
             loss_container_ = LossContainer(
                 stored_loss_terms=stored_loss_terms_,
                 train_loss_values=train_loss_values_,
                 stored_weights_terms=stored_weights_terms_,
             )
+
+            # Reinit a stored_objects for this inner loop
+            stored_params_ = jax.tree_util.tree_map(
+                lambda tracked_param, param: (
+                    jnp.zeros((n_iter_for_params,) + jnp.asarray(param).shape)
+                    if tracked_param is not None
+                    else None
+                ),
+                tracked_params,
+                init_params,
+                is_leaf=lambda x: x is None,
+            )
+            stored_objects_ = StoredObjectContainer(stored_params=stored_params_)
 
             carry_ = (
                 0,
@@ -444,7 +534,7 @@ def solve_alternate(
                 carry[3],
                 carry[4],
                 loss_container_,
-                carry[6],
+                stored_objects_,
                 carry[7],
             )
             # 2 - go for gradient steps on this eq_params
@@ -470,6 +560,16 @@ def solve_alternate(
                     loss_container_.stored_weights_terms,
                 ),
             )
+            stored_objects_ = carry_[6]
+            stored_objects = StoredObjectContainer(
+                stored_params=jax.tree.map(
+                    lambda s, l: jax.lax.dynamic_update_slice(
+                        s, l, (start_idx,) + s[0].shape
+                    ),
+                    stored_objects.stored_params,
+                    stored_objects_.stored_params,
+                )
+            )
 
             carry = (
                 i,
@@ -478,7 +578,7 @@ def solve_alternate(
                 carry_[3],
                 carry_[4],
                 loss_container,
-                carry_[6],
+                stored_objects,
                 carry_[7],
             )
             return carry
@@ -501,6 +601,7 @@ def solve_alternate(
     def nn_train_fun(carry):
         i = carry[0]
         loss_container = carry[5]
+        stored_objects = carry[6]
 
         def _nn_params_one_iteration(carry):
             (
@@ -510,7 +611,7 @@ def solve_alternate(
                 _,
                 train_data,
                 loss_container,
-                _,
+                stored_objects,
                 key,
             ) = carry
 
@@ -549,15 +650,15 @@ def solve_alternate(
             )
 
             # save loss value and selected parameters
-            _, loss_container_ = _store_loss_and_params(
+            stored_objects_, loss_container_ = _store_loss_and_params(
                 i,
-                None,  # params,
-                None,  # stored_objects.stored_params,
+                params,
+                stored_objects.stored_params,
                 loss_container,
                 train_loss_value,
                 loss_terms,
                 loss.loss_weights,
-                None,  # tracked_params,
+                tracked_params,
             )
 
             carry = (
@@ -571,7 +672,7 @@ def solve_alternate(
                     data=data, param_data=param_data, obs_data=obs_data
                 ),
                 loss_container_,
-                carry[6],
+                stored_objects_,
                 carry[7],
             )
 
@@ -609,6 +710,8 @@ def solve_alternate(
                 ),
             )
             # ensure continuity between steps for loss weights
+            # this is important for update weight methods which requires
+            # previous weight values
             stored_weights_terms_ = jax.tree_util.tree_map(
                 lambda st_, st: st_.at[-1].set(st[start_idx - 1]),
                 stored_weights_terms_,
@@ -621,6 +724,18 @@ def solve_alternate(
             train_loss_values=train_loss_values_,
             stored_weights_terms=stored_weights_terms_,
         )
+        # Reinit a stored_objects for this inner loop
+        stored_params_ = jax.tree_util.tree_map(
+            lambda tracked_param, param: (
+                jnp.zeros((nn_n_iter,) + jnp.asarray(param).shape)
+                if tracked_param is not None
+                else None
+            ),
+            tracked_params,
+            init_params,
+            is_leaf=lambda x: x is None,
+        )
+        stored_objects_ = StoredObjectContainer(stored_params=stored_params_)
         carry_ = (
             0,
             loss_,
@@ -628,7 +743,7 @@ def solve_alternate(
             carry[3],
             carry[4],
             loss_container_,
-            carry[6],
+            stored_objects_,
             carry[7],
         )
         # 2 - go for gradient steps on nn_params
@@ -654,6 +769,16 @@ def solve_alternate(
                 loss_container_.stored_weights_terms,
             ),
         )
+        stored_objects_ = carry_[6]
+        stored_objects = StoredObjectContainer(
+            stored_params=jax.tree.map(
+                lambda s, l: jax.lax.dynamic_update_slice(
+                    s, l, (start_idx,) + s[0].shape
+                ),
+                stored_objects.stored_params,
+                stored_objects_.stored_params,
+            )
+        )
 
         carry = (
             i,
@@ -662,7 +787,7 @@ def solve_alternate(
             carry_[3],
             carry_[4],
             loss_container,
-            carry_[6],
+            stored_objects,
             carry_[7],
         )
         return carry
@@ -681,7 +806,8 @@ def solve_alternate(
             key,
         ) = carry
 
-        jax.debug.print("jinns alternate solver iteration {x}", x=i)
+        if verbose:
+            jax.debug.print("jinns alternate solver iteration {x}", x=i)
 
         ###### OPTIMIZATION ON EQ_PARAMS ###########
 
@@ -706,5 +832,11 @@ def solve_alternate(
         carry[2].params,
         carry[5].train_loss_values,
         carry[5].stored_loss_terms,
+        carry[4].data,
+        carry[1],  # loss
+        carry[2].opt_state,
+        carry[6].stored_params,
         carry[5].stored_weights_terms,
+        carry[4].obs_data,
+        carry[4].param_data,
     )

@@ -1,40 +1,102 @@
+import pytest
+import jax
 import jax.numpy as jnp
 import optax
+import equinox as eqx
 
 import jinns
 from jinns.parameters._params import Params
 
 
-# @pytest.fixture
+@pytest.fixture
 def init_Params_objects():
-    n_iter = Params(nn_params=100, eq_params={"theta": 200, "kappa": 300})
-
+    n_iter_by_solver = Params(nn_params=1, eq_params={"theta": 2, "kappa": 3})
+    eqx_list = (
+        (eqx.nn.Linear, 1, 20),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 20, 1),
+        (jnp.exp,),
+    )
+    u, init_nn_params = jinns.nn.PINN_MLP.create(
+        key=key, eqx_list=eqx_list, eq_type="ODE"
+    )
     init_params = Params(
-        nn_params=jnp.array([10.0, 10.0]),
+        nn_params=init_nn_params,
         eq_params={"theta": jnp.array([1.0]), "kappa": jnp.array([2.0])},
     )
+
+    class DummyODE(jinns.loss.ODE):
+        Tmax: int = 1
+
+        def equation(self, t, u, params):
+            return jnp.array([2.0])
+
+    dynamic_loss = DummyODE()
+    loss_kwargs = {
+        "u": u,
+        "loss_weights": jinns.loss.LossWeightsODE(dyn_loss=1.0),
+        "dynamic_loss": dynamic_loss,
+        "derivative_keys": None,  # defaults to nn_params everywhere
+        "params": init_params,
+    }
+    loss = jinns.loss.LossODE(**loss_kwargs)
 
     optimizers = Params(
         nn_params=optax.adam(learning_rate=1e-3),
         eq_params={
-            "theta": optax.radam(learning_rate=1e-3),
-            "kappa": optax.adamw(learning_rate=1e-3),
+            "theta": optax.adam(learning_rate=1e-3),
+            "kappa": optax.adam(learning_rate=1e-3),
         },
     )
 
-    return n_iter, init_params, optimizers
+    return n_iter_by_solver, optimizers, init_params, loss
 
 
-n_iter, init_params, optimizers = init_Params_objects()
+n_iter = 10
 
-loss_kwargs = {
-    "u": None,
-    "loss_weights": None,
-    "dynamic_loss": None,
-    "derivative_keys": None,  # defaults to nn_params everywhere
-    "params": init_params,
-}
 
-loss = jinns.loss.LossODE(**loss_kwargs)
+key = jax.random.PRNGKey(0)
+train_data = jinns.data.DataGeneratorODE(
+    key=key,
+    nt=10,
+    tmin=0,
+    tmax=1,
+    temporal_batch_size=None,
+)
 
-# jinns.solve_alternate(n_iter, init_params, None, loss, optimizers)
+
+def test_tracked_parameters(init_Params_objects):
+    n_iter_by_solver, optimizers, init_params, loss = init_Params_objects
+    tracked_params = jinns.parameters.Params(
+        nn_params=None, eq_params={"theta": True, "kappa": True}
+    )
+    out = jinns.solve_alternate(
+        n_iter=n_iter,
+        n_iter_by_solver=n_iter_by_solver,
+        init_params=init_params,
+        optimizers=optimizers,
+        data=train_data,
+        loss=loss,
+        tracked_params=tracked_params,
+        verbose=False,
+    )
+    assert jnp.allclose(out[6].eq_params.theta, 1.0 * jnp.ones((6 * n_iter)))
+    assert jnp.allclose(out[6].eq_params.kappa, 2.0 * jnp.ones((6 * n_iter)))
+
+
+def test_tracked_loss_values(init_Params_objects):
+    n_iter_by_solver, optimizers, init_params, loss = init_Params_objects
+    tracked_params = jinns.parameters.Params(
+        nn_params=None, eq_params={"theta": True, "kappa": True}
+    )
+    out = jinns.solve_alternate(
+        n_iter=n_iter,
+        n_iter_by_solver=n_iter_by_solver,
+        init_params=init_params,
+        optimizers=optimizers,
+        data=train_data,
+        loss=loss,
+        tracked_params=tracked_params,
+        verbose=False,
+    )
+    assert jnp.allclose(out[1], 4.0 * jnp.ones((6 * n_iter)))
