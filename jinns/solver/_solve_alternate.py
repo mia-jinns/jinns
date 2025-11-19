@@ -466,7 +466,7 @@ def solve_alternate(
 
             break_fun_ = _get_break_fun(
                 n_iter_for_params,
-                verbose,
+                verbose=False,
                 conditions_str=("bool_max_iter", "bool_nan_in_params"),
             )
 
@@ -600,7 +600,7 @@ def solve_alternate(
     # In the jax lax while loop, the compilation is better but AOT is
     # disallowed there
     nn_break_fun_ = _get_break_fun(
-        nn_n_iter, verbose, conditions_str=("bool_max_iter", "bool_nan_in_params")
+        nn_n_iter, verbose=False, conditions_str=("bool_max_iter", "bool_nan_in_params")
     )
 
     def nn_train_fun(carry):
