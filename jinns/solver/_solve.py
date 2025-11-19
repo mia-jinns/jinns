@@ -31,7 +31,7 @@ from jinns.data._utils import append_param_batch, append_obs_batch
 
 if TYPE_CHECKING:
     from jinns.parameters._params import Params
-    from jinns.utils._types import AnyBatch
+    from jinns.utils._types import AnyBatch, AnyLossComponents
     from jinns.loss._abstract_loss import AbstractLoss
     from jinns.validation._validation import AbstractValidationModule
     from jinns.data._DataGeneratorParameter import DataGeneratorParameter
@@ -53,6 +53,7 @@ if TYPE_CHECKING:
 
 
 def solve(
+    *,
     n_iter: int,
     init_params: Params[Array],
     data: AbstractDataGenerator,
@@ -73,18 +74,20 @@ def solve(
 ) -> tuple[
     Params[Array],
     Float[Array, " n_iter"],
-    PyTree,
+    AnyLossComponents[Float[Array, " n_iter"]],
     AbstractDataGenerator,
     AbstractLoss,
     optax.OptState,
     Params[Array | None],
-    PyTree,
+    AnyLossComponents[Float[Array, " n_iter"]],
+    DataGeneratorObservations | None,
+    DataGeneratorParameter | None,
     Float[Array, " n_iter"] | None,
     Params[Array],
 ]:
     """
     Performs the optimization process via stochastic gradient descent
-    algorithm. We minimize the function defined `loss.evaluate()` with
+    algorithm. We minimize the function defined in `loss.evaluate()` with
     respect to the learnable parameters of the problem whose initial values
     are given in `init_params`.
 
@@ -94,9 +97,9 @@ def solve(
     n_iter
         The maximum number of iterations in the optimization.
     init_params
-        The initial jinns.parameters.Params object.
+        The initial `jinns.parameters.Params` object.
     data
-        A DataGenerator object to retrieve batches of collocation points.
+        A `jinns.data.AbstractDataGenerator` object to retrieve batches of collocation points.
     loss
         The loss function to minimize.
     optimizer
@@ -105,22 +108,21 @@ def solve(
         Default 1000. The rate at which we print the loss value in the
         gradient step loop.
     opt_state
-        Provide an optional initial state to the optimizer.
+        Default `None`. Provides an optional initial state to the optimizer.
     tracked_params
-        Default None. An eqx.Module of type Params with non-None values for
+        Default `None`. A `jinns.parameters.Params` object with non-`None` values for
         parameters that needs to be tracked along the iterations.
-        None values in tracked_params will not be traversed. Thus
-        the user can provide something like `tracked_params = jinns.parameters.Params(
-        nn_params=None, eq_params={"nu": True})` while init_params.nn_params
+        The user can provide something like `tracked_params = jinns.parameters.Params(
+        nn_params=None, eq_params={"nu": True})` while `init_params.nn_params`
         being a complex data structure.
     param_data
-        Default None. A DataGeneratorParameter object which can be used to
+        Default `None`. A `jinns.data.DataGeneratorParameter` object which can be used to
         sample equation parameters.
     obs_data
-        Default None. A DataGeneratorObservations
+        Default `None`. A `jinns.data.DataGeneratorObservations`
         object which can be used to sample minibatches of observations.
     validation
-        Default None. Otherwise, a callable ``eqx.Module`` which implements a
+        Default `None`. Otherwise, a callable `eqx.Module` which implements a
         validation strategy. See documentation of `jinns.validation.
         _validation.AbstractValidationModule` for the general interface, and
         `jinns.validation._validation.ValidationLoss` for a practical
@@ -134,12 +136,13 @@ def solve(
         validation strategy of their choice, and to decide on the early
         stopping criterion.
     obs_batch_sharding
-        Default None. An optional sharding object to constraint the obs_batch.
-        Typically, a SingleDeviceSharding(gpu_device) when obs_data has been
-        created with sharding_device=SingleDeviceSharding(cpu_device) to avoid
+        Default `None`. An optional sharding object to constraint the
+        `obs_batch`.
+        Typically, a `SingleDeviceSharding(gpu_device)` when `obs_data` has been
+        created with `sharding_device=SingleDeviceSharding(cpu_device)` to avoid
         loading on GPU huge datasets of observations.
     params_mask
-        A Params object with boolean as leaves to choose over which parameters
+        Default `None`. A `jinns.parameters.Params` object with boolean as leaves to choose over which parameters
         the optimization will effectively be done (over which gradient
         computations will happen). This params_mask will then be used as the
         filter_spec of a `eqx.partition` function. This strategy is the root of
@@ -151,7 +154,7 @@ def solve(
         `DerivativeKeys` are much less computationally efficient, hence the
         overlay `params_mask` that have been added.
     opt_state_field_for_acceleration
-        A string. Default is None, i.e. the optimizer without acceleration.
+        A string. Default `None`, i.e. the optimizer without acceleration.
         Because in some optimization scheme one can have what is called
         acceleration where the loss is computed at some accelerated parameter
         values, different from the actual parameter values. These accelerated
@@ -160,48 +163,55 @@ def solve(
         gradient step will be done by evaluate gradients at parameter value
         `opt_state.opt_state_field_for_acceleration`.
     verbose
-        Default True. If False, no std output (loss or cause of
+        Default `True`. If `False`, no output (loss or cause of
         exiting the optimization loop) will be produced.
     ahead_of_time
-        Default True. Separate the compilation of the main training loop from
+        Default `True`. Separate the compilation of the main training loop from
         the execution to get both timings. You might need to avoid this
         behaviour if you need to perform JAX transforms over chunks of code
         containing `jinns.solve()` since AOT-compiled functions cannot be JAX
         transformed (see https://jax.readthedocs.io/en/latest/aot.html#aot-compiled-functions-cannot-be-transformed).
-        When False, jinns does not provide any timing information (which would
+        When `False`, jinns does not provide any timing information (which would
         be nonsense in a JIT transformed `solve()` function).
     key
-        Default None. A JAX random key that can be used for diverse purpose in
+        Default `None`. A JAX random key that can be used for diverse purpose in
         the main iteration loop.
 
     Returns
     -------
     params
-        The last non NaN value of the params at then end of the
-        optimization process
+        The last non-NaN value of the params at then end of the
+        optimization process.
     total_loss_values
-        An array of the total loss term along the gradient steps
+        An array of the total loss term along the gradient steps.
     stored_loss_terms
         A PyTree with attributes being arrays of all the values for each loss
-        term
+        term.
     data
-        The input data object
+        The data generator object passed as input, possibly modified.
     loss
-        The input loss object
+        The loss object passed as input, possibly modified.
     opt_state
-        The final optimized state
+        The final optimized state.
     stored_params
-        A Params objects with the stored values of the desired parameters (as
-        signified in tracked_params argument)
+        A object with the stored values of the desired parameters (as
+        signified in `tracked_params` argument).
     stored_weights_terms
-        A PyTree with attributes being arrays of all the values for each loss
-        weight. Note that if Loss.update_weight_method is None, we return None,
+        A PyTree with leaves being arrays of all the values for each loss
+        weight. Note that if `Loss.update_weight_method is None`, we return
+        `None`,
         because loss weights are never updated and we can then save some
-        computations
+        computations.
+    obs_data
+        The `jinns.data.DataGeneratorObservations` object passed as input or
+        `None`.
+    param_data
+        The `jinns.data.DataGeneratorParameter` object passed as input or
+        `None`.
     validation_crit_values
-        An array containing the validation criterion values of the training
+        An array containing the validation criterion values of the training.
     best_val_params
-        The best parameters according to the validation criterion
+        The best parameters according to the validation criterion.
     """
     initialization_time = time.time()
     if n_iter < 1:
@@ -570,11 +580,13 @@ def solve(
         optimization.last_non_nan_params,
         loss_container.train_loss_values,
         loss_container.stored_loss_terms,
-        train_data.data,  # return the DataGenerator if needed (no in-place modif)
-        loss,  # return the Loss if needed (no-inplace modif)
+        train_data.data,
+        loss,
         optimization.opt_state,
         stored_objects.stored_params,
         loss_container.stored_weights_terms,
+        train_data.obs_data,
+        train_data.param_data,
         validation_crit_values if validation is not None else None,
         validation_parameters,
     )
