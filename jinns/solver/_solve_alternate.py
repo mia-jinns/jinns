@@ -46,6 +46,7 @@ def solve_alternate(
     init_params: Params[Array],
     data: AbstractDataGenerator,
     loss: AbstractLoss,
+    print_loss_every: int = 10,
     tracked_params: Params[Any | None] | None = None,
     verbose: bool = True,
     obs_data: DataGeneratorObservations | None = None,
@@ -95,6 +96,9 @@ def solve_alternate(
         A `jinns.data.AbstractDataGenerator` object to retrieve batches of collocation points.
     loss
         The loss function to minimize.
+    print_loss_every
+        Default 10. The rate at which we print the loss value in the
+        gradient step loop.
     tracked_params
         Default `None`. A `jinns.parameters.Params` object with non-`None` values for
         parameters that needs to be tracked along the iterations.
@@ -837,9 +841,6 @@ def solve_alternate(
             key,
         ) = carry
 
-        if verbose:
-            jax.debug.print("jinns alternate solver iteration {x}", x=i)
-
         ###### OPTIMIZATION ON EQ_PARAMS ###########
 
         for eq_param, _ in eq_param_eq_optim:
@@ -851,6 +852,18 @@ def solve_alternate(
 
         ############################################
 
+        if verbose:
+            _ = jax.lax.cond(
+                i % print_loss_every == 0,
+                lambda _: jax.debug.print(
+                    "Alternate iteration {i}: loss value = {loss_val}",
+                    i=i,
+                    loss_val=carry[5].train_loss_values[i],
+                ),
+                lambda _: None,
+                (None,),
+            )
+
         i += 1
         return (i, carry[1], carry[2], carry[3], carry[4], carry[5], carry[6], carry[7])
 
@@ -861,6 +874,14 @@ def solve_alternate(
         carry = _one_alternate_iteration(carry)
     jax.block_until_ready(carry)
     end = time.time()
+
+    if verbose:
+        jax.debug.print(
+            "\nFinal alternate iteration {i}: train loss value = {train_loss_val}",
+            i=carry[0],
+            train_loss_val=carry[5].train_loss_values[carry[0] - 1],
+        )
+
     if verbose:
         print("\nTraining took\n", end - start, "\n")
 
