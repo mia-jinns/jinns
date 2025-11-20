@@ -202,11 +202,11 @@ def solve(
         `None`,
         because loss weights are never updated and we can then save some
         computations.
-    obs_data
-        The `jinns.data.DataGeneratorObservations` object passed as input or
-        `None`.
     param_data
         The `jinns.data.DataGeneratorParameter` object passed as input or
+        `None`.
+    obs_data
+        The `jinns.data.DataGeneratorObservations` object passed as input or
         `None`.
     validation_crit_values
         An array containing the validation criterion values of the training.
