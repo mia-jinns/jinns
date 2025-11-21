@@ -853,12 +853,17 @@ def solve_alternate(
         ############################################
 
         if verbose:
+            n_iter_total = (
+                i * (sum(n_iter_list_eq_params) + nn_n_iter)
+                + sum(n_iter_list_eq_params)
+                + nn_n_iter
+            )
             _ = jax.lax.cond(
                 i % print_loss_every == 0,
                 lambda _: jax.debug.print(
                     "Alternate iteration {i}: loss value = {loss_val}",
                     i=i,
-                    loss_val=carry[5].train_loss_values[i],
+                    loss_val=carry[5].train_loss_values[n_iter_total - 1],
                 ),
                 lambda _: None,
                 (None,),
@@ -876,10 +881,11 @@ def solve_alternate(
     end = time.time()
 
     if verbose:
+        n_iter_total = (carry[0] - 1) * (sum(n_iter_list_eq_params) + nn_n_iter)
         jax.debug.print(
-            "\nFinal alternate iteration {i}: train loss value = {train_loss_val}",
+            "\nFinal alternate iteration {i}: loss value = {train_loss_val}",
             i=carry[0],
-            train_loss_val=carry[5].train_loss_values[carry[0] - 1],
+            train_loss_val=carry[5].train_loss_values[n_iter_total - 1],
         )
 
     if verbose:
