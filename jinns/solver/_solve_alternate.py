@@ -477,45 +477,21 @@ def solve_alternate(
                 conditions_str=("bool_max_iter", "bool_nan_in_params"),
             )
 
+            # 1 - some init
             start_idx = i * (sum(n_iter_list_eq_params) + nn_n_iter) + sum(
                 n_iter_list_eq_params[:idx_params]
             )
-            # 1 - some init
-            loss_ = eqx.tree_at(
-                lambda pt: (pt.derivative_keys,),
-                carry[1],
-                (eq_gd_steps_derivative_keys[eq_param],),
-            )
-            # Reinit a loss container for this inner loop
-            stored_loss_terms_ = jax.tree_util.tree_map(
-                lambda _: jnp.zeros((n_iter_for_params)), loss_terms
-            )
-            train_loss_values_ = jnp.zeros((n_iter_for_params,))
-            if loss_.update_weight_method is not None:
-                stored_weights_terms_ = _init_stored_weights_terms(
-                    loss_, n_iter_for_params
-                )
-                # ensure continuity between steps for loss weights
-                # this is important for update weight methods which requires
-                # previous weight values
-                stored_weights_terms_ = jax.tree_util.tree_map(
-                    lambda st_, st: st_.at[-1].set(st[start_idx - 1]),
-                    stored_weights_terms_,
-                    loss_container.stored_weights_terms,
-                )
-            else:
-                stored_weights_terms_ = None
-            loss_container_ = LossContainer(
-                stored_loss_terms=stored_loss_terms_,
-                train_loss_values=train_loss_values_,
-                stored_weights_terms=stored_weights_terms_,
-            )
 
-            # Reinit a stored_objects for this inner loop
-            stored_params_ = _init_stored_params(
-                tracked_params, init_params, n_iter * n_iter_for_params
+            loss_, loss_container_, stored_objects_ = _init_before_local_optimization(
+                eq_gd_steps_derivative_keys[eq_param],
+                n_iter_for_params,
+                loss_terms,
+                carry[1],
+                loss_container,
+                start_idx,
+                tracked_params,
+                init_params,
             )
-            stored_objects_ = StoredObjectContainer(stored_params=stored_params_)
 
             carry_ = (
                 0,
@@ -531,34 +507,8 @@ def solve_alternate(
             carry_ = jax.lax.while_loop(break_fun_, _eq_params_one_iteration, carry_)
 
             # Now we prepare back the main carry
-            # jax.debug.print("start_idx eqx {i}", i=start_idx)
-            loss_container_ = carry_[5]
-            loss_container = LossContainer(
-                stored_loss_terms=jax.tree.map(
-                    lambda s, l: jax.lax.dynamic_update_slice(s, l, (start_idx,)),
-                    loss_container.stored_loss_terms,
-                    loss_container_.stored_loss_terms,
-                ),
-                train_loss_values=jax.lax.dynamic_update_slice(
-                    loss_container.train_loss_values,
-                    loss_container_.train_loss_values,
-                    (start_idx,),
-                ),
-                stored_weights_terms=jax.tree.map(
-                    lambda s, l: jax.lax.dynamic_update_slice(s, l, (start_idx,)),
-                    loss_container.stored_weights_terms,
-                    loss_container_.stored_weights_terms,
-                ),
-            )
-            stored_objects_ = carry_[6]
-            stored_objects = StoredObjectContainer(
-                stored_params=jax.tree.map(
-                    lambda s, l: jax.lax.dynamic_update_slice(
-                        s, l, (start_idx,) + s[0].shape
-                    ),
-                    stored_objects.stored_params,
-                    stored_objects_.stored_params,
-                )
+            loss_container, stored_objects = _get_loss_and_objects_container(
+                loss_container, carry_[5], stored_objects, carry_[6], start_idx
             )
 
             carry = (
@@ -672,36 +622,16 @@ def solve_alternate(
         start_idx = i * (sum(n_iter_list_eq_params) + nn_n_iter) + sum(
             n_iter_list_eq_params
         )
-        loss_ = eqx.tree_at(
-            lambda pt: pt.derivative_keys, carry[1], nn_gd_steps_derivative_keys
+        loss_, loss_container_, stored_objects_ = _init_before_local_optimization(
+            nn_gd_steps_derivative_keys,
+            nn_n_iter,
+            loss_terms,
+            carry[1],
+            loss_container,
+            start_idx,
+            tracked_params,
+            init_params,
         )
-        # Reinit a loss container for this inner loop
-        stored_loss_terms_ = jax.tree_util.tree_map(
-            lambda _: jnp.zeros((nn_n_iter,)), loss_terms
-        )
-        train_loss_values_ = jnp.zeros((nn_n_iter,))
-        if loss_.update_weight_method is not None:
-            stored_weights_terms_ = _init_stored_weights_terms(loss_, nn_n_iter)
-            # ensure continuity between steps for loss weights
-            # this is important for update weight methods which requires
-            # previous weight values
-            stored_weights_terms_ = jax.tree_util.tree_map(
-                lambda st_, st: st_.at[-1].set(st[start_idx - 1]),
-                stored_weights_terms_,
-                loss_container.stored_weights_terms,
-            )
-        else:
-            stored_weights_terms_ = None
-        loss_container_ = LossContainer(
-            stored_loss_terms=stored_loss_terms_,
-            train_loss_values=train_loss_values_,
-            stored_weights_terms=stored_weights_terms_,
-        )
-        # Reinit a stored_objects for this inner loop
-        stored_params_ = _init_stored_params(
-            tracked_params, init_params, n_iter * nn_n_iter
-        )
-        stored_objects_ = StoredObjectContainer(stored_params=stored_params_)
         carry_ = (
             0,
             loss_,
@@ -716,34 +646,8 @@ def solve_alternate(
         carry_ = jax.lax.while_loop(nn_break_fun_, _nn_params_one_iteration, carry_)
 
         # Now we prepare back the main carry
-        # jax.debug.print("start_idx nn {i}", i=start_idx)
-        loss_container_ = carry_[5]
-        loss_container = LossContainer(
-            stored_loss_terms=jax.tree.map(
-                lambda s, l: jax.lax.dynamic_update_slice(s, l, (start_idx,)),
-                loss_container.stored_loss_terms,
-                loss_container_.stored_loss_terms,
-            ),
-            train_loss_values=jax.lax.dynamic_update_slice(
-                loss_container.train_loss_values,
-                loss_container_.train_loss_values,
-                (start_idx,),
-            ),
-            stored_weights_terms=jax.tree.map(
-                lambda s, l: jax.lax.dynamic_update_slice(s, l, (start_idx,)),
-                loss_container.stored_weights_terms,
-                loss_container_.stored_weights_terms,
-            ),
-        )
-        stored_objects_ = carry_[6]
-        stored_objects = StoredObjectContainer(
-            stored_params=jax.tree.map(
-                lambda s, l: jax.lax.dynamic_update_slice(
-                    s, l, (start_idx,) + s[0].shape
-                ),
-                stored_objects.stored_params,
-                stored_objects_.stored_params,
-            )
+        loss_container, stored_objects = _get_loss_and_objects_container(
+            loss_container, carry_[5], stored_objects, carry_[6], start_idx
         )
 
         carry = (
@@ -837,3 +741,83 @@ def solve_alternate(
         carry[4].obs_data,
         carry[4].param_data,
     )
+
+
+def _get_loss_and_objects_container(
+    loss_container, loss_container_, stored_objects, stored_objects_, start_idx
+):
+    """
+    Utility function to update the global (at the level of the alternate
+    optimization) loss_container and stored_objects from the local
+    loss_container_ and stored_objects_ that have been obtained at the end of
+    one of the alternate optimzations
+    """
+    loss_container = LossContainer(
+        stored_loss_terms=jax.tree.map(
+            lambda s, l: jax.lax.dynamic_update_slice(s, l, (start_idx,)),
+            loss_container.stored_loss_terms,
+            loss_container_.stored_loss_terms,
+        ),
+        train_loss_values=jax.lax.dynamic_update_slice(
+            loss_container.train_loss_values,
+            loss_container_.train_loss_values,
+            (start_idx,),
+        ),
+        stored_weights_terms=jax.tree.map(
+            lambda s, l: jax.lax.dynamic_update_slice(s, l, (start_idx,)),
+            loss_container.stored_weights_terms,
+            loss_container_.stored_weights_terms,
+        ),
+    )
+    stored_objects = StoredObjectContainer(
+        stored_params=jax.tree.map(
+            lambda s, l: jax.lax.dynamic_update_slice(s, l, (start_idx,) + s[0].shape),
+            stored_objects.stored_params,
+            stored_objects_.stored_params,
+        )
+    )
+    return loss_container, stored_objects
+
+
+def _init_before_local_optimization(
+    derivative_keys,
+    n_iter_local,
+    loss_terms,
+    loss,
+    loss_container,
+    start_idx,
+    tracked_params,
+    init_params,
+):
+    loss_ = eqx.tree_at(
+        lambda pt: (pt.derivative_keys,),
+        loss,
+        (derivative_keys,),
+    )
+    # Reinit a loss container for this inner loop
+    stored_loss_terms_ = jax.tree_util.tree_map(
+        lambda _: jnp.zeros((n_iter_local)), loss_terms
+    )
+    train_loss_values_ = jnp.zeros((n_iter_local,))
+    if loss_.update_weight_method is not None:
+        stored_weights_terms_ = _init_stored_weights_terms(loss_, n_iter_local)
+        # ensure continuity between steps for loss weights
+        # this is important for update weight methods which requires
+        # previous weight values
+        stored_weights_terms_ = jax.tree_util.tree_map(
+            lambda st_, st: st_.at[-1].set(st[start_idx - 1]),
+            stored_weights_terms_,
+            loss_container.stored_weights_terms,
+        )
+    else:
+        stored_weights_terms_ = None
+    loss_container_ = LossContainer(
+        stored_loss_terms=stored_loss_terms_,
+        train_loss_values=train_loss_values_,
+        stored_weights_terms=stored_weights_terms_,
+    )
+
+    # Reinit a stored_objects for this inner loop
+    stored_params_ = _init_stored_params(tracked_params, init_params, n_iter_local)
+    stored_objects_ = StoredObjectContainer(stored_params=stored_params_)
+    return loss_, loss_container_, stored_objects_
