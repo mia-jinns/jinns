@@ -881,7 +881,7 @@ def solve_alternate(
     end = time.time()
 
     if verbose:
-        n_iter_total = (carry[0] - 1) * (sum(n_iter_list_eq_params) + nn_n_iter)
+        n_iter_total = (carry[0]) * (sum(n_iter_list_eq_params) + nn_n_iter)
         jax.debug.print(
             "\nFinal alternate iteration {i}: loss value = {train_loss_val}",
             i=carry[0],
