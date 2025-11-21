@@ -1,3 +1,7 @@
+import jax
+import jax.numpy as jnp
+import equinox as eqx
+
 from jinns.data._DataGeneratorODE import DataGeneratorODE
 from jinns.data._CubicMeshPDEStatio import CubicMeshPDEStatio
 from jinns.data._CubicMeshPDENonStatio import CubicMeshPDENonStatio
@@ -118,3 +122,39 @@ def _check_batch_size(other_data, main_data, attr_name):
                         f" to {main_data.__class__}.n for correct"
                         " vectorization"
                     )
+
+
+def _init_stored_weights_terms(loss, n_iter):
+    return eqx.tree_at(
+        lambda pt: jax.tree.leaves(
+            pt, is_leaf=lambda x: x is not None and eqx.is_inexact_array(x)
+        ),
+        loss.loss_weights,
+        tuple(
+            jnp.zeros((n_iter))
+            for n in range(
+                len(
+                    jax.tree.leaves(
+                        loss.loss_weights,
+                        is_leaf=lambda x: x is not None and eqx.is_inexact_array(x),
+                    )
+                )
+            )
+        ),
+    )
+
+
+def _init_stored_params(tracked_params, params, n_iter):
+    return jax.tree_util.tree_map(
+        lambda tracked_param, param: (
+            jnp.zeros((n_iter,) + jnp.asarray(param).shape)
+            if tracked_param is not None
+            else None
+        ),
+        tracked_params,
+        params,
+        is_leaf=lambda x: x is None,  # None values in tracked_params will not
+        # be traversed. Thus the user can provide something like `tracked_params = jinns.parameters.Params(
+        # nn_params=None, eq_params={"nu": True})` while init_params.nn_params
+        # being a complex data structure
+    )

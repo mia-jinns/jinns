@@ -21,6 +21,7 @@ from jinns.solver._solve import (
     _get_get_batch,
     _store_loss_and_params,
 )
+from jinns.solver._utils import _init_stored_weights_terms, _init_stored_params
 from jinns.utils._containers import (
     DataGeneratorContainer,
     OptimizationContainer,
@@ -308,15 +309,8 @@ def solve_alternate(
     # initialize parameter tracking
     if tracked_params is None:
         tracked_params = jax.tree.map(lambda p: None, init_params)
-    stored_params = jax.tree_util.tree_map(
-        lambda tracked_param, param: (
-            jnp.zeros((n_iter * total_iter_all_solvers,) + jnp.asarray(param).shape)
-            if tracked_param is not None
-            else None
-        ),
-        tracked_params,
-        init_params,
-        is_leaf=lambda x: x is None,
+    stored_params = _init_stored_params(
+        tracked_params, init_params, n_iter * total_iter_all_solvers
     )
 
     # initialize the dict for stored parameter values
@@ -334,22 +328,8 @@ def solve_alternate(
 
     # initialize the PyTree for stored loss weights values
     if loss.update_weight_method is not None:
-        stored_weights_terms = eqx.tree_at(
-            lambda pt: jax.tree.leaves(
-                pt, is_leaf=lambda x: x is not None and eqx.is_inexact_array(x)
-            ),
-            loss.loss_weights,
-            tuple(
-                jnp.zeros((n_iter * total_iter_all_solvers))
-                for n in range(
-                    len(
-                        jax.tree.leaves(
-                            loss.loss_weights,
-                            is_leaf=lambda x: x is not None and eqx.is_inexact_array(x),
-                        )
-                    )
-                )
-            ),
+        stored_weights_terms = _init_stored_weights_terms(
+            loss, n_iter * total_iter_all_solvers
         )
     else:
         stored_weights_terms = None
@@ -512,23 +492,8 @@ def solve_alternate(
             )
             train_loss_values_ = jnp.zeros((n_iter_for_params,))
             if loss_.update_weight_method is not None:
-                stored_weights_terms_ = eqx.tree_at(
-                    lambda pt: jax.tree.leaves(
-                        pt, is_leaf=lambda x: x is not None and eqx.is_inexact_array(x)
-                    ),
-                    loss_.loss_weights,
-                    tuple(
-                        jnp.zeros((n_iter_for_params))
-                        for n in range(
-                            len(
-                                jax.tree.leaves(
-                                    loss_.loss_weights,
-                                    is_leaf=lambda x: x is not None
-                                    and eqx.is_inexact_array(x),
-                                )
-                            )
-                        )
-                    ),
+                stored_weights_terms_ = _init_stored_weights_terms(
+                    loss_, n_iter_for_params
                 )
                 # ensure continuity between steps for loss weights
                 # this is important for update weight methods which requires
@@ -547,15 +512,8 @@ def solve_alternate(
             )
 
             # Reinit a stored_objects for this inner loop
-            stored_params_ = jax.tree_util.tree_map(
-                lambda tracked_param, param: (
-                    jnp.zeros((n_iter_for_params,) + jnp.asarray(param).shape)
-                    if tracked_param is not None
-                    else None
-                ),
-                tracked_params,
-                init_params,
-                is_leaf=lambda x: x is None,
+            stored_params_ = _init_stored_params(
+                tracked_params, init_params, n_iter * n_iter_for_params
             )
             stored_objects_ = StoredObjectContainer(stored_params=stored_params_)
 
@@ -723,24 +681,7 @@ def solve_alternate(
         )
         train_loss_values_ = jnp.zeros((nn_n_iter,))
         if loss_.update_weight_method is not None:
-            stored_weights_terms_ = eqx.tree_at(
-                lambda pt: jax.tree.leaves(
-                    pt, is_leaf=lambda x: x is not None and eqx.is_inexact_array(x)
-                ),
-                loss_.loss_weights,
-                tuple(
-                    jnp.zeros((nn_n_iter))
-                    for n in range(
-                        len(
-                            jax.tree.leaves(
-                                loss_.loss_weights,
-                                is_leaf=lambda x: x is not None
-                                and eqx.is_inexact_array(x),
-                            )
-                        )
-                    )
-                ),
-            )
+            stored_weights_terms_ = _init_stored_weights_terms(loss_, nn_n_iter)
             # ensure continuity between steps for loss weights
             # this is important for update weight methods which requires
             # previous weight values
@@ -757,15 +698,8 @@ def solve_alternate(
             stored_weights_terms=stored_weights_terms_,
         )
         # Reinit a stored_objects for this inner loop
-        stored_params_ = jax.tree_util.tree_map(
-            lambda tracked_param, param: (
-                jnp.zeros((nn_n_iter,) + jnp.asarray(param).shape)
-                if tracked_param is not None
-                else None
-            ),
-            tracked_params,
-            init_params,
-            is_leaf=lambda x: x is None,
+        stored_params_ = _init_stored_params(
+            tracked_params, init_params, n_iter * nn_n_iter
         )
         stored_objects_ = StoredObjectContainer(stored_params=stored_params_)
         carry_ = (

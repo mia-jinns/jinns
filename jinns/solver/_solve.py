@@ -18,7 +18,11 @@ from jaxtyping import Float, Array, PyTree, PRNGKeyArray
 import equinox as eqx
 from jinns.solver._rar import init_rar, trigger_rar
 from jinns.utils._utils import _check_nan_in_pytree
-from jinns.solver._utils import _check_batch_size
+from jinns.solver._utils import (
+    _check_batch_size,
+    _init_stored_weights_terms,
+    _init_stored_params,
+)
 from jinns.parameters._params import Params
 from jinns.utils._containers import (
     DataGeneratorContainer,
@@ -269,19 +273,7 @@ def solve(
     # initialize parameter tracking
     if tracked_params is None:
         tracked_params = jax.tree.map(lambda p: None, init_params)
-    stored_params = jax.tree_util.tree_map(
-        lambda tracked_param, param: (
-            jnp.zeros((n_iter,) + jnp.asarray(param).shape)
-            if tracked_param is not None
-            else None
-        ),
-        tracked_params,
-        init_params,
-        is_leaf=lambda x: x is None,  # None values in tracked_params will not
-        # be traversed. Thus the user can provide something like `tracked_params = jinns.parameters.Params(
-        # nn_params=None, eq_params={"nu": True})` while init_params.nn_params
-        # being a complex data structure
-    )
+    stored_params = _init_stored_params(tracked_params, init_params, n_iter)
 
     # initialize the dict for stored parameter values
     # we need to get a loss_term to init stuff
@@ -297,23 +289,7 @@ def solve(
 
     # initialize the PyTree for stored loss weights values
     if loss.update_weight_method is not None:
-        stored_weights_terms = eqx.tree_at(
-            lambda pt: jax.tree.leaves(
-                pt, is_leaf=lambda x: x is not None and eqx.is_inexact_array(x)
-            ),
-            loss.loss_weights,
-            tuple(
-                jnp.zeros((n_iter))
-                for n in range(
-                    len(
-                        jax.tree.leaves(
-                            loss.loss_weights,
-                            is_leaf=lambda x: x is not None and eqx.is_inexact_array(x),
-                        )
-                    )
-                )
-            ),
-        )
+        _init_stored_weights_terms(loss, n_iter)
     else:
         stored_weights_terms = None
     if loss.update_weight_method is not None and key is None:
