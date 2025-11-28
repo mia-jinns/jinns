@@ -19,8 +19,8 @@ repos:
         require_serial: true
         args:
           [
-            "--fail-on=F,E",
-            "--exit-zero",
             "-rn", # Only display messages
             "-sn", # Don't display the score
+            "--fail-on=F,E",
+            "--exit-zero",
           ]
