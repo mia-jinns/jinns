@@ -1,0 +1,12 @@
+python
+
+[MESSAGE CONTROL]
+
+#disable=C0301, C0114, C0116, R0913, R0917
+
+#C0301: Line too long (108/100) (line-too-long)
+#C0114: Missing module docstring (missing-module-docstring)
+#C0116: Missing function or method docstring (missing-function-docstring)
+#R0913: Too many arguments (6/5) (too-many-arguments)
+#R0917: Too many positional arguments (6/5) (too-many-positional-arguments)
+
