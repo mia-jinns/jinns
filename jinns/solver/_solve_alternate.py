@@ -15,13 +15,15 @@ from jaxtyping import Array, PRNGKeyArray, Float
 import equinox as eqx
 
 from jinns.parameters._params import Params
-from jinns.solver._solve import (
+from jinns.solver._utils import (
+    _init_stored_weights_terms,
+    _init_stored_params,
     _get_break_fun,
     _loss_evaluate_and_gradient_step,
     _get_get_batch,
     _store_loss_and_params,
+    _print_fn,
 )
-from jinns.solver._utils import _init_stored_weights_terms, _init_stored_params
 from jinns.utils._containers import (
     DataGeneratorContainer,
     OptimizationContainer,
@@ -701,15 +703,10 @@ def solve_alternate(
                 + sum(n_iter_list_eq_params)
                 + nn_n_iter
             )
-            _ = jax.lax.cond(
-                i % print_loss_every == 0,
-                lambda _: jax.debug.print(
-                    "Alternate iteration {i}: loss value = {loss_val}",
-                    i=i,
-                    loss_val=carry[5].train_loss_values[n_iter_total - 1],
-                ),
-                lambda _: None,
-                (None,),
+            _print_fn(
+                n_iter_total,
+                carry[5].train_loss_values[n_iter_total - 1],
+                prefix="[train alternate]",
             )
 
         i += 1
