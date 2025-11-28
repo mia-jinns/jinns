@@ -2,6 +2,10 @@
 
 * Unreleased (currently on `main`)
 
+* v1.7.0
+
+    - This version brings up `jinns.solve_alternate()` for an efficient and fully customizable alternate optimization between the PINN parameters (internally `Params.nn_params`) and the equation parameters (internally `Params.eq_params`) (see [!89](https://gitlab.com/mia_jinns/jinns/-/merge_requests/89)). This can be a good approach for inverse problems with PINNs, check out the [tutorial notebook](https://mia_jinns.gitlab.io/jinns/Notebooks/Tutorials/GLV_JointEstimation_Alternate/)
+
 * v1.6.1
 
     - Fix instanciation error because the `EqParams` object should not be used in `DataGeneratorObservations` [!88](https://gitlab.com/mia_jinns/jinns/-/merge_requests/88)
