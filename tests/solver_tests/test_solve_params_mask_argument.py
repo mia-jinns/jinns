@@ -92,12 +92,14 @@ def test_Burgers_10it(train_Burgers_init):
     params = init_params
     tx = optax.adamw(learning_rate=1e-3)
     n_iter = 10
-    params_nn_params, total_loss_list_nn_params, _, _, _, _, _, _, _, _ = jinns.solve(
-        init_params=params,
-        data=train_data,
-        optimizer=tx,
-        loss=loss_nn_params,
-        n_iter=n_iter,
+    params_nn_params, total_loss_list_nn_params, _, _, _, _, _, _, _, _, _, _ = (
+        jinns.solve(
+            init_params=params,
+            data=train_data,
+            optimizer=tx,
+            loss=loss_nn_params,
+            n_iter=n_iter,
+        )
     )
 
     params_mask = jinns.parameters.Params(
@@ -119,7 +121,7 @@ def test_Burgers_10it(train_Burgers_init):
     params = init_params
     tx = optax.adamw(learning_rate=1e-3)
     n_iter = 10
-    params_params_mask, total_loss_list_params_mask, _, _, _, _, _, _, _, _ = (
+    params_params_mask, total_loss_list_params_mask, _, _, _, _, _, _, _, _, _, _ = (
         jinns.solve(
             init_params=params,
             data=train_data,

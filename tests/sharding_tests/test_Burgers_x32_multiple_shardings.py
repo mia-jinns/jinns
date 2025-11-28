@@ -3,7 +3,7 @@ import pytest
 import os
 
 os.environ["JAX_PLATFORMS"] = "cpu"
-os.environ["XLA_FLAGS"] = f"--xla_force_host_platform_device_count=2"
+os.environ["XLA_FLAGS"] = "--xla_force_host_platform_device_count=2"
 
 import jax
 import jax.numpy as jnp
@@ -113,7 +113,7 @@ def train_Burgers_10it_sharding(train_Burgers_init_sharding):
 
     tx = optax.adam(learning_rate=1e-3)
     n_iter = 10
-    params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _, _ = jinns.solve(
+    params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _, _, _, _ = jinns.solve(
         init_params=params,
         data=train_data,
         optimizer=tx,
@@ -215,7 +215,7 @@ def train_Burgers_10it_no_sharding(train_Burgers_init_no_sharding):
 
     tx = optax.adam(learning_rate=1e-3)
     n_iter = 10
-    params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _, _ = jinns.solve(
+    params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _, _, _, _ = jinns.solve(
         init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
     )
     return total_loss_list[9]
