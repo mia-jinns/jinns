@@ -21,6 +21,5 @@ repos:
           [
             "-rn", # Only display messages
             "-sn", # Don't display the score
-            "--fail-on=F,E",
-            "--exit-zero",
+            "--errors-only",
           ]
