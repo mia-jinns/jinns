@@ -662,7 +662,12 @@ def solve_alternate(
         )
         return carry
 
-    nn_params_train_fun_compiled = jax.jit(nn_train_fun).lower(carry).compile()
+    nn_params_train_fun_compiled = (
+        jax.jit(nn_train_fun)
+        .trace(jax.eval_shape(lambda _: carry, (None,)))
+        .lower()
+        .compile()
+    )
 
     if verbose:
         print("Initialization time:", time.time() - initialization_time)
