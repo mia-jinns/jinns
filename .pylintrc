@@ -1,8 +1,8 @@
-python
+#python
 
 [MESSAGE CONTROL]
 
-#disable=C0301, C0114, C0116, R0913, R0917
+disable=C0301, C0114, C0116, R0913, R0917
 
 #C0301: Line too long (108/100) (line-too-long)
 #C0114: Missing module docstring (missing-module-docstring)
