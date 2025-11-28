@@ -121,7 +121,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C]):
             f" got {len(weights)} and {len(terms_list)}"
         )
 
-    def ponderate_and_sum_gradient(self, terms: C) -> C:
+    def ponderate_and_sum_gradient(self, terms: C) -> Params[Array | None]:
         """
         Get total gradients from individual loss gradients and weights
         for each parameter
