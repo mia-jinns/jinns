@@ -49,7 +49,7 @@ if TYPE_CHECKING:
 
     AnyLoss: TypeAlias = LossODE | LossPDEStatio | LossPDENonStatio
 
-    main_carry: TypeAlias = tuple[
+    SolveCarry: TypeAlias = tuple[
         int,
         AbstractLoss,
         OptimizationContainer,
@@ -59,5 +59,16 @@ if TYPE_CHECKING:
         LossContainer,
         StoredObjectContainer,
         Float[Array, " n_iter"] | None,
+        PRNGKeyArray | None,
+    ]
+
+    SolveAlternateCarry: TypeAlias = tuple[
+        int,
+        AbstractLoss,
+        OptimizationContainer,
+        OptimizationExtraContainer,
+        DataGeneratorContainer,
+        LossContainer,
+        StoredObjectContainer,
         PRNGKeyArray | None,
     ]

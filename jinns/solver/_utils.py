@@ -21,18 +21,17 @@ from jinns.data._DataGeneratorODE import DataGeneratorODE
 from jinns.data._CubicMeshPDEStatio import CubicMeshPDEStatio
 from jinns.data._CubicMeshPDENonStatio import CubicMeshPDENonStatio
 from jinns.data._DataGeneratorParameter import DataGeneratorParameter
+from jinns.parameters._params import Params
+from jinns.utils._containers import (
+    LossContainer,
+    StoredObjectContainer,
+)
 
 if TYPE_CHECKING:
-    from jinns.parameters._params import Params
-    from jinns.utils._types import AnyBatch, main_carry
+    from jinns.utils._types import AnyBatch, SolveCarry, SolveAlternateCarry
     from jinns.loss._abstract_loss import AbstractLoss
-    from jinns.data._DataGeneratorParameter import DataGeneratorParameter
     from jinns.data._DataGeneratorObservations import DataGeneratorObservations
     from jinns.data._AbstractDataGenerator import AbstractDataGenerator
-    from jinns.utils._containers import (
-        LossContainer,
-        StoredObjectContainer,
-    )
 
 
 def _init_stored_weights_terms(loss, n_iter):
@@ -333,7 +332,7 @@ def _get_break_fun(
         "bool_nan_in_params",
         "bool_early_stopping",
     ),
-) -> Callable[[main_carry], bool]:
+) -> Callable[[SolveCarry | SolveAlternateCarry], bool]:
     """
     Wrapper to get the break_fun with appropriate `n_iter`.
     The verbose argument is here to control printing (or not) when exiting

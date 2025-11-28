@@ -218,88 +218,10 @@ def solve_alternate(
     # and get the negative to optimize only on eq_params FOR EACH EQ_PARAMS
     # Hence the PyTree we need to construct to tree.map over is a little more
     # complex since we need to keep the overall dict structure
-    nb_eq_params = len(
-        jax.tree.leaves(
-            eq_optimizers, is_leaf=lambda x: isinstance(x, optax.GradientTransformation)
-        )
+
+    eq_params_masks, eq_gd_steps_derivative_keys = (
+        _get_eq_param_masks_and_derivative_keys(eq_optimizers, init_params, loss)
     )
-    # masks_ is a sort of one hot encoding for each eq_param
-    masks_ = tuple(jnp.eye(nb_eq_params)[i] for i in range(nb_eq_params))
-    # eq_params_masks_ is a EqParams with each leaf getting its one hot
-    # encoding of the eq_param it represents
-    eq_params_masks_ = jax.tree.unflatten(
-        jax.tree.structure(
-            eq_optimizers, is_leaf=lambda x: isinstance(x, optax.GradientTransformation)
-        ),
-        masks_,
-    )
-    # if you forget about the broadcast below
-    # eq_params_masks is a EqParams where each leaf is a Params
-    # where we have a 1 where the subleaf of Params is the same as the upper
-    # leaf of the EqParams
-    # now add the broadcast: it is needed because eg ll=[0, 0, 1] has just been
-    # unflattened into 3 eq_params (from eq_optimizers structure). The problem
-    # is that here, a float (0 or 0 or 1) has been assigned, all with struct
-    # (). This is problematic since it will not match struct of
-    # Params.eq_params that are tuple for eg. Then if
-    # Params.eq_params=(alpha=(0., 0.), beta=(1.,), gamma=(4., 4.,
-    # jnp.array([4., 4.]))) then the result of the unflatten will be
-    # modified into the correct structures ie,
-    # (alpha=(0, 0), beta=(0,), gamma=(1, 1, 1)) instead of
-    # (alpha=0, beta=0, gamma=1)
-    # the tree.broadcast has been added to prevent a bug in the tree.map of
-    # `_set_derivatives` of jinns DerivativeKeys
-
-    eq_params_masks = jax.tree.map(
-        lambda l, ll, p: Params(
-            nn_params=False,
-            eq_params=jax.tree.broadcast(
-                jax.tree.unflatten(
-                    jax.tree.structure(
-                        eq_optimizers,
-                        is_leaf=lambda x: isinstance(x, optax.GradientTransformation),
-                    ),
-                    ll,
-                ),
-                init_params.eq_params,
-            ),
-        ),
-        eq_optimizers,
-        eq_params_masks_,
-        init_params.eq_params,
-        is_leaf=lambda x: isinstance(x, optax.GradientTransformation),
-    )
-
-    def replace_float(leaf):
-        if isinstance(leaf, bool):
-            return leaf
-        elif leaf == 1:
-            return True
-        elif leaf == 0:
-            return False
-        else:
-            raise ValueError
-
-    # Note that we need to replace with plain bool:
-    # 1. filter_spec does not even accept onp.array
-    # 2. filter_spec does not accept non static arguments. So any jnp array is
-    # non hashable and we will not be able to make it static
-    # params_mask cannot be inside the carry of course, just like the
-    # optimizer
-    eq_params_masks = jax.tree.map(lambda l: replace_float(l), eq_params_masks)
-
-    # derivative keys with only eq_params updates for the gradient steps over eq_params
-    # Here we make a dict for simplicity
-    # A key=a eq_param=the content to form the jinns DerivativeKeys for each eq_param
-    # There is then True for where needed
-    eq_gd_steps_derivative_keys = {
-        f.name: jax.tree.map(
-            lambda l: getattr(eq_params_masks, f.name),
-            loss.derivative_keys,
-            is_leaf=lambda x: isinstance(x, Params),
-        )
-        for f in fields(eq_params_masks)
-    }
 
     #######################################
     # SOME INITIALIZATIONS FOR CONTAINERS #
@@ -385,7 +307,7 @@ def solve_alternate(
     for idx_params, (eq_param, eq_optim) in enumerate(eq_param_eq_optim):
         n_iter_for_params = getattr(eq_n_iters, eq_param)
 
-        def eq_train_fun(n_iter, carry):
+        def eq_train_fun(_, carry):
             i = carry[0]
             loss_container = carry[5]
             stored_objects = carry[6]
@@ -706,6 +628,7 @@ def solve_alternate(
             _print_fn(
                 n_iter_total,
                 carry[5].train_loss_values[n_iter_total - 1],
+                print_loss_every,
                 prefix="[train alternate]",
             )
 
@@ -823,3 +746,90 @@ def _init_before_local_optimization(
     stored_params_ = _init_stored_params(tracked_params, init_params, n_iter_local)
     stored_objects_ = StoredObjectContainer(stored_params=stored_params_)
     return loss_, loss_container_, stored_objects_
+
+
+def _get_eq_param_masks_and_derivative_keys(eq_optimizers, init_params, loss):
+    nb_eq_params = len(
+        jax.tree.leaves(
+            eq_optimizers, is_leaf=lambda x: isinstance(x, optax.GradientTransformation)
+        )
+    )
+    # masks_ is a sort of one hot encoding for each eq_param
+    masks_ = tuple(jnp.eye(nb_eq_params)[i] for i in range(nb_eq_params))
+    # eq_params_masks_ is a EqParams with each leaf getting its one hot
+    # encoding of the eq_param it represents
+    eq_params_masks_ = jax.tree.unflatten(
+        jax.tree.structure(
+            eq_optimizers, is_leaf=lambda x: isinstance(x, optax.GradientTransformation)
+        ),
+        masks_,
+    )
+    # if you forget about the broadcast below
+    # eq_params_masks is a EqParams where each leaf is a Params
+    # where we have a 1 where the subleaf of Params is the same as the upper
+    # leaf of the EqParams
+    # now add the broadcast: it is needed because eg ll=[0, 0, 1] has just been
+    # unflattened into 3 eq_params (from eq_optimizers structure). The problem
+    # is that here, a float (0 or 0 or 1) has been assigned, all with struct
+    # (). This is problematic since it will not match struct of
+    # Params.eq_params that are tuple for eg. Then if
+    # Params.eq_params=(alpha=(0., 0.), beta=(1.,), gamma=(4., 4.,
+    # jnp.array([4., 4.]))) then the result of the unflatten will be
+    # modified into the correct structures ie,
+    # (alpha=(0, 0), beta=(0,), gamma=(1, 1, 1)) instead of
+    # (alpha=0, beta=0, gamma=1)
+    # the tree.broadcast has been added to prevent a bug in the tree.map of
+    # `_set_derivatives` of jinns DerivativeKeys
+
+    eq_params_masks = jax.tree.map(
+        lambda l, ll, p: Params(
+            nn_params=False,
+            eq_params=jax.tree.broadcast(
+                jax.tree.unflatten(
+                    jax.tree.structure(
+                        eq_optimizers,
+                        is_leaf=lambda x: isinstance(x, optax.GradientTransformation),
+                    ),
+                    ll,
+                ),
+                init_params.eq_params,
+            ),
+        ),
+        eq_optimizers,
+        eq_params_masks_,
+        init_params.eq_params,
+        is_leaf=lambda x: isinstance(x, optax.GradientTransformation),
+    )
+
+    def replace_float(leaf):
+        if isinstance(leaf, bool):
+            return leaf
+        elif leaf == 1:
+            return True
+        elif leaf == 0:
+            return False
+        else:
+            raise ValueError
+
+    # Note that we need to replace with plain bool:
+    # 1. filter_spec does not even accept onp.array
+    # 2. filter_spec does not accept non static arguments. So any jnp array is
+    # non hashable and we will not be able to make it static
+    # params_mask cannot be inside the carry of course, just like the
+    # optimizer
+    eq_params_masks = jax.tree.map(lambda l: replace_float(l), eq_params_masks)
+
+    # derivative keys with only eq_params updates for the gradient steps over eq_params
+    # Here we make a dict for simplicity
+    # A key=a eq_param=the content to form the jinns DerivativeKeys for each eq_param
+    # There is then True for where needed
+    eq_gd_steps_derivative_keys = {
+        f.name: jax.tree.map(
+            lambda l: getattr(eq_params_masks, f.name),
+            loss.derivative_keys,
+            is_leaf=lambda x: isinstance(x, Params),
+        )
+        for f in fields(eq_params_masks)
+    }
+
+    return eq_params_masks, eq_gd_steps_derivative_keys

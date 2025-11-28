@@ -35,8 +35,7 @@ from jinns.utils._containers import (
 )
 
 if TYPE_CHECKING:
-    from jinns.parameters._params import Params
-    from jinns.utils._types import AnyLossComponents, main_carry
+    from jinns.utils._types import AnyLossComponents, SolveCarry
     from jinns.loss._abstract_loss import AbstractLoss
     from jinns.validation._validation import AbstractValidationModule
     from jinns.data._DataGeneratorParameter import DataGeneratorParameter
@@ -277,7 +276,7 @@ def solve(
 
     # initialize the PyTree for stored loss weights values
     if loss.update_weight_method is not None:
-        _init_stored_weights_terms(loss, n_iter)
+        stored_weights_terms = _init_stored_weights_terms(loss, n_iter)
     else:
         stored_weights_terms = None
     if loss.update_weight_method is not None and key is None:
@@ -331,7 +330,7 @@ def solve(
         key,
     )
 
-    def _one_iteration(carry: main_carry) -> main_carry:
+    def _one_iteration(carry: SolveCarry) -> SolveCarry:
         # Note that optimizer and params_mask are not part of the carry since
         # the former is not tractable and the latter (while it could be
         # hashable) must be static because of the equinox `filter_spec` (https://github.com/patrick-kidger/equinox/issues/1036)
