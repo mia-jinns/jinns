@@ -89,7 +89,11 @@ def solve_alternate(
     n_iter
         The maximum number of cyles of alternate iterations.
     optimizers
-        A `jinns.parameters.Params` object, where each leave is an optax optimizer
+        A `jinns.parameters.Params` object, where each leave is an optax
+        optimizer. Note that when using an `optax.chain` with a schedular for a
+        certain parameter, the iteration count considered is the one of this
+        precise parameter. That is, for parameter `theta`, the scheduler is
+        spread over `n_iter_by_solver.eq_params.theta * n_iter` steps.
     n_iter_by_optimizer
         A Params object, where each leaves gives the number of iteration of the
         corresponding optimizer, within one alternate cycle.

@@ -100,3 +100,65 @@ def test_tracked_loss_values(init_Params_objects):
         verbose=False,
     )
     assert jnp.allclose(out[1], 4.0 * jnp.ones((6 * n_iter)))
+
+
+def test_schedulers(init_Params_objects):
+    """
+    We check that the count is OK for each schedule of each param that is
+    optimized
+    """
+    _, _, init_params, loss = init_Params_objects
+
+    n_iter_by_solver = Params(nn_params=4, eq_params={"theta": 2, "kappa": 3})
+    nn_scheduler = optax.linear_schedule(
+        init_value=1.0,
+        end_value=0.01,
+        transition_steps=n_iter_by_solver.nn_params * n_iter,
+    )
+    theta_scheduler = optax.linear_schedule(
+        init_value=1.0,
+        end_value=0.01,
+        transition_steps=n_iter_by_solver.eq_params.theta * n_iter,
+    )
+    kappa_scheduler = optax.linear_schedule(
+        init_value=1.0,
+        end_value=0.01,
+        transition_steps=n_iter_by_solver.eq_params.kappa * n_iter,
+    )
+    optimizers = Params(
+        nn_params=optax.chain(
+            optax.scale_by_adam(),
+            optax.scale_by_schedule(nn_scheduler),
+            optax.scale(-1.0),
+        ),
+        eq_params={
+            "theta": optax.chain(
+                optax.scale_by_adam(),
+                optax.scale_by_schedule(theta_scheduler),
+                optax.scale(-1.0),
+            ),
+            "kappa": optax.chain(
+                optax.scale_by_adam(),
+                optax.scale_by_schedule(kappa_scheduler),
+                optax.scale(-1.0),
+            ),
+        },
+    )
+
+    tracked_params = jinns.parameters.Params(
+        nn_params=None, eq_params={"theta": True, "kappa": True}
+    )
+    out = jinns.solve_alternate(
+        n_iter=n_iter,
+        n_iter_by_solver=n_iter_by_solver,
+        init_params=init_params,
+        optimizers=optimizers,
+        data=train_data,
+        loss=loss,
+        tracked_params=tracked_params,
+        verbose=False,
+    )
+    opt_state = out[5]
+    assert opt_state[0][1].count == 40
+    assert opt_state[1].theta[1].count == 20
+    assert opt_state[1].kappa[1].count == 30
