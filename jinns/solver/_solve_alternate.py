@@ -626,7 +626,7 @@ def solve_alternate(
                 + nn_n_iter
             )
             _print_fn(
-                n_iter_total,
+                i,
                 carry[5].train_loss_values[n_iter_total - 1],
                 print_loss_every,
                 prefix="[train alternate]",
