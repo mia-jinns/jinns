@@ -162,6 +162,16 @@ class _LossPDEAbstract(AbstractLoss[L, B, C], Generic[L, B, C, D, Y]):
     ):
         super().__init__(loss_weights=self.loss_weights, **kwargs)
 
+        if self.update_weight_method is not None and jnp.any(
+            jnp.array(jax.tree.leaves(self.loss_weights)) == 0
+        ):
+            warnings.warn(
+                "self.update_weight_method is activated while some loss "
+                "weights are zero. The update weight method will likely "
+                "update the zero weight to some non-zero value. Check that "
+                "this is the desired behaviour."
+            )
+
         if obs_slice is None:
             self.obs_slice = jnp.s_[...]
         else:

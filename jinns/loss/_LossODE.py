@@ -134,6 +134,16 @@ class LossODE(AbstractLoss[LossWeightsODE, ODEBatch, ODEComponents[Array | None]
         self.u = u
         self.dynamic_loss = dynamic_loss
         self.vmap_in_axes = (0,)
+        if self.update_weight_method is not None and jnp.any(
+            jnp.array(jax.tree.leaves(self.loss_weights)) == 0
+        ):
+            warnings.warn(
+                "self.update_weight_method is activated while some loss "
+                "weights are zero. The update weight method will likely "
+                "update the zero weight to some non-zero value. Check that "
+                "this is the desired behaviour."
+            )
+
         if derivative_keys is None:
             # by default we only take gradient wrt nn_params
             if params is None:

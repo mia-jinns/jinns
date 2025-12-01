@@ -87,7 +87,7 @@ def create_loss(tmin, Tmax, u, derivative_keys, init_params):
     return loss
 
 
-def train(train_data, params, loss):
+def train(train_data, params, loss, key=None):
     tx = optax.adam(learning_rate=1e0)
     n_iter = 2
     end_params, _, _, _, _, _, _, _, _, _, _, _ = jinns.solve(
@@ -96,6 +96,7 @@ def train(train_data, params, loss):
         optimizer=tx,
         loss=loss,
         n_iter=n_iter,
+        key=key,
     )
     return end_params
 
@@ -284,3 +285,45 @@ def test_derivative_keys_via_Str_values_updates3(
         params.nn_params.layers[0].weight, end_params.nn_params.layers[0].weight
     )
     assert not jnp.allclose(params.eq_params.a, end_params.eq_params.a)
+
+
+def test_derivatives_keys_with_loss_update(
+    create_pinn_ode, initialize_parameters, create_datagenerator
+):
+    u, _ = create_pinn_ode
+    init_params = initialize_parameters
+    train_data, tmin, Tmax = create_datagenerator
+
+    derivative_keys = DerivativeKeysODE.from_str(
+        params=init_params,
+        dyn_loss=Params(nn_params=True, eq_params={"a": True}),
+        initial_condition=Params(nn_params=True, eq_params={"a": True}),
+    )
+    u0 = 1.848
+
+    class LinearFODE(ODE):
+        def equation(self, t, u, params):
+            # in log-space
+            u_ = lambda t, p: u(t, p)[0]
+            du_dt = jax.grad(u_, 0)(t, params)
+            return du_dt - params.eq_params.a
+
+    fo_loss = LinearFODE(Tmax=Tmax)
+    loss_weights = jinns.loss.LossWeightsODE(dyn_loss=0.0, initial_condition=0.0)
+
+    with pytest.warns(UserWarning):
+        loss = jinns.loss.LossODE(
+            u=u,
+            loss_weights=loss_weights,
+            dynamic_loss=fo_loss,
+            initial_condition=(float(tmin), jnp.log(u0)),
+            derivative_keys=derivative_keys,
+            params=init_params,
+            update_weight_method="soft_adapt",
+        )
+    key = jax.random.PRNGKey(2)
+    end_params = train(train_data, init_params, loss, key=key)
+    assert not jnp.allclose(
+        init_params.nn_params.layers[0].bias, end_params.nn_params.layers[0].bias
+    )
+    assert not jnp.allclose(init_params.eq_params.a, end_params.eq_params.a)
