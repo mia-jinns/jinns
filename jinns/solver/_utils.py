@@ -77,7 +77,7 @@ def _loss_evaluate_and_gradient_step(
     loss: AbstractLoss,
     params: Params[Array],
     last_non_nan_params: Params[Array],
-    opt_state: optax.OptState,
+    state: optax.OptState,
     optimizer: optax.GradientTransformation,
     loss_container: LossContainer,
     key: PRNGKeyArray,
@@ -85,16 +85,23 @@ def _loss_evaluate_and_gradient_step(
     opt_state_field_for_acceleration: str | None = None,
     with_loss_weight_update: bool = True,
 ):
+    """
+    In this function and functions called from this functoin, we change naming
+    convention for concision. `opt_state` (the general optimizer state) becomes
+    `state`, so that `opt_state` can here refer to the unmasked optimizer
+    state fields, ie, so which are really involved in the parameter update as
+    defined by `params_mask`.
+    """
     # NOTE the partitioning which is the root of the new approach
     # to optimize only on given parameters
     (
         opt_params,
         opt_params_accel,
         non_opt_params,
-        opt_opt_state,
-        non_opt_opt_state,
+        opt_state,
+        non_opt_state,
     ) = _get_masked_optimization_stuff(
-        params, opt_state, opt_state_field_for_acceleration, params_mask
+        params, state, opt_state_field_for_acceleration, params_mask
     )
 
     # The following part is the equivalent of a
@@ -130,20 +137,23 @@ def _loss_evaluate_and_gradient_step(
         params_mask
     )  # because the update cannot be made otherwise
 
-    opt_params, opt_opt_state = _gradient_step(
+    # Here the gradient step via optax optimizer only *really* updates the
+    # desired parameters, (no fake with filled with zero entries)
+    # (all other entries of the pytrees are None thanks to params_mask)
+    opt_params, opt_state = _gradient_step(
         opt_grads,
         optimizer,
         opt_params,  # NOTE that we never give the accelerated
         # params here, this would be a wrong procedure
-        opt_opt_state,
+        opt_state,
     )
 
-    params, opt_state = _get_unmasked_optimization_stuff(
+    params, state = _get_unmasked_optimization_stuff(
         opt_params,
         non_opt_params,
         opt_state,
-        opt_opt_state,
-        non_opt_opt_state,
+        opt_state,
+        non_opt_state,
         params_mask,
     )
 
@@ -154,7 +164,7 @@ def _loss_evaluate_and_gradient_step(
         lambda _: params,
         None,
     )
-    return train_loss_value, params, last_non_nan_params, opt_state, loss, loss_terms
+    return train_loss_value, params, last_non_nan_params, state, loss, loss_terms
 
 
 @partial(
@@ -165,7 +175,7 @@ def _gradient_step(
     grads: Params[Array],
     optimizer: optax.GradientTransformation,
     params: Params[Array],
-    opt_state: optax.OptState,
+    state: optax.OptState,
 ) -> tuple[
     Params[Array],
     optax.OptState,
@@ -177,38 +187,55 @@ def _gradient_step(
     stuff
     """
 
-    updates, opt_state = optimizer.update(
+    updates, state = optimizer.update(
         grads,  # type: ignore
-        opt_state,
+        state,
         params,  # type: ignore
     )  # Also see optimizer.init for explanation of type ignore
     params = optax.apply_updates(params, updates)  # type: ignore
 
     return (
         params,
-        opt_state,
+        state,
     )
 
 
 @partial(jit, static_argnames=["params_mask"])
 def _get_masked_optimization_stuff(
-    params, opt_state, opt_state_field_for_acceleration, params_mask
+    params, state, state_field_for_acceleration, params_mask
 ):
+    """
+    From the parameters `params`, the optimizer state `state`, we use the
+    parameter mask `params_mask` to retrieve the partitioned version of those
+    two objects, `opt_params` for the parameters that are optimized and
+    `non_opt_params` for those that are not optimized. Same for `state`.
+
+    The argument `state_field_for_acceleration` can correspond to a field
+    inside the `state` module. If it is not None, a `opt_params_accel` object
+    is created that is different of `opt_params`. See
+    `opt_state_field_for_acceleration` in `jinns.solve` docstring for more
+    details.
+
+    The opposite of `eqx.partition` ie, `eqx.combine` is made in the loss
+    `evaluevaluate_by_terms()` method for the computations and in
+    `_get_unmasked_optimization_stuff` to reconstruct the object after the
+    gradient step
+    """
     opt_params, non_opt_params = params.partition(params_mask)
-    opt_opt_state = jax.tree.map(
+    opt_state = jax.tree.map(
         lambda l: l.partition(params_mask)[0] if isinstance(l, Params) else l,
-        opt_state,
+        state,
         is_leaf=lambda x: isinstance(x, Params),
     )
-    non_opt_opt_state = jax.tree.map(
+    non_opt_state = jax.tree.map(
         lambda l: l.partition(params_mask)[1] if isinstance(l, Params) else l,
-        opt_state,
+        state,
         is_leaf=lambda x: isinstance(x, Params),
     )
 
     # NOTE to enable optimization procedures with acceleration
-    if opt_state_field_for_acceleration is not None:
-        opt_params_accel = getattr(opt_opt_state, opt_state_field_for_acceleration)
+    if state_field_for_acceleration is not None:
+        opt_params_accel = getattr(opt_state, state_field_for_acceleration)
     else:
         opt_params_accel = opt_params
 
@@ -216,33 +243,36 @@ def _get_masked_optimization_stuff(
         opt_params,
         opt_params_accel,
         non_opt_params,
-        opt_opt_state,
-        non_opt_opt_state,
+        opt_state,
+        non_opt_state,
     )
 
 
 @partial(jit, static_argnames=["params_mask"])
 def _get_unmasked_optimization_stuff(
-    opt_params, non_opt_params, opt_state, opt_opt_state, non_opt_opt_state, params_mask
+    opt_params, non_opt_params, state, opt_state, non_opt_state, params_mask
 ):
+    """
+    Reverse operations of `_get_masked_optimization_stuff`
+    """
     # NOTE the combine which closes the partitioned chunck
     if params_mask is not None:
         params = eqx.combine(opt_params, non_opt_params)
         opt_state = jax.tree.map(
             lambda a, b, c: eqx.combine(b, c) if isinstance(a, Params) else b,
-            # NOTE else b in order to take retrieve all non Params stuff from
-            # opt_opt_state
+            # NOTE else b in order to take all non Params stuff from
+            # opt_state
             # that may have been updated too
+            state,
             opt_state,
-            opt_opt_state,
-            non_opt_opt_state,
+            non_opt_state,
             is_leaf=lambda x: isinstance(x, Params),
         )
     else:
         params = opt_params
-        opt_state = opt_opt_state
+        state = opt_state
 
-    return params, opt_state
+    return params, state
 
 
 @partial(jit, static_argnames=["prefix"])
