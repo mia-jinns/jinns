@@ -75,10 +75,37 @@ def solve_alternate(
     relying on optax masked transforms and `jinns.parameters.DerivativeKeys` when
     `Params.nn_params`
     is big while `Params.eq_params` is much smaller. The former do not prevent all
-    computations from being done (for example, we still have a big opt_state when updating
+    computations from being done (because, for example, we still have a big opt_state when updating
     only `Params.eq_params`, jinns' `DerivativeKeys` only consists in putting
     stop gradients, etc. -- see for example Inverse problem tutorial on Burgers
-    in jinns documentation), it is then suboptimal.
+    in jinns documentation and [the `optax` issue that we
+    raised](https://www.github.com/google-deepmind/optax/issues/993)).
+    Using `optax` transforms is then suboptimal. Using `solve_alternate`
+    improves the situation: for example, instead of having a big opt_state of the size of
+    nn_params that is uselessly filled with 0, we have `None` thanks to a logic
+    of `params_mask` and the usage of `eqx.partition` and `eqx.combine`. The
+    key functions that perform the partitions are
+    `_get_masked_optimization_stuff` and `_get_unmasked_optimization_stuff` in
+    `jinns/solver/_utils.py`.
+
+    The `solve_alternate()` main loop efficiently alternates between a local
+    optimization on `nn_params` and local optimizations on all `eq_params`.
+    There is then a main `jax.while_loop` with a main carry, and several
+    local `jax.while_loop` for each local optimizations, with local carry
+    structures. Local optimizations (local loops and carrys) are defined
+    in AOT jitted functions
+    (`nn_params_train_fun_compiled` and the elements of the dict
+    `eq_params_train_fun_compiled`). Those AOT jitted functions comprise the
+    body of the local loop (`_nn_params_one_iteration` and
+    `_eq_params_one_iteration`) as well as 3 steps:
+
+    1) Step 1. Prepare the local carry. Make the junction with the main carry
+    and make the appropriate initializations. See the function
+    `_init_before_local_optimization`.
+    2) Step 2. Perfom the local gradient steps (local `jax.while_loop`)
+    3) Step 3. Extract the needed elements from the local carry at the end of
+    the local loop to the main carry. See the function
+    `_get_loss_and_objects_container`.
 
     With `jinns.solve_alternate` we want to address efficiently inverse
     problems where `Params.nn_params` is arbitrarily big, but
@@ -301,7 +328,8 @@ def solve_alternate(
 
     # NOTE we precompile the eq_n_iters[eq_params]-iterations over eq_params
     # that we will repeat many times. This gets the compilation cost out of the
-    # loop
+    # loop. This is done for each equation parameters, those functions are
+    # stored in a dictionary.
 
     eq_param_eq_optim = tuple(
         (f.name, getattr(eq_optimizers, f.name)) for f in fields(eq_optimizers)
@@ -405,7 +433,7 @@ def solve_alternate(
                 conditions_str=("bool_max_iter", "bool_nan_in_params"),
             )
 
-            # 1 - some init
+            # STEP 1 (see main docstring)
             start_idx = i * (sum(n_iter_list_eq_params) + nn_n_iter) + sum(
                 n_iter_list_eq_params[:idx_params]
             )
@@ -431,10 +459,10 @@ def solve_alternate(
                 stored_objects_,
                 carry[7],
             )
-            # 2 - go for gradient steps on this eq_params
+            # STEP 2 (see main docstring)
             carry_ = jax.lax.while_loop(break_fun_, _eq_params_one_iteration, carry_)
 
-            # Now we prepare back the main carry
+            # STEP 3 (see main docstring)
             loss_container, stored_objects = _get_loss_and_objects_container(
                 loss_container, carry_[5], stored_objects, carry_[6], start_idx
             )
@@ -458,7 +486,7 @@ def solve_alternate(
             .compile()
         )
 
-    # NOTE we precompile the repetitive call to jinns.solve()
+    # NOTE we precompile the local optimization loop on the nn params
     # In the plain while loop, the compilation is costly each time
     # In the jax lax while loop, the compilation is better but AOT is
     # disallowed there
@@ -546,7 +574,7 @@ def solve_alternate(
 
             return carry
 
-        # 1 - some init
+        # STEP 1 (see main docstring)
         start_idx = i * (sum(n_iter_list_eq_params) + nn_n_iter) + sum(
             n_iter_list_eq_params
         )
@@ -570,10 +598,11 @@ def solve_alternate(
             stored_objects_,
             carry[7],
         )
-        # 2 - go for gradient steps on nn_params
+        # STEP 2 (see main docstring)
         carry_ = jax.lax.while_loop(nn_break_fun_, _nn_params_one_iteration, carry_)
 
         # Now we prepare back the main carry
+        # STEP 3 (see main docstring)
         loss_container, stored_objects = _get_loss_and_objects_container(
             loss_container, carry_[5], stored_objects, carry_[6], start_idx
         )
@@ -676,10 +705,13 @@ def _get_loss_and_objects_container(
     loss_container, loss_container_, stored_objects, stored_objects_, start_idx
 ):
     """
-    Utility function to update the global (at the level of the alternate
-    optimization) loss_container and stored_objects from the local
-    loss_container_ and stored_objects_ that have been obtained at the end of
-    one of the alternate optimzations
+    This functions contains what needs to be done at the end of a local
+    optimization on `nn_params` or on one of the `eq_params`. This mainly
+    consists in extracting from the local carry what needs to be transferred to
+    the global carry:
+
+    - loss_container content (to get the continuity of loss values, etc.)
+    - stored_objects content (to get the continuity of stored params etc.)
     """
     loss_container = LossContainer(
         stored_loss_terms=jax.tree.map(
@@ -718,6 +750,17 @@ def _init_before_local_optimization(
     tracked_params,
     init_params,
 ):
+    """
+    This functions contains what needs to be done at the beginning of a local
+    optimization on `nn_params` or on one of the `eq_params`. This maily
+    consists in initializating the local carry with the object having the
+    correct shape for the incoming local while loop.
+    This also
+    consists in extracting from the global carry what needs to be transferred to
+    the local carry:
+
+    - loss weight values to get the continuity of loss_weight updates methods
+    """
     loss_ = eqx.tree_at(
         lambda pt: (pt.derivative_keys,),
         loss,
