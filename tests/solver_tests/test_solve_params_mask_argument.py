@@ -141,7 +141,7 @@ def test_Burgers_10it(train_Burgers_init):
     params = init_params
     tx = optax.adamw(learning_rate=1e-3)
     n_iter = 10
-    params_both_no_mask, _, _, _, _, _, _, _, _, _ = jinns.solve(
+    params_both_no_mask, _, _, _, _, _, _, _, _, _, _, _ = jinns.solve(
         init_params=params,
         data=train_data,
         optimizer=tx,
