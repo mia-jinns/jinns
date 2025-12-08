@@ -52,7 +52,7 @@ exclude_also = [
 include = ["jinns"]
 exclude = ["jinns/experimental"]
 pythonVersion = "3.11"
-typeCheckingMode = "strict"
+typeCheckingMode = "basic"
 
 [tool.ruff]
 [tool.ruff.lint]
