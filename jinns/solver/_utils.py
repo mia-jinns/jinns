@@ -151,7 +151,7 @@ def _loss_evaluate_and_gradient_step(
     params, state = _get_unmasked_optimization_stuff(
         opt_params,
         non_opt_params,
-        opt_state,
+        state,
         opt_state,
         non_opt_state,
         params_mask,
@@ -258,7 +258,7 @@ def _get_unmasked_optimization_stuff(
     # NOTE the combine which closes the partitioned chunck
     if params_mask is not None:
         params = eqx.combine(opt_params, non_opt_params)
-        opt_state = jax.tree.map(
+        state = jax.tree.map(
             lambda a, b, c: eqx.combine(b, c) if isinstance(a, Params) else b,
             # NOTE else b in order to take all non Params stuff from
             # opt_state
