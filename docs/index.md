@@ -12,7 +12,7 @@
 pip install jinns
 ```
 
-Requires Python 3.11+ and JAX 0.4.31+
+Requires Python 3.11+ and JAX 0.8.1+
 
 JAX ecosystem: jinns depends on [Equinox](https://docs.kidger.site/equinox/) and [Optax](https://optax.readthedocs.io/en/latest/).
 
