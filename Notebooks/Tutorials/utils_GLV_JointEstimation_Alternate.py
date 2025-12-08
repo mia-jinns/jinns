@@ -116,7 +116,10 @@ def soft_thresholding_additive_update(
         grads = getattr(grads.eq_params, param)
         params = getattr(params.eq_params, param)
 
-        new_params = jax.tree.map(lambda g, p: p - learning_rate * g, grads, params)
+        # new_params = jax.tree.map(lambda g, p: p - learning_rate * g, grads, state.y)
+        new_params = jax.tree.map(
+            lambda u, v: v + u, params, grads
+        )  # grads = previous updates
 
         if param == "g":
             next_x = proj_g(new_params)
@@ -125,7 +128,7 @@ def soft_thresholding_additive_update(
         else:
             raise ValueError
         next_t = 0.5 * (1 + jnp.sqrt(1 + 4 * state.t**2))
-        diff_x = jax.tree.map(lambda u, v: u - v, next_x, new_params)
+        diff_x = jax.tree.map(lambda u, v: u - v, next_x, params)
         next_y = jax.tree.map(
             lambda u, v: u + (state.t - 1) / next_t * v, next_x, diff_x
         )
