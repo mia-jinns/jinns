@@ -69,47 +69,27 @@ def solve_alternate(
     DataGeneratorParameter | None,
 ]:
     """
-    Solve alternatively between `Params.nn_params` and `Params.eq_params`. In this functions both
-    set of parameters, all gradient updates, all opt_states, etc. are
-    explicitly handled separately. This approach becomes more efficient than
-    relying on optax masked transforms and `jinns.parameters.DerivativeKeys` when
-    `Params.nn_params`
-    is big while `Params.eq_params` is much smaller. The former do not prevent all
-    computations from being done (because, for example, we still have a big opt_state when updating
-    only `Params.eq_params`, jinns' `DerivativeKeys` only consists in putting
-    stop gradients, etc. -- see for example Inverse problem tutorial on Burgers
-    in jinns documentation and [the `optax` issue that we
-    raised](https://www.github.com/google-deepmind/optax/issues/993)).
-    Using `optax` transforms is then suboptimal. Using `solve_alternate`
-    improves the situation: for example, instead of having a big opt_state of the size of
-    nn_params that is uselessly filled with 0, we have `None` thanks to a logic
-    of `params_mask` and the usage of `eqx.partition` and `eqx.combine`. The
-    key functions that perform the partitions are
-    `_get_masked_optimization_stuff` and `_get_unmasked_optimization_stuff` in
-    `jinns/solver/_utils.py`.
-
-    The `solve_alternate()` main loop efficiently alternates between a local
-    optimization on `nn_params` and local optimizations on all `eq_params`.
-    There is then a main `jax.while_loop` with a main carry, and several
-    local `jax.while_loop` for each local optimizations, with local carry
-    structures. Local optimizations (local loops and carrys) are defined
-    in AOT jitted functions
-    (`nn_params_train_fun_compiled` and the elements of the dict
-    `eq_params_train_fun_compiled`). Those AOT jitted functions comprise the
-    body of the local loop (`_nn_params_one_iteration` and
-    `_eq_params_one_iteration`) as well as 3 steps:
-
-    1) Step 1. Prepare the local carry. Make the junction with the main carry
-    and make the appropriate initializations. See the function
-    `_init_before_local_optimization`.
-    2) Step 2. Perfom the local gradient steps (local `jax.while_loop`)
-    3) Step 3. Extract the needed elements from the local carry at the end of
-    the local loop to the main carry. See the function
-    `_get_loss_and_objects_container`.
-
-    With `jinns.solve_alternate` we want to address efficiently inverse
-    problems where `Params.nn_params` is arbitrarily big, but
+    Efficient implementation of the alternate minimization scheme between
+    `Params.nn_params` and `Params.eq_params`. This function is recommanded for inverse problems where `Params.nn_params` is arbitrarily big, but
     `Params.eq_params` prepresents only a few physical parameters.
+
+
+    In this functions both type of parameters (`eq` and `nn`) are handled
+    separately, as well as all related quantities such as gradient updates,
+    opt_states, etc. This approach becomes more efficient than solely
+    relying on optax masked transforms and `jinns.parameters.DerivativeKeys`
+    when `Params.nn_params` is big while `Params.eq_params` is much smaller.
+    Which is often the case. Indeed, `DerivativeKeys` only prevents some
+    gradients computations but a major computational bottleneck comes from
+    passing huge optax states filled with dummy zeros udpdates (for frozen
+    parameters) at each iteration, [see the `optax` issue that we raised](https://www.github.com/google-deepmind/optax/issues/993)).
+
+    Using `solve_alternate` improves this situation by handling Optax
+    optimization states separately for `nn` and `eq` params. This allows to
+    pass `None` instead of huge dummy zero updates for "frozen" parameters in
+    the optimization states. Internally, this is done thanks to the
+    `params_mask` PyTree of boolean used for `eqx.partition` and `eqx.combine`.
+
 
     Parameters
     ----------
@@ -189,6 +169,29 @@ def solve_alternate(
         The `jinns.data.DataGeneratorParameter` object passed as input or
         `None`.
     """
+    # The key functions that perform the partitions are
+    # `_get_masked_optimization_stuff` and `_get_unmasked_optimization_stuff` in
+    # `jinns/solver/_utils.py`.
+
+    # The `solve_alternate()` main loop efficiently alternates between a local
+    # optimization on `nn_params` and local optimizations on all `eq_params`.
+    # There is then a main `jax.while_loop` with a main carry, and several
+    # local `jax.while_loop` for each local optimizations, with local carry
+    # structures. Local optimizations (local loops and carrys) are defined
+    # in AOT jitted functions
+    # (`nn_params_train_fun_compiled` and the elements of the dict
+    # `eq_params_train_fun_compiled`). Those AOT jitted functions comprise the
+    # body of the local loop (`_nn_params_one_iteration` and
+    # `_eq_params_one_iteration`) as well as 3 steps:
+
+    # 1) Step 1. Prepare the local carry. Make the junction with the main carry
+    # and make the appropriate initializations. See the function
+    # `_init_before_local_optimization`.
+    # 2) Step 2. Perfom the local gradient steps (local `jax.while_loop`)
+    # 3) Step 3. Extract the needed elements from the local carry at the end of
+    # the local loop to the main carry. See the function
+    # `_get_loss_and_objects_container`.
+
     initialization_time = time.time()
     if n_iter < 1:
         raise ValueError("Cannot run jinns.solve for n_iter<1")
