@@ -21,7 +21,7 @@ from jinns.solver._utils import (
     _init_stored_params,
     _get_break_fun,
     _loss_evaluate_and_gradient_step,
-    _get_get_batch,
+    _build_get_batch,
     _store_loss_and_params,
     _print_fn,
 )
@@ -255,7 +255,7 @@ def solve(
     train_loss_values = jnp.zeros((n_iter))
     # depending on obs_batch_sharding we will get the simple get_batch or the
     # get_batch with device_put, the latter is not jittable
-    get_batch = _get_get_batch(obs_batch_sharding)
+    get_batch = _build_get_batch(obs_batch_sharding)
 
     # initialize parameter tracking
     if tracked_params is None:

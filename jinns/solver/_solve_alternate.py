@@ -20,7 +20,7 @@ from jinns.solver._utils import (
     _init_stored_params,
     _get_break_fun,
     _loss_evaluate_and_gradient_step,
-    _get_get_batch,
+    _build_get_batch,
     _store_loss_and_params,
     _print_fn,
 )
@@ -196,7 +196,7 @@ def solve_alternate(
     main_break_fun = _get_break_fun(
         n_iter, verbose, conditions_str=("bool_max_iter", "bool_nan_in_params")
     )
-    get_batch = _get_get_batch(None)
+    get_batch = _build_get_batch(None)
 
     nn_n_iter = n_iter_by_solver.nn_params
     eq_n_iters = n_iter_by_solver.eq_params

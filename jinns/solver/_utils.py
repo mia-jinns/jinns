@@ -283,7 +283,7 @@ def _get_unmasked_optimization_stuff(
 
 @partial(jit, static_argnames=["prefix"])
 def _print_fn(i: int, loss_val: Float, print_loss_every: int, prefix: str = ""):
-    # note that if the following is not jitted in the main lor loop, it is
+    # note that if the following is not jitted in the main for loop, it is
     # super slow
     _ = jax.lax.cond(
         i % print_loss_every == 0,
@@ -440,7 +440,7 @@ def _get_break_fun(
     return break_fun
 
 
-def _get_get_batch(
+def _build_get_batch(
     obs_batch_sharding: jax.sharding.Sharding | None,
 ) -> Callable[
     [
