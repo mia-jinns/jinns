@@ -9,7 +9,12 @@ import jax.numpy as jnp
 import optax
 from jinns.parameters._params import Params
 from jinns.loss._loss_weight_updates import soft_adapt, lr_annealing, ReLoBRaLo
-from jinns.utils._types import AnyLossComponents, AnyBatch, AnyLossWeights
+from jinns.utils._types import (
+    AnyLossComponents,
+    AnyBatch,
+    AnyLossWeights,
+    AnyDerivativeKeys,
+)
 
 L = TypeVar(
     "L", bound=AnyLossWeights
@@ -25,18 +30,21 @@ C = TypeVar(
     "C", bound=AnyLossComponents[Array | None]
 )  # The above comment also works with Unions (https://docs.python.org/3/library/typing.html#typing.TypeVar)
 
+DK = TypeVar("DK", bound=AnyDerivativeKeys)
+
 # In the cases above, without the bound, we could not have covariance on
 # the type because it would break LSP. Note that covariance on the return type
 # is authorized in LSP hence we do not need the same TypeVar instruction for
 # the return types of evaluate_by_terms for example!
 
 
-class AbstractLoss(eqx.Module, Generic[L, B, C]):
+class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
     """
     About the call:
     https://github.com/patrick-kidger/equinox/issues/1002 + https://docs.kidger.site/equinox/pattern/
     """
 
+    derivative_keys: eqx.AbstractVar[DK]
     loss_weights: eqx.AbstractVar[L]
     update_weight_method: Literal["soft_adapt", "lr_annealing", "ReLoBRaLo"] | None = (
         eqx.field(kw_only=True, default=None, static=True)

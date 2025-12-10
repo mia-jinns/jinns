@@ -11,6 +11,11 @@ from jinns.loss._loss_weights import (
     LossWeightsPDEStatio,
     LossWeightsPDENonStatio,
 )
+from jinns.parameters._derivative_keys import (
+    DerivativeKeysODE,
+    DerivativeKeysPDENonStatio,
+    DerivativeKeysPDEStatio,
+)
 from jinns.loss._loss_components import (
     ODEComponents,
     PDEStatioComponents,
@@ -19,6 +24,9 @@ from jinns.loss._loss_components import (
 
 AnyBatch: TypeAlias = ODEBatch | PDENonStatioBatch | PDEStatioBatch | ObsBatchDict
 
+AnyDerivativeKeys: TypeAlias = (
+    DerivativeKeysODE | DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio
+)
 AnyLossWeights: TypeAlias = (
     LossWeightsODE | LossWeightsPDEStatio | LossWeightsPDENonStatio
 )
