@@ -49,6 +49,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
     update_weight_method: Literal["soft_adapt", "lr_annealing", "ReLoBRaLo"] | None = (
         eqx.field(kw_only=True, default=None, static=True)
     )
+    vmap_in_axes: tuple[int] = eqx.field(static=True)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self.evaluate(*args, **kwargs)

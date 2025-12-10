@@ -68,11 +68,14 @@ B = TypeVar("B", bound=PDEStatioBatch | PDENonStatioBatch)
 C = TypeVar(
     "C", bound=PDEStatioComponents[Array | None] | PDENonStatioComponents[Array | None]
 )
-D = TypeVar("D", bound=DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio)
+DKPDE = TypeVar("DKPDE", bound=DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio)
 Y = TypeVar("Y", bound=PDEStatio | PDENonStatio | None)
 
 
-class _LossPDEAbstract(AbstractLoss[L, B, C], Generic[L, B, C, D, Y]):
+class _LossPDEAbstract(
+    AbstractLoss[L, B, C, DKPDE],
+    Generic[L, B, C, DKPDE, Y],
+):
     r"""
     Parameters
     ----------
@@ -507,7 +510,6 @@ class LossPDEStatio(
     dynamic_loss: PDEStatio | None
     loss_weights: LossWeightsPDEStatio
     derivative_keys: DerivativeKeysPDEStatio
-    vmap_in_axes: tuple[int] = eqx.field(static=True)
 
     params: InitVar[Params[Array] | None]
 
@@ -758,7 +760,6 @@ class LossPDENonStatio(
     initial_condition_fun: Callable[[Float[Array, " dimension"]], Array] | None = (
         eqx.field(static=True)
     )
-    vmap_in_axes: tuple[int] = eqx.field(static=True)
     max_norm_samples_omega: int = eqx.field(static=True)
     max_norm_time_slices: int = eqx.field(static=True)
 

@@ -47,7 +47,11 @@ if TYPE_CHECKING:
     )
 
 
-class LossODE(AbstractLoss[LossWeightsODE, ODEBatch, ODEComponents[Array | None]]):
+class LossODE(
+    AbstractLoss[
+        LossWeightsODE, ODEBatch, ODEComponents[Array | None], DerivativeKeysODE
+    ]
+):
     r"""Loss object for an ordinary differential equation
 
     $$
@@ -106,7 +110,6 @@ class LossODE(AbstractLoss[LossWeightsODE, ODEBatch, ODEComponents[Array | None]
     # (ie. jax.Array cannot be static) and that we do not expect to change
     u: AbstractPINN
     dynamic_loss: ODE | None
-    vmap_in_axes: tuple[int] = eqx.field(static=True)
     derivative_keys: DerivativeKeysODE
     loss_weights: LossWeightsODE
     initial_condition: InitialCondition | None
