@@ -64,9 +64,13 @@ def _init_stored_params(tracked_params, params, n_iter):
         tracked_params,
         params,
         is_leaf=lambda x: x is None,  # None values in tracked_params will not
-        # be traversed. Thus the user can provide something like `tracked_params = jinns.parameters.Params(
-        # nn_params=None, eq_params={"nu": True})` while init_params.nn_params
-        # being a complex data structure
+        # be traversed. Thus the user can provide something like
+        # ```
+        #  tracked_params = jinns.parameters.Params(
+        #   nn_params=None,
+        #   eq_params={"nu": True})
+        # ```
+        # even when init_params.nn_params is a complex data structure.
     )
 
 
@@ -86,14 +90,16 @@ def _loss_evaluate_and_gradient_step(
     with_loss_weight_update: bool = True,
 ):
     """
-    In this function and functions called from this functoin, we change naming
-    convention for concision. `opt_state` (the general optimizer state) becomes
-    `state`, so that `opt_state` can here refer to the unmasked optimizer
-    state fields, ie, so which are really involved in the parameter update as
-    defined by `params_mask`.
+    # The crux of our new approach is partitioning and recombining the parameters and optimization state according to params_mask.
+
+    NOTE: in this function body, we change naming convention for concision:
+     * `state` refers to the general optimizer state
+     * `opt_state` refers to the unmasked optimizer state, i.e. which are
+     really involved in the parameter update as defined by `params_mask`.
+     * `non_opt_state` refers to the the optimizer state for non-optimized
+     params.
     """
-    # NOTE the partitioning which is the root of the new approach
-    # to optimize only on given parameters
+
     (
         opt_params,
         opt_params_accel,
@@ -110,7 +116,8 @@ def _loss_evaluate_and_gradient_step(
     # if needed for updating loss weights.
     # Since the total loss is a weighted sum of individual loss terms, so
     # are its total gradients.
-    # Compute individual losses and individual gradients
+
+    # 1. Compute individual losses and individual gradients
     loss_terms, grad_terms = loss.evaluate_by_terms(
         opt_params_accel
         if opt_state_field_for_acceleration is not None
@@ -127,7 +134,7 @@ def _loss_evaluate_and_gradient_step(
             i, loss_terms, loss_container.stored_loss_terms, grad_terms, subkey
         )
 
-    # total grad
+    # 2. total grad
     grads = loss.ponderate_and_sum_gradient(grad_terms)
 
     # total loss
@@ -137,9 +144,9 @@ def _loss_evaluate_and_gradient_step(
         params_mask
     )  # because the update cannot be made otherwise
 
-    # Here the gradient step via optax optimizer only *really* updates the
-    # desired parameters, (no fake with filled with zero entries)
-    # (all other entries of the pytrees are None thanks to params_mask)
+    # Here, we only use the gradient step of the Optax optimizer on the
+    # parameters specified by params_mask. , no dummy state with filled with zero entries
+    # all other entries of the pytrees are None thanks to params_mask)
     opt_params, opt_state = _gradient_step(
         opt_grads,
         optimizer,
@@ -261,8 +268,7 @@ def _get_unmasked_optimization_stuff(
         state = jax.tree.map(
             lambda a, b, c: eqx.combine(b, c) if isinstance(a, Params) else b,
             # NOTE else b in order to take all non Params stuff from
-            # opt_state
-            # that may have been updated too
+            # opt_state that may have been updated too
             state,
             opt_state,
             non_opt_state,
