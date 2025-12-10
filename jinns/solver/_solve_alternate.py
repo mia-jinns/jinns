@@ -70,7 +70,7 @@ def solve_alternate(
 ]:
     """
     Efficient implementation of the alternate minimization scheme between
-    `Params.nn_params` and `Params.eq_params`. This function is recommanded for inverse problems where `Params.nn_params` is arbitrarily big, but
+    `Params.nn_params` and `Params.eq_params`. This function is recommended for inverse problems where `Params.nn_params` is arbitrarily big, but
     `Params.eq_params` prepresents only a few physical parameters.
 
 
@@ -78,8 +78,8 @@ def solve_alternate(
     separately, as well as all related quantities such as gradient updates,
     opt_states, etc. This approach becomes more efficient than solely
     relying on optax masked transforms and `jinns.parameters.DerivativeKeys`
-    when `Params.nn_params` is big while `Params.eq_params` is much smaller.
-    Which is often the case. Indeed, `DerivativeKeys` only prevents some
+    when `Params.nn_params` is big while `Params.eq_params` is much smaller,
+    which is often the case. Indeed, `DerivativeKeys` only prevents some
     gradients computations but a major computational bottleneck comes from
     passing huge optax states filled with dummy zeros udpdates (for frozen
     parameters) at each iteration, [see the `optax` issue that we raised](https://www.github.com/google-deepmind/optax/issues/993)).
@@ -88,7 +88,7 @@ def solve_alternate(
     optimization states separately for `nn` and `eq` params. This allows to
     pass `None` instead of huge dummy zero updates for "frozen" parameters in
     the optimization states. Internally, this is done thanks to the
-    `params_mask` PyTree of boolean used for `eqx.partition` and `eqx.combine`.
+    `params_mask` PyTree of booleans used for `eqx.partition` and `eqx.combine`.
 
 
     Parameters
