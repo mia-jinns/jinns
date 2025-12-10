@@ -3,12 +3,11 @@ jinns
 
 ![status](https://gitlab.com/mia_jinns/jinns/badges/main/pipeline.svg) ![coverage](https://gitlab.com/mia_jinns/jinns/badges/main/coverage.svg)
 
-Physics Informed Neural Networks with JAX. **jinns** is developed to estimate solutions of ODE and PDE problems using neural networks, with a strong focus on
+Physics Informed Neural Networks with JAX. **jinns** is a Python package for physics-informed neural networks (PINNs) in the [JAX](https://jax.readthedocs.io/en/latest/) ecosystem. It provides an intuitive and flexible interface for
 
- 1. inverse problems: find equation parameters given noisy/indirect observations
- 2. meta-modeling: solve for a parametric family of differential equations
-
-It can also be used for forward problems and hybrid-modeling.
+ * forward problem: learning a PDE solution.
+ * inverse problem: learning the parameters of a PDE. **New in jinns v1.7.0:** `jinns.solve_alternate()` for fine-grained and efficient inverse problems.
+ * meta-modeling: learning a family of PDE indexed by its parameters.
 
 **jinns** specific points:
 
