@@ -95,8 +95,10 @@ def train_1it(train_init, capsys):
 
     tx = optax.adam(learning_rate=1e90)
     n_iter = 10
-    params, total_loss_list, loss_by_term_dict, _, loss, _, _, _, _, _ = jinns.solve(
-        init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
+    params, total_loss_list, loss_by_term_dict, _, loss, _, _, _, _, _, _, _ = (
+        jinns.solve(
+            init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
+        )
     )
     captured = capsys.readouterr()
     return init_params, params, captured.out

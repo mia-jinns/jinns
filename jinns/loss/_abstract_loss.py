@@ -82,10 +82,22 @@ class AbstractLoss(eqx.Module, Generic[L, B, C]):
         return self.evaluate(*args, **kwargs)
 
     @abc.abstractmethod
-    def evaluate_by_terms(self, params: Params[Array], batch: B) -> tuple[C, C]:
+    def evaluate_by_terms(
+        self,
+        opt_params: Params[Array],
+        batch: B,
+        *,
+        non_opt_params: Params[Array] | None = None,
+    ) -> tuple[C, C]:
         pass
 
-    def evaluate(self, params: Params[Array], batch: B) -> tuple[Float[Array, " "], C]:
+    def evaluate(
+        self,
+        opt_params: Params[Array],
+        batch: B,
+        *,
+        non_opt_params: Params[Array] | None = None,
+    ) -> tuple[Float[Array, " "], C]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -93,16 +105,20 @@ class AbstractLoss(eqx.Module, Generic[L, B, C]):
 
         Parameters
         ---------
-        params
-            Parameters at which the loss is evaluated
+        opt_params
+            Parameters, which are optimized, at which the loss is evaluated
         batch
             Composed of a batch of points in the
             domain, a batch of points in the domain
             border and an optional additional batch of parameters (eg. for
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
+        non_opt_params
+            Parameters, which are non optimized, at which the loss is evaluated
         """
-        loss_terms, _ = self.evaluate_by_terms(params, batch)
+        loss_terms, _ = self.evaluate_by_terms(
+            opt_params, batch, non_opt_params=non_opt_params
+        )
 
         loss_val = self.ponderate_and_sum_loss(loss_terms)
 
@@ -145,7 +161,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C]):
             "tuple of loss weights at LossWeights.observations."
         )
 
-    def ponderate_and_sum_gradient(self, terms: C) -> C:
+    def ponderate_and_sum_gradient(self, terms: C) -> Params[Array | None]:
         """
         Get total gradients from individual loss gradients and weights
         for each parameter

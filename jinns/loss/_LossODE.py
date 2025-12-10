@@ -58,7 +58,6 @@ class LossODE(AbstractLoss[LossWeightsODE, ODEBatch, ODEComponents[Array | None]
     where $\mathcal{N}[\cdot]$ is a differential operator and the
     initial condition is $u(t_0)=u_0$.
 
-
     Parameters
     ----------
     u : eqx.Module
@@ -148,6 +147,16 @@ class LossODE(AbstractLoss[LossWeightsODE, ODEBatch, ODEComponents[Array | None]
         self.u = u
         self.dynamic_loss = dynamic_loss
         self.vmap_in_axes = (0,)
+        if self.update_weight_method is not None and jnp.any(
+            jnp.array(jax.tree.leaves(self.loss_weights)) == 0
+        ):
+            warnings.warn(
+                "self.update_weight_method is activated while some loss "
+                "weights are zero. The update weight method will likely "
+                "update the zero weight to some non-zero value. Check that "
+                "this is the desired behaviour."
+            )
+
         if derivative_keys is None:
             # by default we only take gradient wrt nn_params
             if params is None:
@@ -238,7 +247,11 @@ class LossODE(AbstractLoss[LossWeightsODE, ODEBatch, ODEComponents[Array | None]
             self.loss_weights = LossWeightsODE()
 
     def evaluate_by_terms(
-        self, params: Params[Array], batch: ODEBatch
+        self,
+        opt_params: Params[Array],
+        batch: ODEBatch,
+        *,
+        non_opt_params: Params[Array] | None = None,
     ) -> tuple[
         ODEComponents[Float[Array, " "] | None], ODEComponents[Float[Array, " "] | None]
     ]:
@@ -249,15 +262,22 @@ class LossODE(AbstractLoss[LossWeightsODE, ODEBatch, ODEComponents[Array | None]
 
         Parameters
         ---------
-        params
-            Parameters at which the loss is evaluated
+        opt_params
+            Parameters, which are optimized, at which the loss is evaluated
         batch
             Composed of a batch of points in the
             domain, a batch of points in the domain
             border and an optional additional batch of parameters (eg. for
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
+        non_opt_params
+            Parameters, which are not optimized, at which the loss is evaluated
         """
+        if non_opt_params is not None:
+            params = eqx.combine(opt_params, non_opt_params)
+        else:
+            params = opt_params
+
         temporal_batch = batch.temporal_batch
 
         # Retrieve the optional eq_params_batch

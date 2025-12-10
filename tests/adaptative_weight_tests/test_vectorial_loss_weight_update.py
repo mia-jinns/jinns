@@ -186,13 +186,15 @@ def train_GLV_10it(train_GLV_init):
     key = jax.random.PRNGKey(0)
     tx = optax.adam(learning_rate=1e-3)
     n_iter = 10
-    params, total_loss_list, loss_by_term_dict, data, _, _, _, _, _, _ = jinns.solve(
-        n_iter=n_iter,
-        loss=loss,
-        optimizer=tx,
-        init_params=params,
-        data=train_data,
-        key=key,
+    params, total_loss_list, loss_by_term_dict, data, _, _, _, _, _, _, _, _ = (
+        jinns.solve(
+            n_iter=n_iter,
+            loss=loss,
+            optimizer=tx,
+            init_params=params,
+            data=train_data,
+            key=key,
+        )
     )
     return total_loss_list[9]
 

@@ -92,15 +92,26 @@ def train_Burgers_10it(train_Burgers_init):
 
     tx = optax.adam(learning_rate=1e-3)
     n_iter = 10
-    params, total_loss_list, loss_by_term_dict, _, _, _, tracked_params, _, _, _ = (
-        jinns.solve(
-            init_params=params,
-            data=train_data,
-            optimizer=tx,
-            loss=loss,
-            n_iter=n_iter,
-            tracked_params=tracked_params,
-        )
+    (
+        params,
+        total_loss_list,
+        loss_by_term_dict,
+        _,
+        _,
+        _,
+        tracked_params,
+        _,
+        _,
+        _,
+        _,
+        _,
+    ) = jinns.solve(
+        init_params=params,
+        data=train_data,
+        optimizer=tx,
+        loss=loss,
+        n_iter=n_iter,
+        tracked_params=tracked_params,
     )
     return tracked_params, params.eq_params.nu
 

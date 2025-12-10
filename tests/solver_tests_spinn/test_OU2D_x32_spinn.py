@@ -34,7 +34,6 @@ def train_OU_init():
     nb = None
     domain_batch_size = 32
     initial_batch_size = 32
-    dim = 2
     xmin = -3
     xmax = 3
     ymin = -3
@@ -124,7 +123,7 @@ def train_OU_10it(train_OU_init):
 
     tx = optax.adamw(learning_rate=1e-4)
     n_iter = 10
-    params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _, _ = jinns.solve(
+    params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _, _, _, _ = jinns.solve(
         init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
     )
 

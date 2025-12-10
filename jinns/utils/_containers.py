@@ -37,6 +37,8 @@ class OptimizationContainer(eqx.Module):
     params: Params
     last_non_nan_params: Params
     opt_state: OptState
+    # params_mask: Params = eqx.field(static=True)  # to make params_mask
+    # hashable JAX type. See _gradient_step docstring
 
 
 class OptimizationExtraContainer(eqx.Module):

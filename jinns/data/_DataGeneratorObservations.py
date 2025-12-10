@@ -15,16 +15,6 @@ from jinns.data._utils import _reset_or_increment
 from jinns.data._AbstractDataGenerator import AbstractDataGenerator
 from jinns.utils._DictToModuleMeta import DictToModuleMeta
 
-
-class DGObservedParams(metaclass=DictToModuleMeta):
-    """
-    However, static type checkers cannot know that DGObservedParams inherit from
-    eqx.Module and explicit casting to the latter class will be needed
-    """
-
-    pass
-
-
 if TYPE_CHECKING:
     # imports only used in type hints
     InputEqParams = (
@@ -35,6 +25,15 @@ if TYPE_CHECKING:
     # because the lambda are not type annotated, but there is no proper way
     # to do this and we should assign the lambda to a type hinted variable
     # before hand: this is not practical, let us not get mad at this
+
+
+class DGObservedParams(metaclass=DictToModuleMeta):
+    """
+    However, static type checkers cannot know that DGObservedParams inherit from
+    eqx.Module and explicit casting to the latter class will be needed
+    """
+
+    pass
 
 
 class DataGeneratorObservations(AbstractDataGenerator):

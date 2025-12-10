@@ -47,9 +47,9 @@ class DerivativeKeysODE(eqx.Module):
     [`DynamicLoss`][jinns.loss.DynamicLoss] should be differentiated both with
     respect to the neural network parameters *and* the equation parameters, or only some of them.
 
-    To do so, user can either use strings or a `Params` object
-    with PyTree structure matching the parameters of the problem at
-    hand, and booleans indicating if gradient is to be taken or not. Internally,
+    To do so, user can either use strings or a `Params[bool]` object
+    with PyTree structure matching the parameters of the problem (`Params[Array]`) at
+    hand, and leaves being booleans indicating if gradient is to be taken or not. Internally,
     a `jax.lax.stop_gradient()` is appropriately set to each `True` node when
     computing each loss term.
 
@@ -156,12 +156,12 @@ class DerivativeKeysODE(eqx.Module):
         """
         Construct the DerivativeKeysODE from strings. For each term of the
         loss, specify whether to differentiate wrt the neural network
-        parameters, the equation parameters or both. The `Params` object, which
+        parameters, the equation parameters or both. The `Params[Array]` object, which
         contains the actual array of parameters must be passed to
         construct the fields with the appropriate PyTree structure.
 
         !!! note
-            You can mix strings and `Params` if you need granularity.
+            You can mix strings and `Params[bool]` if you need granularity.
 
         Parameters
         ----------
@@ -498,7 +498,14 @@ def _set_derivatives(
         `Params(nn_params=True | False, eq_params={"alpha":True | False,
         "beta":True | False})`.
         """
-
+        assert jax.tree.structure(params_.eq_params) == jax.tree.structure(
+            derivative_mask.eq_params
+        ), (
+            "The derivative "
+            "mask for eq_params does not have the same tree structure as "
+            "Params.eq_params. This is often due to a wrong Params[bool] "
+            "passed when initializing the derivative key object."
+        )
         return Params(
             nn_params=jax.lax.cond(
                 derivative_mask.nn_params,

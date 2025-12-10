@@ -162,6 +162,16 @@ class _LossPDEAbstract(AbstractLoss[L, B, C], Generic[L, B, C, D, Y]):
     ):
         super().__init__(loss_weights=self.loss_weights, **kwargs)
 
+        if self.update_weight_method is not None and jnp.any(
+            jnp.array(jax.tree.leaves(self.loss_weights)) == 0
+        ):
+            warnings.warn(
+                "self.update_weight_method is activated while some loss "
+                "weights are zero. The update weight method will likely "
+                "update the zero weight to some non-zero value. Check that "
+                "this is the desired behaviour."
+            )
+
         if obs_slice is None:
             self.obs_slice = jnp.s_[...]
         else:
@@ -551,11 +561,12 @@ class LossPDEStatio(
     # we could have used typing.cast though
 
     def evaluate_by_terms(
-        self, params: Params[Array], batch: PDEStatioBatch
-    ) -> tuple[
-        PDEStatioComponents[Float[Array, ""] | None],
-        PDEStatioComponents[Float[Array, ""] | None],
-    ]:
+        self,
+        opt_params: Params[Array],
+        batch: PDEStatioBatch,
+        *,
+        non_opt_params: Params[Array] | None = None,
+    ) -> tuple[PDEStatioComponents[Array | None], PDEStatioComponents[Array | None]]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -563,15 +574,22 @@ class LossPDEStatio(
 
         Parameters
         ---------
-        params
-            Parameters at which the loss is evaluated
+        opt_params
+            Parameters, which are optimized, at which the loss is evaluated
         batch
             Composed of a batch of points in the
             domain, a batch of points in the domain
             border and an optional additional batch of parameters (eg. for
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
+        non_opt_params
+            Parameters, which are non optimized, at which the loss is evaluated
         """
+        if non_opt_params is not None:
+            params = eqx.combine(opt_params, non_opt_params)
+        else:
+            params = opt_params
+
         # Retrieve the optional eq_params_batch
         # and update eq_params with the latter
         # and update vmap_in_axes
@@ -821,7 +839,11 @@ class LossPDENonStatio(
         )
 
     def evaluate_by_terms(
-        self, params: Params[Array], batch: PDENonStatioBatch
+        self,
+        opt_params: Params[Array],
+        batch: PDENonStatioBatch,
+        *,
+        non_opt_params: Params[Array] | None = None,
     ) -> tuple[
         PDENonStatioComponents[Array | None], PDENonStatioComponents[Array | None]
     ]:
@@ -832,15 +854,22 @@ class LossPDENonStatio(
 
         Parameters
         ---------
-        params
-            Parameters at which the loss is evaluated
+        opt_params
+            Parameters, which are optimized, at which the loss is evaluated
         batch
             Composed of a batch of points in the
             domain, a batch of points in the domain
             border and an optional additional batch of parameters (eg. for
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
+        non_opt_params
+            Parameters, which are non optimized, at which the loss is evaluated
         """
+        if non_opt_params is not None:
+            params = eqx.combine(opt_params, non_opt_params)
+        else:
+            params = opt_params
+
         omega_initial_batch = batch.initial_batch
         assert omega_initial_batch is not None
 
