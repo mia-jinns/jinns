@@ -74,7 +74,7 @@ def solve(
     DataGeneratorObservations | None,
     DataGeneratorParameter | None,
     Float[Array, " n_iter"] | None,
-    Params[Array],
+    Params[Array] | None,
 ]:
     """
     Performs the optimization process via stochastic gradient descent
