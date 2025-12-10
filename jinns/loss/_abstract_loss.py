@@ -58,14 +58,19 @@ class AbstractLoss(eqx.Module, Generic[L, B, C]):
         default=True, kw_only=True
     )
 
-    def __post_init__(self, keep_initial_loss_weight_scales: bool = True):
-        if (
-            self.update_weight_method is not None
-            and self.update_weight_method not in get_args(AvailableUpdateWeightMethods)
+    def __init__(
+        self,
+        *,
+        loss_weights,
+        update_weight_method=None,
+        keep_initial_loss_weight_scales: bool = True,
+    ):
+        if update_weight_method is not None and update_weight_method not in get_args(
+            AvailableUpdateWeightMethods
         ):
-            raise ValueError(
-                f"update_weight_method={self.update_weight_method} is not a valid method"
-            )
+            raise ValueError(f"{update_weight_method=} is not a valid method")
+        self.update_weight_method = update_weight_method
+        self.loss_weights = loss_weights
         if keep_initial_loss_weight_scales:
             self.loss_weight_scales = self.loss_weights
             if self.update_weight_method is not None:
