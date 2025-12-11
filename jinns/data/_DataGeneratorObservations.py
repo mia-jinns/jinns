@@ -5,6 +5,8 @@ Define the DataGenerators modules
 from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
+from functools import partial
+from itertools import zip_longest
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -25,6 +27,30 @@ if TYPE_CHECKING:
     # because the lambda are not type annotated, but there is no proper way
     # to do this and we should assign the lambda to a type hinted variable
     # before hand: this is not practical, let us not get mad at this
+
+
+def _merge_dict_arguments(fun, fixed_args):
+    """
+    a decorator function that transforms a tuple of 1-key-dict argument
+    in a function call with a big merged unpacked dict. This is used for a
+    dynamic construction of a tree map call, where an arbitrary number of arguments
+    are fixed before the tree map call. The key to enable this, is that the
+    function that needs to be called is kw only, but jax tree map does not
+    support keyword only, so we pass through this decorator
+    """
+
+    def wrapper(tuple_of_dict):
+        d = {}
+        # the for loop below is needed because there is no unpack operator
+        # authorized inside a comprehension for now: https://stackoverflow.com/a/37584733
+        for d_ in tuple_of_dict:
+            if len(d_.keys()) != 1:
+                raise ValueError("Problem here, we expect 1-key-dict")
+            if list(d_.keys())[0] not in fixed_args:
+                d.update(d_)
+        return fun(**d)
+
+    return wrapper
 
 
 class DGObservedParams(metaclass=DictToModuleMeta):
@@ -106,34 +132,88 @@ class DataGeneratorObservations(AbstractDataGenerator):
 
         if not isinstance(observed_values, tuple):
             observed_values = (observed_values,)
-
         if not isinstance(observed_pinn_in, tuple):
-            observed_pinn_in = tuple(
-                observed_pinn_in for _ in range(len(observed_values))
-            )  # observed_values is the reference tuple and the only one that can be a
-            # real tuple while obs_pinn_in and obs_eq_params are just copies
-            # because all the logic of using a "vectorial" DGObs is if we have
-            # several *observation* channels
+            observed_pinn_in = (observed_pinn_in,)
+        if isinstance(observed_values, tuple):
+            if len(observed_values) != 1 and len(observed_values) != len(
+                observed_pinn_in
+            ):
+                raise ValueError(
+                    "If observed_values is a tuple, it should"
+                    " be of length 1 (one array, the same for"
+                    " all the pinn_in) or be of length"
+                    " =len(observed_values) (for each"
+                    " observed_values"
+                )
+        if isinstance(observed_pinn_in, tuple):
+            if len(observed_pinn_in) != 1 and len(observed_pinn_in) != len(
+                observed_values
+            ):
+                raise ValueError(
+                    "If observed_pinn_in is a tuple, it should"
+                    " be of length 1 (one array, the same for"
+                    " all the observed_values) or be of length"
+                    " =len(observed_values) (for each"
+                    " observed_values"
+                )
 
-        def check_first_axis(a, b):
-            if a.shape[0] != b.shape[0]:
+        ### Start check first axis
+
+        def check_first_axis(*, values, pinn_in_array):
+            if values.shape[0] != pinn_in_array.shape[0]:
                 raise ValueError(
                     "Each matching elements of self.observed_pinn_in and self.observed_values must have same first axis"
                 )
+            return values
 
-        jax.tree.map(check_first_axis, observed_pinn_in, observed_values)
+        tree_map_args = tuple(
+            ({"values": v}, {"pinn_in_array": p})
+            for v, p in zip_longest(observed_values, observed_pinn_in)
+        )
+        fixed_args = ()
+        if len(observed_values) != len(observed_pinn_in):
+            if len(observed_pinn_in) == 1:
+                check_first_axis = partial(
+                    check_first_axis, pinn_in_array=observed_pinn_in[0]
+                )
+                fixed_args = fixed_args + ("pinn_in_array",)
+            if len(observed_values) == 1:
+                check_first_axis = partial(check_first_axis, values=observed_values[0])
+                fixed_args = fixed_args + ("values",)
+        # ... and then we do the tree map. Note that in the tree.map below,
+        # self.observed_eq_params can have None leaves
+        # tree_map_args is a tuple of tuple dicts: 1) outer tuples are those we
+        # will vectorize over 2) inside tuples to be able to unpack
+        # dynamically (i.e. varying nb of elements to pass to fun)
+        # 3) then the dicts are merged to feed the kw only function
+        # tree.map cannot directly feed a kw only
+        # function such as check_first_axis (so we pass through
+        # the decorator)
+        jax.tree.map(
+            _merge_dict_arguments(check_first_axis, fixed_args),
+            tree_map_args,
+            is_leaf=lambda x: (isinstance(x, tuple) and isinstance(x[0], dict)),
+        )
+
+        ### End check first axis
 
         self.observed_pinn_in = observed_pinn_in
         self.observed_values = observed_values
 
         if observed_eq_params is not None:
             if not isinstance(observed_eq_params, tuple):
-                observed_eq_params = tuple(
-                    observed_eq_params for _ in range(len(observed_values))
-                )  # observed_values is the reference tuple and the only one that can be a
-                # real tuple while obs_pinn_in and obs_eq_params are just copies
-                # because all the logic of using a "vectorial" DGObs is if we have
-                # several *observation* channels
+                observed_eq_params = (observed_eq_params,)
+            if isinstance(observed_eq_params, tuple):
+                if len(observed_eq_params) != 1 and len(observed_eq_params) != len(
+                    observed_values
+                ):
+                    raise ValueError(
+                        "If observed_eq_params is a tuple, it should"
+                        " be of length 1 (one dict, the same for"
+                        " all the observed_values) or be of length"
+                        " =len(observed_values) (for each"
+                        " observed_values"
+                    )
 
             self.observed_eq_params = jax.tree.map(
                 lambda d: {
@@ -144,9 +224,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
             )
 
         else:
-            self.observed_eq_params = tuple(
-                None for _ in range(len(self.observed_values))
-            )
+            self.observed_eq_params = (None,)
 
         self.observed_pinn_in = jax.tree.map(
             lambda x: x[:, None] if len(x.shape) == 1 else x, self.observed_pinn_in
@@ -156,54 +234,117 @@ class DataGeneratorObservations(AbstractDataGenerator):
             lambda x: x[:, None] if len(x.shape) == 1 else x, self.observed_values
         )
 
-        if self.observed_eq_params is not None:
-
-            def check_first_axis2(a, b):
-                for _, v in a.items():
-                    if v.shape[0] != b.shape[0]:
+        ### Start check first axis 2
+        def check_first_axis2(*, eq_params_dict, pinn_in_array):
+            if eq_params_dict is not None:
+                for _, v in eq_params_dict.items():
+                    if v.shape[0] != pinn_in_array.shape[0]:
                         raise ValueError(
                             "Each matching elements of self.observed_pinn_in and self.observed_eq_params must have the same first axis"
                         )
 
-            jax.tree.map(
-                check_first_axis2,
-                self.observed_eq_params,
-                self.observed_pinn_in,
-                is_leaf=lambda x: isinstance(x, dict),
-            )
+        # the following tree_map_args will work if all lengths are equal either
+        # 1 or more
+        tree_map_args = tuple(
+            ({"eq_params_dict": e}, {"pinn_in_array": p})
+            for e, p in zip_longest(self.observed_eq_params, self.observed_pinn_in)
+        )
+        fixed_args = ()
+        if len(self.observed_eq_params) != len(self.observed_pinn_in):
+            if len(self.observed_pinn_in) == 1:
+                check_first_axis2 = partial(
+                    check_first_axis2, pinn_in_array=self.observed_pinn_in[0]
+                )
+                fixed_args = fixed_args + ("pinn_in_array",)
 
-        def check_ndim(a, b, c):
-            if a.ndim > 2:
+            if len(self.observed_eq_params) == 1:
+                check_first_axis2 = partial(
+                    check_first_axis2, eq_params_dict=self.observed_eq_params[0]
+                )
+                fixed_args = fixed_args + ("eq_params_dict",)
+        jax.tree.map(
+            _merge_dict_arguments(
+                check_first_axis2, fixed_args
+            ),  # https://stackoverflow.com/a/42421497
+            tree_map_args,
+            is_leaf=lambda x: (isinstance(x, tuple) and isinstance(x[0], dict)),
+        )
+
+        ### End check first axis 2
+
+        ### Start check ndim
+
+        def check_ndim(*, values, pinn_in_array, eq_params_dict):
+            if values.ndim > 2:
                 raise ValueError(
                     "Each element of self.observed_pinn_in must have 2 dimensions"
                 )
-            if b.ndim > 2:
+            if pinn_in_array.ndim > 2:
                 raise ValueError(
                     "Each element of self.observed_values must have 2 dimensions"
                 )
-            if c is not None:
-                for _, v in c.items():
+            if eq_params_dict is not None:
+                for _, v in eq_params_dict.items():
                     if v.ndim > 2:
                         raise ValueError(
                             "Each value of observed_eq_params must have 2 dimensions"
                         )
 
-        jax.tree.map(
-            check_ndim,
-            self.observed_pinn_in,
-            self.observed_values,
-            self.observed_eq_params,
+        # the following tree_map_args will work if all lengths are equal either
+        # 1 or more
+        tree_map_args = tuple(
+            ({"eq_params_dict": e}, {"pinn_in_array": p}, {"values": v})
+            for e, p, v in zip_longest(
+                self.observed_eq_params, self.observed_pinn_in, self.observed_values
+            )
         )
+        # now, if some shape are different, it can only be because there are 1
+        # while we expect a fixed n (thanks to the early tests above)
+        # then we must fix the arguments that are single leaf pytree
+        # and keep track of the arguments that are fixed to be able to remove
+        # them in the wrapper
+        fixed_args = ()
+        if len(self.observed_eq_params) != len(self.observed_pinn_in) or len(
+            self.observed_eq_params
+        ) != len(self.observed_values):
+            if len(self.observed_pinn_in) == 1:
+                check_ndim = partial(check_ndim, pinn_in_array=self.observed_pinn_in[0])
+                fixed_args = fixed_args + ("pinn_in_array",)
+            if len(self.observed_eq_params) == 1:
+                check_ndim = partial(
+                    check_ndim, eq_params_dict=self.observed_eq_params[0]
+                )
+                fixed_args = fixed_args + ("eq_params_dict",)
+            if len(self.observed_values) == 1:
+                check_ndim = partial(check_ndim, values=self.observed_values[0])
+                fixed_args = fixed_args + ("values",)
+
+        jax.tree.map(
+            _merge_dict_arguments(check_ndim, fixed_args),
+            tree_map_args,
+            is_leaf=lambda x: (isinstance(x, tuple) and isinstance(x[0], dict)),
+        )
+        ### End check ndim
+
+        # longest_tuple will be used for correct jax tree map broadcast. Note
+        # that even though self.observed_pinn_in and self.observed_values does
+        # not have the same len (as tuples), their components (jnp.arrays) do
+        # have the same first axis. This is worked out by all the previous
+        # checks
+        if len(self.observed_pinn_in) > len(self.observed_values):
+            longest_tuple = self.observed_pinn_in
+        else:
+            longest_tuple = self.observed_values
 
         self.n = jax.tree.map(
             lambda o: o.shape[0],
-            self.observed_pinn_in,
+            longest_tuple,
         )
 
         if isinstance(obs_batch_size, int) or obs_batch_size is None:
             self.obs_batch_size = jax.tree.map(
                 lambda _: obs_batch_size,
-                self.observed_pinn_in,
+                longest_tuple,
             )
 
         # After all the checks
@@ -211,7 +352,9 @@ class DataGeneratorObservations(AbstractDataGenerator):
         # `DGObservedParams`
         # class used by Jinns.
         self.observed_eq_params = tuple(
-            DGObservedParams(o_, "DGObservedParams") for o_ in self.observed_eq_params
+            DGObservedParams(o_, "DGObservedParams")
+            for o_ in self.observed_eq_params
+            if o_ is not None
         )
 
         # NOTE currently disabled
@@ -230,7 +373,6 @@ class DataGeneratorObservations(AbstractDataGenerator):
 
         # When self.obs_batch_size leaf is None we will have self.curr_idx leaf
         # to None. (Previous behaviour would put an unused self.curr_idx to 0)
-        print(self.obs_batch_size)
         self.curr_idx = jax.tree.map(
             lambda bs, n: bs + n if bs is not None else None,
             self.obs_batch_size,
@@ -244,7 +386,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
         #        jnp.arange(self.n), self.sharding_device
         #    )
         # else:
-        self.indices = jax.tree.map(lambda x: jnp.arange(x), self.n)
+        self.indices = jax.tree.map(jnp.arange, self.n)
 
         if not isinstance(self.key, tuple):
             # recall post_init is the only place with _init_ where we can set
@@ -277,6 +419,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
 
     @staticmethod
     def obs_batch(
+        *,
         n,
         obs_batch_size,
         observed_pinn_in,
@@ -338,17 +481,59 @@ class DataGeneratorObservations(AbstractDataGenerator):
         """
         Generic method to return a batch
         """
-
-        ret = jax.tree.map(
-            DataGeneratorObservations.obs_batch,
-            self.n,
-            self.obs_batch_size,
+        # the following tree map over DataGeneratorObservations.obs_batch, must
+        # be handled with pre-fixed arguments when, for memory reason,
+        # observed_pinn_in or observed_values or observed_eq_params have not
+        # does not have the same length. If all tuples are of size 1, this
+        # should work totally transparently
+        args = (
+            self.observed_eq_params,
             self.observed_pinn_in,
             self.observed_values,
-            self.observed_eq_params,
+            self.n,
+            self.obs_batch_size,
             self.curr_idx,
             self.key,
             self.indices,
+        )
+
+        tree_map_args = tuple(
+            (
+                {"observed_eq_params": e},
+                {"observed_pinn_in": p},
+                {"observed_values": v},
+                {"n": n},
+                {"obs_batch_size": b},
+                {"curr_idx": c},
+                {"key": k},
+                {"indices": i},
+            )
+            for e, p, v, n, b, c, k, i in zip_longest(*args)
+        )
+        fixed_args = ()
+        obs_batch_fun = DataGeneratorObservations.obs_batch
+        if len(set(map(len, args))) > 1:  # at least 2 lengths differ
+            # but since values, pinn_in and equations are the arguments that
+            # generates all the others, it suffices to potentially fix the
+            # former
+            if len(self.observed_pinn_in) == 1:
+                obs_batch_fun = partial(
+                    obs_batch_fun, observed_pinn_in=self.observed_pinn_in[0]
+                )
+                fixed_args = fixed_args + ("observed_pinn_in",)
+            if len(self.observed_eq_params) == 1:
+                obs_batch_fun = partial(
+                    obs_batch_fun, eq_params_dict=self.observed_eq_params[0]
+                )
+                fixed_args = fixed_args + ("observed_eq_params",)
+            if len(self.observed_values) == 1:
+                obs_batch_fun = partial(obs_batch_fun, values=self.observed_values[0])
+                fixed_args = fixed_args + ("observed_values",)
+
+        ret = jax.tree.map(
+            _merge_dict_arguments(obs_batch_fun, fixed_args),
+            tree_map_args,
+            is_leaf=lambda x: (isinstance(x, tuple) and isinstance(x[0], dict)),
         )
         new_key = jax.tree.map(
             lambda l: l[0], ret, is_leaf=lambda x: isinstance(x, tuple) and len(x) == 4
