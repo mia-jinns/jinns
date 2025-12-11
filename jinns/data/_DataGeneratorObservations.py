@@ -134,17 +134,19 @@ class DataGeneratorObservations(AbstractDataGenerator):
             observed_values = (observed_values,)
         if not isinstance(observed_pinn_in, tuple):
             observed_pinn_in = (observed_pinn_in,)
-        if isinstance(observed_values, tuple):
-            if len(observed_values) != 1 and len(observed_values) != len(
-                observed_pinn_in
-            ):
-                raise ValueError(
-                    "If observed_values is a tuple, it should"
-                    " be of length 1 (one array, the same for"
-                    " all the pinn_in) or be of length"
-                    " =len(observed_values) (for each"
-                    " observed_values"
-                )
+
+            # TODO NOTE TODO NOTE
+        # if isinstance(observed_values, tuple):
+        #    if len(observed_values) != 1 and len(observed_values) != len(
+        #        observed_pinn_in
+        #    ):
+        #        raise ValueError(
+        #            "If observed_values is a tuple, it should"
+        #            " be of length 1 (one array, the same for"
+        #            " all the pinn_in) or be of length"
+        #            " =len(observed_pinn_in) (for each"
+        #            " observed_values"
+        #        )
         if isinstance(observed_pinn_in, tuple):
             if len(observed_pinn_in) != 1 and len(observed_pinn_in) != len(
                 observed_values
@@ -346,6 +348,8 @@ class DataGeneratorObservations(AbstractDataGenerator):
                 lambda _: obs_batch_size,
                 longest_tuple,
             )
+        else:
+            self.obs_batch_size = obs_batch_size
 
         # After all the checks
         # Convert the dict of observed parameters to the internal
