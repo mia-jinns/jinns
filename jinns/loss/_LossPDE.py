@@ -161,9 +161,14 @@ class _LossPDEAbstract(
         norm_weights: Float[Array, " nb_norm_samples"] | float | int | None = None,
         obs_slice: EllipsisType | slice | None = None,
         key: PRNGKeyArray | None = None,
+        derivative_keys: DKPDE,
         **kwargs: Any,  # for arguments for super()
     ):
-        super().__init__(loss_weights=self.loss_weights, **kwargs)
+        super().__init__(
+            loss_weights=self.loss_weights,
+            derivative_keys=derivative_keys,
+            **kwargs,
+        )
 
         if self.update_weight_method is not None and jnp.any(
             jnp.array(jax.tree.leaves(self.loss_weights)) == 0
@@ -528,25 +533,25 @@ class LossPDEStatio(
             self.loss_weights = LossWeightsPDEStatio()
         else:
             self.loss_weights = loss_weights
-        self.dynamic_loss = dynamic_loss
-
-        super().__init__(
-            **kwargs,
-        )
 
         if derivative_keys is None:
             # be default we only take gradient wrt nn_params
             try:
-                self.derivative_keys = DerivativeKeysPDEStatio(params=params)
+                derivative_keys = DerivativeKeysPDEStatio(params=params)
             except ValueError as exc:
                 raise ValueError(
                     "Problem at derivative_keys initialization "
                     f"received {derivative_keys=} and {params=}"
                 ) from exc
         else:
-            self.derivative_keys = derivative_keys
+            derivative_keys = derivative_keys
 
-        self.vmap_in_axes = (0,)
+        super().__init__(
+            derivative_keys=derivative_keys,
+            vmap_in_axes=(0,),
+            **kwargs,
+        )
+        self.dynamic_loss = dynamic_loss
 
     def _get_dynamic_loss_batch(
         self, batch: PDEStatioBatch
@@ -785,25 +790,26 @@ class LossPDENonStatio(
             self.loss_weights = LossWeightsPDENonStatio()
         else:
             self.loss_weights = loss_weights
-        self.dynamic_loss = dynamic_loss
-
-        super().__init__(
-            **kwargs,
-        )
 
         if derivative_keys is None:
             # be default we only take gradient wrt nn_params
             try:
-                self.derivative_keys = DerivativeKeysPDENonStatio(params=params)
+                derivative_keys = DerivativeKeysPDENonStatio(params=params)
             except ValueError as exc:
                 raise ValueError(
                     "Problem at derivative_keys initialization "
                     f"received {derivative_keys=} and {params=}"
                 ) from exc
         else:
-            self.derivative_keys = derivative_keys
+            derivative_keys = derivative_keys
 
-        self.vmap_in_axes = (0,)  # for t_x
+        super().__init__(
+            derivative_keys=derivative_keys,
+            vmap_in_axes=(0,),  # for t_x
+            **kwargs,
+        )
+
+        self.dynamic_loss = dynamic_loss
 
         if initial_condition_fun is None:
             warnings.warn(

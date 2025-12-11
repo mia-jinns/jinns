@@ -133,10 +133,25 @@ class LossODE(
         else:
             self.loss_weights = loss_weights
 
-        super().__init__(loss_weights=self.loss_weights, **kwargs)
+        if derivative_keys is None:
+            # by default we only take gradient wrt nn_params
+            if params is None:
+                raise ValueError(
+                    "Problem at derivative_keys initialization "
+                    f"received {derivative_keys=} and {params=}"
+                )
+            derivative_keys = DerivativeKeysODE(params=params)
+        else:
+            derivative_keys = derivative_keys
+
+        super().__init__(
+            loss_weights=self.loss_weights,
+            derivative_keys=derivative_keys,
+            vmap_in_axes=(0,),
+            **kwargs,
+        )
         self.u = u
         self.dynamic_loss = dynamic_loss
-        self.vmap_in_axes = (0,)
         if self.update_weight_method is not None and jnp.any(
             jnp.array(jax.tree.leaves(self.loss_weights)) == 0
         ):
@@ -146,17 +161,6 @@ class LossODE(
                 "update the zero weight to some non-zero value. Check that "
                 "this is the desired behaviour."
             )
-
-        if derivative_keys is None:
-            # by default we only take gradient wrt nn_params
-            if params is None:
-                raise ValueError(
-                    "Problem at derivative_keys initialization "
-                    f"received {derivative_keys=} and {params=}"
-                )
-            self.derivative_keys = DerivativeKeysODE(params=params)
-        else:
-            self.derivative_keys = derivative_keys
 
         if initial_condition is None:
             warnings.warn(
