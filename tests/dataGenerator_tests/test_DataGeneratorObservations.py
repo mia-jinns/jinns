@@ -1,8 +1,3 @@
-import os
-
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
-import time
 from itertools import zip_longest
 from functools import partial
 import pytest
@@ -182,6 +177,7 @@ def test_batch_size_checks():
 
 def test_batch_equality():
     """
+    A more complex batch equality test
     To avoid problems of jitting a bound method, we decorticated the get_bathc
     function of DataGeneratorObservations here
     """
@@ -242,15 +238,10 @@ def test_batch_equality():
         )
         return fun, tree_map_args
 
-    #### FIRST a cost_analysis for the duplicated case
     key = jax.random.PRNGKey(2)
     key, subkey = jax.random.split(key)
     subkeys2 = jax.random.split(key, 20)
 
-    print(jax.random.normal(key, shape=(100000, 3)).nbytes)
-
-    print("Before duplicated DG instanciation")
-    time.sleep(5)
     dg1 = jinns.data.DataGeneratorObservations(
         key=subkey,
         observed_pinn_in=tuple(
@@ -263,23 +254,15 @@ def test_batch_equality():
             {"a": jax.random.normal(key, shape=(100000,))} for _ in range(len(subkeys2))
         ),
     )
-    print("After duplicated DG instanciation")
-    print("Before unduplicated DG instanciation")
-    time.sleep(5)
-    #  print(sys.getsizeof(dg))
-    #  #print(jnp.ones(1000).nbytes)
-    #  fun, tree_map_args = get_obs_batch_fun(dg1)
-    #  compiled_1 = jax.jit(fun).lower(
-    #      tree_map_args
-    #  ).compile()
-    #  print(compiled_1.cost_analysis()["bytes accessed"])
-    #  obs_batch_duplicated = jax.tree.map(
-    #      lambda l:l[3],
-    #      compiled_1(tree_map_args),
-    #      is_leaf=lambda x: isinstance(x, tuple) and len(x)==4
-    #  )
+    fun, tree_map_args = get_obs_batch_fun(dg1)
+    compiled_1 = jax.jit(fun).lower(tree_map_args).compile()
+    # print(compiled_1.cost_analysis()["bytes accessed"])
+    obs_batch_duplicated = jax.tree.map(
+        lambda l: l[3],
+        compiled_1(tree_map_args),
+        is_leaf=lambda x: isinstance(x, tuple) and len(x) == 4,
+    )
 
-    #### SECOND a cost_analysis for the non duplicated case
     key = jax.random.PRNGKey(2)
     key, subkey = jax.random.split(key)
 
@@ -292,26 +275,29 @@ def test_batch_equality():
         observed_eq_params={"a": jax.random.normal(key, shape=(100000,))},
     )
 
-    print("After unduplicated DG instanciation")
-    time.sleep(5)
+    fun, tree_map_args = get_obs_batch_fun(dg2)
+    compiled_2 = jax.jit(fun).lower(tree_map_args).compile()
+    # print(compiled_2.cost_analysis()["bytes accessed"])
+    obs_batch_nonduplicated = jax.tree.map(
+        lambda l: l[3],
+        compiled_2(tree_map_args),
+        is_leaf=lambda x: isinstance(x, tuple) and len(x) == 4,
+    )
 
-
-#   fun, tree_map_args = get_obs_batch_fun(dg2)
-#   compiled_2 = jax.jit(fun).lower(
-#       tree_map_args
-#   ).compile()
-#   print(compiled_2.cost_analysis()["bytes accessed"])
-#   obs_batch_nonduplicated = jax.tree.map(
-#       lambda l:l[3],
-#       compiled_2(tree_map_args),
-#       is_leaf=lambda x: isinstance(x, tuple) and len(x)==4
-#   )
-
-#   assert all(tuple(jnp.allclose(
-#       obs_batch_duplicated[i]["pinn_in"],
-#       obs_batch_nonduplicated[i]["pinn_in"]
-#   ) for i in range(len(obs_batch_duplicated))))
-#   assert all(tuple(jnp.allclose(
-#       obs_batch_duplicated[i]["val"],
-#       obs_batch_nonduplicated[i]["val"]
-#   ) for i in range(len(obs_batch_duplicated))))
+    assert all(
+        tuple(
+            jnp.allclose(
+                obs_batch_duplicated[i]["pinn_in"],
+                obs_batch_nonduplicated[i]["pinn_in"],
+            )
+            for i in range(len(obs_batch_duplicated))
+        )
+    )
+    assert all(
+        tuple(
+            jnp.allclose(
+                obs_batch_duplicated[i]["val"], obs_batch_nonduplicated[i]["val"]
+            )
+            for i in range(len(obs_batch_duplicated))
+        )
+    )
