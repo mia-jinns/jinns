@@ -74,18 +74,19 @@ class DataGeneratorObservations(AbstractDataGenerator):
     obs_batch_size : tuple[int | None, ...]
         The size of the batch of randomly selected points among
         the `n` points. If None, no minibatch are used.
-    observed_pinn_in : Float[Array, " n_obs nb_pinn_in"]
+    observed_pinn_in : Float[Array, " n_obs nb_pinn_in"] | tuple[Float[Array, " n_obs nb_pinn_in"], ...]
         Observed values corresponding to the input of the PINN
         (eg. the time at which we recorded the observations). The first
         dimension must corresponds to the number of observed_values.
         The second dimension depends on the input dimension of the PINN,
         that is `1` for ODE, `n_dim_x` for stationnary PDE and `n_dim_x + 1`
         for non-stationnary PDE.
-    observed_values : Float[Array, " n_obs, nb_pinn_out"]
+        Can be a tuple of such arguments to support multidatasets, see below.
+    observed_values : Float[Array, " n_obs, nb_pinn_out"] | tuple[Float[Array, " n_obs, nb_pinn_out"], ...]
         Observed values that the PINN should learn to fit. The first
         dimension must be aligned with observed_pinn_in.
-    observed_eq_params : dict[str, Float[Array, " n_obs 1"]], default={}
-        XXX If some datasets do not have observed_eq_params, we expect {}
+        Can be a tuple of such arguments to support multidatasets, see below.
+    observed_eq_params : dict[str, Float[Array, " n_obs 1"]] | tuple[dict[str, Float[Array, " n_obs 1"], ...]], default=None
         A dict with keys corresponding to
         the parameter name. The keys must match the keys in
         `params["eq_params"]`, ie., if only some parameters are observed, other
@@ -93,6 +94,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
         with values corresponding to the parameter value for which we also
         have observed_pinn_in and observed_values. Hence the first
         dimension must be aligned with observed_pinn_in and observed_values.
+        Can be a tuple of such arguments to support multidatasets, see below.
         Optional argument.
     sharding_device : jax.sharding.Sharding, default=None
         Default None. An optional sharding object to constraint the storage
@@ -102,6 +104,23 @@ class DataGeneratorObservations(AbstractDataGenerator):
         can still be performed on other devices (*e.g.* GPU, TPU or
         any pre-defined Sharding) thanks to the `obs_batch_sharding`
         arguments of `jinns.solve()`. Read `jinns.solve()` doc for more info.
+
+    ** New in jinns vX.X.X:** We provide the possibility of specifying several
+        datasets of observations, this can serve a variety of purposes, as for
+        example, provided different observations for different channels of the
+        solution (by using the `obs_slice` attribute of Loss objects, see the
+        notebook on this topic in the documentation). To
+        provide several datasets, it suffices to pass `observed_values` or
+        `observed_pinn_in` or `observed_eq_params` as tuples. If you have
+        several `observed_values` but the same `observed_eq_params` and or the
+        same `observed_pinn_in`, the two latter should not be duplicated in
+        tuples of the same length of `observed_values`. The last sentence
+        remains true when interchanging the terms `observed_values`,
+        `observed_pinn_in` and `observed_eq_params` in any position.
+        This is not a syntaxic sugar.
+        This is a real necessity to avoid duplicating data, to gain speed. This
+        internally handled with dynamic freezing
+        of non vectorized arguments (see code...)
     """
 
     key: PRNGKeyArray
@@ -127,6 +146,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
         observed_eq_params: tuple[InputEqParams, ...] | InputEqParams | None = None,
         sharding_device: jax.sharding.Sharding | None = None,
     ) -> None:
+        """ """
         super().__init__()
         self.key = key
 
@@ -134,30 +154,45 @@ class DataGeneratorObservations(AbstractDataGenerator):
             observed_values = (observed_values,)
         if not isinstance(observed_pinn_in, tuple):
             observed_pinn_in = (observed_pinn_in,)
+        if observed_eq_params is not None:
+            if not isinstance(observed_eq_params, tuple):
+                observed_eq_params = (observed_eq_params,)
+        else:
+            observed_eq_params = (None,)
 
-            # TODO NOTE TODO NOTE
-        # if isinstance(observed_values, tuple):
-        #    if len(observed_values) != 1 and len(observed_values) != len(
-        #        observed_pinn_in
-        #    ):
-        #        raise ValueError(
-        #            "If observed_values is a tuple, it should"
-        #            " be of length 1 (one array, the same for"
-        #            " all the pinn_in) or be of length"
-        #            " =len(observed_pinn_in) (for each"
-        #            " observed_values"
-        #        )
-        if isinstance(observed_pinn_in, tuple):
-            if len(observed_pinn_in) != 1 and len(observed_pinn_in) != len(
-                observed_values
-            ):
-                raise ValueError(
-                    "If observed_pinn_in is a tuple, it should"
-                    " be of length 1 (one array, the same for"
-                    " all the observed_values) or be of length"
-                    " =len(observed_values) (for each"
-                    " observed_values"
-                )
+        # now if values, pinn_in, and eq_params does not have same length (as
+        # tuples), we must find the longest one and the other either must be
+        # length 1 or must be the same length as the longest
+        len_longest_tuple = max(
+            map(len, (observed_values, observed_pinn_in, observed_eq_params))
+        )
+        longest_tuple = max(
+            (observed_values, observed_pinn_in, observed_eq_params), key=len
+        )
+        if len(observed_values) != 1 and len(observed_values) != len_longest_tuple:
+            raise ValueError(
+                "If observed_values is a tuple, it should"
+                " be of length 1 (one array, the same for"
+                " all the pinn_in and eq_params entries) or be of the same"
+                " length as the longest tuple of entries (1 to 1 matching)"
+            )
+        if len(observed_pinn_in) != 1 and len(observed_pinn_in) != len_longest_tuple:
+            raise ValueError(
+                "If observed_pinn_in is a tuple, it should"
+                " be of length 1 (one array, the same for"
+                " all the values and eq_params entries) or be of the same"
+                " length as the longest tuple of entries (1 to 1 matching)"
+            )
+        if (
+            len(observed_eq_params) != 1
+            and len(observed_eq_params) != len_longest_tuple
+        ):
+            raise ValueError(
+                "If observed_eq_params is a tuple, it should"
+                " be of length 1 (one array, the same for"
+                " all the values and pinn_in entries) or be of the same"
+                " length as the longest tuple of entries (1 to 1 matching)"
+            )
 
         ### Start check first axis
 
@@ -201,22 +236,10 @@ class DataGeneratorObservations(AbstractDataGenerator):
 
         self.observed_pinn_in = observed_pinn_in
         self.observed_values = observed_values
-
-        if observed_eq_params is not None:
-            if not isinstance(observed_eq_params, tuple):
-                observed_eq_params = (observed_eq_params,)
-            if isinstance(observed_eq_params, tuple):
-                if len(observed_eq_params) != 1 and len(observed_eq_params) != len(
-                    observed_values
-                ):
-                    raise ValueError(
-                        "If observed_eq_params is a tuple, it should"
-                        " be of length 1 (one dict, the same for"
-                        " all the observed_values) or be of length"
-                        " =len(observed_values) (for each"
-                        " observed_values"
-                    )
-
+        if observed_eq_params == (None,):
+            self.observed_eq_params = observed_eq_params  # pyright: ignore
+            # (this is resolved later on one instanciating DGObservedParams)
+        else:
             self.observed_eq_params = jax.tree.map(
                 lambda d: {
                     k: v[:, None] if len(v.shape) == 1 else v for k, v in d.items()
@@ -224,9 +247,6 @@ class DataGeneratorObservations(AbstractDataGenerator):
                 observed_eq_params,
                 is_leaf=lambda x: isinstance(x, dict),
             )
-
-        else:
-            self.observed_eq_params = (None,)
 
         self.observed_pinn_in = jax.tree.map(
             lambda x: x[:, None] if len(x.shape) == 1 else x, self.observed_pinn_in
@@ -329,27 +349,36 @@ class DataGeneratorObservations(AbstractDataGenerator):
         ### End check ndim
 
         # longest_tuple will be used for correct jax tree map broadcast. Note
-        # that even though self.observed_pinn_in and self.observed_values does
+        # that even though self.observed_pinn_in and self.observed_values and
+        # self.observed_eq_params does
         # not have the same len (as tuples), their components (jnp.arrays) do
         # have the same first axis. This is worked out by all the previous
         # checks
-        if len(self.observed_pinn_in) > len(self.observed_values):
-            longest_tuple = self.observed_pinn_in
-        else:
-            longest_tuple = self.observed_values
-
         self.n = jax.tree.map(
             lambda o: o.shape[0],
-            longest_tuple,
+            tuple(_ for _ in jax.tree.leaves(longest_tuple)),  # jax.tree.leaves
+            # because if longest_tuple is eq_params then it is a dict but we do
+            # not want self.n to have the dict tree structure
         )
 
         if isinstance(obs_batch_size, int) or obs_batch_size is None:
             self.obs_batch_size = jax.tree.map(
                 lambda _: obs_batch_size,
-                longest_tuple,
+                tuple(_ for _ in jax.tree.leaves(longest_tuple)),  # jax tree leaves
+                # because if longest_tuple is eq_params then it is a dict but we do
+                # not want self.n to have the dict tree structure
             )
-        else:
+        elif isinstance(obs_batch_size, tuple):
+            if len(obs_batch_size) != len_longest_tuple and len(obs_batch_size) != 1:
+                raise ValueError(
+                    "If obs_batch_size is a tuple, it must me"
+                    " of length 1 or of length equal to the"
+                    " maximum length between values, pinn_in and"
+                    " eq_params."
+                )
             self.obs_batch_size = obs_batch_size
+        else:
+            raise ValueError("obs_batch_size must be an int, a tuple or None")
 
         # After all the checks
         # Convert the dict of observed parameters to the internal
@@ -399,10 +428,6 @@ class DataGeneratorObservations(AbstractDataGenerator):
                 jax.tree.structure(self.n),
                 jax.random.split(self.key, len(jax.tree.leaves(self.n))),
             )
-        # recall post_init is the only place with _init_ where we can set
-        # self attribute in a in-place way
-        ###self.key, _ = jax.random.split(self.key, 2)  # to make it equivalent to
-        #### the call to _reset_batch_idx_and_permute in legacy DG
 
     def _get_operands(
         self,
@@ -527,11 +552,13 @@ class DataGeneratorObservations(AbstractDataGenerator):
                 fixed_args = fixed_args + ("observed_pinn_in",)
             if len(self.observed_eq_params) == 1:
                 obs_batch_fun = partial(
-                    obs_batch_fun, eq_params_dict=self.observed_eq_params[0]
+                    obs_batch_fun, observed_eq_params=self.observed_eq_params[0]
                 )
                 fixed_args = fixed_args + ("observed_eq_params",)
             if len(self.observed_values) == 1:
-                obs_batch_fun = partial(obs_batch_fun, values=self.observed_values[0])
+                obs_batch_fun = partial(
+                    obs_batch_fun, observed_values=self.observed_values[0]
+                )
                 fixed_args = fixed_args + ("observed_values",)
 
         ret = jax.tree.map(
