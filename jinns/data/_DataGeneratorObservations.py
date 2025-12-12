@@ -118,9 +118,18 @@ class DataGeneratorObservations(AbstractDataGenerator):
         remains true when interchanging the terms `observed_values`,
         `observed_pinn_in` and `observed_eq_params` in any position.
         This is not a syntaxic sugar.
-        This is a real necessity to avoid duplicating data, to gain speed. This
-        internally handled with dynamic freezing
-        of non vectorized arguments (see code...)
+        This is a real necessity to avoid duplicating data in the dataclasses
+        attributes, to gain speed and memory performances. This
+        internally handled with dynamic freezing of non vectorized
+        arguments (see code...). Note that the data are still duplicated at
+        the moment of the vectorial operation (jax tree map), and at during
+        that operation memory reaches its peaks and the memory usage is the
+        same in the DG with duplication and DG without duplication. However,
+        after that, the memory usage goes down again for the version without
+        duplication (see the test script at
+        `jinns/tests/dataGenerator_tests/profiling_DataGeneratorObservations.py`
+        )
+
     """
 
     key: PRNGKeyArray
