@@ -172,7 +172,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         raise ValueError(
             "The numbers of declared loss weights and "
             "declared loss terms do not concord "
-            f" got {len(weights)} and {len(terms_list)}"
+            f" got {len(weights)} and {len(terms_list)}. "
             "If you passed tuple of dyn_loss, make sure to pass "
             "tuple of loss weights at LossWeights.dyn_loss."
             "If you passed tuple of obs datasets, make sure to pass "
