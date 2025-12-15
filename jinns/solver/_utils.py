@@ -92,6 +92,15 @@ def _loss_evaluate_and_gradient_step(
     """
     # The crux of our new approach is partitioning and recombining the parameters and optimization state according to params_mask.
 
+    params_mask:
+        A jinns.parameters.Params object with boolean as leaves, specifying
+        over which parameters optimization is enabled. This usually implies
+        important computational gains. Internally, it is used as the
+        filter_spec of a eqx.partition function on the parameters. Note that this
+        differs from (and complement) DerivativeKeys, as the latter allows
+        for more granularity by freezing some gradients with respect to
+        different loss terms, but do not subset the optimized parameters globally.
+
     NOTE: in this function body, we change naming convention for concision:
      * `state` refers to the general optimizer state
      * `opt_state` refers to the unmasked optimizer state, i.e. which are
