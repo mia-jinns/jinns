@@ -2,6 +2,7 @@
 Formalize the data structure for the parameters
 """
 
+from __future__ import annotations
 from dataclasses import fields
 from typing import Generic, TypeVar
 import equinox as eqx
@@ -59,6 +60,15 @@ class Params(eqx.Module, Generic[T]):
             self.eq_params = EqParams(eq_params, "EqParams")
         else:
             self.eq_params = eq_params
+
+    def partition(self, mask: Params[bool] | None):
+        """
+        following the boolean mask, partition into two Params
+        """
+        if mask is not None:
+            return eqx.partition(self, mask)
+        else:
+            return self, None
 
 
 def update_eq_params(

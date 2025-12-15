@@ -37,13 +37,17 @@ class OptimizationContainer(eqx.Module):
     params: Params
     last_non_nan_params: Params
     opt_state: OptState
+    # params_mask: Params = eqx.field(static=True)  # to make params_mask
+    # hashable JAX type. See _gradient_step docstring
 
 
 class OptimizationExtraContainer(eqx.Module):
-    curr_seq: int
-    best_iter_id: int  # the best iteration number (that which achieves best_val_params and best_val_params)
-    best_val_criterion: float  # the best validation criterion at early stopping
-    best_val_params: Params  # the best parameter values at early stopping
+    curr_seq: int | None
+    best_iter_id: (
+        int | None
+    )  # the best iteration number (that which achieves best_val_params and best_val_params)
+    best_val_criterion: float | None  # the best validation criterion at early stopping
+    best_val_params: Params | None  # the best parameter values at early stopping
     early_stopping: Bool = False
 
 
