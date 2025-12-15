@@ -9,7 +9,12 @@ import jax.numpy as jnp
 import optax
 from jinns.parameters._params import Params
 from jinns.loss._loss_weight_updates import soft_adapt, lr_annealing, ReLoBRaLo
-from jinns.utils._types import AnyLossComponents, AnyBatch, AnyLossWeights
+from jinns.utils._types import (
+    AnyLossComponents,
+    AnyBatch,
+    AnyLossWeights,
+    AnyDerivativeKeys,
+)
 
 L = TypeVar(
     "L", bound=AnyLossWeights
@@ -25,31 +30,47 @@ C = TypeVar(
     "C", bound=AnyLossComponents[Array | None]
 )  # The above comment also works with Unions (https://docs.python.org/3/library/typing.html#typing.TypeVar)
 
+DK = TypeVar("DK", bound=AnyDerivativeKeys)
+
 # In the cases above, without the bound, we could not have covariance on
 # the type because it would break LSP. Note that covariance on the return type
 # is authorized in LSP hence we do not need the same TypeVar instruction for
 # the return types of evaluate_by_terms for example!
 
 
-class AbstractLoss(eqx.Module, Generic[L, B, C]):
+class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
     """
     About the call:
     https://github.com/patrick-kidger/equinox/issues/1002 + https://docs.kidger.site/equinox/pattern/
     """
 
+    derivative_keys: eqx.AbstractVar[DK]
     loss_weights: eqx.AbstractVar[L]
     update_weight_method: Literal["soft_adapt", "lr_annealing", "ReLoBRaLo"] | None = (
         eqx.field(kw_only=True, default=None, static=True)
     )
+    vmap_in_axes: tuple[int] = eqx.field(static=True)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self.evaluate(*args, **kwargs)
 
     @abc.abstractmethod
-    def evaluate_by_terms(self, params: Params[Array], batch: B) -> tuple[C, C]:
+    def evaluate_by_terms(
+        self,
+        opt_params: Params[Array],
+        batch: B,
+        *,
+        non_opt_params: Params[Array] | None = None,
+    ) -> tuple[C, C]:
         pass
 
-    def evaluate(self, params: Params[Array], batch: B) -> tuple[Float[Array, " "], C]:
+    def evaluate(
+        self,
+        opt_params: Params[Array],
+        batch: B,
+        *,
+        non_opt_params: Params[Array] | None = None,
+    ) -> tuple[Float[Array, " "], C]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -57,16 +78,20 @@ class AbstractLoss(eqx.Module, Generic[L, B, C]):
 
         Parameters
         ---------
-        params
-            Parameters at which the loss is evaluated
+        opt_params
+            Parameters, which are optimized, at which the loss is evaluated
         batch
             Composed of a batch of points in the
             domain, a batch of points in the domain
             border and an optional additional batch of parameters (eg. for
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
+        non_opt_params
+            Parameters, which are non optimized, at which the loss is evaluated
         """
-        loss_terms, _ = self.evaluate_by_terms(params, batch)
+        loss_terms, _ = self.evaluate_by_terms(
+            opt_params, batch, non_opt_params=non_opt_params
+        )
 
         loss_val = self.ponderate_and_sum_loss(loss_terms)
 
@@ -105,7 +130,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C]):
             f" got {len(weights)} and {len(terms_list)}"
         )
 
-    def ponderate_and_sum_gradient(self, terms: C) -> C:
+    def ponderate_and_sum_gradient(self, terms: C) -> Params[Array | None]:
         """
         Get total gradients from individual loss gradients and weights
         for each parameter

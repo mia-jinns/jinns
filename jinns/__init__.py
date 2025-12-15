@@ -7,8 +7,9 @@ from jinns import parameters as parameters
 from jinns import plot as plot
 from jinns import nn as nn
 from jinns.solver._solve import solve
+from jinns.solver._solve_alternate import solve_alternate
 
-__all__ = ["nn", "solve"]
+__all__ = ["nn", "solve", "solve_alternate"]
 
 import warnings
 

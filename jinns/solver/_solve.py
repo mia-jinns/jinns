@@ -8,17 +8,23 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 import time
-from typing import TYPE_CHECKING, Any, TypeAlias, Callable
-from functools import partial
+from typing import TYPE_CHECKING, Any
 import optax
 import jax
-from jax import jit
 import jax.numpy as jnp
-from jaxtyping import Float, Array, PyTree, PRNGKeyArray
-import equinox as eqx
+from jaxtyping import Float, Array, PRNGKeyArray
 from jinns.solver._rar import init_rar, trigger_rar
-from jinns.utils._utils import _check_nan_in_pytree
-from jinns.solver._utils import _check_batch_size
+from jinns.solver._utils import (
+    _check_batch_size,
+    _init_stored_weights_terms,
+    _init_stored_params,
+    _get_break_fun,
+    _loss_evaluate_and_gradient_step,
+    _build_get_batch,
+    _store_loss_and_params,
+    _print_fn,
+)
+from jinns.parameters._params import Params
 from jinns.utils._containers import (
     DataGeneratorContainer,
     OptimizationContainer,
@@ -26,32 +32,18 @@ from jinns.utils._containers import (
     LossContainer,
     StoredObjectContainer,
 )
-from jinns.data._utils import append_param_batch, append_obs_batch
 
 if TYPE_CHECKING:
-    from jinns.parameters._params import Params
-    from jinns.utils._types import AnyBatch
+    from jinns.utils._types import AnyLossComponents, SolveCarry
     from jinns.loss._abstract_loss import AbstractLoss
     from jinns.validation._validation import AbstractValidationModule
     from jinns.data._DataGeneratorParameter import DataGeneratorParameter
     from jinns.data._DataGeneratorObservations import DataGeneratorObservations
     from jinns.data._AbstractDataGenerator import AbstractDataGenerator
 
-    main_carry: TypeAlias = tuple[
-        int,
-        AbstractLoss,
-        OptimizationContainer,
-        OptimizationExtraContainer,
-        DataGeneratorContainer,
-        AbstractValidationModule | None,
-        LossContainer,
-        StoredObjectContainer,
-        Float[Array, " n_iter"] | None,
-        PRNGKeyArray | None,
-    ]
-
 
 def solve(
+    *,
     n_iter: int,
     init_params: Params[Array],
     data: AbstractDataGenerator,
@@ -64,24 +56,27 @@ def solve(
     obs_data: DataGeneratorObservations | None = None,
     validation: AbstractValidationModule | None = None,
     obs_batch_sharding: jax.sharding.Sharding | None = None,
+    opt_state_field_for_acceleration: str | None = None,
     verbose: bool = True,
     ahead_of_time: bool = True,
     key: PRNGKeyArray | None = None,
 ) -> tuple[
     Params[Array],
     Float[Array, " n_iter"],
-    PyTree,
+    AnyLossComponents[Float[Array, " n_iter"]],
     AbstractDataGenerator,
     AbstractLoss,
     optax.OptState,
     Params[Array | None],
-    PyTree,
+    AnyLossComponents[Float[Array, " n_iter"]],
+    DataGeneratorObservations | None,
+    DataGeneratorParameter | None,
     Float[Array, " n_iter"] | None,
-    Params[Array],
+    Params[Array] | None,
 ]:
     """
     Performs the optimization process via stochastic gradient descent
-    algorithm. We minimize the function defined `loss.evaluate()` with
+    algorithm. We minimize the function defined in `loss.evaluate()` with
     respect to the learnable parameters of the problem whose initial values
     are given in `init_params`.
 
@@ -91,9 +86,9 @@ def solve(
     n_iter
         The maximum number of iterations in the optimization.
     init_params
-        The initial jinns.parameters.Params object.
+        The initial `jinns.parameters.Params` object.
     data
-        A DataGenerator object to retrieve batches of collocation points.
+        A `jinns.data.AbstractDataGenerator` object to retrieve batches of collocation points.
     loss
         The loss function to minimize.
     optimizer
@@ -102,22 +97,21 @@ def solve(
         Default 1000. The rate at which we print the loss value in the
         gradient step loop.
     opt_state
-        Provide an optional initial state to the optimizer.
+        Default `None`. Provides an optional initial state to the optimizer.
     tracked_params
-        Default None. An eqx.Module of type Params with non-None values for
+        Default `None`. A `jinns.parameters.Params` object with non-`None` values for
         parameters that needs to be tracked along the iterations.
-        None values in tracked_params will not be traversed. Thus
-        the user can provide something like `tracked_params = jinns.parameters.Params(
-        nn_params=None, eq_params={"nu": True})` while init_params.nn_params
+        The user can provide something like `tracked_params = jinns.parameters.Params(
+        nn_params=None, eq_params={"nu": True})` while `init_params.nn_params`
         being a complex data structure.
     param_data
-        Default None. A DataGeneratorParameter object which can be used to
+        Default `None`. A `jinns.data.DataGeneratorParameter` object which can be used to
         sample equation parameters.
     obs_data
-        Default None. A DataGeneratorObservations
+        Default `None`. A `jinns.data.DataGeneratorObservations`
         object which can be used to sample minibatches of observations.
     validation
-        Default None. Otherwise, a callable ``eqx.Module`` which implements a
+        Default `None`. Otherwise, a callable `eqx.Module` which implements a
         validation strategy. See documentation of `jinns.validation.
         _validation.AbstractValidationModule` for the general interface, and
         `jinns.validation._validation.ValidationLoss` for a practical
@@ -131,53 +125,70 @@ def solve(
         validation strategy of their choice, and to decide on the early
         stopping criterion.
     obs_batch_sharding
-        Default None. An optional sharding object to constraint the obs_batch.
-        Typically, a SingleDeviceSharding(gpu_device) when obs_data has been
-        created with sharding_device=SingleDeviceSharding(cpu_device) to avoid
+        Default `None`. An optional sharding object to constraint the
+        `obs_batch`.
+        Typically, a `SingleDeviceSharding(gpu_device)` when `obs_data` has been
+        created with `sharding_device=SingleDeviceSharding(cpu_device)` to avoid
         loading on GPU huge datasets of observations.
+    opt_state_field_for_acceleration
+        A string. Default `None`, i.e. the optimizer without acceleration.
+        Because in some optimization scheme one can have what is called
+        acceleration where the loss is computed at some accelerated parameter
+        values, different from the actual parameter values. These accelerated
+        parameter can be stored in the optimizer state as a field. If this
+        field name is passed to `opt_state_field_for_acceleration` then the
+        gradient step will be done by evaluate gradients at parameter value
+        `opt_state.opt_state_field_for_acceleration`.
     verbose
-        Default True. If False, no std output (loss or cause of
+        Default `True`. If `False`, no output (loss or cause of
         exiting the optimization loop) will be produced.
     ahead_of_time
-        Default True. Separate the compilation of the main training loop from
+        Default `True`. Separate the compilation of the main training loop from
         the execution to get both timings. You might need to avoid this
         behaviour if you need to perform JAX transforms over chunks of code
         containing `jinns.solve()` since AOT-compiled functions cannot be JAX
         transformed (see https://jax.readthedocs.io/en/latest/aot.html#aot-compiled-functions-cannot-be-transformed).
-        When False, jinns does not provide any timing information (which would
+        When `False`, jinns does not provide any timing information (which would
         be nonsense in a JIT transformed `solve()` function).
     key
-        Default None. A JAX random key that can be used for diverse purpose in
+        Default `None`. A JAX random key that can be used for diverse purpose in
         the main iteration loop.
 
     Returns
     -------
     params
-        The last non NaN value of the params at then end of the
-        optimization process
+        The last non-NaN value of the params at then end of the
+        optimization process.
     total_loss_values
-        An array of the total loss term along the gradient steps
+        An array of the total loss term along the gradient steps.
     stored_loss_terms
         A PyTree with attributes being arrays of all the values for each loss
-        term
+        term.
     data
-        The input data object
+        The data generator object passed as input, possibly modified.
     loss
-        The input loss object
+        The loss object passed as input, possibly modified.
     opt_state
-        The final optimized state
+        The final optimized state.
     stored_params
-        A Params objects with the stored values of the desired parameters (as
-        signified in tracked_params argument)
+        A object with the stored values of the desired parameters (as
+        signified in `tracked_params` argument).
     stored_weights_terms
-        A PyTree with attributes being arrays of all the values for each loss
-        weight. Note that if Loss.update_weight_method is None, we return None,
+        A PyTree with leaves being arrays of all the values for each loss
+        weight. Note that if `Loss.update_weight_method is None`, we return
+        `None`,
         because loss weights are never updated and we can then save some
-        computations
+        computations.
+    param_data
+        The `jinns.data.DataGeneratorParameter` object passed as input or
+        `None`.
+    obs_data
+        The `jinns.data.DataGeneratorObservations` object passed as input or
+        `None`.
     validation_crit_values
-        An array containing the validation criterion values of the training
+        An array containing the validation criterion values of the training.
     best_val_params
-        The best parameters according to the validation criterion
+        The best parameters according to the validation criterion.
     """
     initialization_time = time.time()
     if n_iter < 1:
@@ -224,24 +235,12 @@ def solve(
     train_loss_values = jnp.zeros((n_iter))
     # depending on obs_batch_sharding we will get the simple get_batch or the
     # get_batch with device_put, the latter is not jittable
-    get_batch = _get_get_batch(obs_batch_sharding)
+    get_batch = _build_get_batch(obs_batch_sharding)
 
     # initialize parameter tracking
     if tracked_params is None:
         tracked_params = jax.tree.map(lambda p: None, init_params)
-    stored_params = jax.tree_util.tree_map(
-        lambda tracked_param, param: (
-            jnp.zeros((n_iter,) + jnp.asarray(param).shape)
-            if tracked_param is not None
-            else None
-        ),
-        tracked_params,
-        init_params,
-        is_leaf=lambda x: x is None,  # None values in tracked_params will not
-        # be traversed. Thus the user can provide something like `tracked_params = jinns.parameters.Params(
-        # nn_params=None, eq_params={"nu": True})` while init_params.nn_params
-        # being a complex data structure
-    )
+    stored_params = _init_stored_params(tracked_params, init_params, n_iter)
 
     # initialize the dict for stored parameter values
     # we need to get a loss_term to init stuff
@@ -257,23 +256,7 @@ def solve(
 
     # initialize the PyTree for stored loss weights values
     if loss.update_weight_method is not None:
-        stored_weights_terms = eqx.tree_at(
-            lambda pt: jax.tree.leaves(
-                pt, is_leaf=lambda x: x is not None and eqx.is_inexact_array(x)
-            ),
-            loss.loss_weights,
-            tuple(
-                jnp.zeros((n_iter))
-                for n in range(
-                    len(
-                        jax.tree.leaves(
-                            loss.loss_weights,
-                            is_leaf=lambda x: x is not None and eqx.is_inexact_array(x),
-                        )
-                    )
-                )
-            ),
-        )
+        stored_weights_terms = _init_stored_weights_terms(loss, n_iter)
     else:
         stored_weights_terms = None
     if loss.update_weight_method is not None and key is None:
@@ -326,7 +309,11 @@ def solve(
         key,
     )
 
-    def _one_iteration(carry: main_carry) -> main_carry:
+    def _one_iteration(carry: SolveCarry) -> SolveCarry:
+        # Note that optimizer are not part of the carry since
+        # the former is not tractable and the latter (while it could be
+        # hashable) must be static because of the equinox `filter_spec` (https://github.com/patrick-kidger/equinox/issues/1036)
+
         (
             i,
             loss,
@@ -344,43 +331,24 @@ def solve(
             train_data.data, train_data.param_data, train_data.obs_data
         )
 
-        # ---------------------------------------------------------------------
-        # The following part is the equivalent of a
-        # > train_loss_value, grads = jax.values_and_grad(total_loss.evaluate)(params, ...)
-        # but it is decomposed on individual loss terms so that we can use it
-        # if needed for updating loss weights.
-        # Since the total loss is a weighted sum of individual loss terms, so
-        # are its total gradients.
-
-        # Compute individual losses and individual gradients
-        loss_terms, grad_terms = loss.evaluate_by_terms(optimization.params, batch)
-
-        if loss.update_weight_method is not None:
-            key, subkey = jax.random.split(key)  # type: ignore because key can
-            # still be None currently
-            # avoid computations of tree_at if no updates
-            loss = loss.update_weights(
-                i, loss_terms, loss_container.stored_loss_terms, grad_terms, subkey
+        if key is not None:
+            key, subkey = jax.random.split(key)
+        else:
+            subkey = None
+        (train_loss_value, params, last_non_nan_params, opt_state, loss, loss_terms) = (
+            _loss_evaluate_and_gradient_step(
+                i,
+                batch,
+                loss,
+                optimization.params,
+                optimization.last_non_nan_params,
+                optimization.opt_state,
+                optimizer,
+                loss_container,
+                subkey,
+                None,
+                opt_state_field_for_acceleration,
             )
-
-        # total grad
-        grads = loss.ponderate_and_sum_gradient(grad_terms)
-
-        # total loss
-        train_loss_value = loss.ponderate_and_sum_loss(loss_terms)
-        # ---------------------------------------------------------------------
-
-        # gradient step
-        (
-            params,
-            opt_state,
-            last_non_nan_params,
-        ) = _gradient_step(
-            grads,
-            optimizer,
-            optimization.params,
-            optimization.opt_state,
-            optimization.last_non_nan_params,
         )
 
         # Print train loss value during optimization
@@ -552,249 +520,13 @@ def solve(
         optimization.last_non_nan_params,
         loss_container.train_loss_values,
         loss_container.stored_loss_terms,
-        train_data.data,  # return the DataGenerator if needed (no in-place modif)
-        loss,  # return the Loss if needed (no-inplace modif)
+        train_data.data,
+        loss,
         optimization.opt_state,
         stored_objects.stored_params,
         loss_container.stored_weights_terms,
+        train_data.obs_data,
+        train_data.param_data,
         validation_crit_values if validation is not None else None,
         validation_parameters,
     )
-
-
-@partial(jit, static_argnames=["optimizer"])
-def _gradient_step(
-    grads: Params[Array],
-    optimizer: optax.GradientTransformation,
-    params: Params[Array],
-    opt_state: optax.OptState,
-    last_non_nan_params: Params[Array],
-) -> tuple[
-    Params[Array],
-    optax.OptState,
-    Params[Array],
-]:
-    """
-    optimizer cannot be jit-ted.
-    """
-
-    updates, opt_state = optimizer.update(
-        grads,  # type: ignore
-        opt_state,
-        params,  # type: ignore
-    )  # see optimizer.init for explaination for the ignore(s) here
-    params = optax.apply_updates(params, updates)  # type: ignore
-
-    # check if any of the parameters is NaN
-    last_non_nan_params = jax.lax.cond(
-        _check_nan_in_pytree(params),
-        lambda _: last_non_nan_params,
-        lambda _: params,
-        None,
-    )
-
-    return (
-        params,
-        opt_state,
-        last_non_nan_params,
-    )
-
-
-@partial(jit, static_argnames=["prefix"])
-def _print_fn(i: int, loss_val: Float, print_loss_every: int, prefix: str = ""):
-    # note that if the following is not jitted in the main lor loop, it is
-    # super slow
-    _ = jax.lax.cond(
-        i % print_loss_every == 0,
-        lambda _: jax.debug.print(
-            prefix + "Iteration {i}: loss value = {loss_val}",
-            i=i,
-            loss_val=loss_val,
-        ),
-        lambda _: None,
-        (None,),
-    )
-
-
-@jit
-def _store_loss_and_params(
-    i: int,
-    params: Params[Array],
-    stored_params: Params[Array | None],
-    loss_container: LossContainer,
-    train_loss_val: float,
-    loss_terms: PyTree[Array],
-    weight_terms: PyTree[Array],
-    tracked_params: Params,
-) -> tuple[StoredObjectContainer, LossContainer]:
-    stored_params = jax.tree_util.tree_map(
-        lambda stored_value, param, tracked_param: (
-            None
-            if stored_value is None
-            else jax.lax.cond(
-                tracked_param,
-                lambda ope: ope[0].at[i].set(ope[1]),
-                lambda ope: ope[0],
-                (stored_value, param),
-            )
-        ),
-        stored_params,
-        params,
-        tracked_params,
-        is_leaf=lambda x: x is None,
-    )
-    stored_loss_terms = jax.tree_util.tree_map(
-        lambda stored_term, loss_term: stored_term.at[i].set(loss_term),
-        loss_container.stored_loss_terms,
-        loss_terms,
-    )
-
-    if loss_container.stored_weights_terms is not None:
-        stored_weights_terms = jax.tree_util.tree_map(
-            lambda stored_term, weight_term: stored_term.at[i].set(weight_term),
-            jax.tree.leaves(
-                loss_container.stored_weights_terms,
-                is_leaf=lambda x: x is not None and eqx.is_inexact_array(x),
-            ),
-            jax.tree.leaves(
-                weight_terms,
-                is_leaf=lambda x: x is not None and eqx.is_inexact_array(x),
-            ),
-        )
-        stored_weights_terms = eqx.tree_at(
-            lambda pt: jax.tree.leaves(
-                pt, is_leaf=lambda x: x is not None and eqx.is_inexact_array(x)
-            ),
-            loss_container.stored_weights_terms,
-            stored_weights_terms,
-        )
-    else:
-        stored_weights_terms = None
-
-    train_loss_values = loss_container.train_loss_values.at[i].set(train_loss_val)
-    loss_container = LossContainer(
-        stored_loss_terms, stored_weights_terms, train_loss_values
-    )
-    stored_objects = StoredObjectContainer(stored_params)
-    return stored_objects, loss_container
-
-
-def _get_break_fun(n_iter: int, verbose: bool) -> Callable[[main_carry], bool]:
-    """
-    Wrapper to get the break_fun with appropriate `n_iter`.
-    The verbose argument is here to control printing (or not) when exiting
-    the optimisation loop. It can be convenient is jinns.solve is itself
-    called in a loop and user want to avoid std output.
-    """
-
-    @jit
-    def break_fun(carry: tuple):
-        """
-        Function to break from the main optimization loop whe the following
-        conditions are met : maximum number of iterations, NaN
-        appearing in the parameters, and early stopping criterion.
-        """
-
-        def stop_while_loop(msg):
-            """
-            Note that the message is wrapped in the jax.lax.cond because a
-            string is not a valid JAX type that can be fed into the operands
-            """
-            if verbose:
-                jax.debug.print(f"\nStopping main optimization loop, cause: {msg}")
-            return False
-
-        def continue_while_loop(_):
-            return True
-
-        (i, _, optimization, optimization_extra, _, _, _, _, _, _) = carry
-
-        # Condition 1
-        bool_max_iter = jax.lax.cond(
-            i >= n_iter,
-            lambda _: stop_while_loop("max iteration is reached"),
-            continue_while_loop,
-            None,
-        )
-        # Condition 2
-        bool_nan_in_params = jax.lax.cond(
-            _check_nan_in_pytree(optimization.params),
-            lambda _: stop_while_loop(
-                "NaN values in parameters (returning last non NaN values)"
-            ),
-            continue_while_loop,
-            None,
-        )
-        # Condition 3
-        bool_early_stopping = jax.lax.cond(
-            optimization_extra.early_stopping,
-            lambda _: stop_while_loop("early stopping"),
-            continue_while_loop,
-            _,
-        )
-
-        # stop when one of the cond to continue is False
-        return jax.tree_util.tree_reduce(
-            lambda x, y: jnp.logical_and(jnp.array(x), jnp.array(y)),
-            (bool_max_iter, bool_nan_in_params, bool_early_stopping),
-        )
-
-    return break_fun
-
-
-def _get_get_batch(
-    obs_batch_sharding: jax.sharding.Sharding | None,
-) -> Callable[
-    [
-        AbstractDataGenerator,
-        DataGeneratorParameter | None,
-        DataGeneratorObservations | None,
-    ],
-    tuple[
-        AnyBatch,
-        AbstractDataGenerator,
-        DataGeneratorParameter | None,
-        DataGeneratorObservations | None,
-    ],
-]:
-    """
-    Return the get_batch function that will be used either the jittable one or
-    the non-jittable one with sharding using jax.device.put()
-    """
-
-    def get_batch_sharding(data, param_data, obs_data):
-        """
-        This function is used at each loop but it cannot be jitted because of
-        device_put
-        """
-        data, batch = data.get_batch()
-        if param_data is not None:
-            param_data, param_batch = param_data.get_batch()
-            batch = append_param_batch(batch, param_batch)
-        if obs_data is not None:
-            # This is the part that motivated the transition from scan to for loop
-            # Indeed we need to be transit obs_batch from CPU to GPU when we have
-            # huge observations that cannot fit on GPU. Such transfer wasn't meant
-            # to be jitted, i.e. in a scan loop
-            obs_data, obs_batch = obs_data.get_batch()
-            obs_batch = jax.device_put(obs_batch, obs_batch_sharding)
-            batch = append_obs_batch(batch, obs_batch)
-        return batch, data, param_data, obs_data
-
-    @jit
-    def get_batch(data, param_data, obs_data):
-        """
-        Original get_batch with no sharding
-        """
-        data, batch = data.get_batch()
-        if param_data is not None:
-            param_data, param_batch = param_data.get_batch()
-            batch = append_param_batch(batch, param_batch)
-        if obs_data is not None:
-            obs_data, obs_batch = obs_data.get_batch()
-            batch = append_obs_batch(batch, obs_batch)
-        return batch, data, param_data, obs_data
-
-    if obs_batch_sharding is not None:
-        return get_batch_sharding
-    return get_batch

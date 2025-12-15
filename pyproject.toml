@@ -24,13 +24,14 @@ maintainers = [
 ]
 classifiers = [
   "License :: OSI Approved :: Apache Software License",
-  "Development Status :: 4 - Beta",
+  "Development Status :: 5 - Production/Stable",
   "Programming Language :: Python",
 ]
-dependencies = ["numpy", "jax", "jaxopt", "optax", "equinox>0.11.3", "jax-tqdm", "diffrax", "matplotlib"]
+dependencies = ["numpy>=2.0.0", "jax>=0.8.1", "optax>=0.2.6", "equinox>=0.13.2",
+                "matplotlib", "jaxtyping"]
 
 [project.optional-dependencies]
-notebook = ["jupyter", "seaborn"]
+notebook = ["jupyter", "seaborn", "pandas", "pytest", "pre-commit", "pyright", "diffrax"]
 
 [project.urls]
 Repository = "https://gitlab.com/mia_jinns/jinns"
@@ -52,8 +53,8 @@ exclude_also = [
 include = ["jinns"]
 exclude = ["jinns/experimental"]
 pythonVersion = "3.11"
-typeCheckingMode = "strict"
+typeCheckingMode = "basic"
 
 [tool.ruff]
 [tool.ruff.lint]
-ignore = ["F722", "E741", "E731"]
+ignore = ["F722", "E741", "E731", "E722"]

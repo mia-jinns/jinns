@@ -7,9 +7,14 @@ import jax.random as random
 import jax.numpy as jnp
 import jax
 from jax import vmap
+import optax
 import jinns
 import equinox as eqx
 from jax.scipy.stats import multivariate_normal
+
+# because we did not write a fixture
+jinns.parameters.EqParams.clear()
+jinns.data.DGParams.clear()
 
 key = random.PRNGKey(1)
 n = 117
@@ -95,9 +100,6 @@ with pytest.warns(UserWarning):
     )
 
 
-# Optimizer
-import optax
-
 tx = optax.adamw(learning_rate=1e-3)
 
 n_iter = int(10)
@@ -146,7 +148,7 @@ def test_data_proba_shape_before_solve():
 
 def control_shape_after_solve_with_rar(start_iter, update_every):
     train_data, rar_parameters = get_datagenerator_rar(start_iter, update_every)
-    _, _, _, train_data, _, _, _, _, _, _ = jinns.solve(
+    _, _, _, train_data, _, _, _, _, _, _, _, _ = jinns.solve(
         init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
     )
     assert (train_data.p != 0).sum() == train_data.n_start + jnp.round(
@@ -187,7 +189,7 @@ def test_rar_error_with_SPINN(all_tests):
         ]
         key = jax.random.PRNGKey(12345)
         key, subkey = random.split(key)
-        u, init_nn_params = jinns.nn.create_SPINN(
+        u, init_nn_params = jinns.nn.SPINN_MLP.create(
             subkey, d, r, eqx_list, "nonstatio_PDE"
         )
 

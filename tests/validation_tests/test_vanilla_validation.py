@@ -59,7 +59,6 @@ def test_validation_module():
     D = 1.0
     r = 4.0
     g = 3.0
-    l = xmax - xmin
     boundary_condition = "dirichlet"
     omega_boundary_fun = lambda t_dx: 0  # cte func returning 0
 
@@ -127,6 +126,8 @@ def test_validation_module():
     (
         params_spinn,
         train_loss_values,
+        _,
+        _,
         _,
         _,
         _,

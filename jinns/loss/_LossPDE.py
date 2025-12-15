@@ -68,11 +68,14 @@ B = TypeVar("B", bound=PDEStatioBatch | PDENonStatioBatch)
 C = TypeVar(
     "C", bound=PDEStatioComponents[Array | None] | PDENonStatioComponents[Array | None]
 )
-D = TypeVar("D", bound=DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio)
+DKPDE = TypeVar("DKPDE", bound=DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio)
 Y = TypeVar("Y", bound=PDEStatio | PDENonStatio | None)
 
 
-class _LossPDEAbstract(AbstractLoss[L, B, C], Generic[L, B, C, D, Y]):
+class _LossPDEAbstract(
+    AbstractLoss[L, B, C, DKPDE],
+    Generic[L, B, C, DKPDE, Y],
+):
     r"""
     Parameters
     ----------
@@ -158,9 +161,24 @@ class _LossPDEAbstract(AbstractLoss[L, B, C], Generic[L, B, C, D, Y]):
         norm_weights: Float[Array, " nb_norm_samples"] | float | int | None = None,
         obs_slice: EllipsisType | slice | None = None,
         key: PRNGKeyArray | None = None,
+        derivative_keys: DKPDE,
         **kwargs: Any,  # for arguments for super()
     ):
-        super().__init__(loss_weights=self.loss_weights, **kwargs)
+        super().__init__(
+            loss_weights=self.loss_weights,
+            derivative_keys=derivative_keys,
+            **kwargs,
+        )
+
+        if self.update_weight_method is not None and jnp.any(
+            jnp.array(jax.tree.leaves(self.loss_weights)) == 0
+        ):
+            warnings.warn(
+                "self.update_weight_method is activated while some loss "
+                "weights are zero. The update weight method will likely "
+                "update the zero weight to some non-zero value. Check that "
+                "this is the desired behaviour."
+            )
 
         if obs_slice is None:
             self.obs_slice = jnp.s_[...]
@@ -497,7 +515,6 @@ class LossPDEStatio(
     dynamic_loss: PDEStatio | None
     loss_weights: LossWeightsPDEStatio
     derivative_keys: DerivativeKeysPDEStatio
-    vmap_in_axes: tuple[int] = eqx.field(static=True)
 
     params: InitVar[Params[Array] | None]
 
@@ -516,25 +533,25 @@ class LossPDEStatio(
             self.loss_weights = LossWeightsPDEStatio()
         else:
             self.loss_weights = loss_weights
-        self.dynamic_loss = dynamic_loss
-
-        super().__init__(
-            **kwargs,
-        )
 
         if derivative_keys is None:
             # be default we only take gradient wrt nn_params
             try:
-                self.derivative_keys = DerivativeKeysPDEStatio(params=params)
+                derivative_keys = DerivativeKeysPDEStatio(params=params)
             except ValueError as exc:
                 raise ValueError(
                     "Problem at derivative_keys initialization "
                     f"received {derivative_keys=} and {params=}"
                 ) from exc
         else:
-            self.derivative_keys = derivative_keys
+            derivative_keys = derivative_keys
 
-        self.vmap_in_axes = (0,)
+        super().__init__(
+            derivative_keys=derivative_keys,
+            vmap_in_axes=(0,),
+            **kwargs,
+        )
+        self.dynamic_loss = dynamic_loss
 
     def _get_dynamic_loss_batch(
         self, batch: PDEStatioBatch
@@ -549,11 +566,12 @@ class LossPDEStatio(
     # we could have used typing.cast though
 
     def evaluate_by_terms(
-        self, params: Params[Array], batch: PDEStatioBatch
-    ) -> tuple[
-        PDEStatioComponents[Float[Array, ""] | None],
-        PDEStatioComponents[Float[Array, ""] | None],
-    ]:
+        self,
+        opt_params: Params[Array],
+        batch: PDEStatioBatch,
+        *,
+        non_opt_params: Params[Array] | None = None,
+    ) -> tuple[PDEStatioComponents[Array | None], PDEStatioComponents[Array | None]]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -561,15 +579,22 @@ class LossPDEStatio(
 
         Parameters
         ---------
-        params
-            Parameters at which the loss is evaluated
+        opt_params
+            Parameters, which are optimized, at which the loss is evaluated
         batch
             Composed of a batch of points in the
             domain, a batch of points in the domain
             border and an optional additional batch of parameters (eg. for
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
+        non_opt_params
+            Parameters, which are non optimized, at which the loss is evaluated
         """
+        if non_opt_params is not None:
+            params = eqx.combine(opt_params, non_opt_params)
+        else:
+            params = opt_params
+
         # Retrieve the optional eq_params_batch
         # and update eq_params with the latter
         # and update vmap_in_axes
@@ -740,7 +765,6 @@ class LossPDENonStatio(
     initial_condition_fun: Callable[[Float[Array, " dimension"]], Array] | None = (
         eqx.field(static=True)
     )
-    vmap_in_axes: tuple[int] = eqx.field(static=True)
     max_norm_samples_omega: int = eqx.field(static=True)
     max_norm_time_slices: int = eqx.field(static=True)
 
@@ -766,25 +790,26 @@ class LossPDENonStatio(
             self.loss_weights = LossWeightsPDENonStatio()
         else:
             self.loss_weights = loss_weights
-        self.dynamic_loss = dynamic_loss
-
-        super().__init__(
-            **kwargs,
-        )
 
         if derivative_keys is None:
             # be default we only take gradient wrt nn_params
             try:
-                self.derivative_keys = DerivativeKeysPDENonStatio(params=params)
+                derivative_keys = DerivativeKeysPDENonStatio(params=params)
             except ValueError as exc:
                 raise ValueError(
                     "Problem at derivative_keys initialization "
                     f"received {derivative_keys=} and {params=}"
                 ) from exc
         else:
-            self.derivative_keys = derivative_keys
+            derivative_keys = derivative_keys
 
-        self.vmap_in_axes = (0,)  # for t_x
+        super().__init__(
+            derivative_keys=derivative_keys,
+            vmap_in_axes=(0,),  # for t_x
+            **kwargs,
+        )
+
+        self.dynamic_loss = dynamic_loss
 
         if initial_condition_fun is None:
             warnings.warn(
@@ -820,7 +845,11 @@ class LossPDENonStatio(
         )
 
     def evaluate_by_terms(
-        self, params: Params[Array], batch: PDENonStatioBatch
+        self,
+        opt_params: Params[Array],
+        batch: PDENonStatioBatch,
+        *,
+        non_opt_params: Params[Array] | None = None,
     ) -> tuple[
         PDENonStatioComponents[Array | None], PDENonStatioComponents[Array | None]
     ]:
@@ -831,15 +860,22 @@ class LossPDENonStatio(
 
         Parameters
         ---------
-        params
-            Parameters at which the loss is evaluated
+        opt_params
+            Parameters, which are optimized, at which the loss is evaluated
         batch
             Composed of a batch of points in the
             domain, a batch of points in the domain
             border and an optional additional batch of parameters (eg. for
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
+        non_opt_params
+            Parameters, which are non optimized, at which the loss is evaluated
         """
+        if non_opt_params is not None:
+            params = eqx.combine(opt_params, non_opt_params)
+        else:
+            params = opt_params
+
         omega_initial_batch = batch.initial_batch
         assert omega_initial_batch is not None
 
