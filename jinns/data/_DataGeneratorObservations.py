@@ -137,7 +137,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
     observed_pinn_in: tuple[Float[Array, " n_obs nb_pinn_in"], ...]
     observed_values: tuple[Float[Array, " n_obs nb_pinn_out"], ...]
     observed_eq_params: tuple[eqx.Module | None, ...]
-    sharding_device: jax.sharding.Sharding | None  # = eqx.field(static=True)
+    sharding_device: jax.sharding.Sharding | None = eqx.field(static=True)
 
     n: tuple[int, ...] = eqx.field(init=False, static=True)
     curr_idx: tuple[int, ...] = eqx.field(init=False)
@@ -399,19 +399,17 @@ class DataGeneratorObservations(AbstractDataGenerator):
             if o_ is not None
         )
 
-        # NOTE currently disabled
-        self.sharding_device = None
-        # self.sharding_device = sharding_device
-        # if self.sharding_device is not None:
-        #     self.observed_pinn_in = jax.lax.with_sharding_constraint(
-        #         self.observed_pinn_in, self.sharding_device
-        #     )
-        #     self.observed_values = jax.lax.with_sharding_constraint(
-        #         self.observed_values, self.sharding_device
-        #     )
-        #     self.observed_eq_params = jax.lax.with_sharding_constraint(
-        #         self.observed_eq_params, self.sharding_device
-        #     )
+        self.sharding_device = sharding_device
+        if self.sharding_device is not None:
+            self.observed_pinn_in = jax.lax.with_sharding_constraint(
+                self.observed_pinn_in, self.sharding_device
+            )
+            self.observed_values = jax.lax.with_sharding_constraint(
+                self.observed_values, self.sharding_device
+            )
+            self.observed_eq_params = jax.lax.with_sharding_constraint(
+                self.observed_eq_params, self.sharding_device
+            )
 
         # When self.obs_batch_size leaf is None we will have self.curr_idx leaf
         # to None. (Previous behaviour would put an unused self.curr_idx to 0)
@@ -423,12 +421,11 @@ class DataGeneratorObservations(AbstractDataGenerator):
         )
         # For speed and to avoid duplicating data what is really
         # shuffled is a vector of indices
-        # if self.sharding_device is not None:
-        #    self.indices = jax.lax.with_sharding_constraint(
-        #        jnp.arange(self.n), self.sharding_device
-        #    )
-        # else:
         self.indices = jax.tree.map(jnp.arange, self.n)
+        if self.sharding_device is not None:
+            self.indices = jax.lax.with_sharding_constraint(
+                self.indices, self.sharding_device
+            )
 
         if not isinstance(self.key, tuple):
             # recall post_init is the only place with _init_ where we can set
