@@ -88,7 +88,7 @@ nav:
       - Saving / loading your model: 'Notebooks/Tutorials/load_save_model.ipynb'
       - Using validation module: 'Notebooks/Tutorials/introducing_validation_loss.ipynb'
       - Simple inverse problem: 'Notebooks/Tutorials/1D_non_stationary_Burgers_JointEstimation_Vanilla.ipynb'
-      - More advanced inverse problem: 'Notebooks/Tutorials/GLV_JointEstimation_Alternate.ipynb'
+      - Alternate inverse problem: 'Notebooks/Tutorials/tuto_GLV_inverse_problem.ipynb'
     - Examples:
       - Forward problems:
         - ODE:
@@ -104,6 +104,8 @@ nav:
           - 2D Fisher-KPP  with covariates: 'Notebooks/PDE/Reaction_Diffusion_2D_heterogenous_model.ipynb'
           - 2D learning Ornstein Uhlenbeck pdf (RAR sampling): 'Notebooks/PDE/2D_non_stationary_OU.ipynb'
       - Inverse problems:
+        - ODE:
+          - Generalized Lotka-Volterra (advanced): 'Notebooks/ODE/GLV_JointEstimation_Alternate.ipynb'
         - PDE:
           - Heat equation 2D and estimation of the diffusion coefficient: 'Notebooks/PDE/2D_Heat_inverse_problem.ipynb'
           - Poisson in 2D: 'Notebooks/PDE/2D_Poisson_inverse_problem.ipynb'

@@ -37,7 +37,6 @@ def update_and_project(param: str) -> optax._src.base.GradientTransformation:
 
     def update_fn(grads, state, params=None):
         grads_ = grads
-        params_ = params
 
         grads = getattr(grads.eq_params, param)
         params = getattr(params.eq_params, param)
@@ -112,7 +111,6 @@ def soft_thresholding_additive_update(
 
     def update_fn(grads, state, params=None):
         grads_ = grads
-        params_ = params
         grads = getattr(grads.eq_params, param)
         params = getattr(params.eq_params, param)
 
