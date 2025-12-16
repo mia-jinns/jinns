@@ -13,7 +13,6 @@ import optax
 import jax
 import jax.numpy as jnp
 from jaxtyping import Float, Array, PRNGKeyArray
-import equinox as eqx
 from jinns.solver._rar import init_rar, trigger_rar
 from jinns.solver._utils import (
     _check_batch_size,
@@ -57,7 +56,6 @@ def solve(
     obs_data: DataGeneratorObservations | None = None,
     validation: AbstractValidationModule | None = None,
     obs_batch_sharding: jax.sharding.Sharding | None = None,
-    params_mask: Params[bool] | None = None,
     opt_state_field_for_acceleration: str | None = None,
     verbose: bool = True,
     ahead_of_time: bool = True,
@@ -132,18 +130,6 @@ def solve(
         Typically, a `SingleDeviceSharding(gpu_device)` when `obs_data` has been
         created with `sharding_device=SingleDeviceSharding(cpu_device)` to avoid
         loading on GPU huge datasets of observations.
-    params_mask
-        Default `None`. A `jinns.parameters.Params` object with boolean as leaves to choose over which parameters
-        the optimization will effectively be done (over which gradient
-        computations will happen). This params_mask will then be used as the
-        filter_spec of a `eqx.partition` function. This strategy is the root of
-        the `jinns.solve_alternate` approach. `params_mask` does not replace
-        `DerivativeKeys`, the latter enable differentiating wrt certain parameters
-        with granularity over certain loss(es) only, among the parameters whose
-        differentiation is enabled by `params_mask`. Hence `DerivativeKeys` are
-        more precise and could make the job of `params_mask` somehow, but
-        `DerivativeKeys` are much less computationally efficient, hence the
-        overlay `params_mask` that have been added.
     opt_state_field_for_acceleration
         A string. Default `None`, i.e. the optimizer without acceleration.
         Because in some optimization scheme one can have what is called
@@ -227,13 +213,7 @@ def solve(
             _check_batch_size(obs_data, param_data, "n")
 
     if opt_state is None:
-        opt_init_params, non_opt_init_params = init_params.partition(params_mask)
-        opt_state = optimizer.init(opt_init_params)  # type: ignore
-
-        if params_mask is not None:
-            init_params = eqx.combine(opt_init_params, non_opt_init_params)
-        else:
-            init_params = opt_init_params
+        opt_state = optimizer.init(init_params)  # type: ignore
         # our Params are eqx.Module (dataclass + PyTree), PyTree is
         # compatible with optax transform but not dataclass, this leads to a
         # type hint error: we could prevent this by ensuring with the eqx.filter that
@@ -331,7 +311,7 @@ def solve(
     )
 
     def _one_iteration(carry: SolveCarry) -> SolveCarry:
-        # Note that optimizer and params_mask are not part of the carry since
+        # Note that optimizer are not part of the carry since
         # the former is not tractable and the latter (while it could be
         # hashable) must be static because of the equinox `filter_spec` (https://github.com/patrick-kidger/equinox/issues/1036)
 
@@ -367,7 +347,7 @@ def solve(
                 optimizer,
                 loss_container,
                 subkey,
-                params_mask,
+                None,
                 opt_state_field_for_acceleration,
             )
         )

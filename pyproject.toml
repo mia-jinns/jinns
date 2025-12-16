@@ -57,4 +57,4 @@ typeCheckingMode = "basic"
 
 [tool.ruff]
 [tool.ruff.lint]
-ignore = ["F722", "E741", "E731"]
+ignore = ["F722", "E741", "E731", "E722"]
