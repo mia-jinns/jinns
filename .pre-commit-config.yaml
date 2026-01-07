@@ -13,7 +13,7 @@ repos:
     hooks:
       - id: pylint
         name: pylint
-        entry: pylint || uv run pylint # tries a shell pylint if fails it tries a pylint from uv venv
+        entry: bash -c 'pylint || uv run pylint' # tries a shell pylint if fails it tries a pylint from uv venv
         language: system
         types: [python]
         require_serial: true
