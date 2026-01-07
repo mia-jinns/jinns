@@ -45,16 +45,10 @@ Physics Informed Neural Networks with JAX. **jinns** is a Python package for phy
 
 # Installation
 
-Install the latest version with `pip`:
+Install the latest version with pip
 
 ```bash
 pip install jinns
-```
-
-or `uv`:
-
-```bash
-uv add jinns
 ```
 
 # Documentation
@@ -73,30 +67,20 @@ Here are the contributors guidelines:
 
 1. First fork the library on Gitlab.
 
-2. Clone the repository
-
-3. **[pip]** Install the library in development mode with
+2. Then clone and install the library in development mode with
 
 ```bash
 pip install -e .
 ```
 
-4. **[pip]** Install pre-commit and run it. Our pre-commit hooks consist in `ruff format` and `ruff check`. You can install `ruff` simply by `pip install ruff`. We highly recommend you to check the code type hints with `pyright` even though we currently have no rule concerning type checking in the pipeline.
+3. Install pre-commit and run it. Our pre-commit hooks consist in `ruff format` and `ruff check`. You can install `ruff` simply by `pip install ruff`. We highly recommend you to check the code type hints with `pyright` even though we currently have no rule concerning type checking in the pipeline.
 
 ```bash
 pip install pre-commit
 pre-commit install
 ```
 
-3. **[uv]** If you are using `uv`, you may want to use `uv sync --extra XXX"` where `XXX={gpu_cuda12, gpu_cuda13, cpu}` to update the required packages already listed via `uv.lock` file.
-
-4. **[uv]** Install the pre-commit
-
-```bash
-uv run pre-commmit install
-```
-
-5. Open a merge request once you are done with your changes, the review will be done via Gitlab.
+ 4. Open a merge request once you are done with your changes, the review will be done via Gitlab.
 
 # Contributors
 
