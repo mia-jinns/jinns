@@ -34,3 +34,7 @@ site/
 # Coverage
 .coverage
 tests/.coverage
+
+# uv users
+uv.lock
+.python-version
