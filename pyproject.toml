@@ -41,6 +41,7 @@ dependencies = [
 notebook = ["jupyter", "seaborn", "pandas", "diffrax"]
 gpu_cuda13 = ["jax[cuda13]>=0.8.1"]
 gpu_cuda12 = ["jax[cuda12]>=0.8.1"]
+cpu = ["jax>=0.8.1"]
 dev = ["pre-commit", "pytest", "pylint"]
 
 [project.urls]
