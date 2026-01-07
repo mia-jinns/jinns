@@ -13,8 +13,8 @@ repos:
     hooks:
       - id: pylint
         name: pylint
-        entry: bash -c '(pylint -rn -sn --errors-only $(git diff --cached --name-only --diff-filter=ACMR | (grep -e '.md$\|.py$')))
-                         || (uv run pylint -rn -sn --errors-only $(git diff --cached --name-only --diff-filter=ACMR | (grep -e '.md$\|.py$')))'
+        entry: bash -c '(pylint -rn -sn --errors-only $(git diff --cached --name-only --diff-filter=ACMR | grep -e ".ipynb$\|.py$"))
+                         || (uv run pylint -rn -sn --errors-only $(git diff --cached --name-only --diff-filter=ACMR | grep -e ".ipynb$\|.py$"))'
                          # to support env managed by uv and others we need to
                          # explicilty reconstruct this local command in both
                          # cases:
