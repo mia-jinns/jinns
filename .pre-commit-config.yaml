@@ -13,7 +13,15 @@ repos:
     hooks:
       - id: pylint
         name: pylint
-        entry: bash -c '(pylint jinns && pylint tests) || (uv run pylint jinns && uv run pylint tests)' # tries a shell pylint if fails it tries a pylint from uv venv
+        entry: bash -c '(pylint -rn -sn --errors-only $(git diff --cached --name-only --diff-filter=ACMR | (grep -e '.md$\|.py$')))
+                         || (uv run pylint -rn -sn --errors-only $(git diff --cached --name-only --diff-filter=ACMR | (grep -e '.md$\|.py$')))'
+                         # to support env managed by uv and others we need to
+                         # explicilty reconstruct this local command in both
+                         # cases:
+                         # tries a shell pylint if fails it tries a pylint from uv venv
+                         # git diff --cached --name-only --diff-filter=ACMR
+                         # gets the name of all staged files and we keep only
+                         # ipynb and py for pylint to work on
         language: system
         types: [python]
         require_serial: true
