@@ -10,6 +10,7 @@ from jax import vmap
 import jax.numpy as jnp
 import equinox as eqx
 
+from jinns.loss._DynamicLossAbstract import ODE, PDEStatio, PDENonStatio
 from jinns.data._DataGeneratorODE import DataGeneratorODE
 from jinns.data._CubicMeshPDEStatio import CubicMeshPDEStatio
 from jinns.data._CubicMeshPDENonStatio import CubicMeshPDENonStatio
@@ -176,16 +177,25 @@ def _rar_step_init(
             )
 
             data = eqx.tree_at(lambda m: m.key, data, new_key)
-
-        v_dyn_loss = vmap(
-            lambda inputs: loss.dynamic_loss.evaluate(inputs, loss.u, params),
-        )
-        dyn_on_s = v_dyn_loss(new_samples)
-
-        if dyn_on_s.ndim > 1:
-            mse_on_s = (jnp.linalg.norm(dyn_on_s, axis=-1) ** 2).flatten()
         else:
-            mse_on_s = dyn_on_s**2
+            raise ValueError("Wrong DataGenerator type")
+
+        v_dyn_loss = jax.tree.map(
+            lambda d: vmap(
+                lambda inputs: d.evaluate(inputs, loss.u, params),
+            ),
+            loss.dynamic_loss,
+            is_leaf=lambda x: isinstance(x, (ODE, PDEStatio, PDENonStatio)),
+        )
+        dyn_on_s = jax.tree.map(lambda d: d(new_samples), v_dyn_loss)
+
+        mse_on_s = jax.tree.reduce(
+            jnp.add,
+            jax.tree.map(
+                lambda v: (jnp.linalg.norm(v, axis=-1) ** 2).flatten(), dyn_on_s
+            ),
+            0,
+        )
 
         ## Select the m points with higher dynamic loss
         higher_residual_idx = jax.lax.dynamic_slice(
