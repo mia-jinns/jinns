@@ -146,6 +146,7 @@ def train_GLV_init():
         initial_condition=(float(tmin), jnp.array([N_0[0], N_0[1], N_0[2]])),
         params=init_params,
         update_weight_method="soft_adapt",
+        keep_initial_loss_weight_scales=True,
     )
 
     return init_params, loss, train_data
