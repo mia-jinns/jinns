@@ -35,7 +35,6 @@ from jinns.data._Batchs import ODEBatch
 if TYPE_CHECKING:
     # imports only used in type hints
     from jinns.nn._abstract_pinn import AbstractPINN
-    from jinns.loss import ODE
 
     InitialConditionUser = (
         tuple[Float[Array, " n_cond "], Float[Array, " n_cond dim"]]
@@ -66,17 +65,17 @@ class LossODE(
     ----------
     u : eqx.Module
         the PINN
-    dynamic_loss : ODE
+    dynamic_loss : tuple[ODE, ...] | ODE | None
         the ODE dynamic part of the loss, basically the differential
         operator $\mathcal{N}[u](t)$. Should implement a method
         `dynamic_loss.evaluate(t, u, params)`.
         Can be None in order to access only some part of the evaluate call.
-    loss_weights : LossWeightsODE, default=None
+    loss_weights : LossWeightsODE | None, default=None
         The loss weights for the differents term : dynamic loss,
         initial condition and eventually observations if any.
         Can be updated according to a specific algorithm. See
         `update_weight_method`
-    update_weight_method : Literal['soft_adapt', 'lr_annealing', 'ReLoBRaLo'], default=None
+    update_weight_method : Literal['soft_adapt', 'lr_annealing', 'ReLoBRaLo'] | None, default=None
         Default is None meaning no update for loss weights. Otherwise a string
     keep_initial_loss_weight_scales : bool, default=True
         Only used if an update weight method is specified. It decides whether
@@ -84,22 +83,16 @@ class LossODE(
         passed by the user at initialization. This is useful to force some
         scale difference between the adaptative loss weights even after the
         update method is applied.
-    derivative_keys : DerivativeKeysODE, default=None
+    derivative_keys : DerivativeKeysODE | None, default=None
         Specify which field of `params` should be differentiated for each
         composant of the total loss. Particularily useful for inverse problems.
         Fields can be "nn_params", "eq_params" or "both". Those that should not
         be updated will have a `jax.lax.stop_gradient` called on them. Default
         is `"nn_params"` for each composant of the loss.
-    initial_condition : tuple[
-            Float[Array, "n_cond "],
-            Float[Array, "n_cond dim"]
-        ] |
-        tuple[int | float | Float[Array, " "],
-              int | float | Float[Array, " dim"]
-        ], default=None
+    initial_condition : InitialConditionUser | None, default=None
         Most of the time, a tuple of length 2 with initial condition $(t_0, u_0)$.
         From jinns v1.5.1 we accept tuples of jnp arrays with shape (n_cond, 1) for t0 and (n_cond, dim) for u0. This is useful to include observed conditions at different time points, such as *e.g* final conditions. It was designed to implement $\mathcal{L}^{aux}$ from _Systems biology informed deep learning for inferring parameters and hidden dynamics_, Alireza Yazdani et al., 2020
-    obs_slice : tuple[EllipsisType | slice, ...] | None, default=None
+    obs_slice : tuple[EllipsisType | slice, ...] | EllipsisType | slice | None, default=None
         Slice object specifying the begininning/ending
         slice of u output(s) that is observed. This is useful for
         multidimensional PINN, with partially observed outputs.
@@ -107,7 +100,7 @@ class LossODE(
         **Note**: If several observation datasets are passed this arguments need to be set as a
         tuple of jnp.slice objects with the same length as the number of
         observation datasets
-    params : InitVar[Params[Array]], default=None
+    params : InitVar[Params[Array]] | None, default=None
         The main Params object of the problem needed to instanciate the
         DerivativeKeysODE if the latter is not specified.
     Raises
@@ -155,8 +148,6 @@ class LossODE(
                     f"received {derivative_keys=} and {params=}"
                 )
             derivative_keys = DerivativeKeysODE(params=params)
-        else:
-            derivative_keys = derivative_keys
 
         super().__init__(
             loss_weights=self.loss_weights,
@@ -302,8 +293,9 @@ class LossODE(
             cast(eqx.Module, batch.param_batch_dict), params
         )
 
-        ## dynamic part
         if self.dynamic_loss != (None,):
+            # Note, for the record, multiple dynamic losses
+            # have been introduced in MR 92
             dyn_loss_fun: tuple[Callable[[Params[Array]], Array], ...] | None = (
                 jax.tree.map(
                     lambda d: lambda p: dynamic_loss_apply(
@@ -322,7 +314,8 @@ class LossODE(
             dyn_loss_fun = None
 
         if self.initial_condition is not None:
-            # initial condition
+            # Note, for the record, multiple initial conditions for LossODEs
+            # have been introduced in MR 77
             t0, u0 = self.initial_condition
 
             # first construct the plain init loss no vmaping
@@ -359,18 +352,24 @@ class LossODE(
                 # None in_axes or out_axes
                 initial_condition_fun = (initial_condition_fun_,)
             else:
-                initial_condition_fun: Callable[[Params[Array]], Array] | None = (
+                initial_condition_fun: (
+                    tuple[Callable[[Params[Array]], Array], ...] | None
+                ) = (
                     lambda p: jnp.mean(
                         vmap(initial_condition_fun_, vmap_in_axes_params)(p)
-                    )
+                    ),
                 )
-            # Note that initial_condition_fun_ is formed as a tuple for
+            # Note that since MR 92
+            # initial_condition_fun is formed as a tuple for
             # consistency with dynamic and observation
             # losses and more modularity for later
         else:
             initial_condition_fun = None
 
         if batch.obs_batch_dict is not None:
+            # Note, for the record, multiple DGObs
+            # (leading to batch.obs_batch_dict being tuple | None)
+            # have been introduced in MR 92
             if len(batch.obs_batch_dict) != len(self.obs_slice):
                 raise ValueError(
                     "There must be the same number of "
@@ -411,10 +410,6 @@ class LossODE(
             params_obs,
         )
 
-        # Note that the lambda functions below are with type: ignore just
-        # because the lambda are not type annotated, but there is no proper way
-        # to do this and we should assign the lambda to a type hinted variable
-        # before hand: this is not practical, let us not get mad at this
         mses_grads = jax.tree.map(
             self.get_gradients,
             all_funs,
