@@ -2,6 +2,10 @@
 
 * Unreleased (currently on `main`)
 
+* v1.7.1
+
+    - The possibility to specify tuples of 1D dynamic losses for a loss instead of a vectorial dynamic loss. The original motivation is that **we can now easily add an adaptative loss weight for each dynamic loss channel** while using the existing loss weight update approach of `jinns`. The possibility to **feed several datasets to a `DataGeneratorObservations`. This enables, for example, having datasets (unaligned) for each of the dynamic loss channel**. For more details see [!92](https://gitlab.com/mia_jinns/jinns/-/merge_requests/92) 
+
 * v1.7.0
 
     - This version brings up `jinns.solve_alternate()` for an efficient and fully customizable alternate optimization between the PINN parameters (internally `Params.nn_params`) and the equation parameters (internally `Params.eq_params`) (see [!89](https://gitlab.com/mia_jinns/jinns/-/merge_requests/89)). This can be a good approach for inverse problems with PINNs, check out the [tutorial notebook](https://mia_jinns.gitlab.io/jinns/Notebooks/Tutorials/GLV_JointEstimation_Alternate/). **Breaking change:** `jinns.solve` now returns the consumed `DataGeneratorObservations` and `DataGeneratorParameter` if such objects have been passed as arguments [#17](https://gitlab.com/mia_jinns/jinns/-/issues/17).
