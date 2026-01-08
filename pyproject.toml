@@ -27,11 +27,22 @@ classifiers = [
   "Development Status :: 5 - Production/Stable",
   "Programming Language :: Python",
 ]
-dependencies = ["numpy>=2.0.0", "jax>=0.8.1", "optax>=0.2.6", "equinox>=0.13.2",
-                "matplotlib", "jaxtyping"]
+dependencies = [
+    "numpy>=2.0.0",
+    "jax>=0.8.1",
+    "optax>=0.2.6",
+    "equinox>=0.13.2",
+    "matplotlib",
+    "jaxtyping",
+    "pyright>=1.1.407",
+]
 
 [project.optional-dependencies]
-notebook = ["jupyter", "seaborn", "pandas", "pytest", "pre-commit", "pyright", "diffrax"]
+notebook = ["jupyter", "seaborn", "pandas", "diffrax"]
+gpu_cuda13 = ["jax[cuda13]>=0.8.1"]
+gpu_cuda12 = ["jax[cuda12]>=0.8.1"]
+cpu = ["jax>=0.8.1"]
+dev = ["pre-commit", "pytest", "pylint", "ruff"]
 
 [project.urls]
 Repository = "https://gitlab.com/mia_jinns/jinns"
