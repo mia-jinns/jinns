@@ -74,7 +74,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         derivative_keys,
         vmap_in_axes,
         update_weight_method=None,
-        keep_initial_loss_weight_scales: bool = True,
+        keep_initial_loss_weight_scales: bool = False,
     ):
         if update_weight_method is not None and update_weight_method not in get_args(
             AvailableUpdateWeightMethods
