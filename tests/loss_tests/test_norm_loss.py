@@ -14,16 +14,12 @@ import jinns.loss
 def train_OU_init():
     key = random.PRNGKey(2)
     key, subkey = random.split(key)
-    eqx_list = [
-        [eqx.nn.Linear, 3, 5],
-        [
-            jax.nn.tanh,
-        ],
-        [eqx.nn.Linear, 5, 5],
-        [
-            jnp.exp,
-        ],
-    ]
+    eqx_list = (
+        (eqx.nn.Linear, 3, 5),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 5, 5),
+        (jnp.exp,),
+    )
     key, subkey = random.split(key)
     u, init_nn_params = jinns.nn.PINN_MLP.create(
         key=subkey, eqx_list=eqx_list, eq_type="PDENonStatio"
@@ -61,10 +57,11 @@ def train_OU_init():
     )
 
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
-        dyn_loss=1.0,
-        initial_condition=1 * Tmax,
-        norm_loss=1 * Tmax,
+        dyn_loss=jnp.array(1.0),
+        initial_condition=jnp.array(1 * Tmax),
+        norm_loss=jnp.array(1 * Tmax),
     )
+
     dynamic_loss = jinns.loss.OU_FPENonStatioLoss2D(Tmax=Tmax)
 
     return u, init_params, loss_weights, dynamic_loss, u0, mc_samples, volume
@@ -72,15 +69,18 @@ def train_OU_init():
 
 def test_unidimensionality(train_OU_init):
     u, init_params, loss_weights, dynamic_loss, u0, mc_samples, volume = train_OU_init
-    loss = jinns.loss.LossPDENonStatio(
-        u=u,
-        loss_weights=loss_weights,
-        dynamic_loss=dynamic_loss,
-        initial_condition_fun=u0,
-        norm_weights=volume,
-        norm_samples=mc_samples,
-        params=init_params,
-    )
+
+    with pytest.warns(UserWarning):
+        loss = jinns.loss.LossPDENonStatio(
+            u=u,
+            loss_weights=loss_weights,
+            dynamic_loss=dynamic_loss,
+            initial_condition_fun=u0,
+            norm_weights=volume,
+            norm_samples=mc_samples,
+            params=init_params,
+        )
+
     nb = 3
     batch = jinns.data.PDENonStatioBatch(
         domain_batch=jnp.zeros((nb, 3)),
