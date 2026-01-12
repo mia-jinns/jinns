@@ -67,7 +67,7 @@ class HyperPINN(PINN):
     eq_type : str
         A string with three possibilities.
         "ODE": the HyperPINN is called with one input `t`.
-        "statio_PDE": the HyperPINN is called with one input `x`, `x`
+        "PDEStatio": the HyperPINN is called with one input `x`, `x`
         can be high dimensional.
         "PDENonStatio": the HyperPINN is called with two inputs `t` and `x`, `x`
         can be high dimensional.
@@ -214,7 +214,7 @@ class HyperPINN(PINN):
     def create(
         cls,
         *,
-        eq_type: Literal["ODE", "statio_PDE", "PDENonStatio"],
+        eq_type: Literal["ODE", "PDEStatio", "PDENonStatio"],
         hyperparams: list[str],
         hypernet_input_size: int,
         key: PRNGKeyArray | None = None,
@@ -257,7 +257,7 @@ class HyperPINN(PINN):
         eq_type
             A string with three possibilities.
             "ODE": the HyperPINN is called with one input `t`.
-            "statio_PDE": the HyperPINN is called with one input `x`, `x`
+            "PDEStatio": the HyperPINN is called with one input `x`, `x`
             can be high dimensional.
             "PDENonStatio": the HyperPINN is called with two inputs `t` and `x`, `x`
             can be high dimensional.

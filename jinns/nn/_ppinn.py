@@ -31,10 +31,10 @@ class PPINN_MLP(PINN):
         when the PINN is also used to output equation parameters for example
         Note that it must be a slice and not an integer (a preprocessing of the
         user provided argument takes care of it).
-    eq_type : Literal["ODE", "statio_PDE", "PDENonStatio"]
+    eq_type : Literal["ODE", "PDEStatio", "PDENonStatio"]
         A string with three possibilities.
         "ODE": the PPINN is called with one input `t`.
-        "statio_PDE": the PPINN is called with one input `x`, `x`
+        "PDEStatio": the PPINN is called with one input `x`, `x`
         can be high dimensional.
         "PDENonStatio": the PPINN is called with two inputs `t` and `x`, `x`
         can be high dimensional.
@@ -125,7 +125,7 @@ class PPINN_MLP(PINN):
         cls,
         *,
         key: PRNGKeyArray | None = None,
-        eq_type: Literal["ODE", "statio_PDE", "PDENonStatio"],
+        eq_type: Literal["ODE", "PDEStatio", "PDENonStatio"],
         eqx_network_list: list[eqx.nn.MLP | MLP] | None = None,
         eqx_list_list: (
             list[tuple[tuple[Callable, int, int] | tuple[Callable], ...]] | None
@@ -158,7 +158,7 @@ class PPINN_MLP(PINN):
         eq_type
             A string with three possibilities.
             "ODE": the PPINN MLP is called with one input `t`.
-            "statio_PDE": the PPINN MLP is called with one input `x`, `x`
+            "PDEStatio": the PPINN MLP is called with one input `x`, `x`
             can be high dimensional.
             "PDENonStatio": the PPINN MLP is called with two inputs `t` and `x`, `x`
             can be high dimensional.

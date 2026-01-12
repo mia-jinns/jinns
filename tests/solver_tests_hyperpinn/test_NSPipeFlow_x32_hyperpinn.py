@@ -105,7 +105,7 @@ def train_NSPipeFlow_init():
     u_p_hyper, u_p_init_nn_params = jinns.nn.HyperPINN.create(
         key=subkey,
         eqx_list=eqx_list,
-        eq_type="statio_PDE",
+        eq_type="PDEStatio",
         hyperparams=hyperparams,
         hypernet_input_size=hypernet_input_size,
         eqx_list_hyper=eqx_list_hyper,

@@ -44,7 +44,7 @@ def create_SPINN_ode():
 def create_SPINN_statio():
     key = random.PRNGKey(2)
     key, subkey = random.split(key)
-    u_statio = SPINN_MLP.create(subkey, d, r, eqx_list, "statio_PDE", m)[0]
+    u_statio = SPINN_MLP.create(subkey, d, r, eqx_list, "PDEStatio", m)[0]
 
     return u_statio
 
@@ -68,7 +68,7 @@ def test_ode_pinn_struct(create_SPINN_ode):
 
 def test_statio_pinn_struct(create_SPINN_statio):
     u_statio = create_SPINN_statio
-    assert u_statio.eq_type == "statio_PDE"
+    assert u_statio.eq_type == "PDEStatio"
     assert isinstance(u_statio, jinns.nn.SPINN)
 
     assert u_statio.d == d

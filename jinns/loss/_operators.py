@@ -18,8 +18,8 @@ from jinns.nn._abstract_pinn import AbstractPINN
 
 def _get_eq_type(
     u: AbstractPINN | Callable[[Array, Params[Array]], Array],
-    eq_type: Literal["PDENonStatio", "statio_PDE"] | None,
-) -> Literal["PDENonStatio", "statio_PDE"]:
+    eq_type: Literal["PDENonStatio", "PDEStatio"] | None,
+) -> Literal["PDENonStatio", "PDEStatio"]:
     """
     But we filter out ODE from eq_type because we only have operators that does
     not work with ODEs so far
@@ -36,7 +36,7 @@ def divergence_rev(
     inputs: Float[Array, " dim"] | Float[Array, " 1+dim"],
     u: AbstractPINN | Callable[[Array, Params[Array]], Array],
     params: Params[Array],
-    eq_type: Literal["PDENonStatio", "statio_PDE"] | None = None,
+    eq_type: Literal["PDENonStatio", "PDEStatio"] | None = None,
 ) -> Float[Array, " "]:
     r"""
     Compute the divergence of a vector field $\mathbf{u}$, i.e.,
@@ -76,7 +76,7 @@ def divergence_rev(
 
     if eq_type == "PDENonStatio":
         _, accu = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[0] - 1))
-    elif eq_type == "statio_PDE":
+    elif eq_type == "PDEStatio":
         _, accu = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[0]))
     else:
         raise ValueError("Unexpected u.eq_type!")
@@ -87,7 +87,7 @@ def divergence_fwd(
     inputs: Float[Array, " batch_size dim"] | Float[Array, " batch_size 1+dim"],
     u: AbstractPINN | Callable[[Array, Params[Array]], Array],
     params: Params[Array],
-    eq_type: Literal["PDENonStatio", "statio_PDE"] | None = None,
+    eq_type: Literal["PDENonStatio", "PDEStatio"] | None = None,
 ) -> Float[Array, " batch_size * (1+dim) 1"] | Float[Array, " batch_size * (dim) 1"]:
     r"""
     Compute the divergence of a **batched** vector field $\mathbf{u}$, i.e.,
@@ -142,7 +142,7 @@ def divergence_fwd(
 
     if eq_type == "PDENonStatio":
         _, accu = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[1] - 1))
-    elif eq_type == "statio_PDE":
+    elif eq_type == "PDEStatio":
         _, accu = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[1]))
     else:
         raise ValueError("Unexpected u.eq_type!")
@@ -154,7 +154,7 @@ def laplacian_rev(
     u: AbstractPINN | Callable[[Array, Params[Array]], Array],
     params: Params[Array],
     method: Literal["trace_hessian_x", "trace_hessian_t_x", "loop"] = "trace_hessian_x",
-    eq_type: Literal["PDENonStatio", "statio_PDE"] | None = None,
+    eq_type: Literal["PDENonStatio", "PDEStatio"] | None = None,
 ) -> Float[Array, " "]:
     r"""
     Compute the Laplacian of a scalar field $u$ from $\mathbb{R}^d$
@@ -201,7 +201,7 @@ def laplacian_rev(
                 u(jnp.concatenate([inputs[:1], x], axis=0), params)
             )
             return jnp.sum(jnp.diag(jax.hessian(u_)(inputs[1:])))
-        if eq_type == "statio_PDE":
+        if eq_type == "PDEStatio":
             u_ = lambda inputs: jnp.squeeze(u(inputs, params))
             return jnp.sum(jnp.diag(jax.hessian(u_)(inputs)))
         raise ValueError("Unexpected eq_type!")
@@ -211,7 +211,7 @@ def laplacian_rev(
         if eq_type == "PDENonStatio":
             u_ = lambda inputs: jnp.squeeze(u(inputs, params))
             return jnp.sum(jnp.diag(jax.hessian(u_)(inputs))[1:])
-        if eq_type == "statio_PDE":
+        if eq_type == "PDEStatio":
             u_ = lambda inputs: jnp.squeeze(u(inputs, params))
             return jnp.sum(jnp.diag(jax.hessian(u_)(inputs)))
         raise ValueError("Unexpected eq_type!")
@@ -240,7 +240,7 @@ def laplacian_rev(
             _, trace_hessian = jax.lax.scan(
                 scan_fun, {}, jnp.arange(inputs.shape[0] - 1)
             )
-        elif eq_type == "statio_PDE":
+        elif eq_type == "PDEStatio":
             _, trace_hessian = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[0]))
         else:
             raise ValueError("Unexpected eq_type!")
@@ -253,7 +253,7 @@ def laplacian_fwd(
     u: AbstractPINN | Callable[[Array, Params[Array]], Array],
     params: Params[Array],
     method: Literal["trace_hessian_t_x", "trace_hessian_x", "loop"] = "loop",
-    eq_type: Literal["PDENonStatio", "statio_PDE"] | None = None,
+    eq_type: Literal["PDENonStatio", "PDEStatio"] | None = None,
 ) -> Float[Array, " batch_size * (1+dim) 1"] | Float[Array, " batch_size * (dim) 1"]:
     r"""
     Compute the Laplacian of a **batched** scalar field $u$
@@ -327,7 +327,7 @@ def laplacian_fwd(
             _, trace_hessian = jax.lax.scan(
                 scan_fun, {}, jnp.arange(inputs.shape[-1] - 1)
             )
-        elif eq_type == "statio_PDE":
+        elif eq_type == "PDEStatio":
             _, trace_hessian = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[-1]))
         else:
             raise ValueError("Unexpected eq_type!")
@@ -351,7 +351,7 @@ def laplacian_fwd(
             res_dims = "".join([f"{chr(97 + d)}" for d in range(inputs.shape[-1])])
             lap = jnp.einsum(res_dims + "ii->" + res_dims, r)
             return lap[..., None]
-        if eq_type == "statio_PDE":
+        if eq_type == "PDEStatio":
             # compute the Hessian including the batch dimension, get rid of the
             # (..,1,..) axis that is here because of the scalar output
             # if inputs.shape==(10,2), r.shape=(10,10,1,10,2,10,2)
@@ -369,7 +369,7 @@ def laplacian_fwd(
             return lap[..., None]
         raise ValueError("Unexpected eq_type!")
     if method == "trace_hessian_x":
-        if eq_type == "statio_PDE":
+        if eq_type == "PDEStatio":
             # compute the Hessian including the batch dimension, get rid of the
             # (..,1,..) axis that is here because of the scalar output
             # if inputs.shape==(10,2), r.shape=(10,10,1,10,2,10,2)
@@ -394,7 +394,7 @@ def vectorial_laplacian_rev(
     u: AbstractPINN | Callable[[Array, Params[Array]], Array],
     params: Params[Array],
     dim_out: int | None = None,
-    eq_type: Literal["PDENonStatio", "statio_PDE"] | None = None,
+    eq_type: Literal["PDENonStatio", "PDEStatio"] | None = None,
 ) -> Float[Array, " dim_out"]:
     r"""
     Compute the vectorial Laplacian of a vector field $\mathbf{u}$ from
@@ -448,7 +448,7 @@ def vectorial_laplacian_fwd(
     u: AbstractPINN | Callable[[Array, Params[Array]], Array],
     params: Params[Array],
     dim_out: int | None = None,
-    eq_type: Literal["PDENonStatio", "statio_PDE"] | None = None,
+    eq_type: Literal["PDENonStatio", "PDEStatio"] | None = None,
 ) -> Float[Array, " batch_size * (1+dim) n"] | Float[Array, " batch_size * (dim) n"]:
     r"""
     Compute the vectorial Laplacian of a vector field $\mathbf{u}$ when

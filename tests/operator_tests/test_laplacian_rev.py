@@ -18,7 +18,7 @@ def create_u_statio():
         (eqx.nn.Linear, 20, 1),
     )
     key, subkey = jax.random.split(key)
-    return jinns.nn.PINN_MLP.create(key=subkey, eqx_list=eqx_list, eq_type="statio_PDE")
+    return jinns.nn.PINN_MLP.create(key=subkey, eqx_list=eqx_list, eq_type="PDEStatio")
 
 
 def test_laplacian_rev_statio(create_u_statio):

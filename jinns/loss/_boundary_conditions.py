@@ -227,7 +227,7 @@ def boundary_neumann(
     if isinstance(u, PINN):
         u_ = lambda inputs, params: jnp.squeeze(u(inputs, params)[dim_to_apply])
 
-        if u.eq_type == "statio_PDE":
+        if u.eq_type == "PDEStatio":
             v_neumann = vmap(
                 lambda inputs, params: _subtract_with_check(
                     f(inputs),
@@ -274,7 +274,7 @@ def boundary_neumann(
         if (batch_array.shape[0] == 1 and isinstance(batch, PDEStatioBatch)) or (
             batch_array.shape[-1] == 2 and isinstance(batch, PDENonStatioBatch)
         ):
-            if u.eq_type == "statio_PDE":
+            if u.eq_type == "PDEStatio":
                 _, du_dx = jax.jvp(
                     lambda inputs: u(inputs, params)[..., dim_to_apply],
                     (batch_array,),
@@ -291,7 +291,7 @@ def boundary_neumann(
         elif (batch_array.shape[-1] == 2 and isinstance(batch, PDEStatioBatch)) or (
             batch_array.shape[-1] == 3 and isinstance(batch, PDENonStatioBatch)
         ):
-            if u.eq_type == "statio_PDE":
+            if u.eq_type == "PDEStatio":
                 tangent_vec_0 = jnp.repeat(
                     jnp.array([1.0, 0.0])[None], batch_array.shape[0], axis=0
                 )

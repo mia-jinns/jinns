@@ -18,7 +18,7 @@ def create_u_statio():
         (eqx.nn.Linear, 20, 10 * 4),
     )
     key, subkey = jax.random.split(key)
-    return jinns.nn.SPINN_MLP.create(subkey, 2, 10, eqx_list, "statio_PDE", 4)
+    return jinns.nn.SPINN_MLP.create(subkey, 2, 10, eqx_list, "PDEStatio", 4)
 
 
 def test_laplacian_fwd_statio(create_u_statio):
@@ -31,25 +31,25 @@ def test_laplacian_fwd_statio(create_u_statio):
                 x,
                 lambda x, params: u_statio(x, params)[..., 0],
                 params,
-                eq_type="statio_PDE",
+                eq_type="PDEStatio",
             ),
             jinns.loss.laplacian_fwd(
                 x,
                 lambda x, params: u_statio(x, params)[..., 1],
                 params,
-                eq_type="statio_PDE",
+                eq_type="PDEStatio",
             ),
             jinns.loss.laplacian_fwd(
                 x,
                 lambda x, params: u_statio(x, params)[..., 2],
                 params,
-                eq_type="statio_PDE",
+                eq_type="PDEStatio",
             ),
             jinns.loss.laplacian_fwd(
                 x,
                 lambda x, params: u_statio(x, params)[..., 3],
                 params,
-                eq_type="statio_PDE",
+                eq_type="PDEStatio",
             ),
         ]
     )

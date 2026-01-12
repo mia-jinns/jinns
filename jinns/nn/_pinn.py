@@ -50,10 +50,10 @@ class PINN(AbstractPINN):
         when the PINN is also used to output equation parameters for example
         Note that it must be a slice and not an integer (a preprocessing of the
         user provided argument takes care of it).
-    eq_type : Literal["ODE", "statio_PDE", "PDENonStatio"]
+    eq_type : Literal["ODE", "PDEStatio", "PDENonStatio"]
         A string with three possibilities.
         "ODE": the PINN is called with one input `t`.
-        "statio_PDE": the PINN is called with one input `x`, `x`
+        "PDEStatio": the PINN is called with one input `x`, `x`
         can be high dimensional.
         "PDENonStatio": the PINN is called with two inputs `t` and `x`, `x`
         can be high dimensional.
@@ -83,11 +83,11 @@ class PINN(AbstractPINN):
     Raises
     ------
     RuntimeError
-        If the parameter value for eq_type is not in `["ODE", "statio_PDE",
+        If the parameter value for eq_type is not in `["ODE", "PDEStatio",
         "PDENonStatio"]`
     """
 
-    eq_type: Literal["ODE", "statio_PDE", "PDENonStatio"] = eqx.field(
+    eq_type: Literal["ODE", "PDEStatio", "PDENonStatio"] = eqx.field(
         static=True, kw_only=True
     )
     slice_solution: slice = eqx.field(static=True, kw_only=True, default=None)
@@ -108,7 +108,7 @@ class PINN(AbstractPINN):
     static: PINN = eqx.field(init=False, static=True)
 
     def __post_init__(self, eqx_network):
-        if self.eq_type not in ["ODE", "statio_PDE", "PDENonStatio"]:
+        if self.eq_type not in ["ODE", "PDEStatio", "PDENonStatio"]:
             raise RuntimeError("Wrong parameter value for eq_type")
         # saving the static part of the model and initial parameters
 

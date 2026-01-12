@@ -58,7 +58,7 @@ def create_pinn_statio():
     u_statio = HyperPINN.create(
         key=subkey,
         eqx_list=eqx_list,
-        eq_type="statio_PDE",
+        eq_type="PDEStatio",
         hyperparams=hyperparams,
         hypernet_input_size=n_param,
         eqx_list_hyper=eqx_list_hyper,
@@ -91,7 +91,7 @@ def test_ode_pinn_struct(create_pinn_ode):
 
 def test_statio_pinn_struct(create_pinn_statio):
     u_statio = create_pinn_statio
-    assert u_statio.eq_type == "statio_PDE"
+    assert u_statio.eq_type == "PDEStatio"
     assert isinstance(u_statio, jinns.nn.PINN)
     assert isinstance(u_statio, jinns.nn.HyperPINN)
     assert isinstance(u_statio.slice_solution, slice)

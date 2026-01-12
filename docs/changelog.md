@@ -1,6 +1,8 @@
 # Changelog
 
-* Unreleased (currently on `main`)
+* v1.7.1:
+
+ - Breaking change: change naming convention of `PINN.eq_type` attribute. It now takes value in 
 
 * v1.7.0
 

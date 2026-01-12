@@ -37,7 +37,7 @@ def create_pinn_statio():
         (eqx.nn.Linear, 128, 1),
     )
     key, subkey = random.split(key)
-    u_statio = PINN_MLP.create(key=subkey, eqx_list=eqx_list, eq_type="statio_PDE")[0]
+    u_statio = PINN_MLP.create(key=subkey, eqx_list=eqx_list, eq_type="PDEStatio")[0]
 
     return u_statio
 
@@ -67,7 +67,7 @@ def test_ode_pinn_struct(create_pinn_ode):
 
 def test_statio_pinn_struct(create_pinn_statio):
     u_statio = create_pinn_statio
-    assert u_statio.eq_type == "statio_PDE"
+    assert u_statio.eq_type == "PDEStatio"
     assert isinstance(u_statio, jinns.nn.PINN)
     print(u_statio.slice_solution)
     assert isinstance(u_statio.slice_solution, slice)

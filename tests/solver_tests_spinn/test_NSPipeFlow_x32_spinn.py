@@ -32,7 +32,7 @@ def train_NSPipeFlow_init():
     )
     key, subkey = random.split(key)
     u_p, u_p_init_nn_params = jinns.nn.SPINN_MLP.create(
-        subkey, d_, r, eqx_list, "statio_PDE", m
+        subkey, d_, r, eqx_list, "PDEStatio", m
     )
     L = 1
     R = 0.05
