@@ -53,7 +53,7 @@ def create_u_nonstatio():
         (eqx.nn.Linear, 20, 10),
     )
     key, subkey = jax.random.split(key)
-    return jinns.nn.SPINN_MLP.create(subkey, 3, 10, eqx_list, "nonstatio_PDE", 1)
+    return jinns.nn.SPINN_MLP.create(subkey, 3, 10, eqx_list, "PDENonStatio", 1)
 
 
 def test_laplacian_fwd_nonstatio(create_u_nonstatio):

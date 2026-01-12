@@ -22,7 +22,7 @@ def create_MLP_1():
     )
     key, subkey = random.split(key)
     u, params = jinns.nn.PINN_MLP.create(
-        key=subkey, eqx_list=eqx_list, eq_type="nonstatio_PDE"
+        key=subkey, eqx_list=eqx_list, eq_type="PDENonStatio"
     )
     params = jinns.parameters.Params(nn_params=params, eq_params={})
 
@@ -36,7 +36,7 @@ def create_MLP_2():
     key, subkey = random.split(key)
     eqx_network = eqx.nn.MLP(2, 1, 128, 3, jax.nn.tanh, key=subkey)
     u, params = jinns.nn.PINN_MLP.create(
-        eqx_network=eqx_network, eq_type="nonstatio_PDE"
+        eqx_network=eqx_network, eq_type="PDENonStatio"
     )
     params = jinns.parameters.Params(nn_params=params, eq_params={})
 
@@ -68,7 +68,7 @@ def create_MLP_3():
     )
     eqx_network = jinns.nn.MLP(key=subkey, eqx_list=eqx_list)
 
-    u = MyPINN(eqx_network=eqx_network, eq_type="nonstatio_PDE")
+    u = MyPINN(eqx_network=eqx_network, eq_type="PDENonStatio")
     params = u.init_params
     params = jinns.parameters.Params(nn_params=params, eq_params={})
 

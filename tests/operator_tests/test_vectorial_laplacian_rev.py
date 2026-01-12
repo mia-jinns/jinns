@@ -72,7 +72,7 @@ def create_u_nonstatio():
     )
     key, subkey = jax.random.split(key)
     return jinns.nn.PINN_MLP.create(
-        key=subkey, eqx_list=eqx_list, eq_type="nonstatio_PDE"
+        key=subkey, eqx_list=eqx_list, eq_type="PDENonStatio"
     )
 
 
@@ -86,25 +86,25 @@ def test_laplacian_rev_nonstatio(create_u_nonstatio):
                 t_x,
                 lambda t_x, params: u_nonstatio(t_x, params)[0],
                 params,
-                eq_type="nonstatio_PDE",
+                eq_type="PDENonStatio",
             ),
             jinns.loss.laplacian_rev(
                 t_x,
                 lambda t_x, params: u_nonstatio(t_x, params)[1],
                 params,
-                eq_type="nonstatio_PDE",
+                eq_type="PDENonStatio",
             ),
             jinns.loss.laplacian_rev(
                 t_x,
                 lambda t_x, params: u_nonstatio(t_x, params)[2],
                 params,
-                eq_type="nonstatio_PDE",
+                eq_type="PDENonStatio",
             ),
             jinns.loss.laplacian_rev(
                 t_x,
                 lambda t_x, params: u_nonstatio(t_x, params)[3],
                 params,
-                eq_type="nonstatio_PDE",
+                eq_type="PDENonStatio",
             ),
         ]
     )

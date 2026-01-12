@@ -95,7 +95,7 @@ class PINN_MLP(PINN):
     def create(
         cls,
         *,
-        eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"],
+        eq_type: Literal["ODE", "statio_PDE", "PDENonStatio"],
         key: PRNGKeyArray | None = None,
         eqx_network: eqx.nn.MLP | MLP | None = None,
         eqx_list: tuple[tuple[Callable, int, int] | tuple[Callable], ...] | None = None,
@@ -132,7 +132,7 @@ class PINN_MLP(PINN):
             "ODE": the MLP is called with one input `t`.
             "statio_PDE": the MLP is called with one input `x`, `x`
             can be high dimensional.
-            "nonstatio_PDE": the MLP is called with two inputs `t` and `x`, `x`
+            "PDENonStatio": the MLP is called with two inputs `t` and `x`, `x`
             can be high dimensional.
             **Note**: the input dimension as given in eqx_list has to match the sum
             of the dimension of `t` + the dimension of `x` or the output dimension

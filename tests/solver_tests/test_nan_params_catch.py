@@ -54,8 +54,8 @@ def train_init():
         method=method,
     )
     # initial conditions and growth
-    u0 = 1.0
-    a = 1.0
+    u0 = jnp.array(1.0)
+    a = jnp.array(1.0)
     init_params = jinns.parameters.Params(
         nn_params=init_nn_params,
         eq_params={"a": a},
@@ -70,7 +70,9 @@ def train_init():
 
     fo_loss = LinearFODE(Tmax=Tmax)
 
-    loss_weights = jinns.loss.LossWeightsODE(dyn_loss=2.0, initial_condition=1.0)
+    loss_weights = jinns.loss.LossWeightsODE(
+        dyn_loss=jnp.array(2.0), initial_condition=jnp.array(1.0)
+    )
     loss = jinns.loss.LossODE(
         u=u,
         loss_weights=loss_weights,
@@ -83,7 +85,7 @@ def train_init():
 
 
 @pytest.fixture
-def train_1it(train_init, capsys):
+def train_10it(train_init, capsys):
     """
     Fixture that requests a fixture
 
@@ -95,27 +97,32 @@ def train_1it(train_init, capsys):
 
     tx = optax.adam(learning_rate=1e90)
     n_iter = 10
-    params, total_loss_list, loss_by_term_dict, _, loss, _, _, _, _, _, _, _ = (
-        jinns.solve(
-            init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
+    with pytest.warns(RuntimeWarning):
+        params, total_loss_list, loss_by_term_dict, _, loss, _, _, _, _, _, _, _ = (
+            jinns.solve(
+                init_params=params,
+                data=train_data,
+                optimizer=tx,
+                loss=loss,
+                n_iter=n_iter,
+            )
         )
-    )
-    captured = capsys.readouterr()
+        captured = capsys.readouterr()
     return init_params, params, captured.out
 
 
-def test_no_nan_params_check(train_1it):
-    _, params, _ = train_1it
+def test_no_nan_params_check(train_10it):
+    _, params, _ = train_10it
     assert not _check_nan_in_pytree(params)
 
 
-def test_init_params_equals_params(train_1it):
-    init_params, params, _ = train_1it
+def test_init_params_equals_params(train_10it):
+    init_params, params, _ = train_10it
     assert jax.tree_util.tree_all(
         jax.tree_util.tree_map(jnp.allclose, params, init_params)
     )
 
 
-def test_break_reason(train_1it):
-    _, _, captured_out = train_1it
+def test_break_reason(train_10it):
+    _, _, captured_out = train_10it
     assert "NaN values" in captured_out

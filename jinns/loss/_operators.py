@@ -18,8 +18,8 @@ from jinns.nn._abstract_pinn import AbstractPINN
 
 def _get_eq_type(
     u: AbstractPINN | Callable[[Array, Params[Array]], Array],
-    eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None,
-) -> Literal["nonstatio_PDE", "statio_PDE"]:
+    eq_type: Literal["PDENonStatio", "statio_PDE"] | None,
+) -> Literal["PDENonStatio", "statio_PDE"]:
     """
     But we filter out ODE from eq_type because we only have operators that does
     not work with ODEs so far
@@ -36,7 +36,7 @@ def divergence_rev(
     inputs: Float[Array, " dim"] | Float[Array, " 1+dim"],
     u: AbstractPINN | Callable[[Array, Params[Array]], Array],
     params: Params[Array],
-    eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
+    eq_type: Literal["PDENonStatio", "statio_PDE"] | None = None,
 ) -> Float[Array, " "]:
     r"""
     Compute the divergence of a vector field $\mathbf{u}$, i.e.,
@@ -64,7 +64,7 @@ def divergence_rev(
     eq_type = _get_eq_type(u, eq_type)
 
     def scan_fun(_, i):
-        if eq_type == "nonstatio_PDE":
+        if eq_type == "PDENonStatio":
             du_dxi = grad(lambda inputs, params: u(inputs, params)[1 + i])(
                 inputs, params
             )[1 + i]
@@ -74,7 +74,7 @@ def divergence_rev(
             ]
         return _, du_dxi
 
-    if eq_type == "nonstatio_PDE":
+    if eq_type == "PDENonStatio":
         _, accu = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[0] - 1))
     elif eq_type == "statio_PDE":
         _, accu = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[0]))
@@ -87,7 +87,7 @@ def divergence_fwd(
     inputs: Float[Array, " batch_size dim"] | Float[Array, " batch_size 1+dim"],
     u: AbstractPINN | Callable[[Array, Params[Array]], Array],
     params: Params[Array],
-    eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
+    eq_type: Literal["PDENonStatio", "statio_PDE"] | None = None,
 ) -> Float[Array, " batch_size * (1+dim) 1"] | Float[Array, " batch_size * (dim) 1"]:
     r"""
     Compute the divergence of a **batched** vector field $\mathbf{u}$, i.e.,
@@ -120,7 +120,7 @@ def divergence_fwd(
     eq_type = _get_eq_type(u, eq_type)
 
     def scan_fun(_, i):
-        if eq_type == "nonstatio_PDE":
+        if eq_type == "PDENonStatio":
             tangent_vec = jnp.repeat(
                 jax.nn.one_hot(i + 1, inputs.shape[-1])[None],
                 inputs.shape[0],
@@ -140,7 +140,7 @@ def divergence_fwd(
             )
         return _, du_dxi
 
-    if eq_type == "nonstatio_PDE":
+    if eq_type == "PDENonStatio":
         _, accu = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[1] - 1))
     elif eq_type == "statio_PDE":
         _, accu = jax.lax.scan(scan_fun, {}, jnp.arange(inputs.shape[1]))
@@ -154,7 +154,7 @@ def laplacian_rev(
     u: AbstractPINN | Callable[[Array, Params[Array]], Array],
     params: Params[Array],
     method: Literal["trace_hessian_x", "trace_hessian_t_x", "loop"] = "trace_hessian_x",
-    eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
+    eq_type: Literal["PDENonStatio", "statio_PDE"] | None = None,
 ) -> Float[Array, " "]:
     r"""
     Compute the Laplacian of a scalar field $u$ from $\mathbb{R}^d$
@@ -196,7 +196,7 @@ def laplacian_rev(
         # computation and then discarding elements but for higher order derivatives
         # it might not be worth it. See other options below for computating the
         # Laplacian
-        if eq_type == "nonstatio_PDE":
+        if eq_type == "PDENonStatio":
             u_ = lambda x: jnp.squeeze(
                 u(jnp.concatenate([inputs[:1], x], axis=0), params)
             )
@@ -208,7 +208,7 @@ def laplacian_rev(
     if method == "trace_hessian_t_x":
         # NOTE that it is unclear whether it is better to vectorially compute the
         # Hessian (despite a useless time dimension) as below
-        if eq_type == "nonstatio_PDE":
+        if eq_type == "PDENonStatio":
             u_ = lambda inputs: jnp.squeeze(u(inputs, params))
             return jnp.sum(jnp.diag(jax.hessian(u_)(inputs))[1:])
         if eq_type == "statio_PDE":
@@ -225,7 +225,7 @@ def laplacian_rev(
         u_ = lambda inputs: u(inputs, params).squeeze()
 
         def scan_fun(_, i):
-            if eq_type == "nonstatio_PDE":
+            if eq_type == "PDENonStatio":
                 d2u_dxi2 = grad(
                     lambda inputs: grad(u_)(inputs)[1 + i],
                 )(inputs)[1 + i]
@@ -236,7 +236,7 @@ def laplacian_rev(
                 )(inputs)[i]
             return _, d2u_dxi2
 
-        if eq_type == "nonstatio_PDE":
+        if eq_type == "PDENonStatio":
             _, trace_hessian = jax.lax.scan(
                 scan_fun, {}, jnp.arange(inputs.shape[0] - 1)
             )
@@ -253,7 +253,7 @@ def laplacian_fwd(
     u: AbstractPINN | Callable[[Array, Params[Array]], Array],
     params: Params[Array],
     method: Literal["trace_hessian_t_x", "trace_hessian_x", "loop"] = "loop",
-    eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
+    eq_type: Literal["PDENonStatio", "statio_PDE"] | None = None,
 ) -> Float[Array, " batch_size * (1+dim) 1"] | Float[Array, " batch_size * (dim) 1"]:
     r"""
     Compute the Laplacian of a **batched** scalar field $u$
@@ -302,7 +302,7 @@ def laplacian_fwd(
     if method == "loop":
 
         def scan_fun(_, i):
-            if eq_type == "nonstatio_PDE":
+            if eq_type == "PDENonStatio":
                 tangent_vec = jnp.repeat(
                     jax.nn.one_hot(i + 1, inputs.shape[-1])[None],
                     inputs.shape[0],
@@ -323,7 +323,7 @@ def laplacian_fwd(
             __, d2u_dxi2 = jax.jvp(du_dxi_fun, (inputs,), (tangent_vec,))
             return _, d2u_dxi2
 
-        if eq_type == "nonstatio_PDE":
+        if eq_type == "PDENonStatio":
             _, trace_hessian = jax.lax.scan(
                 scan_fun, {}, jnp.arange(inputs.shape[-1] - 1)
             )
@@ -333,7 +333,7 @@ def laplacian_fwd(
             raise ValueError("Unexpected eq_type!")
         return jnp.sum(trace_hessian, axis=0)
     if method == "trace_hessian_t_x":
-        if eq_type == "nonstatio_PDE":
+        if eq_type == "PDENonStatio":
             # compute the Hessian including the batch dimension, get rid of the
             # (..,1,..) axis that is here because of the scalar output
             # if inputs.shape==(10,3) (1 for time, 2 for x_dim)
@@ -394,7 +394,7 @@ def vectorial_laplacian_rev(
     u: AbstractPINN | Callable[[Array, Params[Array]], Array],
     params: Params[Array],
     dim_out: int | None = None,
-    eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
+    eq_type: Literal["PDENonStatio", "statio_PDE"] | None = None,
 ) -> Float[Array, " dim_out"]:
     r"""
     Compute the vectorial Laplacian of a vector field $\mathbf{u}$ from
@@ -448,7 +448,7 @@ def vectorial_laplacian_fwd(
     u: AbstractPINN | Callable[[Array, Params[Array]], Array],
     params: Params[Array],
     dim_out: int | None = None,
-    eq_type: Literal["nonstatio_PDE", "statio_PDE"] | None = None,
+    eq_type: Literal["PDENonStatio", "statio_PDE"] | None = None,
 ) -> Float[Array, " batch_size * (1+dim) n"] | Float[Array, " batch_size * (dim) n"]:
     r"""
     Compute the vectorial Laplacian of a vector field $\mathbf{u}$ when

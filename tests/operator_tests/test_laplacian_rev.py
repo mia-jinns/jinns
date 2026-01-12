@@ -49,7 +49,7 @@ def create_u_nonstatio():
     )
     key, subkey = jax.random.split(key)
     return jinns.nn.PINN_MLP.create(
-        key=subkey, eqx_list=eqx_list, eq_type="nonstatio_PDE"
+        key=subkey, eqx_list=eqx_list, eq_type="PDENonStatio"
     )
 
 

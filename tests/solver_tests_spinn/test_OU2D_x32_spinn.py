@@ -26,7 +26,7 @@ def train_OU_init():
     )
     key, subkey = random.split(key)
     u, init_nn_params = jinns.nn.SPINN_MLP.create(
-        subkey, d, r, eqx_list, "nonstatio_PDE"
+        subkey, d, r, eqx_list, "PDENonStatio"
     )
 
     n = 5000

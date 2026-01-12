@@ -69,7 +69,7 @@ class HyperPINN(PINN):
         "ODE": the HyperPINN is called with one input `t`.
         "statio_PDE": the HyperPINN is called with one input `x`, `x`
         can be high dimensional.
-        "nonstatio_PDE": the HyperPINN is called with two inputs `t` and `x`, `x`
+        "PDENonStatio": the HyperPINN is called with two inputs `t` and `x`, `x`
         can be high dimensional.
         **Note**: the input dimension as given in eqx_list has to match the sum
         of the dimension of `t` + the dimension of `x` or the output dimension
@@ -192,7 +192,7 @@ class HyperPINN(PINN):
         hyper = eqx.combine(params.nn_params, self.static_hyper)
 
         eq_params_batch = jnp.concatenate(
-            [getattr(params.eq_params, k).flatten() for k in self.hyperparams],
+            [getattr(params.eq_params, k).flatten() for k in self.hyperparams],  # pylint: disable=E1133
             axis=0,
         )
 
@@ -214,7 +214,7 @@ class HyperPINN(PINN):
     def create(
         cls,
         *,
-        eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"],
+        eq_type: Literal["ODE", "statio_PDE", "PDENonStatio"],
         hyperparams: list[str],
         hypernet_input_size: int,
         key: PRNGKeyArray | None = None,
@@ -259,7 +259,7 @@ class HyperPINN(PINN):
             "ODE": the HyperPINN is called with one input `t`.
             "statio_PDE": the HyperPINN is called with one input `x`, `x`
             can be high dimensional.
-            "nonstatio_PDE": the HyperPINN is called with two inputs `t` and `x`, `x`
+            "PDENonStatio": the HyperPINN is called with two inputs `t` and `x`, `x`
             can be high dimensional.
             **Note**: the input dimension as given in eqx_list has to match the sum
             of the dimension of `t` + the dimension of `x` or the output dimension

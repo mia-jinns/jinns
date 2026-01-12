@@ -5,7 +5,6 @@ Test script for custom PINN eqx.Module
 import pytest
 import jax
 import jax.random as random
-import jax.numpy as jnp
 import equinox as eqx
 
 import jinns
@@ -73,7 +72,7 @@ def create_pinn_nonstatio():
     u_nonstatio = HyperPINN.create(
         key=subkey,
         eqx_list=eqx_list,
-        eq_type="nonstatio_PDE",
+        eq_type="PDENonStatio",
         hyperparams=hyperparams,
         hypernet_input_size=n_param,
         eqx_list_hyper=eqx_list_hyper,
@@ -83,7 +82,6 @@ def create_pinn_nonstatio():
 
 
 def test_ode_pinn_struct(create_pinn_ode):
-
     u_ode = create_pinn_ode
     assert isinstance(u_ode, jinns.nn.PINN)
     assert isinstance(u_ode, jinns.nn.HyperPINN)
@@ -92,7 +90,6 @@ def test_ode_pinn_struct(create_pinn_ode):
 
 
 def test_statio_pinn_struct(create_pinn_statio):
-
     u_statio = create_pinn_statio
     assert u_statio.eq_type == "statio_PDE"
     assert isinstance(u_statio, jinns.nn.PINN)
@@ -101,9 +98,8 @@ def test_statio_pinn_struct(create_pinn_statio):
 
 
 def test_nonstatio_pinn_struct(create_pinn_nonstatio):
-
     u_nonstatio = create_pinn_nonstatio
-    assert u_nonstatio.eq_type == "nonstatio_PDE"
+    assert u_nonstatio.eq_type == "PDENonStatio"
     assert isinstance(u_nonstatio, jinns.nn.PINN)
     assert isinstance(u_nonstatio, jinns.nn.HyperPINN)
     assert isinstance(u_nonstatio.slice_solution, slice)

@@ -33,7 +33,7 @@ def test_weight_history():
     )
     key, subkey = jax.random.split(key)
     u, init_nn_params = jinns.nn.PINN_MLP.create(
-        key=subkey, eqx_list=eqx_list, eq_type="nonstatio_PDE"
+        key=subkey, eqx_list=eqx_list, eq_type="PDENonStatio"
     )
 
     n = 1
@@ -132,7 +132,7 @@ def test_loss_value():
     )
     key, subkey = jax.random.split(key)
     u, init_nn_params = jinns.nn.PINN_MLP.create(
-        key=subkey, eqx_list=eqx_list, eq_type="nonstatio_PDE"
+        key=subkey, eqx_list=eqx_list, eq_type="PDENonStatio"
     )
 
     n = 1
