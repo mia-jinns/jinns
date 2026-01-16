@@ -69,8 +69,9 @@ def train_OU_init():
     )
 
     def u0(x):
-        # TODO: find a reshape of init_func to prevent UserWarning from jinns
-        return multivariate_normal.pdf(x, mean=jnp.array([1, 1]), cov=0.1 * jnp.eye(2))
+        return multivariate_normal.pdf(x, mean=jnp.array([1, 1]), cov=0.1 * jnp.eye(2))[
+            ..., None
+        ]
 
     int_xmin, int_xmax = -3, 3
     int_ymin, int_ymax = -3, 3
