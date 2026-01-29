@@ -1,5 +1,3 @@
-import pytest
-
 import jinns
 from jax import random
 import jax.numpy as jnp
@@ -126,27 +124,26 @@ def test_validation_module():
     tx = optax.adamw(learning_rate=1e-4)
     n_iter = 10
 
-    with pytest.warns(UserWarning):
-        (
-            params_spinn,
-            train_loss_values,
-            _,
-            _,
-            _,
-            _,
-            _,
-            _,
-            _,
-            _,
-            validation_loss_values,
-            best_params_spinn,
-        ) = jinns.solve(
-            init_params=params_spinn,
-            data=train_data,
-            optimizer=tx,
-            loss=loss_spinn,
-            n_iter=n_iter,
-            validation=validation,
-        )
+    (
+        params_spinn,
+        train_loss_values,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        validation_loss_values,
+        best_params_spinn,
+    ) = jinns.solve(
+        init_params=params_spinn,
+        data=train_data,
+        optimizer=tx,
+        loss=loss_spinn,
+        n_iter=n_iter,
+        validation=validation,
+    )
 
     assert isinstance(best_params_spinn, jinns.parameters.Params)

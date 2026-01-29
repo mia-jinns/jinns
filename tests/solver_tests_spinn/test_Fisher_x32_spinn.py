@@ -66,7 +66,7 @@ def train_Fisher_init():
     mu_init = 0 * jnp.ones((1))
 
     def u0(x):
-        return jnp.squeeze(norm.pdf(x, loc=mu_init, scale=sigma_init))
+        return norm.pdf(x, loc=mu_init, scale=sigma_init)[..., None]
 
     D = 1.0
     r = 4.0
