@@ -34,12 +34,13 @@ def init_Params_objects():
     dynamic_loss = DummyODE()
     loss_kwargs = {
         "u": u,
-        "loss_weights": jinns.loss.LossWeightsODE(dyn_loss=1.0),
+        "loss_weights": jinns.loss.LossWeightsODE(dyn_loss=jnp.array(1.0)),
         "dynamic_loss": dynamic_loss,
         "derivative_keys": None,  # defaults to nn_params everywhere
         "params": init_params,
     }
-    loss = jinns.loss.LossODE(**loss_kwargs)
+    with pytest.warns(UserWarning):
+        loss = jinns.loss.LossODE(**loss_kwargs)
 
     optimizers = Params(
         nn_params=optax.adam(learning_rate=1e-3),

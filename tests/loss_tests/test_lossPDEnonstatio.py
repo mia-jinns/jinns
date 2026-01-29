@@ -11,7 +11,7 @@ def test_t0_checks():
     key = jax.random.PRNGKey(2)
     eqx_network = eqx.nn.MLP(2, 1, 128, 3, jax.nn.tanh, key=key)
     u, params = jinns.nn.PINN_MLP.create(
-        eqx_network=eqx_network, eq_type="nonstatio_PDE"
+        eqx_network=eqx_network, eq_type="PDENonStatio"
     )
     params = jinns.parameters.Params(nn_params=params)
 

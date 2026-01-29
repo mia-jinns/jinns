@@ -1,5 +1,6 @@
 """ """
 
+import pytest
 import jax
 import jax.numpy as jnp
 import equinox as eqx
@@ -30,7 +31,7 @@ def test_weight_history():
     )
     key, subkey = jax.random.split(key)
     u, init_nn_params = jinns.nn.PINN_MLP.create(
-        key=subkey, eqx_list=eqx_list, eq_type="nonstatio_PDE"
+        key=subkey, eqx_list=eqx_list, eq_type="PDENonStatio"
     )
 
     n = 1
@@ -65,7 +66,7 @@ def test_weight_history():
     )
 
     def u0(x):
-        return 0.6
+        return jnp.array(0.6)
 
     class DummyLoss(jinns.loss.PDENonStatio):
         def equation(self, t_x, u, params):
@@ -73,14 +74,15 @@ def test_weight_history():
 
     dummy_loss = DummyLoss(Tmax=1)
 
-    loss = jinns.loss.LossPDENonStatio(
-        u=u,
-        loss_weights=loss_weights,
-        update_weight_method="soft_adapt",
-        dynamic_loss=dummy_loss,
-        initial_condition_fun=u0,
-        params=init_params,
-    )
+    with pytest.warns(UserWarning):
+        loss = jinns.loss.LossPDENonStatio(
+            u=u,
+            loss_weights=loss_weights,
+            update_weight_method="soft_adapt",
+            dynamic_loss=dummy_loss,
+            initial_condition_fun=u0,
+            params=init_params,
+        )
 
     params = init_params
 
@@ -129,7 +131,7 @@ def test_loss_value():
     )
     key, subkey = jax.random.split(key)
     u, init_nn_params = jinns.nn.PINN_MLP.create(
-        key=subkey, eqx_list=eqx_list, eq_type="nonstatio_PDE"
+        key=subkey, eqx_list=eqx_list, eq_type="PDENonStatio"
     )
 
     n = 1
@@ -158,7 +160,7 @@ def test_loss_value():
     train_data = eqx.tree_at(lambda pt: pt.domain, train_data, jnp.array([[0.0, 1.0]]))
     train_data = eqx.tree_at(lambda pt: pt.initial, train_data, jnp.array([[1.0]]))
 
-    nu = 1 / (100 * jnp.pi)
+    nu = jnp.array(1 / (100 * jnp.pi))
     init_params = jinns.parameters.Params(
         nn_params=init_nn_params, eq_params={"nu": nu}
     )
@@ -179,16 +181,16 @@ def test_loss_value():
         "initial_condition_fun": u0,
         "params": init_params,
     }
+    with pytest.warns(UserWarning):
+        loss = jinns.loss.LossPDENonStatio(**loss_kwargs)
 
-    loss = jinns.loss.LossPDENonStatio(**loss_kwargs)
+        loss_SA = jinns.loss.LossPDENonStatio(
+            **(loss_kwargs | {"update_weight_method": "softadapt"})
+        )
 
-    loss_SA = jinns.loss.LossPDENonStatio(
-        **(loss_kwargs | {"update_weight_method": "softadapt"})
-    )
-
-    loss_LRA = jinns.loss.LossPDENonStatio(
-        **(loss_kwargs | {"update_weight_method": "lr_annealing"})
-    )
+        loss_LRA = jinns.loss.LossPDENonStatio(
+            **(loss_kwargs | {"update_weight_method": "lr_annealing"})
+        )
 
     losses_and_grad = jax.value_and_grad(loss, 0, has_aux=True)
     losses_and_grad_SA = jax.value_and_grad(loss_SA, 0, has_aux=True)

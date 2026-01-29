@@ -51,7 +51,10 @@ def test_weight_update_value():
         loss_new = loss.update_weights(
             1, loss_terms, stored_loss_terms, grad_terms, None
         )
+    else:
+        loss_new = None
 
+    assert loss_new is not None
     assert jnp.allclose(loss_new.loss_weights.dyn_loss, 0.333, atol=1e-3)
     assert jnp.allclose(loss_new.loss_weights.norm_loss, 0.333, atol=1e-3)
     assert jnp.allclose(loss_new.loss_weights.boundary_loss, 0.333, atol=1e-3)

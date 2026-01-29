@@ -37,7 +37,7 @@ def test_plot2d_statio_with_spinn():
 
     key, subkey = jax.random.split(jax.random.PRNGKey(1))
     u_spinn, init_nn_params_spinn = jinns.nn.SPINN_MLP.create(
-        subkey, d, r, eqx_list, "statio_PDE"
+        subkey, d, r, eqx_list, "PDEStatio"
     )
     params = jinns.parameters.Params(nn_params=init_nn_params_spinn, eq_params={})
 

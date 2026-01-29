@@ -1,6 +1,9 @@
 # Changelog
 
-* Unreleased (currently on `main`)
+* v1.7.1:
+
+ - Breaking change: change naming convention of `PINN.eq_type` attribute. It now takes value in `[ODE", "PDEStatio", "PDENonStatio"]` to be consistent with `jinns` class names. See Issue [#27](https://gitlab.com/mia_jinns/jinns/-/issues/27).
+
 
 * v1.7.1
 

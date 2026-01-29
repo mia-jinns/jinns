@@ -16,6 +16,7 @@ from jaxtyping import Float, Array, PyTree
 import jax
 import jax.numpy as jnp
 from jinns.parameters._params import EqParams
+from jinns.nn import SPINN
 
 
 # See : https://docs.kidger.site/equinox/api/module/advanced_fields/#equinox.AbstractClassVar--known-issues
@@ -153,7 +154,7 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
                 "The output of dynamic loss must be vectorial, "
                 "i.e. of shape (d,) with d >= 1"
             )
-        if len(evaluation.shape) > 1:
+        if len(evaluation.shape) > 1 and not isinstance(u, SPINN):
             warnings.warn(
                 "Return value from DynamicLoss' equation has more "
                 "than one dimension. This is in general a mistake (probably from "

@@ -13,7 +13,7 @@ class AbstractPINN(eqx.Module):
     https://github.com/patrick-kidger/equinox/issues/1002 + https://docs.kidger.site/equinox/pattern/
     """
 
-    eq_type: eqx.AbstractVar[Literal["ODE", "statio_PDE", "nonstatio_PDE"]]
+    eq_type: eqx.AbstractVar[Literal["ODE", "PDEStatio", "PDENonStatio"]]
 
     @abc.abstractmethod
     def __call__(self, inputs: Any, params: Params[Array], *args, **kwargs) -> Any:

@@ -45,7 +45,7 @@ def train_OU_init():
     )
     key, subkey = random.split(key)
     u, init_nn_params = jinns.nn.PINN_MLP.create(
-        key=subkey, eqx_list=eqx_list, eq_type="statio_PDE"
+        key=subkey, eqx_list=eqx_list, eq_type="PDEStatio"
     )
     sigma = jnp.array(0.5)
     alpha = jnp.array(6.0)
