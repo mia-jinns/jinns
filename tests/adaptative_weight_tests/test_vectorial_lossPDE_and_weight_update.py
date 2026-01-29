@@ -27,7 +27,7 @@ def train_DummyPDEStatio_init():
     eqx_list = ((eqx.nn.Linear, 1, 1),)
     key, subkey = random.split(key)
     u, init_nn_params = jinns.nn.PINN_MLP.create(
-        key=subkey, eqx_list=eqx_list, eq_type="statio_PDE"
+        key=subkey, eqx_list=eqx_list, eq_type="PDEStatio"
     )
     init_nn_params = eqx.tree_at(
         lambda pt: (pt.layers[0].weight, pt.layers[0].bias),
@@ -145,7 +145,7 @@ def train_DummyPDENonStatio_init():
     eqx_list = ((eqx.nn.Linear, 2, 1),)
     key, subkey = random.split(key)
     u, init_nn_params = jinns.nn.PINN_MLP.create(
-        key=subkey, eqx_list=eqx_list, eq_type="nonstatio_PDE"
+        key=subkey, eqx_list=eqx_list, eq_type="PDENonStatio"
     )
     init_nn_params = eqx.tree_at(
         lambda pt: (pt.layers[0].weight, pt.layers[0].bias),
