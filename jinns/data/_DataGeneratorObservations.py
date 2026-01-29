@@ -31,12 +31,66 @@ if TYPE_CHECKING:
 
 def _merge_dict_arguments(fun, fixed_args):
     """
-    a decorator function that transforms a tuple of 1-key-dict argument
-    in a function call with a big merged unpacked dict. This is used for a
-    dynamic construction of a tree map call, where an arbitrary number of arguments
-    are fixed before the tree map call. The key to enable this, is that the
-    function that needs to be called is kw only, but jax tree map does not
-    support keyword only, so we pass through this decorator
+    A decorator function that transforms a tuple dictionary with one key
+    in a function call with a big merged unpacked dict.
+
+    This is used for a dynamic construction of a tree map call, where an arbitrary number of arguments
+    are fixed before the tree map call.
+
+    We need this because the function that needs to be called
+    is kw only, but jax tree map does not support keyword only,
+    so we pass through this decorator
+
+    Example of usage:
+    ```
+    def f(*, a, b):
+       '''
+       kw only function that we would like to call in a jax.tree.map
+       but we do not know which arguments will be fixed before runtime
+       and jax.tree.map does not allow for kw
+       '''
+       # Do whatever you need to
+
+    # Then, by any means (at runtime), we determine the arguments that will be
+    # fixed during the jax.tree.map, we store them as a tuple of strings, as
+    # example:
+    fixed_args = ("a")
+    # and we actually fix them for all this to have some sense:
+    f = partial(f, a=observed_pinn_in[0])
+
+    # We also need to construct a tuple of tuples of dictionaries with only one
+    # key. We want to call the jax.tree.map for each tuple in the tuple. In
+    # each tuple we have dictionaries with one key (one dict for each for the
+    # argument of `f` which serves as key). The dictionaries will be handled by
+    # the decorator:
+    tree_map_args = ( # jax.tree.map over each element of this tuple
+        ({"a": None}, # most expected value since a is fixed
+         {"b": observed_values[0]}), # any useful value.
+
+        ({"a": None}, {"b":observed_values[1]),
+        ({"a": None}, {"b":observed_values[2]}),
+    )
+    # Then we can call
+    jax.tree.map(
+        _merge_dict_arguments(f, fixed_args),
+        tree_map_args,
+        is_leaf=lambda x: (isinstance(x, tuple) and isinstance(x[0], dict)), # force iteration over outer tuple only
+    )
+    ```
+    In the code sample above, we see that the gain really lies in the fact that
+    `a=observed_pinn_in[0]` is not duplicated and this saves memory (in most of
+    runtime) while still enabling the jax.tree.map call (which however,
+    duplicates `a`
+    just for the computation time :)). Indeed, the direct way would be to
+    construct something like:
+    ```
+    tree_map_args = (
+        (observed_pinn_in[0], observed_values[0]),
+        (observed_pinn_in[0], observed_values[1]),
+        (observed_pinn_in[0], observed_values[2]),
+    )
+    ```
+    which could be a burden for the whole runtime
     """
 
     def wrapper(tuple_of_dict):
@@ -105,7 +159,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
         any pre-defined Sharding) thanks to the `obs_batch_sharding`
         arguments of `jinns.solve()`. Read `jinns.solve()` doc for more info.
 
-    ** New in jinns vX.X.X:** We provide the possibility of specifying several
+    ** New in jinns v1.7.1:** We provide the possibility of specifying several
         datasets of observations, this can serve a variety of purposes, as for
         example, provided different observations for different channels of the
         solution (by using the `obs_slice` attribute of Loss objects, see the
@@ -126,9 +180,12 @@ class DataGeneratorObservations(AbstractDataGenerator):
         that operation memory reaches its peaks and the memory usage is the
         same in the DG with duplication and DG without duplication. However,
         after that, the memory usage goes down again for the version without
-        duplication (see the test script at
+        duplication so we avoid memory overflow that could happen, for example,
+        when computing costly dynamic losses while storing a uselessly big
+        DataGeneratorObservations
+        (see the test script at
         `jinns/tests/dataGenerator_tests/profiling_DataGeneratorObservations.py`
-        )
+        ).
 
     """
 
