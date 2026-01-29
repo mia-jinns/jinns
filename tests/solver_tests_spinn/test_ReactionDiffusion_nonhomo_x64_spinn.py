@@ -67,7 +67,7 @@ def train_ReacDiff_init():
     mu_init = jnp.array([0.7, 0.15])
 
     def u0(x):
-        return jnp.exp(-jnp.linalg.norm(x - mu_init, axis=-1))
+        return jnp.exp(-jnp.linalg.norm(x - mu_init, axis=-1))[..., None]
 
     D = 0.05
     r1, r2, r3 = 0.0, -4.0, 2.0
