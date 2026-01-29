@@ -65,7 +65,7 @@ def train_NSPipeFlow_init():
                 (eqx.nn.Linear, 50, 1),
             ),
         ],
-        eq_type="statio_PDE",
+        eq_type="PDEStatio",
         output_transform=u_p_output_transform,
     )
 

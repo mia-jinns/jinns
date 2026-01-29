@@ -24,7 +24,7 @@ def save_reload(tmpdir):
         (eqx.nn.Linear, 128, r),
     )
     key, subkey = random.split(key)
-    u, params = jinns.nn.SPINN_MLP.create(subkey, d, r, eqx_list, "nonstatio_PDE")
+    u, params = jinns.nn.SPINN_MLP.create(subkey, d, r, eqx_list, "PDENonStatio")
 
     params = jinns.parameters.Params(nn_params=params, eq_params={})
 
@@ -35,7 +35,7 @@ def save_reload(tmpdir):
         "d": d,
         "r": r,
         "eqx_list": eqx_list,
-        "eq_type": "nonstatio_PDE",
+        "eq_type": "PDENonStatio",
     }
     save_pinn(filename, u, params, kwargs_creation)
 

@@ -23,7 +23,7 @@ def create_SMLP():
         (eqx.nn.Linear, 128, r),
     )
     key, subkey = random.split(key)
-    u, params = jinns.nn.SPINN_MLP.create(subkey, d, r, eqx_list, "nonstatio_PDE")
+    u, params = jinns.nn.SPINN_MLP.create(subkey, d, r, eqx_list, "PDENonStatio")
 
     return u, params
 

@@ -40,7 +40,7 @@ def create_PPINN_MLP():
     ]
     key, subkey = random.split(key)
     u, params = jinns.nn.PPINN_MLP.create(
-        key=subkey, eqx_list_list=eqx_list_list, eq_type="nonstatio_PDE"
+        key=subkey, eqx_list_list=eqx_list_list, eq_type="PDENonStatio"
     )
     params = jinns.parameters.Params(nn_params=params, eq_params={})
 

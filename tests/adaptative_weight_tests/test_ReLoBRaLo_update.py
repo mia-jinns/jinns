@@ -3,6 +3,8 @@ Test the soft adapt implementation
 https://docs.nvidia.com/deeplearning/physicsnemo/physicsnemo-sym/user_guide/theory/advanced_schemes.html#softadapt
 """
 
+import pytest
+
 import jax
 import jax.numpy as jnp
 import jinns
@@ -38,19 +40,24 @@ def test_weight_update_value():
         boundary_loss=jnp.array(1.2),
         observations=None,
     )
+    with pytest.warns(UserWarning):
+        loss = jinns.loss.LossPDEStatio(
+            u=None,
+            dynamic_loss=None,
+            loss_weights=loss_weights,
+            update_weight_method="ReLoBRaLo",
+            params=jinns.parameters.Params(eq_params={"a": jnp.array(0)}),
+        )
 
-    loss = jinns.loss.LossPDEStatio(
-        u=None,
-        dynamic_loss=None,
-        loss_weights=loss_weights,
-        update_weight_method="ReLoBRaLo",
-        params=jinns.parameters.Params(eq_params={"a": jnp.array(0)}),
-    )
     if loss.update_weight_method is not None:
         key = jax.random.PRNGKey(0)
         loss_new = loss.update_weights(
             1, loss_terms, stored_loss_terms, grad_terms, key
         )
+    else:
+        loss_new = None
+
+    assert loss_new is not None
 
     assert jnp.allclose(loss_new.loss_weights.dyn_loss, 0.333, atol=1e-3)
     assert jnp.allclose(loss_new.loss_weights.norm_loss, 0.333, atol=1e-3)

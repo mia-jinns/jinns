@@ -27,7 +27,7 @@ def train_Fisher_init():
     key, subkey = random.split(key)
     key, subkey = random.split(key)
     u, init_nn_params = jinns.nn.SPINN_MLP.create(
-        subkey, d, r, eqx_list, "nonstatio_PDE"
+        subkey, d, r, eqx_list, "PDENonStatio"
     )
 
     n = 2500
@@ -66,7 +66,7 @@ def train_Fisher_init():
     mu_init = 0 * jnp.ones((1))
 
     def u0(x):
-        return jnp.squeeze(norm.pdf(x, loc=mu_init, scale=sigma_init))
+        return norm.pdf(x, loc=mu_init, scale=sigma_init)[..., None]
 
     D = 1.0
     r = 4.0

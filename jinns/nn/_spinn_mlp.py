@@ -78,7 +78,7 @@ class SPINN_MLP(SPINN):
         d: int,
         r: int,
         eqx_list: tuple[tuple[Callable, int, int] | tuple[Callable], ...],
-        eq_type: Literal["ODE", "statio_PDE", "nonstatio_PDE"],
+        eq_type: Literal["ODE", "PDEStatio", "PDENonStatio"],
         m: int = 1,
         filter_spec: PyTree[Union[bool, Callable[[Any], bool]]] = None,
     ) -> tuple[Self, SPINN]:
@@ -114,12 +114,12 @@ class SPINN_MLP(SPINN):
                 (jax.nn.tanh,),
                 (eqx.nn.Linear, 20, r * m)
             )`.
-        eq_type : Literal["ODE", "statio_PDE", "nonstatio_PDE"]
+        eq_type : Literal["ODE", "PDEStatio", "PDENonStatio"]
             A string with three possibilities.
             "ODE": the PINN is called with one input `t`.
-            "statio_PDE": the PINN is called with one input `x`, `x`
+            "PDEStatio": the PINN is called with one input `x`, `x`
             can be high dimensional.
-            "nonstatio_PDE": the PINN is called with two inputs `t` and `x`, `x`
+            "PDENonStatio": the PINN is called with two inputs `t` and `x`, `x`
             can be high dimensional.
             **Note**: the input dimension as given in eqx_list has to match the sum
             of the dimension of `t` + the dimension of `x`.
@@ -150,11 +150,11 @@ class SPINN_MLP(SPINN):
         Raises
         ------
         RuntimeError
-            If the parameter value for eq_type is not in `["ODE", "statio_PDE",
-            "nonstatio_PDE"]` and for various failing checks
+            If the parameter value for eq_type is not in `["ODE", "PDEStatio",
+            "PDENonStatio"]` and for various failing checks
         """
 
-        if eq_type not in ["ODE", "statio_PDE", "nonstatio_PDE"]:
+        if eq_type not in ["ODE", "PDEStatio", "PDENonStatio"]:
             raise RuntimeError("Wrong parameter value for eq_type")
 
         def element_is_layer(element: tuple) -> TypeGuard[tuple[Callable, int, int]]:

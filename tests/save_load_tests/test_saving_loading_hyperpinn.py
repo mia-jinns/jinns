@@ -58,7 +58,7 @@ def save_reload(tmpdir):
     kwargs_creation = {
         "key": subkey,
         "eqx_list": eqx_list,
-        "eq_type": "nonstatio_PDE",
+        "eq_type": "PDENonStatio",
         "hyperparams": hyperparams,
         "hypernet_input_size": hypernet_input_size,
         "eqx_list_hyper": eqx_list_hyper,
