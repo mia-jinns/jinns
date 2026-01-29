@@ -23,7 +23,7 @@ def train_Burgers_init():
     )
     key, subkey = random.split(key)
     u, init_nn_params = jinns.nn.PINN_MLP.create(
-        key=subkey, eqx_list=eqx_list, eq_type="nonstatio_PDE"
+        key=subkey, eqx_list=eqx_list, eq_type="PDENonStatio"
     )
 
     n = 1000
@@ -53,7 +53,7 @@ def train_Burgers_init():
         method=method,
     )
 
-    nu = 1 / (100 * jnp.pi)
+    nu = jnp.array(1 / (100 * jnp.pi))
     init_params = jinns.parameters.Params(
         nn_params=init_nn_params, eq_params={"nu": nu}
     )
@@ -64,7 +64,9 @@ def train_Burgers_init():
     be_loss = jinns.loss.BurgersEquation(Tmax=Tmax)
 
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
-        dyn_loss=1, initial_condition=5, boundary_loss=1
+        dyn_loss=jnp.array(1),
+        initial_condition=jnp.array(5),
+        boundary_loss=jnp.array(1),
     )
 
     loss = jinns.loss.LossPDENonStatio(

@@ -25,7 +25,7 @@ def save_reload_with_params(tmpdir):
     kwargs_creation = {
         "key": subkey,
         "eqx_list": eqx_list,
-        "eq_type": "nonstatio_PDE",
+        "eq_type": "PDENonStatio",
     }
     u, params = jinns.nn.PINN_MLP.create(**kwargs_creation)
 

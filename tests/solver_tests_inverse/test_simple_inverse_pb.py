@@ -76,7 +76,7 @@ def create_problem():
     )
     key, subkey = jax.random.split(key)
     u, init_nn_params = jinns.nn.PINN_MLP.create(
-        key=subkey, eqx_list=eqx_list, eq_type="nonstatio_PDE"
+        key=subkey, eqx_list=eqx_list, eq_type="PDENonStatio"
     )
     init_params = jinns.parameters.Params(
         nn_params=init_nn_params,

@@ -1,6 +1,4 @@
 import jinns
-
-
 from jax import random
 import jax.numpy as jnp
 import equinox as eqx
@@ -18,7 +16,7 @@ def test_validation_module():
     eqx_list = ((eqx.nn.Linear, 1, r),)
     key, subkey = random.split(key)
     u_spinn, init_nn_params_spinn = jinns.nn.SPINN_MLP.create(
-        subkey, d, r, eqx_list, "nonstatio_PDE"
+        subkey, d, r, eqx_list, "PDENonStatio"
     )
 
     n = NUM_POINTS
@@ -70,7 +68,9 @@ def test_validation_module():
     fisher_dynamic_loss = jinns.loss.FisherKPP(Tmax=Tmax)
 
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
-        dyn_loss=1, initial_condition=1 * Tmax, boundary_loss=1 * Tmax
+        dyn_loss=jnp.array(1),
+        initial_condition=jnp.array(1 * Tmax),
+        boundary_loss=jnp.array(1 * Tmax),
     )
 
     loss_spinn = jinns.loss.LossPDENonStatio(
@@ -123,6 +123,7 @@ def test_validation_module():
 
     tx = optax.adamw(learning_rate=1e-4)
     n_iter = 10
+
     (
         params_spinn,
         train_loss_values,
