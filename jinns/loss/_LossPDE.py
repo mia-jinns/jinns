@@ -46,7 +46,7 @@ from jinns.loss import PDENonStatio, PDEStatio
 if TYPE_CHECKING:
     # imports for type hints only
     from jinns.nn._abstract_pinn import AbstractPINN
-    from jinns.utils._types import BoundaryConditionFun
+    from jinns.loss._BoundaryConditionAbstract import BoundaryCondition
 
 _IMPLEMENTED_BOUNDARY_CONDITIONS = [
     "dirichlet",
@@ -137,13 +137,14 @@ class _LossPDEAbstract(
     # (ie. jax.Array cannot be static) and that we do not expect to change
     u: eqx.AbstractVar[AbstractPINN]
     dynamic_loss: eqx.AbstractVar[Y]
-    omega_boundary_fun: (
-        BoundaryConditionFun | dict[str, BoundaryConditionFun] | None
-    ) = eqx.field(static=True)
-    omega_boundary_condition: str | dict[str, str | None] | None = eqx.field(
-        static=True
-    )
-    omega_boundary_dim: slice | dict[str, slice] = eqx.field(static=True)
+    boundary_condition: BoundaryCondition | None
+    # omega_boundary_fun: (
+    #    BoundaryConditionFun | dict[str, BoundaryConditionFun] | None
+    # ) = eqx.field(static=True)
+    # omega_boundary_condition: str | dict[str, str | None] | None = eqx.field(
+    #    static=True
+    # )
+    # omega_boundary_dim: slice | dict[str, slice] = eqx.field(static=True)
     norm_samples: Float[Array, " nb_norm_samples dimension"] | None
     norm_weights: Float[Array, " nb_norm_samples"] | None
     obs_slice: EllipsisType | slice = eqx.field(static=True)
@@ -152,11 +153,12 @@ class _LossPDEAbstract(
     def __init__(
         self,
         *,
-        omega_boundary_fun: BoundaryConditionFun
-        | dict[str, BoundaryConditionFun]
-        | None = None,
-        omega_boundary_condition: str | dict[str, str | None] | None = None,
-        omega_boundary_dim: int | slice | dict[str, int | slice] | None = None,
+        boundary_condition: BoundaryCondition,
+        # omega_boundary_fun: BoundaryConditionFun
+        # | dict[str, BoundaryConditionFun]
+        # | None = None,
+        # omega_boundary_condition: str | dict[str, str | None] | None = None,
+        # omega_boundary_dim: int | slice | dict[str, int | slice] | None = None,
         norm_samples: Float[Array, " nb_norm_samples dimension"] | None = None,
         norm_weights: Float[Array, " nb_norm_samples"] | float | int | None = None,
         obs_slice: EllipsisType | slice | None = None,
@@ -185,107 +187,110 @@ class _LossPDEAbstract(
         else:
             self.obs_slice = obs_slice
 
-        if (
-            isinstance(omega_boundary_fun, dict)
-            and not isinstance(omega_boundary_condition, dict)
-        ) or (
-            not isinstance(omega_boundary_fun, dict)
-            and isinstance(omega_boundary_condition, dict)
-        ):
-            raise ValueError(
-                "if one of omega_boundary_fun or "
-                "omega_boundary_condition is dict, the other should be too."
-            )
+        self.boundary_condition = boundary_condition
+        if self.boundary_condition is None:
+            warnings.warn("Missing boundary condition.")
+        # if (
+        #    isinstance(omega_boundary_fun, dict)
+        #    and not isinstance(omega_boundary_condition, dict)
+        # ) or (
+        #    not isinstance(omega_boundary_fun, dict)
+        #    and isinstance(omega_boundary_condition, dict)
+        # ):
+        #    raise ValueError(
+        #        "if one of omega_boundary_fun or "
+        #        "omega_boundary_condition is dict, the other should be too."
+        #    )
 
-        if omega_boundary_condition is None or omega_boundary_fun is None:
-            warnings.warn(
-                "Missing boundary function or no boundary condition."
-                "Boundary function is thus ignored."
-            )
-        else:
-            if isinstance(omega_boundary_condition, dict):
-                for _, v in omega_boundary_condition.items():
-                    if v is not None and not any(
-                        v.lower() in s for s in _IMPLEMENTED_BOUNDARY_CONDITIONS
-                    ):
-                        raise NotImplementedError(
-                            f"The boundary condition {omega_boundary_condition} is not"
-                            f"implemented yet. Try one of :"
-                            f"{_IMPLEMENTED_BOUNDARY_CONDITIONS}."
-                        )
-            else:
-                if not any(
-                    omega_boundary_condition.lower() in s
-                    for s in _IMPLEMENTED_BOUNDARY_CONDITIONS
-                ):
-                    raise NotImplementedError(
-                        f"The boundary condition {omega_boundary_condition} is not"
-                        f"implemented yet. Try one of :"
-                        f"{_IMPLEMENTED_BOUNDARY_CONDITIONS}."
-                    )
-            if isinstance(omega_boundary_fun, dict) and isinstance(
-                omega_boundary_condition, dict
-            ):
-                keys_omega_boundary_fun = cast(str, omega_boundary_fun.keys())
-                if (
-                    not (
-                        list(keys_omega_boundary_fun) == ["xmin", "xmax"]
-                        and list(omega_boundary_condition.keys()) == ["xmin", "xmax"]
-                    )
-                ) and (
-                    not (
-                        list(keys_omega_boundary_fun)
-                        == ["xmin", "xmax", "ymin", "ymax"]
-                        and list(omega_boundary_condition.keys())
-                        == ["xmin", "xmax", "ymin", "ymax"]
-                    )
-                ):
-                    raise ValueError(
-                        "The key order (facet order) in the "
-                        "boundary condition dictionaries is incorrect"
-                    )
+        # if omega_boundary_condition is None or omega_boundary_fun is None:
+        #    warnings.warn(
+        #        "Missing boundary function or no boundary condition."
+        #        "Boundary function is thus ignored."
+        #    )
+        # else:
+        #    if isinstance(omega_boundary_condition, dict):
+        #        for _, v in omega_boundary_condition.items():
+        #            if v is not None and not any(
+        #                v.lower() in s for s in _IMPLEMENTED_BOUNDARY_CONDITIONS
+        #            ):
+        #                raise NotImplementedError(
+        #                    f"The boundary condition {omega_boundary_condition} is not"
+        #                    f"implemented yet. Try one of :"
+        #                    f"{_IMPLEMENTED_BOUNDARY_CONDITIONS}."
+        #                )
+        #    else:
+        #        if not any(
+        #            omega_boundary_condition.lower() in s
+        #            for s in _IMPLEMENTED_BOUNDARY_CONDITIONS
+        #        ):
+        #            raise NotImplementedError(
+        #                f"The boundary condition {omega_boundary_condition} is not"
+        #                f"implemented yet. Try one of :"
+        #                f"{_IMPLEMENTED_BOUNDARY_CONDITIONS}."
+        #            )
+        #    if isinstance(omega_boundary_fun, dict) and isinstance(
+        #        omega_boundary_condition, dict
+        #    ):
+        #        keys_omega_boundary_fun = cast(str, omega_boundary_fun.keys())
+        #        if (
+        #            not (
+        #                list(keys_omega_boundary_fun) == ["xmin", "xmax"]
+        #                and list(omega_boundary_condition.keys()) == ["xmin", "xmax"]
+        #            )
+        #        ) and (
+        #            not (
+        #                list(keys_omega_boundary_fun)
+        #                == ["xmin", "xmax", "ymin", "ymax"]
+        #                and list(omega_boundary_condition.keys())
+        #                == ["xmin", "xmax", "ymin", "ymax"]
+        #            )
+        #        ):
+        #            raise ValueError(
+        #                "The key order (facet order) in the "
+        #                "boundary condition dictionaries is incorrect"
+        #            )
 
-        self.omega_boundary_fun = omega_boundary_fun
-        self.omega_boundary_condition = omega_boundary_condition
+        # self.omega_boundary_fun = omega_boundary_fun
+        # self.omega_boundary_condition = omega_boundary_condition
 
-        if isinstance(omega_boundary_fun, dict):
-            keys_omega_boundary_fun: str = cast(str, omega_boundary_fun.keys())
-            if omega_boundary_dim is None:
-                self.omega_boundary_dim = {
-                    k: jnp.s_[::] for k in keys_omega_boundary_fun
-                }
-            if not isinstance(omega_boundary_dim, dict):
-                raise ValueError(
-                    "If omega_boundary_fun is a dict then"
-                    " omega_boundary_dim should also be a dict"
-                )
-            if list(omega_boundary_dim.keys()) != list(keys_omega_boundary_fun):
-                raise ValueError(
-                    "If omega_boundary_fun is a dict,"
-                    " omega_boundary_dim should be a dict with the same keys"
-                )
-            self.omega_boundary_dim = {}
-            for k, v in omega_boundary_dim.items():
-                if isinstance(v, int):
-                    # rewrite it as a slice to ensure that axis does not disappear when
-                    # indexing
-                    self.omega_boundary_dim[k] = jnp.s_[v : v + 1]
-                else:
-                    self.omega_boundary_dim[k] = v
+        # if isinstance(omega_boundary_fun, dict):
+        #    keys_omega_boundary_fun: str = cast(str, omega_boundary_fun.keys())
+        #    if omega_boundary_dim is None:
+        #        self.omega_boundary_dim = {
+        #            k: jnp.s_[::] for k in keys_omega_boundary_fun
+        #        }
+        #    if not isinstance(omega_boundary_dim, dict):
+        #        raise ValueError(
+        #            "If omega_boundary_fun is a dict then"
+        #            " omega_boundary_dim should also be a dict"
+        #        )
+        #    if list(omega_boundary_dim.keys()) != list(keys_omega_boundary_fun):
+        #        raise ValueError(
+        #            "If omega_boundary_fun is a dict,"
+        #            " omega_boundary_dim should be a dict with the same keys"
+        #        )
+        #    self.omega_boundary_dim = {}
+        #    for k, v in omega_boundary_dim.items():
+        #        if isinstance(v, int):
+        #            # rewrite it as a slice to ensure that axis does not disappear when
+        #            # indexing
+        #            self.omega_boundary_dim[k] = jnp.s_[v : v + 1]
+        #        else:
+        #            self.omega_boundary_dim[k] = v
 
-        else:
-            assert not isinstance(omega_boundary_dim, dict)
-            if omega_boundary_dim is None:
-                self.omega_boundary_dim = jnp.s_[::]
-            elif isinstance(omega_boundary_dim, int):
-                # rewrite it as a slice to ensure that axis does not disappear when
-                # indexing
-                self.omega_boundary_dim = jnp.s_[
-                    omega_boundary_dim : omega_boundary_dim + 1
-                ]
-            else:
-                assert isinstance(omega_boundary_dim, slice)
-                self.omega_boundary_dim = omega_boundary_dim
+        # else:
+        #    assert not isinstance(omega_boundary_dim, dict)
+        #    if omega_boundary_dim is None:
+        #        self.omega_boundary_dim = jnp.s_[::]
+        #    elif isinstance(omega_boundary_dim, int):
+        #        # rewrite it as a slice to ensure that axis does not disappear when
+        #        # indexing
+        #        self.omega_boundary_dim = jnp.s_[
+        #            omega_boundary_dim : omega_boundary_dim + 1
+        #        ]
+        #    else:
+        #        assert isinstance(omega_boundary_dim, slice)
+        #        self.omega_boundary_dim = omega_boundary_dim
 
         if norm_samples is not None:
             self.norm_samples = norm_samples
@@ -361,17 +366,19 @@ class _LossPDEAbstract(
         self, batch: B
     ) -> Callable[[Params[Array]], Array] | None:
         if (
-            self.omega_boundary_condition is not None
-            and self.omega_boundary_fun is not None
+            # self.omega_boundary_condition is not None
+            # and self.omega_boundary_fun is not None
+            self.boundary_condition is not None
         ):
             boundary_loss_fun: Callable[[Params[Array]], Array] | None = (
                 lambda p: boundary_condition_apply(
+                    self.boundary_condition,  # type: ignore # we are in lambda...
                     self.u,
                     batch,
                     _set_derivatives(p, self.derivative_keys.boundary_loss),
-                    self.omega_boundary_fun,  # type: ignore (we are in lambda)
-                    self.omega_boundary_condition,  # type: ignore
-                    self.omega_boundary_dim,  # type: ignore
+                    # self.omega_boundary_fun,  # type: ignore (we are in lambda)
+                    # self.omega_boundary_condition,  # type: ignore
+                    # self.omega_boundary_dim,  # type: ignore
                 )
             )
         else:

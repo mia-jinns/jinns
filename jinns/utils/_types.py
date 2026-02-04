@@ -49,10 +49,35 @@ if TYPE_CHECKING:
     from jinns.loss._abstract_loss import AbstractLoss
     from jinns.loss._LossODE import LossODE
     from jinns.loss._LossPDE import LossPDEStatio, LossPDENonStatio
+    from jinns.parameters._Params import Params
+    from jinns.nn._abstract_pinn import AbstractPINN
+    from jinns.loss._BoundaryConditionAbstract import BoundaryCondition
 
     # Here we define types available for the whole package
     BoundaryConditionFun: TypeAlias = Callable[
         [Float[Array, " dim"] | Float[Array, " dim + 1"]], Float[Array, " dim_solution"]
+    ]
+
+    BoundaryEquationU: TypeAlias = Callable[
+        [
+            BoundaryCondition,
+            Float[Array, " InputDim n_facet"],
+            AbstractPINN,
+            Params[Array],
+        ],
+        Float[Array, " InputDim n_facet"],
+    ]
+    BoundaryEquationF: TypeAlias = Callable[
+        [BoundaryCondition, Float[Array, " InputDim n_facet"], Params[Array]],
+        Float[Array, " InputDim n_facet"],
+    ]
+    BoundaryEquationUOnFacet: TypeAlias = Callable[
+        [BoundaryCondition, Float[Array, " InputDim"], AbstractPINN, Params[Array]],
+        Float[Array, " InputDim"],
+    ]
+    BoundaryEquationFOnFacet: TypeAlias = Callable[
+        [BoundaryCondition, Float[Array, " InputDim"], Params[Array]],
+        Float[Array, " InputDim"],
     ]
 
     AnyLoss: TypeAlias = LossODE | LossPDEStatio | LossPDENonStatio

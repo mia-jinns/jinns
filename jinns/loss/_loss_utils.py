@@ -6,16 +6,13 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-from typing import TYPE_CHECKING, Callable, TypeGuard
+from typing import TYPE_CHECKING, Callable
 from types import EllipsisType
 import jax
 import jax.numpy as jnp
 from jax import vmap
 from jaxtyping import Float, Array
 
-from jinns.loss._boundary_conditions import (
-    _compute_boundary_loss,
-)
 from jinns.utils._utils import _subtract_with_check, get_grid
 from jinns.data._utils import make_cartesian_product
 from jinns.parameters._params import _get_vmap_in_axes_params
@@ -26,7 +23,13 @@ from jinns.data._Batchs import PDEStatioBatch, PDENonStatioBatch
 from jinns.parameters._params import Params
 
 if TYPE_CHECKING:
-    from jinns.utils._types import BoundaryConditionFun
+    from jinns.loss._BoundaryConditionAbstract import BoundaryCondition
+    from jinns.utils._types import (
+        BoundaryEquationUOnFacet,
+        BoundaryEquationFOnFacet,
+        BoundaryEquationU,
+        BoundaryEquationF,
+    )
     from jinns.nn._abstract_pinn import AbstractPINN
 
 
@@ -157,82 +160,147 @@ def normalization_loss_apply(
 
 
 def boundary_condition_apply(
+    boundary_condition: BoundaryCondition,
     u: AbstractPINN,
     batch: PDEStatioBatch | PDENonStatioBatch,
     params: Params[Array],
-    omega_boundary_fun: BoundaryConditionFun | dict[str, BoundaryConditionFun],
-    omega_boundary_condition: str | dict[str, str],
-    omega_boundary_dim: slice | dict[str, slice],
+    # omega_boundary_fun: BoundaryConditionFun | dict[str, BoundaryConditionFun],
+    # omega_boundary_condition: str | dict[str, str],
+    # omega_boundary_dim: slice | dict[str, slice],
 ) -> Float[Array, " "]:
     assert batch.border_batch is not None
     vmap_in_axes = (0,) + _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
-    def _check_tuple_of_dict(
-        val,
-    ) -> TypeGuard[
-        tuple[
-            dict[str, BoundaryConditionFun],
-            dict[str, BoundaryConditionFun],
-            dict[str, BoundaryConditionFun],
-        ]
-    ]:
-        return all(isinstance(x, dict) for x in val)
+    # def _check_tuple_of_dict(
+    #    val,
+    # ) -> TypeGuard[
+    #    tuple[
+    #        dict[str, BoundaryConditionFun],
+    #        dict[str, BoundaryConditionFun],
+    #        dict[str, BoundaryConditionFun],
+    #    ]
+    # ]:
+    #    return all(isinstance(x, dict) for x in val)
 
-    omega_boundary_dicts = (
-        omega_boundary_condition,
-        omega_boundary_fun,
-        omega_boundary_dim,
-    )
-    if _check_tuple_of_dict(omega_boundary_dicts):
-        # We must create the facet tree dictionary as we do not have the
-        # enumerate from the for loop to pass the id integer
-        if batch.border_batch.shape[-1] == 2:
-            # 1D
-            facet_tree = {"xmin": 0, "xmax": 1}
-        elif batch.border_batch.shape[-1] == 4:
-            # 2D
-            facet_tree = {"xmin": 0, "xmax": 1, "ymin": 2, "ymax": 3}
-        else:
-            raise ValueError("Other border batches are not implemented")
-        b_losses_by_facet = jax.tree_util.tree_map(
-            lambda c, f, fa, d: (
-                None
-                if c is None
-                else jnp.mean(
-                    _compute_boundary_loss(c, f, batch, u, params, fa, d, vmap_in_axes)
-                )
-            ),
-            omega_boundary_dicts[0],  # omega_boundary_condition,
-            omega_boundary_dicts[1],  # omega_boundary_fun,
-            facet_tree,
-            omega_boundary_dicts[2],  # omega_boundary_dim,
-            is_leaf=lambda x: x is None,
-        )  # when exploring leaves with None value (no condition) the returned
-        # mse is None and we get rid of the None leaves of b_losses_by_facet
-        # with the tree_leaves below
-        # Note that to keep the behaviour given in the comment above we neede
-        # to specify is_leaf according to the note in the release of 0.4.29
-    else:
-        facet_tuple = tuple(f for f in range(batch.border_batch.shape[-1]))
-        b_losses_by_facet = jax.tree_util.tree_map(
-            lambda fa: jnp.mean(
-                _compute_boundary_loss(
-                    omega_boundary_dicts[0],  # type: ignore -> need TypeIs from 3.13
-                    omega_boundary_dicts[1],  # type: ignore -> need TypeIs from 3.13
-                    batch,
-                    u,
-                    params,
-                    fa,
-                    omega_boundary_dicts[2],  # type: ignore -> need TypeIs from 3.13
-                    vmap_in_axes,
-                )
-            ),
-            facet_tuple,
+    # omega_boundary_dicts = (
+    #    omega_boundary_condition,
+    #    omega_boundary_fun,
+    #    omega_boundary_dim,
+    # )
+    # if _check_tuple_of_dict(omega_boundary_dicts):
+    #    # We must create the facet tree dictionary as we do not have the
+    #    # enumerate from the for loop to pass the id integer
+    #    if batch.border_batch.shape[-1] == 2:
+    #        # 1D
+    #        facet_tree = {"xmin": 0, "xmax": 1}
+    #    elif batch.border_batch.shape[-1] == 4:
+    #        # 2D
+    #        facet_tree = {"xmin": 0, "xmax": 1, "ymin": 2, "ymax": 3}
+    #    else:
+    #        raise ValueError("Other border batches are not implemented")
+    #    b_losses_by_facet = jax.tree_util.tree_map(
+    #        lambda c, f, fa, d: (
+    #            None
+    #            if c is None
+    #            else jnp.mean(
+    #                _compute_boundary_loss(c, f, batch, u, params, fa, d, vmap_in_axes)
+    #            )
+    #        ),
+    #        omega_boundary_dicts[0],  # omega_boundary_condition,
+    #        omega_boundary_dicts[1],  # omega_boundary_fun,
+    #        facet_tree,
+    #        omega_boundary_dicts[2],  # omega_boundary_dim,
+    #        is_leaf=lambda x: x is None,
+    #    )  # when exploring leaves with None value (no condition) the returned
+    #    # mse is None and we get rid of the None leaves of b_losses_by_facet
+    #    # with the tree_leaves below
+    #    # Note that to keep the behaviour given in the comment above we neede
+    #    # to specify is_leaf according to the note in the release of 0.4.29
+    # else:
+    #    facet_tuple = tuple(f for f in range(batch.border_batch.shape[-1]))
+    #    b_losses_by_facet = jax.tree_util.tree_map(
+    #        lambda fa: jnp.mean(
+    #            _compute_boundary_loss(
+    #                omega_boundary_dicts[0],  # type: ignore -> need TypeIs from 3.13
+    #                omega_boundary_dicts[1],  # type: ignore -> need TypeIs from 3.13
+    #                batch,
+    #                u,
+    #                params,
+    #                fa,
+    #                omega_boundary_dicts[2],  # type: ignore -> need TypeIs from 3.13
+    #                vmap_in_axes,
+    #            )
+    #        ),
+    #        facet_tuple,
+    #    )
+    # mse_boundary_loss = jax.tree_util.tree_reduce(
+    #    lambda x, y: x + y, jax.tree_util.tree_leaves(b_losses_by_facet)
+    # )
+    # return mse_boundary_loss
+
+    if isinstance(u, PINN):
+        v_boundary_condition = vmap(
+            lambda inputs, params: boundary_condition.evaluate(inputs, u, params),
+            vmap_in_axes,
+            0,
         )
+        b_losses_by_facet = jnp.sum(
+            v_boundary_condition(
+                batch.border_batch,
+                params,
+            )
+            ** 2,
+            axis=-1,
+        )
+    else:
+        raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
     mse_boundary_loss = jax.tree_util.tree_reduce(
         lambda x, y: x + y, jax.tree_util.tree_leaves(b_losses_by_facet)
     )
     return mse_boundary_loss
+
+
+# elif isinstance(u, SPINN):
+#        grid = get_grid(batch_array)
+#        res = _subtract_with_check(f(grid), values, cause="boundary condition fun")
+#        mse_u_boundary = jnp.sum(
+#            res**2,
+#            axis=-1,
+#        )
+
+
+def equation_on_all_facets_equal(
+    equation: BoundaryEquationUOnFacet | BoundaryEquationFOnFacet,
+) -> BoundaryEquationU | BoundaryEquationF:
+    """
+    Decorator to be used around `BoundaryCondition.equation_u` or
+    `BoundaryCondition.equation_f` if all the facets should be treated
+    identically.
+    This means that from `equation_u` or `equation_f` defined on a single facet
+    we automatically vectorize the computations on all the facets which extends
+    the initial function to work with a trailing `n_facet` dimension for their
+    `inputs` and return arguments. See type hinting for another look on what's
+    happening.
+
+    The wrapper vectorizes the computations over the facet axis
+    with a jax.vmap which is almost always the best solution.
+    The user can draw inspiration from this code for
+    more specific situations.
+    """
+
+    def wrapper(*args):
+        equation_by_facet = jax.vmap(
+            equation,
+            in_axes=(
+                None,
+                -1,
+            )
+            + tuple(None for _ in range(len(args) - 2)),
+            out_axes=-1,
+        )
+        return equation_by_facet(*args)
+
+    return wrapper
 
 
 def observations_loss_apply(

@@ -9,6 +9,7 @@ from ._DynamicLoss import (
     FisherKPP,
     NavierStokesMassConservation2DStatio,
 )
+from ._BoundaryCondition import Dirichlet
 from ._loss_weights import (
     LossWeightsODE,
     LossWeightsPDENonStatio,
@@ -51,4 +52,5 @@ __all__ = [
     "soft_adapt",
     "lr_annealing",
     "ReLoBRaLo",
+    "Dirichlet",
 ]
