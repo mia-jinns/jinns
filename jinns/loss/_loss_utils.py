@@ -6,6 +6,7 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
+from functools import partial
 from typing import TYPE_CHECKING, Callable
 from types import EllipsisType
 import jax
@@ -239,36 +240,37 @@ def boundary_condition_apply(
     # return mse_boundary_loss
 
     if isinstance(u, PINN):
+        # Note that facets are on the last axis as specified by
+        # `BoundaryCondition` function type hints
         v_boundary_condition = vmap(
             lambda inputs, params: jnp.sum(
-                boundary_condition.evaluate(inputs, u, params), axis=0
+                boundary_condition.evaluate(inputs, u, params) ** 2, axis=0
             ),  # this jnp.sum = reduction over the dimensions of the residuals
             vmap_in_axes,
             0,
         )
-        b_losses_by_facet = jnp.mean(
-            v_boundary_condition(
-                batch.border_batch,
-                params,
-            )
-            ** 2,
-            axis=0,
-        )  # this jnp.mean = reduction over the samples
+        b_loss = v_boundary_condition(
+            batch.border_batch,
+            params,
+        )
+    elif isinstance(u, SPINN):
+        b_loss = jnp.sum(
+            boundary_condition.evaluate(batch.border_batch, u, params) ** 2,
+            axis=-2,
+        )  # this jnp.sum = reduction over the dimensions of the residuals
+        # (here this is axis=-2 because axis=-1 is always that of the facets)
     else:
         raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
+    b_losses_by_facet = jnp.mean(
+        b_loss,
+        axis=tuple(i for i in range(b_loss.ndim - 1)),
+    )  # this jnp.mean = reduction over the samples
+    # here axis=all axis but last because we have a varying number of axes
+    # possible from SPINN architectures
     mse_boundary_loss = jnp.sum(
         b_losses_by_facet
     )  # this jnp.sum = reduction over the facets
     return mse_boundary_loss
-
-
-# elif isinstance(u, SPINN):
-#        grid = get_grid(batch_array)
-#        res = _subtract_with_check(f(grid), values, cause="boundary condition fun")
-#        mse_u_boundary = jnp.sum(
-#            res**2,
-#            axis=-1,
-#        )
 
 
 def equation_on_all_facets_equal(
@@ -290,9 +292,12 @@ def equation_on_all_facets_equal(
     more specific situations.
     """
 
-    def wrapper(*args):
+    def wrapper(*args, **kwargs):
+        """
+        We handle kwargs for `gridify` e.g.
+        """
         equation_by_facet = jax.vmap(
-            equation,
+            partial(equation, **kwargs),
             in_axes=(
                 None,
                 -1,

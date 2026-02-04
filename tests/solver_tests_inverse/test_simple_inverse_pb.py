@@ -107,13 +107,13 @@ def create_problem():
         observations="nn_params",
         params=init_params,
     )
+    boundary_condition = jinns.loss.Dirichlet()
     loss_nu_and_theta = jinns.loss.LossPDENonStatio(
         u=u,
         loss_weights=loss_weights,
         dynamic_loss=be_loss,
         derivative_keys=derivative_keys_nu_and_theta,
-        omega_boundary_fun=lambda t_dx: 0,
-        omega_boundary_condition="dirichlet",
+        boundary_condition=boundary_condition,
         initial_condition_fun=u0,
     )
     return loss_nu_and_theta, init_params, train_data, obs_data

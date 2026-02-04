@@ -68,7 +68,7 @@ if TYPE_CHECKING:
         Float[Array, " InputDim n_facet"],
     ]
     BoundaryEquationF: TypeAlias = Callable[
-        [BoundaryCondition, Float[Array, " InputDim n_facet"], Params[Array]],
+        [BoundaryCondition, Float[Array, " InputDim n_facet"], Params[Array], bool],
         Float[Array, " InputDim n_facet"],
     ]
     BoundaryEquationUOnFacet: TypeAlias = Callable[
@@ -76,7 +76,7 @@ if TYPE_CHECKING:
         Float[Array, " InputDim"],
     ]
     BoundaryEquationFOnFacet: TypeAlias = Callable[
-        [BoundaryCondition, Float[Array, " InputDim"], Params[Array]],
+        [BoundaryCondition, Float[Array, " InputDim"], Params[Array], bool],
         Float[Array, " InputDim"],
     ]
 

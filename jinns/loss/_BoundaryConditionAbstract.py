@@ -11,7 +11,7 @@ import abc
 from typing import TYPE_CHECKING
 import equinox as eqx
 from jaxtyping import Float, Array
-from jinns.nn import SPINN
+from jinns.nn import SPINN, PINN
 from jinns.utils._utils import _subtract_with_check
 
 
@@ -36,20 +36,24 @@ class BoundaryCondition(eqx.Module):
     ) -> Float[Array, " eq_dim n_facet"]:
         eval_u = self.equation_u(inputs, u, params)
 
-        # TODO update check on shape because facet is a trailing axis
-        if len(eval_u.shape) == 0:
+        if eval_u.ndim == 0:
             raise ValueError(
                 "The output of loss must be vectorial, i.e. of shape (d,) with d >= 1"
             )
-        if len(eval_u.shape) > 1 and not isinstance(u, SPINN):
+        if eval_u.ndim > 2 and not isinstance(u, SPINN):
             warnings.warn(
                 "Return value from BoundaryCondition' equation has more "
-                "than one dimension. This is in general a mistake (probably from "
+                "than two dimensions. This is in general a mistake (probably from "
                 "an unfortunate broadcast in jnp.array computations) resulting in "
                 "bad reduction operations in losses."
             )
 
-        eval_f = self.equation_f(inputs, params)
+        if isinstance(u, PINN):
+            eval_f = self.equation_f(inputs, params, gridify=False)
+        elif isinstance(u, SPINN):
+            eval_f = self.equation_f(inputs, params, gridify=True)
+        else:
+            raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
 
         # TODO add check on shape
 
@@ -63,7 +67,7 @@ class BoundaryCondition(eqx.Module):
     @abc.abstractmethod
     def equation_u(
         self,
-        inputs: Float[Array, " InputDim n_facet"],
+        inputs: InputDim,
         u: AbstractPINN,
         params: Params[Array],
     ) -> Float[Array, " eq_dim n_facet"]:
@@ -75,7 +79,7 @@ class BoundaryCondition(eqx.Module):
 
         Parameters
         ----------
-        x : Float[Array, " InputDim n_facet"]
+        x : InputDim
             A `d` dimensional jnp.array representing a point in in each
             element (facet) of $\delta\Omega$.
         u : AbstractPINN
@@ -98,7 +102,7 @@ class BoundaryCondition(eqx.Module):
 
     @abc.abstractmethod
     def equation_f(
-        self, inputs: Float[Array, " InputDim n_facet"], params: Params[Array]
+        self, inputs: InputDim, params: Params[Array], gridify: bool = False
     ) -> Float[Array, " eq_dim n_facet"]:
         r"""The values that the solution should match on the boundaries
 
@@ -108,11 +112,15 @@ class BoundaryCondition(eqx.Module):
 
         Parameters
         ----------
-        x : Float[Array, " InputDim n_facet"]
+        x : InputDim
             A `d` dimensional jnp.array representing a point in in each
             element (facet) of $\delta\Omega$.
         params : Params[Array]
             The parameters of the equation and the networks, $\theta$ and $\nu$ respectively.
+        gridify : bool
+            Whether the inputs should be transformed into a grid
+            (`jinns.utils.get_grid`) before calling `f`. This is useful for
+            SPINN.
 
         Returns
         -------
