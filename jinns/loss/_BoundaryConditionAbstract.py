@@ -6,9 +6,12 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
+from functools import partial
 import warnings
 import abc
 from typing import TYPE_CHECKING
+import jax
+import jax.numpy as jnp
 import equinox as eqx
 from jaxtyping import Float, Array
 from jinns.nn import SPINN, PINN
@@ -25,7 +28,7 @@ else:
 InputDim = Float[Array, " dim n_facet"] | Float[Array, " dim+1 n_facet"]
 
 
-class BoundaryCondition(eqx.Module):
+class BoundaryConditionAbstract(eqx.Module):
     r""" """
 
     def evaluate(
@@ -57,12 +60,30 @@ class BoundaryCondition(eqx.Module):
 
         # TODO add check on shape
 
-        residual = _subtract_with_check(
+        # next compute differences between what should match
+        residual = jax.tree.map(
+            partial(
+                _subtract_with_check,
+                cause="boundary condition fun"
+            ),
             eval_f,
             eval_u,
-            cause="boundary condition fun",
         )
-        return residual
+        # next square the differences and reduce over the dimensions of the
+        # residuals
+        if isinstance(u, PINN):
+            residual = jax.tree.map(
+                lambda r: jnp.sum(r ** 2, axis=0),
+                residual
+            )
+        elif isinstance(u, SPINN):
+            residual = jax.tree.map(
+                lambda r: jnp.sum(r ** 2, axis=-1),
+                residual
+            )
+            
+        # now we can form an array with the last axis being the facet
+        return jnp.stack(jax.tree.leaves(residual), axis=-1)
 
     @abc.abstractmethod
     def equation_u(
@@ -70,7 +91,7 @@ class BoundaryCondition(eqx.Module):
         inputs: InputDim,
         u: AbstractPINN,
         params: Params[Array],
-    ) -> Float[Array, " eq_dim n_facet"]:
+    ) -> tuple[Float[Array, " eq_dim"]]:
         r"""The differential operator on the boundaries defining the stationary PDE.
 
         !!! warning
@@ -89,9 +110,10 @@ class BoundaryCondition(eqx.Module):
 
         Returns
         -------
-        Float[Array, "eq_dim facet"]
+        tuple[Float[Array, "eq_dim"]]
             The residual, *i.e.* the differential operator
-            $\mathcal{B}_\theta[u_\nu](x)$ evaluated at each point `x`.
+            $\mathcal{B}_\theta[u_\nu](x)$ evaluated at each facet (last dim of
+            x)
 
         Raises
         ------
@@ -103,7 +125,7 @@ class BoundaryCondition(eqx.Module):
     @abc.abstractmethod
     def equation_f(
         self, inputs: InputDim, params: Params[Array], gridify: bool = False
-    ) -> Float[Array, " eq_dim n_facet"]:
+    ) -> tuple[Float[Array, " eq_dim"]]:
         r"""The values that the solution should match on the boundaries
 
         !!! warning
@@ -124,9 +146,10 @@ class BoundaryCondition(eqx.Module):
 
         Returns
         -------
-        Float[Array, "eq_dim facet"]
+        tuple[Float[Array, "eq_dim"]]
             The residual, *i.e.* the differential operator
-            $\mathcal{B}_\theta[u_\nu](x)$ evaluated at each point `x`.
+            $\mathcal{B}_\theta[u_\nu](x)$ evaluated at each facet (last dim of
+            x)
 
         Raises
         ------

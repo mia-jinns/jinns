@@ -24,7 +24,7 @@ from jinns.data._Batchs import PDEStatioBatch, PDENonStatioBatch
 from jinns.parameters._params import Params
 
 if TYPE_CHECKING:
-    from jinns.loss._BoundaryConditionAbstract import BoundaryCondition
+    from jinns.loss._BoundaryConditionAbstract import BoundaryConditionAbstract
     from jinns.utils._types import (
         BoundaryEquationUOnFacet,
         BoundaryEquationFOnFacet,
@@ -161,7 +161,7 @@ def normalization_loss_apply(
 
 
 def boundary_condition_apply(
-    boundary_condition: BoundaryCondition,
+    boundary_condition: BoundaryConditionAbstract,
     u: AbstractPINN,
     batch: PDEStatioBatch | PDENonStatioBatch,
     params: Params[Array],
@@ -243,9 +243,8 @@ def boundary_condition_apply(
         # Note that facets are on the last axis as specified by
         # `BoundaryCondition` function type hints
         v_boundary_condition = vmap(
-            lambda inputs, params: jnp.sum(
-                boundary_condition.evaluate(inputs, u, params) ** 2, axis=0
-            ),  # this jnp.sum = reduction over the dimensions of the residuals
+            lambda inputs, params: boundary_condition.evaluate(inputs, u,
+                                                               params),
             vmap_in_axes,
             0,
         )
@@ -254,11 +253,7 @@ def boundary_condition_apply(
             params,
         )
     elif isinstance(u, SPINN):
-        b_loss = jnp.sum(
-            boundary_condition.evaluate(batch.border_batch, u, params) ** 2,
-            axis=-2,
-        )  # this jnp.sum = reduction over the dimensions of the residuals
-        # (here this is axis=-2 because axis=-1 is always that of the facets)
+        b_loss = boundary_condition.evaluate(batch.border_batch, u, params)
     else:
         raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
     b_losses_by_facet = jnp.mean(

@@ -90,6 +90,29 @@ def train_NSPipeFlow_init():
         "ymin": jnp.s_[0:2],
         "ymax": jnp.s_[0:2],
     }
+
+    class DirichletFacets(jinns.loss.BoundaryConditionAbstract):
+        """
+        For the facet matching pattern, the last axis of x corresponds to
+        0 -> "xmin"
+        1 -> "xmax"
+        2 -> "ymin"
+        3 -> "ymax"
+        """
+        def equation_u(x, u_p, params):
+            """
+            Note that we must return a tuple for the facets
+            """
+            f1 = u_p(x[..., 0], params)[2:3]
+            f2 = u_p(x[..., 1], params)[2:3]
+            f3 = u_p(x[..., 2], params)[0:2]
+            f4 = u_p(x[..., 3], params)[0:2]
+            return 
+
+
+
+        def equation_f(x, params):
+
     dyn_loss = jinns.loss.NavierStokesMassConservation2DStatio()
     loss_weights = jinns.loss.LossWeightsPDEStatio(dyn_loss=1.0, boundary_loss=1.0)
     loss = jinns.loss.LossPDEStatio(

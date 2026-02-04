@@ -9,6 +9,7 @@ from ._DynamicLoss import (
     FisherKPP,
     NavierStokesMassConservation2DStatio,
 )
+from ._BoundaryConditionAbstract import BoundaryConditionAbstract
 from ._BoundaryCondition import Dirichlet
 from ._loss_weights import (
     LossWeightsODE,

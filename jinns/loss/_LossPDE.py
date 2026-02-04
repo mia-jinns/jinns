@@ -46,7 +46,7 @@ from jinns.loss import PDENonStatio, PDEStatio
 if TYPE_CHECKING:
     # imports for type hints only
     from jinns.nn._abstract_pinn import AbstractPINN
-    from jinns.loss._BoundaryConditionAbstract import BoundaryCondition
+    from jinns.loss._BoundaryConditionAbstract import BoundaryConditionAbstract
 
 _IMPLEMENTED_BOUNDARY_CONDITIONS = [
     "dirichlet",
@@ -137,7 +137,7 @@ class _LossPDEAbstract(
     # (ie. jax.Array cannot be static) and that we do not expect to change
     u: eqx.AbstractVar[AbstractPINN]
     dynamic_loss: eqx.AbstractVar[Y]
-    boundary_condition: BoundaryCondition | None
+    boundary_condition: BoundaryConditionAbstract | None
     # omega_boundary_fun: (
     #    BoundaryConditionFun | dict[str, BoundaryConditionFun] | None
     # ) = eqx.field(static=True)
@@ -153,7 +153,7 @@ class _LossPDEAbstract(
     def __init__(
         self,
         *,
-        boundary_condition: BoundaryCondition,
+        boundary_condition: BoundaryConditionAbstract,
         # omega_boundary_fun: BoundaryConditionFun
         # | dict[str, BoundaryConditionFun]
         # | None = None,

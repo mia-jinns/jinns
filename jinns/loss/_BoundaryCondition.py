@@ -9,7 +9,7 @@ from __future__ import (
 from typing import TYPE_CHECKING
 from jaxtyping import Float, Array
 import jax.numpy as jnp
-from jinns.loss._BoundaryConditionAbstract import BoundaryCondition
+from jinns.loss._BoundaryConditionAbstract import BoundaryConditionAbstract
 from jinns.loss._loss_utils import equation_on_all_facets_equal
 from jinns.utils._utils import get_grid
 
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from jinns.nn._abstract_pinn import AbstractPINN
 
 
-class Dirichlet(BoundaryCondition):
+class Dirichlet(BoundaryConditionAbstract):
     r"""
     Implements
 
