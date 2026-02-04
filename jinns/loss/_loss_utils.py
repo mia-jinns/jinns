@@ -240,23 +240,25 @@ def boundary_condition_apply(
 
     if isinstance(u, PINN):
         v_boundary_condition = vmap(
-            lambda inputs, params: boundary_condition.evaluate(inputs, u, params),
+            lambda inputs, params: jnp.sum(
+                boundary_condition.evaluate(inputs, u, params), axis=0
+            ),  # this jnp.sum = reduction over the dimensions of the residuals
             vmap_in_axes,
             0,
         )
-        b_losses_by_facet = jnp.sum(
+        b_losses_by_facet = jnp.mean(
             v_boundary_condition(
                 batch.border_batch,
                 params,
             )
             ** 2,
-            axis=-1,
-        )
+            axis=0,
+        )  # this jnp.mean = reduction over the samples
     else:
         raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
-    mse_boundary_loss = jax.tree_util.tree_reduce(
-        lambda x, y: x + y, jax.tree_util.tree_leaves(b_losses_by_facet)
-    )
+    mse_boundary_loss = jnp.sum(
+        b_losses_by_facet
+    )  # this jnp.sum = reduction over the facets
     return mse_boundary_loss
 
 

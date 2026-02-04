@@ -53,12 +53,10 @@ class BoundaryCondition(eqx.Module):
 
         # TODO add check on shape
 
-        residual = (
-            _subtract_with_check(
-                eval_f,
-                eval_u,
-                cause="boundary condition fun",
-            ),
+        residual = _subtract_with_check(
+            eval_f,
+            eval_u,
+            cause="boundary condition fun",
         )
         return residual
 
