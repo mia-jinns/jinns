@@ -160,7 +160,6 @@ class Neumann(BoundaryConditionAbstract):
                         for facet in range(n_facets)
                     )
                 if u.eq_type == "PDENonStatio":
-                    print("HERE")
                     return tuple(
                         du_dx_fun(
                             jnp.repeat(
@@ -205,12 +204,11 @@ class Neumann(BoundaryConditionAbstract):
         else:  # case 2D borders (because 3D borders are not supported yet)
             n_facets = 4
         if gridify:  # to handle SPINN, ignore otherwise
-            # inputs.shape[-1] indicates the number of dimensions of the pb
+            n_dim = inputs.shape[-2]
+            # inputs.shape[-2] indicates the number of dimensions of the pb
             # thus we get the correct grid of zeros
             return tuple(
-                jnp.zeros(get_grid(inputs[..., facet]).shape[: inputs.shape[-1]])[
-                    ..., None
-                ]
+                jnp.zeros(get_grid(inputs[..., facet]).shape[:n_dim])[..., None]
                 for facet in range(n_facets)
             )
         else:

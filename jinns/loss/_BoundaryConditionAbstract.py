@@ -62,11 +62,6 @@ class BoundaryConditionAbstract(eqx.Module):
         else:
             raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
 
-        # TODO add check on shape
-
-        print(eval_u[0].shape, len(eval_u))
-        print(eval_f[0].shape, len(eval_f))
-
         # next compute differences between what should match
         residual = jax.tree.map(
             partial(_subtract_with_check, cause="boundary condition fun"),
