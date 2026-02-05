@@ -35,6 +35,7 @@ dependencies = [
     "matplotlib",
     "jaxtyping",
     "pyright>=1.1.407",
+    "pytest>=9.0.2",
 ]
 
 [project.optional-dependencies]

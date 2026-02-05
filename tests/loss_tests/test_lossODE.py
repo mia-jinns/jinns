@@ -96,7 +96,7 @@ def test_new_initial_condition():
         params=params,
     )
     mses, _ = loss.evaluate_by_terms(params, ODEBatch(None))
-    assert jnp.allclose(mses.initial_condition, jnp.array(0.0))
+    assert jnp.allclose(mses.initial_condition[0], jnp.array(0.0))
 
     loss = jinns.loss.LossODE(
         u=lambda t, p: t,
@@ -105,7 +105,7 @@ def test_new_initial_condition():
         params=params,
     )
     mses, _ = loss.evaluate_by_terms(params, ODEBatch(None))
-    assert jnp.allclose(mses.initial_condition, jnp.array(0.0))
+    assert jnp.allclose(mses.initial_condition[0], jnp.array(0.0))
 
     loss = jinns.loss.LossODE(
         u=lambda t, p: jnp.concatenate([t, t]),
@@ -117,4 +117,4 @@ def test_new_initial_condition():
         params=params,
     )
     mses, _ = loss.evaluate_by_terms(params, ODEBatch(None))
-    assert jnp.allclose(mses.initial_condition, jnp.array(0.0))
+    assert jnp.allclose(mses.initial_condition[0], jnp.array(0.0))

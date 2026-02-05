@@ -26,12 +26,12 @@ from jinns.data._Batchs import PDEStatioBatch, PDENonStatioBatch
 from jinns.parameters._params import Params
 
 if TYPE_CHECKING:
-    from jinns.utils._types import BoundaryConditionFun
+    from jinns.utils._types import BoundaryConditionFun, AnyBatch
     from jinns.nn._abstract_pinn import AbstractPINN
 
 
 def dynamic_loss_apply(
-    dyn_loss: Callable,
+    dyn_loss: Callable[[AnyBatch, AbstractPINN, Params[Array]], Array],
     u: AbstractPINN,
     batch: (
         Float[Array, " batch_size 1"]
