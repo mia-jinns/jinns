@@ -1,9 +1,9 @@
 # Changelog
 
-* v1.7.1:
+* v1.7.1
 
- - Breaking change: change naming convention of `PINN.eq_type` attribute. It now takes value in `[ODE", "PDEStatio", "PDENonStatio"]` to be consistent with `jinns` class names. See Issue [#27](https://gitlab.com/mia_jinns/jinns/-/issues/27).
-
+    - The possibility to specify tuples of 1D dynamic losses for a loss instead of a vectorial dynamic loss. The original motivation is that **we can now easily add an adaptative loss weight for each dynamic loss channel** while using the existing loss weight update approach of `jinns`. The possibility to **feed several datasets to a `DataGeneratorObservations`. This enables, for example, having datasets (unaligned) for each of the dynamic loss channel**. For more details see [!92](https://gitlab.com/mia_jinns/jinns/-/merge_requests/92) 
+    - Breaking change: change naming convention of `PINN.eq_type` attribute. It now takes value in `[ODE", "PDEStatio", "PDENonStatio"]` to be consistent with `jinns` class names. See Issue [#27](https://gitlab.com/mia_jinns/jinns/-/issues/27).
 
 * v1.7.0
 

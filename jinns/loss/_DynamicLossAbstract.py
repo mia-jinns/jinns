@@ -39,6 +39,7 @@ def _decorator_heteregeneous_params(evaluate):
             self._eval_heterogeneous_parameters(
                 inputs, u, params, self.eq_params_heterogeneity
             ),
+            is_leaf=lambda x: x is None,
         )
         new_args = args[:-1] + (_params,)
         res = evaluate(*new_args)

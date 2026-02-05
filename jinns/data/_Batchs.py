@@ -26,14 +26,14 @@ class ObsBatchDict(TypedDict):
 class ODEBatch(eqx.Module):
     temporal_batch: Float[Array, "  batch_size"]
     param_batch_dict: eqx.Module | None = eqx.field(default=None)
-    obs_batch_dict: ObsBatchDict | None = eqx.field(default=None)
+    obs_batch_dict: tuple[ObsBatchDict, ...] | None = eqx.field(default=None)
 
 
 class PDEStatioBatch(eqx.Module):
     domain_batch: Float[Array, "  batch_size dimension"]
     border_batch: Float[Array, "  batch_size dimension n_facets"] | None
     param_batch_dict: eqx.Module | None
-    obs_batch_dict: ObsBatchDict | None
+    obs_batch_dict: tuple[ObsBatchDict, ...] | None
 
     # rewrite __init__ to be able to use inheritance for the NonStatio case
     # below. That way PDENonStatioBatch is a subtype of PDEStatioBatch which
@@ -44,7 +44,7 @@ class PDEStatioBatch(eqx.Module):
         domain_batch: Float[Array, "  batch_size dimension"],
         border_batch: Float[Array, "  batch_size dimension n_facets"] | None,
         param_batch_dict: eqx.Module | None = None,
-        obs_batch_dict: ObsBatchDict | None = None,
+        obs_batch_dict: tuple[ObsBatchDict, ...] | None = None,
     ):
         # TODO: document this ?
         self.domain_batch = domain_batch
@@ -67,7 +67,7 @@ class PDENonStatioBatch(PDEStatioBatch):
         border_batch: Float[Array, "  batch_size dimension n_facets"] | None,
         initial_batch: Float[Array, "  batch_size dimension"] | None,
         param_batch_dict: eqx.Module | None = None,
-        obs_batch_dict: ObsBatchDict | None = None,
+        obs_batch_dict: tuple[ObsBatchDict, ...] | None = None,
     ):
         self.domain_batch = domain_batch
         self.border_batch = border_batch

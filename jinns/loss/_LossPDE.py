@@ -122,7 +122,7 @@ class _LossPDEAbstract(
         made broadcastable to `norm_samples`.
         These corresponds to the weights $w_k = \frac{1}{q(x_k)}$ where
         $q(\cdot)$ is the proposal p.d.f. and $x_k$ are the Monte-Carlo samples.
-    obs_slice : EllipsisType | slice, default=None
+    obs_slice : tuple[EllipsisType | slice, ...] | EllipsisType | slice | None, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
     key : Key | None
@@ -136,7 +136,7 @@ class _LossPDEAbstract(
     # NOTE static=True only for leaf attributes that are not valid JAX types
     # (ie. jax.Array cannot be static) and that we do not expect to change
     u: eqx.AbstractVar[AbstractPINN]
-    dynamic_loss: eqx.AbstractVar[Y]
+    dynamic_loss: tuple[eqx.AbstractVar[Y] | None, ...]
     omega_boundary_fun: (
         BoundaryConditionFun | dict[str, BoundaryConditionFun] | None
     ) = eqx.field(static=True)
@@ -146,7 +146,7 @@ class _LossPDEAbstract(
     omega_boundary_dim: slice | dict[str, slice] = eqx.field(static=True)
     norm_samples: Float[Array, " nb_norm_samples dimension"] | None
     norm_weights: Float[Array, " nb_norm_samples"] | None
-    obs_slice: EllipsisType | slice = eqx.field(static=True)
+    obs_slice: tuple[EllipsisType | slice, ...] = eqx.field(static=True)
     key: PRNGKeyArray | None
 
     def __init__(
@@ -159,7 +159,10 @@ class _LossPDEAbstract(
         omega_boundary_dim: int | slice | dict[str, int | slice] | None = None,
         norm_samples: Float[Array, " nb_norm_samples dimension"] | None = None,
         norm_weights: Float[Array, " nb_norm_samples"] | float | int | None = None,
-        obs_slice: EllipsisType | slice | None = None,
+        obs_slice: tuple[EllipsisType | slice, ...]
+        | EllipsisType
+        | slice
+        | None = None,
         key: PRNGKeyArray | None = None,
         derivative_keys: DKPDE,
         **kwargs: Any,  # for arguments for super()
@@ -181,7 +184,9 @@ class _LossPDEAbstract(
             )
 
         if obs_slice is None:
-            self.obs_slice = jnp.s_[...]
+            self.obs_slice = (jnp.s_[...],)
+        elif not isinstance(obs_slice, tuple):
+            self.obs_slice = (obs_slice,)
         else:
             self.obs_slice = obs_slice
 
@@ -321,16 +326,23 @@ class _LossPDEAbstract(
 
     def _get_dyn_loss_fun(
         self, batch: B, vmap_in_axes_params: tuple[Params[int | None] | None]
-    ) -> Callable[[Params[Array]], Array] | None:
-        if self.dynamic_loss is not None:
-            dyn_loss_eval = self.dynamic_loss.evaluate
-            dyn_loss_fun: Callable[[Params[Array]], Array] | None = (
-                lambda p: dynamic_loss_apply(
-                    dyn_loss_eval,
-                    self.u,
-                    self._get_dynamic_loss_batch(batch),
-                    _set_derivatives(p, self.derivative_keys.dyn_loss),
-                    self.vmap_in_axes + vmap_in_axes_params,
+    ) -> tuple[Callable[[Params[Array]], Array], ...] | None:
+        # Note, for the record, multiple dynamic losses
+        # have been introduced in MR 92
+        if self.dynamic_loss != (None,):
+            dyn_loss_fun: tuple[Callable[[Params[Array]], Array], ...] | None = (
+                jax.tree.map(
+                    lambda d: lambda p: dynamic_loss_apply(
+                        d.evaluate,
+                        self.u,
+                        self._get_dynamic_loss_batch(batch),
+                        _set_derivatives(p, self.derivative_keys.dyn_loss),
+                        self.vmap_in_axes + vmap_in_axes_params,
+                    ),
+                    self.dynamic_loss,
+                    is_leaf=lambda x: isinstance(
+                        x, (PDEStatio, PDENonStatio)
+                    ),  # do not traverse further than first level
                 )
             )
         else:
@@ -340,9 +352,13 @@ class _LossPDEAbstract(
 
     def _get_norm_loss_fun(
         self, batch: B, vmap_in_axes_params: tuple[Params[int | None] | None]
-    ) -> Callable[[Params[Array]], Array] | None:
+    ) -> tuple[Callable[[Params[Array]], Array], ...] | None:
+        # Note that since MR 92
+        # norm_loss_fun is formed as a tuple for
+        # consistency with dynamic and observation
+        # losses and more modularity for later
         if self.norm_samples is not None:
-            norm_loss_fun: Callable[[Params[Array]], Array] | None = (
+            norm_loss_fun: tuple[Callable[[Params[Array]], Array], ...] | None = (
                 lambda p: normalization_loss_apply(
                     self.u,
                     cast(
@@ -351,7 +367,7 @@ class _LossPDEAbstract(
                     _set_derivatives(p, self.derivative_keys.norm_loss),
                     vmap_in_axes_params,
                     self.norm_weights,  # type: ignore -> can't get the __post_init__ narrowing here
-                )
+                ),
             )
         else:
             norm_loss_fun = None
@@ -359,20 +375,24 @@ class _LossPDEAbstract(
 
     def _get_boundary_loss_fun(
         self, batch: B
-    ) -> Callable[[Params[Array]], Array] | None:
+    ) -> tuple[Callable[[Params[Array]], Array], ...] | None:
+        # Note that since MR 92
+        # boundary_loss_fun is formed as a tuple for
+        # consistency with dynamic and observation
+        # losses and more modularity for later
         if (
             self.omega_boundary_condition is not None
             and self.omega_boundary_fun is not None
         ):
-            boundary_loss_fun: Callable[[Params[Array]], Array] | None = (
+            boundary_loss_fun: tuple[Callable[[Params[Array]], Array], ...] | None = (
                 lambda p: boundary_condition_apply(
                     self.u,
                     batch,
                     _set_derivatives(p, self.derivative_keys.boundary_loss),
                     self.omega_boundary_fun,  # type: ignore (we are in lambda)
                     self.omega_boundary_condition,  # type: ignore
-                    self.omega_boundary_dim,  # type: ignore
-                )
+                    self.omega_boundary_dim,
+                ),
             )
         else:
             boundary_loss_fun = None
@@ -384,24 +404,37 @@ class _LossPDEAbstract(
         batch: B,
         vmap_in_axes_params: tuple[Params[int | None] | None],
         params: Params[Array],
-    ) -> tuple[Params[Array] | None, Callable[[Params[Array]], Array] | None]:
+    ) -> tuple[
+        Params[Array] | None, tuple[Callable[[Params[Array]], Array], ...] | None
+    ]:
+        # Note, for the record, multiple DGObs
+        # (leading to batch.obs_batch_dict being tuple | None)
+        # have been introduced in MR 92
         if batch.obs_batch_dict is not None:
-            # update params with the batches of observed params
-            params_obs = update_eq_params(params, batch.obs_batch_dict["eq_params"])
-
-            pinn_in, val = (
-                batch.obs_batch_dict["pinn_in"],
-                batch.obs_batch_dict["val"],
+            if len(batch.obs_batch_dict) != len(self.obs_slice):
+                raise ValueError(
+                    "There must be the same number of "
+                    "observation datasets as the number of "
+                    "obs_slice"
+                )
+            params_obs = jax.tree.map(
+                lambda d: update_eq_params(params, d["eq_params"]),
+                batch.obs_batch_dict,
+                is_leaf=lambda x: isinstance(x, dict),
             )
-
-            obs_loss_fun: Callable[[Params[Array]], Array] | None = (
-                lambda po: observations_loss_apply(
-                    self.u,
-                    pinn_in,
-                    _set_derivatives(po, self.derivative_keys.observations),
-                    self.vmap_in_axes + vmap_in_axes_params,
-                    val,
+            obs_loss_fun: tuple[Callable[[Params[Array]], Array], ...] | None = (
+                jax.tree.map(
+                    lambda d, slice_: lambda po: observations_loss_apply(
+                        self.u,
+                        d["pinn_in"],
+                        _set_derivatives(po, self.derivative_keys.observations),
+                        self.vmap_in_axes + vmap_in_axes_params,
+                        d["val"],
+                        slice_,
+                    ),
+                    batch.obs_batch_dict,
                     self.obs_slice,
+                    is_leaf=lambda x: isinstance(x, dict),
                 )
             )
         else:
@@ -434,7 +467,7 @@ class LossPDEStatio(
     ----------
     u : AbstractPINN
         the PINN
-    dynamic_loss : PDEStatio | None
+    dynamic_loss : tuple[PDEStatio, ...] | PDEStatio | None
         the stationary PDE dynamic part of the loss, basically the differential
         operator $\mathcal{N}[u](x)$. Should implement a method
         `dynamic_loss.evaluate(x, u, params)`.
@@ -497,7 +530,7 @@ class LossPDEStatio(
         Alternatively, the user can pass a float or an integer.
         These corresponds to the weights $w_k = \frac{1}{q(x_k)}$ where
         $q(\cdot)$ is the proposal p.d.f. and $x_k$ are the Monte-Carlo samples.
-    obs_slice : slice, default=None
+    obs_slice : tuple[EllipsisType | slice, ...] | EllipsisType | slice | None, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
 
@@ -512,7 +545,7 @@ class LossPDEStatio(
     # (ie. jax.Array cannot be static) and that we do not expect to change
 
     u: AbstractPINN
-    dynamic_loss: PDEStatio | None
+    dynamic_loss: tuple[PDEStatio | None, ...]
     loss_weights: LossWeightsPDEStatio
     derivative_keys: DerivativeKeysPDEStatio
 
@@ -522,7 +555,7 @@ class LossPDEStatio(
         self,
         *,
         u: AbstractPINN,
-        dynamic_loss: PDEStatio | None,
+        dynamic_loss: tuple[PDEStatio, ...] | PDEStatio | None,
         loss_weights: LossWeightsPDEStatio | None = None,
         derivative_keys: DerivativeKeysPDEStatio | None = None,
         params: Params[Array] | None = None,
@@ -543,15 +576,16 @@ class LossPDEStatio(
                     "Problem at derivative_keys initialization "
                     f"received {derivative_keys=} and {params=}"
                 ) from exc
-        else:
-            derivative_keys = derivative_keys
 
         super().__init__(
             derivative_keys=derivative_keys,
             vmap_in_axes=(0,),
             **kwargs,
         )
-        self.dynamic_loss = dynamic_loss
+        if not isinstance(dynamic_loss, tuple):
+            self.dynamic_loss = (dynamic_loss,)
+        else:
+            self.dynamic_loss = dynamic_loss
 
     def _get_dynamic_loss_batch(
         self, batch: PDEStatioBatch
@@ -619,13 +653,21 @@ class LossPDEStatio(
         )
 
         # get the unweighted mses for each loss term as well as the gradients
-        all_funs: PDEStatioComponents[Callable[[Params[Array]], Array] | None] = (
-            PDEStatioComponents(
-                dyn_loss_fun, norm_loss_fun, boundary_loss_fun, obs_loss_fun
-            )
+        all_funs: PDEStatioComponents[
+            tuple[Callable[[Params[Array]], Array], ...] | None
+        ] = PDEStatioComponents(
+            dyn_loss_fun,
+            norm_loss_fun,
+            boundary_loss_fun,
+            obs_loss_fun,
         )
-        all_params: PDEStatioComponents[Params[Array] | None] = PDEStatioComponents(
-            params, params, params, params_obs
+        all_params: PDEStatioComponents[tuple[Params[Array], ...] | None] = (
+            PDEStatioComponents(
+                jax.tree.map(lambda l: params, dyn_loss_fun),
+                jax.tree.map(lambda l: params, norm_loss_fun),
+                jax.tree.map(lambda l: params, boundary_loss_fun),
+                params_obs,
+            )
         )
         mses_grads = jax.tree.map(
             self.get_gradients,
@@ -633,15 +675,22 @@ class LossPDEStatio(
             all_params,
             is_leaf=lambda x: x is None,
         )
+        # NOTE the is_leaf below is more complex since it must pass possible the tuple
+        # of dyn_loss and then stops (but also account it should not stop when
+        # the tuple of dyn_loss is of length 2)
         mses = jax.tree.map(
-            lambda leaf: leaf[0],  # type: ignore
+            lambda leaf: leaf[0],
             mses_grads,
-            is_leaf=lambda x: isinstance(x, tuple),
+            is_leaf=lambda x: isinstance(x, tuple)
+            and len(x) == 2
+            and isinstance(x[1], Params),
         )
         grads = jax.tree.map(
-            lambda leaf: leaf[1],  # type: ignore
+            lambda leaf: leaf[1],
             mses_grads,
-            is_leaf=lambda x: isinstance(x, tuple),
+            is_leaf=lambda x: isinstance(x, tuple)
+            and len(x) == 2
+            and isinstance(x[1], Params),
         )
 
         return mses, grads
@@ -673,7 +722,7 @@ class LossPDENonStatio(
     ----------
     u : AbstractPINN
         the PINN
-    dynamic_loss : PDENonStatio
+    dynamic_loss : tuple[PDENonStatio, ...] | PDENonStatio | None
         the non stationary PDE dynamic part of the loss, basically the differential
         operator $\mathcal{N}[u](t, x)$. Should implement a method
         `dynamic_loss.evaluate(t, x, u, params)`.
@@ -750,14 +799,13 @@ class LossPDENonStatio(
         Alternatively, the user can pass a float or an integer.
         These corresponds to the weights $w_k = \frac{1}{q(x_k)}$ where
         $q(\cdot)$ is the proposal p.d.f. and $x_k$ are the Monte-Carlo samples.
-    obs_slice : slice, default=None
+    obs_slice : tuple[EllipsisType | slice, ...] | EllipsisType | slice | None, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
-
     """
 
     u: AbstractPINN
-    dynamic_loss: PDENonStatio | None
+    dynamic_loss: tuple[PDENonStatio | None, ...]
     loss_weights: LossWeightsPDENonStatio
     derivative_keys: DerivativeKeysPDENonStatio
     params: InitVar[Params[Array] | None]
@@ -774,7 +822,7 @@ class LossPDENonStatio(
         self,
         *,
         u: AbstractPINN,
-        dynamic_loss: PDENonStatio | None,
+        dynamic_loss: tuple[PDENonStatio, ...] | PDENonStatio | None,
         loss_weights: LossWeightsPDENonStatio | None = None,
         derivative_keys: DerivativeKeysPDENonStatio | None = None,
         initial_condition_fun: Callable[[Float[Array, " dimension"]], Array]
@@ -800,8 +848,6 @@ class LossPDENonStatio(
                     "Problem at derivative_keys initialization "
                     f"received {derivative_keys=} and {params=}"
                 ) from exc
-        else:
-            derivative_keys = derivative_keys
 
         super().__init__(
             derivative_keys=derivative_keys,
@@ -809,7 +855,10 @@ class LossPDENonStatio(
             **kwargs,
         )
 
-        self.dynamic_loss = dynamic_loss
+        if not isinstance(dynamic_loss, tuple):
+            self.dynamic_loss = (dynamic_loss,)
+        else:
+            self.dynamic_loss = dynamic_loss
 
         if initial_condition_fun is None:
             warnings.warn(
@@ -904,7 +953,13 @@ class LossPDENonStatio(
 
         # initial condition
         if self.initial_condition_fun is not None:
-            mse_initial_condition_fun: Callable[[Params[Array]], Array] | None = (
+            # Note that since MR 92
+            # initial_condition_fun is formed as a tuple for
+            # consistency with dynamic and observation
+            # losses and more modularity for later
+            initial_condition_fun: (
+                tuple[Callable[[Params[Array]], Array], ...] | None
+            ) = (
                 lambda p: initial_condition_apply(
                     self.u,
                     omega_initial_batch,
@@ -912,23 +967,29 @@ class LossPDENonStatio(
                     (0,) + vmap_in_axes_params,
                     self.initial_condition_fun,  # type: ignore
                     self.t0,
-                )
+                ),
             )
         else:
-            mse_initial_condition_fun = None
+            initial_condition_fun = None
 
         # get the unweighted mses for each loss term as well as the gradients
-        all_funs: PDENonStatioComponents[Callable[[Params[Array]], Array] | None] = (
-            PDENonStatioComponents(
-                dyn_loss_fun,
-                norm_loss_fun,
-                boundary_loss_fun,
-                obs_loss_fun,
-                mse_initial_condition_fun,
-            )
+        all_funs: PDENonStatioComponents[
+            tuple[Callable[[Params[Array]], Array], ...] | None
+        ] = PDENonStatioComponents(
+            dyn_loss_fun,
+            norm_loss_fun,
+            boundary_loss_fun,
+            obs_loss_fun,
+            initial_condition_fun,
         )
-        all_params: PDENonStatioComponents[Params[Array] | None] = (
-            PDENonStatioComponents(params, params, params, params_obs, params)
+        all_params: PDENonStatioComponents[tuple[Params[Array], ...] | None] = (
+            PDENonStatioComponents(
+                jax.tree.map(lambda l: params, dyn_loss_fun),
+                jax.tree.map(lambda l: params, norm_loss_fun),
+                jax.tree.map(lambda l: params, boundary_loss_fun),
+                params_obs,
+                jax.tree.map(lambda l: params, initial_condition_fun),
+            )
         )
         mses_grads = jax.tree.map(
             self.get_gradients,
@@ -936,15 +997,22 @@ class LossPDENonStatio(
             all_params,
             is_leaf=lambda x: x is None,
         )
+        # NOTE the is_leaf below is more complex since it must pass possible the tuple
+        # of dyn_loss and then stops (but also account it should not stop when
+        # the tuple of dyn_loss is of length 2)
         mses = jax.tree.map(
-            lambda leaf: leaf[0],  # type: ignore
+            lambda leaf: leaf[0],
             mses_grads,
-            is_leaf=lambda x: isinstance(x, tuple),
+            is_leaf=lambda x: isinstance(x, tuple)
+            and len(x) == 2
+            and isinstance(x[1], Params),
         )
         grads = jax.tree.map(
-            lambda leaf: leaf[1],  # type: ignore
+            lambda leaf: leaf[1],
             mses_grads,
-            is_leaf=lambda x: isinstance(x, tuple),
+            is_leaf=lambda x: isinstance(x, tuple)
+            and len(x) == 2
+            and isinstance(x[1], Params),
         )
 
         return mses, grads

@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 import abc
-from typing import Self, Literal, Callable, TypeVar, Generic, Any
-from jaxtyping import PRNGKeyArray, Array, PyTree, Float
+import warnings
+from typing import Self, Literal, Callable, TypeVar, Generic, Any, get_args
+from dataclasses import InitVar
+from jaxtyping import Array, PyTree, Float, PRNGKeyArray
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import optax
 from jinns.parameters._params import Params
-from jinns.loss._loss_weight_updates import soft_adapt, lr_annealing, ReLoBRaLo
+from jinns.loss._loss_weight_updates import (
+    soft_adapt,
+    lr_annealing,
+    ReLoBRaLo,
+    prior_loss,
+)
 from jinns.utils._types import (
     AnyLossComponents,
     AnyBatch,
@@ -38,6 +45,11 @@ DK = TypeVar("DK", bound=AnyDerivativeKeys)
 # the return types of evaluate_by_terms for example!
 
 
+AvailableUpdateWeightMethods = Literal[
+    "softadapt", "soft_adapt", "prior_loss", "lr_annealing", "ReLoBRaLo"
+]
+
+
 class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
     """
     About the call:
@@ -46,10 +58,43 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
 
     derivative_keys: eqx.AbstractVar[DK]
     loss_weights: eqx.AbstractVar[L]
-    update_weight_method: Literal["soft_adapt", "lr_annealing", "ReLoBRaLo"] | None = (
-        eqx.field(kw_only=True, default=None, static=True)
+    loss_weight_scales: L = eqx.field(init=False)
+    update_weight_method: AvailableUpdateWeightMethods | None = eqx.field(
+        kw_only=True, default=None, static=True
     )
     vmap_in_axes: tuple[int] = eqx.field(static=True)
+    keep_initial_loss_weight_scales: InitVar[bool] = eqx.field(
+        default=True, kw_only=True
+    )
+
+    def __init__(
+        self,
+        *,
+        loss_weights,
+        derivative_keys,
+        vmap_in_axes,
+        update_weight_method=None,
+        keep_initial_loss_weight_scales: bool = False,
+    ):
+        if update_weight_method is not None and update_weight_method not in get_args(
+            AvailableUpdateWeightMethods
+        ):
+            raise ValueError(f"{update_weight_method=} is not a valid method")
+        self.update_weight_method = update_weight_method
+        self.loss_weights = loss_weights
+        self.derivative_keys = derivative_keys
+        self.vmap_in_axes = vmap_in_axes
+        if keep_initial_loss_weight_scales:
+            self.loss_weight_scales = self.loss_weights
+            if self.update_weight_method is not None:
+                warnings.warn(
+                    "Loss weights out from update_weight_method will still be"
+                    " multiplied by the initial input loss_weights"
+                )
+        else:
+            self.loss_weight_scales = optax.tree_utils.tree_ones_like(self.loss_weights)
+            # self.loss_weight_scales will contain None where self.loss_weights
+            # has None
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self.evaluate(*args, **kwargs)
@@ -127,7 +172,11 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         raise ValueError(
             "The numbers of declared loss weights and "
             "declared loss terms do not concord "
-            f" got {len(weights)} and {len(terms_list)}"
+            f" got {len(weights)} and {len(terms_list)}. "
+            "If you passed tuple of dyn_loss, make sure to pass "
+            "tuple of loss weights at LossWeights.dyn_loss."
+            "If you passed tuple of obs datasets, make sure to pass "
+            "tuple of loss weights at LossWeights.observations."
         )
 
     def ponderate_and_sum_gradient(self, terms: C) -> Params[Array | None]:
@@ -171,6 +220,8 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             new_weights = soft_adapt(
                 self.loss_weights, iteration_nb, loss_terms, stored_loss_terms
             )
+        elif self.update_weight_method == "prior_loss":
+            new_weights = prior_loss(self.loss_weights, iteration_nb, stored_loss_terms)
         elif self.update_weight_method == "lr_annealing":
             new_weights = lr_annealing(self.loss_weights, grad_terms)
         elif self.update_weight_method == "ReLoBRaLo":
@@ -183,6 +234,13 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         # Below we update the non None entry in the PyTree self.loss_weights
         # we directly get the non None entries because None is not treated as a
         # leaf
+
+        new_weights = jax.lax.cond(
+            iteration_nb == 0,
+            lambda nw: nw,
+            lambda nw: jnp.array(jax.tree.leaves(self.loss_weight_scales)) * nw,
+            new_weights,
+        )
         return eqx.tree_at(
             lambda pt: jax.tree.leaves(pt.loss_weights), self, new_weights
         )
