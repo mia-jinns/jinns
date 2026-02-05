@@ -81,6 +81,7 @@ def train_NSPipeFlow_init():
         2 -> "ymin"
         3 -> "ymax"
         """
+
         def equation_u(self, inputs, u, params):
             """
             Note that we must return a tuple for the facets
@@ -93,12 +94,14 @@ def train_NSPipeFlow_init():
             u3 = u_p(inputs[..., 2], params)[..., 0:2]
             u4 = u_p(inputs[..., 3], params)[..., 0:2]
             return (u1, u2, u3, u4)
+
         def equation_f(self, _, __, gridify=False):
             f1 = jnp.array(p_in)
             f2 = jnp.array(p_out)
-            f3 = jnp.array([0., 0.])
-            f4 = jnp.array([0., 0.])
+            f3 = jnp.array([0.0, 0.0])
+            f4 = jnp.array([0.0, 0.0])
             return (f1, f2, f3, f4)
+
     boundary_condition = DirichletFacets()
 
     dyn_loss = jinns.loss.NavierStokesMassConservation2DStatio()

@@ -76,7 +76,10 @@ class Neumann(BoundaryConditionAbstract):
     """
 
     def equation_u(
-        self, inputs: Float[Array, " dim n_facet"], u: AbstractPINN, params: Params[Array]
+        self,
+        inputs: Float[Array, " dim n_facet"],
+        u: AbstractPINN,
+        params: Params[Array],
     ) -> tuple[Float[Array, " eq_dim"], ...]:
         """
         Note that we write the body for all facets explicitly because we need
@@ -97,17 +100,15 @@ class Neumann(BoundaryConditionAbstract):
         if isinstance(u, PINN):
             if u.eq_type == "PDEStatio":
                 return tuple(
-                    jnp.dot(
-                        jax.grad(u, 0)(inputs[..., facet], params),
-                        n[..., facet]
-                    ) for facet in range(n_facets)
+                    jnp.dot(jax.grad(u, 0)(inputs[..., facet], params), n[..., facet])
+                    for facet in range(n_facets)
                 )
             elif u.eq_type == "PDENonStatio":
                 return tuple(
                     jnp.dot(
-                        jax.grad(u, 0)(inputs[..., facet], params)[1:],
-                        n[..., facet]
-                    ) for facet in range(n_facets)
+                        jax.grad(u, 0)(inputs[..., facet], params)[1:], n[..., facet]
+                    )
+                    for facet in range(n_facets)
                 )
             else:
                 raise ValueError("Wrong u.eq_type")
@@ -124,13 +125,11 @@ class Neumann(BoundaryConditionAbstract):
                 )[1]
                 if u.eq_type == "PDEStatio":
                     return tuple(
-                        du_dx_fun(facet) * n[facet]
-                        for facet in range(n_facets)
+                        du_dx_fun(facet) * n[facet] for facet in range(n_facets)
                     )
                 if u.eq_type == "PDENonStatio":
                     return tuple(
-                        du_dx_fun(facet)[..., 1] * n[facet]
-                        for facet in range(n_facets)
+                        du_dx_fun(facet)[..., 1] * n[facet] for facet in range(n_facets)
                     )
             elif n_facets == 4:
                 du_dx_fun = lambda tangent_vec, facet: jax.jvp(
@@ -144,18 +143,20 @@ class Neumann(BoundaryConditionAbstract):
                             jnp.repeat(
                                 jnp.array([1.0, 0.0])[None],
                                 inputs[..., facet].shape[0],
-                                axis=0
+                                axis=0,
                             ),
-                            facet
-                        ) * n[0, facet] + # this sum is the dot product
-                        du_dx_fun(
+                            facet,
+                        )
+                        * n[0, facet]  # this sum is the dot product
+                        + du_dx_fun(
                             jnp.repeat(
                                 jnp.array([0.0, 1.0])[None],
                                 inputs[..., facet].shape[0],
-                                axis=0
+                                axis=0,
                             ),
-                            facet
-                        ) * n[1, facet]
+                            facet,
+                        )
+                        * n[1, facet]
                         for facet in range(n_facets)
                     )
                 if u.eq_type == "PDENonStatio":
@@ -163,28 +164,33 @@ class Neumann(BoundaryConditionAbstract):
                     return tuple(
                         du_dx_fun(
                             jnp.repeat(
-                                jnp.array([0., 1.0, 0.0])[None],
+                                jnp.array([0.0, 1.0, 0.0])[None],
                                 inputs[..., facet].shape[0],
-                                axis=0
+                                axis=0,
                             ),
-                            facet
-                        ).squeeze() * n[0, facet]
-                        + # this sum is the dot product
+                            facet,
+                        ).squeeze()
+                        * n[0, facet]
+                        +  # this sum is the dot product
                         du_dx_fun(
                             jnp.repeat(
-                                jnp.array([0., 0.0, 1.0])[None],
+                                jnp.array([0.0, 0.0, 1.0])[None],
                                 inputs[..., facet].shape[0],
-                                axis=0
+                                axis=0,
                             ),
-                            facet
-                        ).squeeze() * n[1, facet]
+                            facet,
+                        ).squeeze()
+                        * n[1, facet]
                         for facet in range(n_facets)
                     )
             else:
                 raise ValueError("Not implemented")
 
     def equation_f(
-        self, inputs: Float[Array, " dim n_facet"], params: Params[Array], gridify: bool = False
+        self,
+        inputs: Float[Array, " dim n_facet"],
+        params: Params[Array],
+        gridify: bool = False,
     ) -> tuple[Float[Array, " eq_dim"], ...]:
         """
         Note that we write the body for all facets explicitly because we need
@@ -202,8 +208,9 @@ class Neumann(BoundaryConditionAbstract):
             # inputs.shape[-1] indicates the number of dimensions of the pb
             # thus we get the correct grid of zeros
             return tuple(
-                jnp.zeros(
-                    get_grid(inputs[..., facet]).shape[: inputs.shape[-1]])[..., None]
+                jnp.zeros(get_grid(inputs[..., facet]).shape[: inputs.shape[-1]])[
+                    ..., None
+                ]
                 for facet in range(n_facets)
             )
         else:

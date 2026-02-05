@@ -45,7 +45,9 @@ class BoundaryConditionAbstract(eqx.Module):
                 " d >= 1. At least one of the return value from BoundaryCondition"
                 " breaks the condition."
             )
-        if any(tuple(map(lambda arr: arr.ndim > 1, eval_u))) and not isinstance(u, SPINN):
+        if any(tuple(map(lambda arr: arr.ndim > 1, eval_u))) and not isinstance(
+            u, SPINN
+        ):
             warnings.warn(
                 "At least one of the return value from BoundaryCondition' equation has more "
                 "than one dimension. This is in general a mistake (probably from "
@@ -64,7 +66,7 @@ class BoundaryConditionAbstract(eqx.Module):
 
         print(eval_u[0].shape, len(eval_u))
         print(eval_f[0].shape, len(eval_f))
-        
+
         # next compute differences between what should match
         residual = jax.tree.map(
             partial(_subtract_with_check, cause="boundary condition fun"),

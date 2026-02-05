@@ -6,7 +6,6 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-from functools import partial
 from typing import TYPE_CHECKING, Callable
 from types import EllipsisType
 import jax
@@ -291,17 +290,17 @@ def equation_on_all_facets_equal(
         We handle kwargs for `gridify` e.g.
         """
         equation_by_facet = jax.tree.map(
-            lambda facet:equation(
+            lambda facet: equation(
                 args[0],
-                facet.squeeze(), # note the squeeze to make the trailing axis
+                facet.squeeze(),  # note the squeeze to make the trailing axis
                 # disappear because the wrapper function does not handle with it
                 *args[2:],
-                **kwargs
+                **kwargs,
             ),
-            jnp.split(args[1], args[1].shape[-1], axis=-1), # create a list
+            jnp.split(args[1], args[1].shape[-1], axis=-1),  # create a list
             # of array for each facet to vmap over
         )
-        
+
         return tuple(equation_by_facet)
 
     return wrapper
