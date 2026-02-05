@@ -72,46 +72,34 @@ def train_NSPipeFlow_init():
         nn_params=u_p_init_nn_params,
         eq_params={"rho": rho, "nu": nu},
     )
-    u_p_omega_boundary_fun = {
-        "xmin": lambda x: p_in,
-        "xmax": lambda x: p_out,
-        "ymin": lambda x: jnp.array([0.0, 0.0]),
-        "ymax": lambda x: jnp.array([0.0, 0.0]),
-    }
-    u_p_omega_boundary_condition = {
-        "xmin": "dirichlet",
-        "xmax": "dirichlet",
-        "ymin": "dirichlet",
-        "ymax": "dirichlet",
-    }
-    u_p_omega_boundary_dim = {
-        "xmin": jnp.s_[2:3],
-        "xmax": jnp.s_[2:3],
-        "ymin": jnp.s_[0:2],
-        "ymax": jnp.s_[0:2],
-    }
 
     class DirichletFacets(jinns.loss.BoundaryConditionAbstract):
         """
-        For the facet matching pattern, the last axis of x corresponds to
+        For the facet matching pattern, the last axis of `inputs` corresponds to
         0 -> "xmin"
         1 -> "xmax"
         2 -> "ymin"
         3 -> "ymax"
         """
-        def equation_u(x, u_p, params):
+        def equation_u(self, inputs, u, params):
             """
             Note that we must return a tuple for the facets
+            Note that u is a SPINN so we get the dimension to apply the
+            boundary condition with a ellipsis followed by a slice (eg [...,
+            2:3])
             """
-            f1 = u_p(x[..., 0], params)[2:3]
-            f2 = u_p(x[..., 1], params)[2:3]
-            f3 = u_p(x[..., 2], params)[0:2]
-            f4 = u_p(x[..., 3], params)[0:2]
-            return 
-
-
-
-        def equation_f(x, params):
+            u1 = u_p(inputs[..., 0], params)[..., 2:3]
+            u2 = u_p(inputs[..., 1], params)[..., 2:3]
+            u3 = u_p(inputs[..., 2], params)[..., 0:2]
+            u4 = u_p(inputs[..., 3], params)[..., 0:2]
+            return (u1, u2, u3, u4)
+        def equation_f(self, _, __, gridify=False):
+            f1 = jnp.array(p_in)
+            f2 = jnp.array(p_out)
+            f3 = jnp.array([0., 0.])
+            f4 = jnp.array([0., 0.])
+            return (f1, f2, f3, f4)
+    boundary_condition = DirichletFacets()
 
     dyn_loss = jinns.loss.NavierStokesMassConservation2DStatio()
     loss_weights = jinns.loss.LossWeightsPDEStatio(dyn_loss=1.0, boundary_loss=1.0)
@@ -119,9 +107,7 @@ def train_NSPipeFlow_init():
         u=u_p,
         loss_weights=loss_weights,
         dynamic_loss=dyn_loss,
-        omega_boundary_fun=u_p_omega_boundary_fun,
-        omega_boundary_condition=u_p_omega_boundary_condition,
-        omega_boundary_dim=u_p_omega_boundary_dim,
+        boundary_condition=boundary_condition,
         params=init_params,
     )
     return init_params, loss, train_data

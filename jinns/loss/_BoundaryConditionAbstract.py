@@ -39,14 +39,16 @@ class BoundaryConditionAbstract(eqx.Module):
     ) -> Float[Array, " eq_dim n_facet"]:
         eval_u = self.equation_u(inputs, u, params)
 
-        if eval_u.ndim == 0:
+        if any(tuple(map(lambda arr: arr.ndim == 0, eval_u))):
             raise ValueError(
-                "The output of loss must be vectorial, i.e. of shape (d,) with d >= 1"
+                "The output of loss must be vectorial, i.e. of shape (d,) with"
+                " d >= 1. At least one of the return value from BoundaryCondition"
+                " breaks the condition."
             )
-        if eval_u.ndim > 2 and not isinstance(u, SPINN):
+        if any(tuple(map(lambda arr: arr.ndim > 1, eval_u))) and not isinstance(u, SPINN):
             warnings.warn(
-                "Return value from BoundaryCondition' equation has more "
-                "than two dimensions. This is in general a mistake (probably from "
+                "At least one of the return value from BoundaryCondition' equation has more "
+                "than one dimension. This is in general a mistake (probably from "
                 "an unfortunate broadcast in jnp.array computations) resulting in "
                 "bad reduction operations in losses."
             )
@@ -60,29 +62,25 @@ class BoundaryConditionAbstract(eqx.Module):
 
         # TODO add check on shape
 
+        print(eval_u[0].shape, len(eval_u))
+        print(eval_f[0].shape, len(eval_f))
+        
         # next compute differences between what should match
         residual = jax.tree.map(
-            partial(
-                _subtract_with_check,
-                cause="boundary condition fun"
-            ),
+            partial(_subtract_with_check, cause="boundary condition fun"),
             eval_f,
             eval_u,
         )
         # next square the differences and reduce over the dimensions of the
         # residuals
         if isinstance(u, PINN):
-            residual = jax.tree.map(
-                lambda r: jnp.sum(r ** 2, axis=0),
-                residual
-            )
+            residual = jax.tree.map(lambda r: jnp.sum(r**2, axis=0), residual)
         elif isinstance(u, SPINN):
-            residual = jax.tree.map(
-                lambda r: jnp.sum(r ** 2, axis=-1),
-                residual
-            )
-            
+            residual = jax.tree.map(lambda r: jnp.sum(r**2, axis=-1), residual)
+
         # now we can form an array with the last axis being the facet
+        # Note that we do not necesarily have all the facets in the array we
+        # form
         return jnp.stack(jax.tree.leaves(residual), axis=-1)
 
     @abc.abstractmethod
@@ -91,7 +89,7 @@ class BoundaryConditionAbstract(eqx.Module):
         inputs: InputDim,
         u: AbstractPINN,
         params: Params[Array],
-    ) -> tuple[Float[Array, " eq_dim"]]:
+    ) -> tuple[Float[Array, " eq_dim"], ...]:
         r"""The differential operator on the boundaries defining the stationary PDE.
 
         !!! warning
@@ -125,7 +123,7 @@ class BoundaryConditionAbstract(eqx.Module):
     @abc.abstractmethod
     def equation_f(
         self, inputs: InputDim, params: Params[Array], gridify: bool = False
-    ) -> tuple[Float[Array, " eq_dim"]]:
+    ) -> tuple[Float[Array, " eq_dim"], ...]:
         r"""The values that the solution should match on the boundaries
 
         !!! warning

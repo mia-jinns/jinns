@@ -243,8 +243,7 @@ def boundary_condition_apply(
         # Note that facets are on the last axis as specified by
         # `BoundaryCondition` function type hints
         v_boundary_condition = vmap(
-            lambda inputs, params: boundary_condition.evaluate(inputs, u,
-                                                               params),
+            lambda inputs, params: boundary_condition.evaluate(inputs, u, params),
             vmap_in_axes,
             0,
         )
@@ -282,7 +281,7 @@ def equation_on_all_facets_equal(
     happening.
 
     The wrapper vectorizes the computations over the facet axis
-    with a jax.vmap which is almost always the best solution.
+    with a jax.tree.map which is almost always the best solution.
     The user can draw inspiration from this code for
     more specific situations.
     """
@@ -291,16 +290,19 @@ def equation_on_all_facets_equal(
         """
         We handle kwargs for `gridify` e.g.
         """
-        equation_by_facet = jax.vmap(
-            partial(equation, **kwargs),
-            in_axes=(
-                None,
-                -1,
-            )
-            + tuple(None for _ in range(len(args) - 2)),
-            out_axes=-1,
+        equation_by_facet = jax.tree.map(
+            lambda facet:equation(
+                args[0],
+                facet.squeeze(), # note the squeeze to make the trailing axis
+                # disappear because the wrapper function does not handle with it
+                *args[2:],
+                **kwargs
+            ),
+            jnp.split(args[1], args[1].shape[-1], axis=-1), # create a list
+            # of array for each facet to vmap over
         )
-        return equation_by_facet(*args)
+        
+        return tuple(equation_by_facet)
 
     return wrapper
 

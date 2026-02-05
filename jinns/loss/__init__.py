@@ -10,7 +10,7 @@ from ._DynamicLoss import (
     NavierStokesMassConservation2DStatio,
 )
 from ._BoundaryConditionAbstract import BoundaryConditionAbstract
-from ._BoundaryCondition import Dirichlet
+from ._BoundaryCondition import Dirichlet, Neumann
 from ._loss_weights import (
     LossWeightsODE,
     LossWeightsPDENonStatio,
@@ -54,4 +54,5 @@ __all__ = [
     "lr_annealing",
     "ReLoBRaLo",
     "Dirichlet",
+    "Neumann",
 ]

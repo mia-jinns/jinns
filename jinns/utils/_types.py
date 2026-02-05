@@ -65,11 +65,11 @@ if TYPE_CHECKING:
             AbstractPINN,
             Params[Array],
         ],
-        tuple[Float[Array, " InputDim"]],
+        tuple[Float[Array, " InputDim"], ...],
     ]
     BoundaryEquationF: TypeAlias = Callable[
         [BoundaryCondition, Float[Array, " InputDim n_facet"], Params[Array], bool],
-        tuple[Float[Array, " InputDim"]],
+        tuple[Float[Array, " InputDim"], ...],
     ]
     BoundaryEquationUOnFacet: TypeAlias = Callable[
         [BoundaryCondition, Float[Array, " InputDim"], AbstractPINN, Params[Array]],

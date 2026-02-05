@@ -125,12 +125,13 @@ def train_ReacDiff_init():
         boundary_loss=1 * Tmax,
     )
 
+    boundary_condition = jinns.loss.Neumann()
+
     loss = jinns.loss.LossPDENonStatio(
         u=u_spinn,
         loss_weights=loss_weights,
         dynamic_loss=fisher_dynamic_loss,
-        omega_boundary_fun=lambda t_dx: 0,
-        omega_boundary_condition="neumann",
+        boundary_condition=boundary_condition,
         initial_condition_fun=u0,
         params=init_params,
     )
