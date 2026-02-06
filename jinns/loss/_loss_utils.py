@@ -164,79 +164,9 @@ def boundary_condition_apply(
     u: AbstractPINN,
     batch: PDEStatioBatch | PDENonStatioBatch,
     params: Params[Array],
-    # omega_boundary_fun: BoundaryConditionFun | dict[str, BoundaryConditionFun],
-    # omega_boundary_condition: str | dict[str, str],
-    # omega_boundary_dim: slice | dict[str, slice],
 ) -> Float[Array, " "]:
     assert batch.border_batch is not None
     vmap_in_axes = (0,) + _get_vmap_in_axes_params(batch.param_batch_dict, params)
-
-    # def _check_tuple_of_dict(
-    #    val,
-    # ) -> TypeGuard[
-    #    tuple[
-    #        dict[str, BoundaryConditionFun],
-    #        dict[str, BoundaryConditionFun],
-    #        dict[str, BoundaryConditionFun],
-    #    ]
-    # ]:
-    #    return all(isinstance(x, dict) for x in val)
-
-    # omega_boundary_dicts = (
-    #    omega_boundary_condition,
-    #    omega_boundary_fun,
-    #    omega_boundary_dim,
-    # )
-    # if _check_tuple_of_dict(omega_boundary_dicts):
-    #    # We must create the facet tree dictionary as we do not have the
-    #    # enumerate from the for loop to pass the id integer
-    #    if batch.border_batch.shape[-1] == 2:
-    #        # 1D
-    #        facet_tree = {"xmin": 0, "xmax": 1}
-    #    elif batch.border_batch.shape[-1] == 4:
-    #        # 2D
-    #        facet_tree = {"xmin": 0, "xmax": 1, "ymin": 2, "ymax": 3}
-    #    else:
-    #        raise ValueError("Other border batches are not implemented")
-    #    b_losses_by_facet = jax.tree_util.tree_map(
-    #        lambda c, f, fa, d: (
-    #            None
-    #            if c is None
-    #            else jnp.mean(
-    #                _compute_boundary_loss(c, f, batch, u, params, fa, d, vmap_in_axes)
-    #            )
-    #        ),
-    #        omega_boundary_dicts[0],  # omega_boundary_condition,
-    #        omega_boundary_dicts[1],  # omega_boundary_fun,
-    #        facet_tree,
-    #        omega_boundary_dicts[2],  # omega_boundary_dim,
-    #        is_leaf=lambda x: x is None,
-    #    )  # when exploring leaves with None value (no condition) the returned
-    #    # mse is None and we get rid of the None leaves of b_losses_by_facet
-    #    # with the tree_leaves below
-    #    # Note that to keep the behaviour given in the comment above we neede
-    #    # to specify is_leaf according to the note in the release of 0.4.29
-    # else:
-    #    facet_tuple = tuple(f for f in range(batch.border_batch.shape[-1]))
-    #    b_losses_by_facet = jax.tree_util.tree_map(
-    #        lambda fa: jnp.mean(
-    #            _compute_boundary_loss(
-    #                omega_boundary_dicts[0],  # type: ignore -> need TypeIs from 3.13
-    #                omega_boundary_dicts[1],  # type: ignore -> need TypeIs from 3.13
-    #                batch,
-    #                u,
-    #                params,
-    #                fa,
-    #                omega_boundary_dicts[2],  # type: ignore -> need TypeIs from 3.13
-    #                vmap_in_axes,
-    #            )
-    #        ),
-    #        facet_tuple,
-    #    )
-    # mse_boundary_loss = jax.tree_util.tree_reduce(
-    #    lambda x, y: x + y, jax.tree_util.tree_leaves(b_losses_by_facet)
-    # )
-    # return mse_boundary_loss
 
     if isinstance(u, PINN):
         # Note that facets are on the last axis as specified by
