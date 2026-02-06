@@ -45,8 +45,8 @@ def dynamic_loss_apply(
     vmap_axes: tuple[int, Params[int | None] | None],
     u_type: PINN | HyperPINN | None = None,
     *,
-    no_reduction: bool = False
-    ) -> Float[Array, " "] | Float[Array, " n_samples eq_dim"]:
+    no_reduction: bool = False,
+) -> Float[Array, " "] | Float[Array, " n_samples eq_dim"]:
     """
     Sometimes when u is a lambda function a or dict we do not have access to
     its type here, hence the last argument
@@ -168,7 +168,7 @@ def boundary_condition_apply(
     batch: PDEStatioBatch | PDENonStatioBatch,
     params: Params[Array],
     *,
-    no_reduction: bool = False
+    no_reduction: bool = False,
 ) -> Float[Array, " "] | tuple[Float[Array, " n_samples eq_dim"], ...]:
     assert batch.border_batch is not None
     vmap_in_axes = (0,) + _get_vmap_in_axes_params(batch.param_batch_dict, params)

@@ -182,6 +182,7 @@ def _loss_evaluate_and_gradient_step(
     )
     return train_loss_value, params, last_non_nan_params, state, loss, loss_terms
 
+
 @partial(jit, static_argnames=["optimizer", "params_mask", "with_loss_weight_update"])
 def _loss_evaluate_and_natural_gradient_step(
     i,
@@ -239,7 +240,6 @@ def _loss_evaluate_and_natural_gradient_step(
     # TODO add a proper integration weights support
 
     # 2. Construct Gram matrix
-    
 
     if loss.update_weight_method is not None and with_loss_weight_update:
         key, subkey = jax.random.split(key)  # type: ignore because key can

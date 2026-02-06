@@ -188,8 +188,10 @@ class _LossPDEAbstract(
         pass
 
     def _get_dyn_loss_fun(
-        self, batch: B, vmap_in_axes_params: tuple[Params[int | None] | None],
-        no_reduction: bool = False
+        self,
+        batch: B,
+        vmap_in_axes_params: tuple[Params[int | None] | None],
+        no_reduction: bool = False,
     ) -> Callable[[Params[Array]], Array] | None:
         if self.dynamic_loss is not None:
             dyn_loss_eval = self.dynamic_loss.evaluate
@@ -200,7 +202,7 @@ class _LossPDEAbstract(
                     self._get_dynamic_loss_batch(batch),
                     _set_derivatives(p, self.derivative_keys.dyn_loss),
                     self.vmap_in_axes + vmap_in_axes_params,
-                    no_reduction=no_reduction
+                    no_reduction=no_reduction,
                 )
             )
         else:
@@ -237,7 +239,7 @@ class _LossPDEAbstract(
                     self.u,
                     batch,
                     _set_derivatives(p, self.derivative_keys.boundary_loss),
-                    no_reduction=no_reduction
+                    no_reduction=no_reduction,
                 )
             )
         else:
@@ -419,7 +421,7 @@ class LossPDEStatio(
         batch: PDEStatioBatch,
         *,
         non_opt_params: Params[Array] | None = None,
-        no_reduction: bool = False
+        no_reduction: bool = False,
     ) -> tuple[PDEStatioComponents[Array | None], PDEStatioComponents[Array | None]]:
         """
         Evaluate the loss function at a batch of points for given parameters.
@@ -454,8 +456,7 @@ class LossPDEStatio(
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
         # dynamic part
-        dyn_loss_fun = self._get_dyn_loss_fun(batch, vmap_in_axes_params,
-                                              no_reduction)
+        dyn_loss_fun = self._get_dyn_loss_fun(batch, vmap_in_axes_params, no_reduction)
 
         # normalization part
         norm_loss_fun = self._get_norm_loss_fun(batch, vmap_in_axes_params)
@@ -682,7 +683,7 @@ class LossPDENonStatio(
         batch: PDENonStatioBatch,
         *,
         non_opt_params: Params[Array] | None = None,
-        no_reduction: bool = False
+        no_reduction: bool = False,
     ) -> tuple[
         PDENonStatioComponents[Array | None], PDENonStatioComponents[Array | None]
     ]:
@@ -722,8 +723,7 @@ class LossPDENonStatio(
         vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
         # dynamic part
-        dyn_loss_fun = self._get_dyn_loss_fun(batch, vmap_in_axes_params,
-                                              no_reduction)
+        dyn_loss_fun = self._get_dyn_loss_fun(batch, vmap_in_axes_params, no_reduction)
 
         # normalization part
         norm_loss_fun = self._get_norm_loss_fun(batch, vmap_in_axes_params)
