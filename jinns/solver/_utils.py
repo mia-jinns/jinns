@@ -182,6 +182,112 @@ def _loss_evaluate_and_gradient_step(
     )
     return train_loss_value, params, last_non_nan_params, state, loss, loss_terms
 
+@partial(jit, static_argnames=["optimizer", "params_mask", "with_loss_weight_update"])
+def _loss_evaluate_and_natural_gradient_step(
+    i,
+    batch: AnyBatch,
+    loss: AbstractLoss,
+    params: Params[Array],
+    last_non_nan_params: Params[Array],
+    state: optax.OptState,
+    optimizer: optax.GradientTransformation,
+    loss_container: LossContainer,
+    key: PRNGKeyArray,
+    params_mask: Params[bool] | None = None,
+    opt_state_field_for_acceleration: str | None = None,
+    with_loss_weight_update: bool = True,
+):
+    """
+    # The crux of our new approach is partitioning and recombining the parameters and optimization state according to params_mask.
+
+    params_mask:
+        A jinns.parameters.Params object with boolean as leaves, specifying
+        over which parameters optimization is enabled. This usually implies
+        important computational gains. Internally, it is used as the
+        filter_spec of a eqx.partition function on the parameters. Note that this
+        differs from (and complement) DerivativeKeys, as the latter allows
+        for more granularity by freezing some gradients with respect to
+        different loss terms, but do not subset the optimized parameters globally.
+
+    NOTE: in this function body, we change naming convention for concision:
+     * `state` refers to the general optimizer state
+     * `opt_state` refers to the unmasked optimizer state, i.e. which are
+     really involved in the parameter update as defined by `params_mask`.
+     * `non_opt_state` refers to the the optimizer state for non-optimized
+     params.
+    """
+
+    (
+        opt_params,
+        opt_params_accel,
+        non_opt_params,
+        opt_state,
+        non_opt_state,
+    ) = _get_masked_optimization_stuff(
+        params, state, opt_state_field_for_acceleration, params_mask
+    )
+
+    # 1. Get the unreduced residuals and their gradient, for each loss term
+    residuals, gradients = loss.evaluate_by_terms(
+        opt_params_accel
+        if opt_state_field_for_acceleration is not None
+        else opt_params,
+        batch,
+        non_opt_params=non_opt_params,
+    )
+
+    # TODO add a proper integration weights support
+
+    # 2. Construct Gram matrix
+    
+
+    if loss.update_weight_method is not None and with_loss_weight_update:
+        key, subkey = jax.random.split(key)  # type: ignore because key can
+        # still be None currently
+        # avoid computations of tree_at if no updates
+        loss = loss.update_weights(
+            i, loss_terms, loss_container.stored_loss_terms, grad_terms, subkey
+        )
+
+    # 2. total grad
+    grads = loss.ponderate_and_sum_gradient(grad_terms)
+
+    # total loss
+    train_loss_value = loss.ponderate_and_sum_loss(loss_terms)
+
+    opt_grads, _ = grads.partition(
+        params_mask
+    )  # because the update cannot be made otherwise
+
+    # Here, we only use the gradient step of the Optax optimizer on the
+    # parameters specified by params_mask. , no dummy state with filled with zero entries
+    # all other entries of the pytrees are None thanks to params_mask)
+    opt_params, opt_state = _gradient_step(
+        opt_grads,
+        optimizer,
+        opt_params,  # NOTE that we never give the accelerated
+        # params here, this would be a wrong procedure
+        opt_state,
+    )
+
+    params, state = _get_unmasked_optimization_stuff(
+        opt_params,
+        non_opt_params,
+        state,
+        opt_state,
+        non_opt_state,
+        params_mask,
+    )
+
+    # check if any of the parameters is NaN
+    last_non_nan_params = jax.lax.cond(
+        _check_nan_in_pytree(params),
+        lambda _: last_non_nan_params,
+        lambda _: params,
+        None,
+    )
+    return train_loss_value, params, last_non_nan_params, state, loss, loss_terms
+
 
 @partial(
     jit,

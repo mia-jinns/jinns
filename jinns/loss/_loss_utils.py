@@ -44,7 +44,9 @@ def dynamic_loss_apply(
     params: Params[Array],
     vmap_axes: tuple[int, Params[int | None] | None],
     u_type: PINN | HyperPINN | None = None,
-) -> Float[Array, " "]:
+    *,
+    no_reduction: bool = False
+    ) -> Float[Array, " "] | Float[Array, " n_samples eq_dim"]:
     """
     Sometimes when u is a lambda function a or dict we do not have access to
     its type here, hence the last argument
@@ -64,6 +66,8 @@ def dynamic_loss_apply(
         residuals = dyn_loss(batch, u, params)
     else:
         raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
+    if no_reduction:
+        return residuals
     mse_dyn_loss = jnp.mean(jnp.sum(residuals**2, axis=-1))
 
     return mse_dyn_loss
@@ -163,7 +167,9 @@ def boundary_condition_apply(
     u: AbstractPINN,
     batch: PDEStatioBatch | PDENonStatioBatch,
     params: Params[Array],
-) -> Float[Array, " "]:
+    *,
+    no_reduction: bool = False
+) -> Float[Array, " "] | tuple[Float[Array, " n_samples eq_dim"], ...]:
     assert batch.border_batch is not None
     vmap_in_axes = (0,) + _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
@@ -183,6 +189,8 @@ def boundary_condition_apply(
         residual = boundary_condition.evaluate(batch.border_batch, u, params)
     else:
         raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
+    if no_reduction:
+        return residual
     # next square the differences and reduce over the dimensions of the
     # residuals (sum) and reduce over the samples (mean)
     # we get a tree with a mse for each facet

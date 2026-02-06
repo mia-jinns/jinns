@@ -61,6 +61,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         batch: B,
         *,
         non_opt_params: Params[Array] | None = None,
+        no_reduction: bool = False
     ) -> tuple[C, C]:
         pass
 
