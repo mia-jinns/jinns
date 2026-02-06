@@ -11,7 +11,6 @@ import warnings
 import abc
 from typing import TYPE_CHECKING
 import jax
-import jax.numpy as jnp
 import equinox as eqx
 from jaxtyping import Float, Array
 from jinns.nn import SPINN, PINN
@@ -36,7 +35,11 @@ class BoundaryConditionAbstract(eqx.Module):
         inputs: InputDim,
         u: AbstractPINN,
         params: Params[Array],
-    ) -> Float[Array, " eq_dim n_facet"]:
+    ) -> tuple[Float[Array, " eq_dim"], ...]:
+        """
+        The length of the returned tuple is equal to the number of active
+        boundary condition equations (often equal to the number of facets)
+        """
         eval_u = self.equation_u(inputs, u, params)
 
         if any(tuple(map(lambda arr: arr.ndim == 0, eval_u))):
@@ -68,17 +71,7 @@ class BoundaryConditionAbstract(eqx.Module):
             eval_f,
             eval_u,
         )
-        # next square the differences and reduce over the dimensions of the
-        # residuals
-        if isinstance(u, PINN):
-            residual = jax.tree.map(lambda r: jnp.sum(r**2, axis=0), residual)
-        elif isinstance(u, SPINN):
-            residual = jax.tree.map(lambda r: jnp.sum(r**2, axis=-1), residual)
-
-        # now we can form an array with the last axis being the facet
-        # Note that we do not necesarily have all the facets in the array we
-        # form
-        return jnp.stack(jax.tree.leaves(residual), axis=-1)
+        return residual
 
     @abc.abstractmethod
     def equation_u(

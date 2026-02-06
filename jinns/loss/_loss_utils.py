@@ -60,12 +60,11 @@ def dynamic_loss_apply(
             0,
         )
         residuals = v_dyn_loss(batch, params)
-        mse_dyn_loss = jnp.mean(jnp.sum(residuals**2, axis=-1))
     elif u_type == SPINN or isinstance(u, SPINN):
         residuals = dyn_loss(batch, u, params)
-        mse_dyn_loss = jnp.mean(jnp.sum(residuals**2, axis=-1))
     else:
         raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
+    mse_dyn_loss = jnp.mean(jnp.sum(residuals**2, axis=-1))
 
     return mse_dyn_loss
 
@@ -176,24 +175,20 @@ def boundary_condition_apply(
             vmap_in_axes,
             0,
         )
-        b_loss = v_boundary_condition(
+        residual = v_boundary_condition(
             batch.border_batch,
             params,
         )
     elif isinstance(u, SPINN):
-        b_loss = boundary_condition.evaluate(batch.border_batch, u, params)
+        residual = boundary_condition.evaluate(batch.border_batch, u, params)
     else:
         raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
-    b_losses_by_facet = jnp.mean(
-        b_loss,
-        axis=tuple(i for i in range(b_loss.ndim - 1)),
-    )  # this jnp.mean = reduction over the samples
-    # here axis=all axis but last because we have a varying number of axes
-    # possible from SPINN architectures
-    mse_boundary_loss = jnp.sum(
-        b_losses_by_facet
-    )  # this jnp.sum = reduction over the facets
-    return mse_boundary_loss
+    # next square the differences and reduce over the dimensions of the
+    # residuals (sum) and reduce over the samples (mean)
+    # we get a tree with a mse for each facet
+    mse_by_facet = jax.tree.map(lambda r: jnp.mean(jnp.sum(r**2, axis=-1)), residual)
+    # next compute the final whole mse by reducing the pytree over the facets
+    return jax.tree.reduce(jnp.add, mse_by_facet, jnp.array(0.0))
 
 
 def equation_on_all_facets_equal(
