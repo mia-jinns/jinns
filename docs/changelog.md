@@ -1,8 +1,12 @@
 # Changelog
 
+* v1.8.0:
+
+    - **Breaking change**: the way to specify boundary conditions in `jinns` has changed. Old workflows are broken but numerical results should not change after a code update. We introduce a much more flexible and intuitive class `BoundaryCondition` which mimick the `DynamicLoss` classes. This resolves [#19](https://gitlab.com/mia_jinns/jinns/-/issues/19). Check out the [tutorial](https://mia_jinns.gitlab.io/jinns/Notebooks/Tutorials/implementing_your_own_PDE_problem/) and the documentation.
+
 * v1.7.1:
 
- - Breaking change: change naming convention of `PINN.eq_type` attribute. It now takes value in `[ODE", "PDEStatio", "PDENonStatio"]` to be consistent with `jinns` class names. See Issue [#27](https://gitlab.com/mia_jinns/jinns/-/issues/27).
+    - Breaking change: change naming convention of `PINN.eq_type` attribute. It now takes value in `[ODE", "PDEStatio", "PDENonStatio"]` to be consistent with `jinns` class names. See Issue [#27](https://gitlab.com/mia_jinns/jinns/-/issues/27).
 
 
 * v1.7.0
