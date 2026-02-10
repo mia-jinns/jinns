@@ -28,7 +28,22 @@ InputDim = Float[Array, " dim n_facet"] | Float[Array, " dim+1 n_facet"]
 
 
 class BoundaryConditionAbstract(eqx.Module):
-    r""" """
+    r"""
+    Abstract base class for boundary conditions. Implements the boundary term:
+
+    $$
+        \mathcal{B}[u](t, x) = f(t, x)
+    $$
+
+    for **one** point $t$, $x$ or $(t, x)$, depending on the context.
+
+    **Note:** `inputs` is a jinns boundary point in the methods of this class.
+    This means `inputs` has a trailing dimension of size `n_facet`
+    (`inputs.shape=(x_dim, n_facets)`). The user is then free to do whatever
+    they want. Then `equation_u` and `equation_f` return tuples where elements
+    are conditions to be enforced.
+
+    """
 
     def evaluate(
         self,
@@ -88,7 +103,7 @@ class BoundaryConditionAbstract(eqx.Module):
 
         Parameters
         ----------
-        x : InputDim
+        inputs : InputDim
             A `d` dimensional jnp.array representing a point in in each
             element (facet) of $\delta\Omega$.
         u : AbstractPINN
@@ -101,7 +116,7 @@ class BoundaryConditionAbstract(eqx.Module):
         tuple[Float[Array, "eq_dim"]]
             The residual, *i.e.* the differential operator
             $\mathcal{B}_\theta[u_\nu](x)$ evaluated at each facet (last dim of
-            x)
+            inputs)
 
         Raises
         ------
@@ -122,7 +137,7 @@ class BoundaryConditionAbstract(eqx.Module):
 
         Parameters
         ----------
-        x : InputDim
+        inputs : InputDim
             A `d` dimensional jnp.array representing a point in in each
             element (facet) of $\delta\Omega$.
         params : Params[Array]
@@ -137,7 +152,7 @@ class BoundaryConditionAbstract(eqx.Module):
         tuple[Float[Array, "eq_dim"]]
             The residual, *i.e.* the differential operator
             $\mathcal{B}_\theta[u_\nu](x)$ evaluated at each facet (last dim of
-            x)
+            inputs)
 
         Raises
         ------
