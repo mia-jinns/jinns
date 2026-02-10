@@ -122,7 +122,7 @@ class _LossPDEAbstract(
     def __init__(
         self,
         *,
-        boundary_condition: BoundaryConditionAbstract,
+        boundary_condition: BoundaryConditionAbstract | None = None,
         norm_samples: Float[Array, " nb_norm_samples dimension"] | None = None,
         norm_weights: Float[Array, " nb_norm_samples"] | float | int | None = None,
         obs_slice: EllipsisType | slice | None = None,
