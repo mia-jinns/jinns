@@ -100,14 +100,22 @@ class Neumann(BoundaryConditionAbstract):
         if isinstance(u, PINN):
             if u.eq_type == "PDEStatio":
                 return tuple(
-                    jnp.dot(jax.grad(u, 0)(inputs[..., facet], params), n[..., facet])
+                    jnp.dot(
+                        jax.grad(lambda *args: u(*args).squeeze(), 0)(
+                            inputs[..., facet], params
+                        ),
+                        n[..., facet],
+                    )[None]
                     for facet in range(n_facets)
                 )
             elif u.eq_type == "PDENonStatio":
                 return tuple(
                     jnp.dot(
-                        jax.grad(u, 0)(inputs[..., facet], params)[1:], n[..., facet]
-                    )
+                        jax.grad(lambda *args: u(*args).squeeze(), 0)(
+                            inputs[..., facet], params
+                        )[1:],
+                        n[..., facet],
+                    )[None]
                     for facet in range(n_facets)
                 )
             else:
