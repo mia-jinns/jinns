@@ -27,6 +27,8 @@ from ._operators import (
     vectorial_laplacian_rev,
 )
 
+from ._loss_utils import equation_on_all_facets_equal
+
 __all__ = [
     "DynamicLoss",
     "ODE",
@@ -55,4 +57,6 @@ __all__ = [
     "ReLoBRaLo",
     "Dirichlet",
     "Neumann",
+    "BoundaryConditionAbstract",
+    "equation_on_all_facets_equal",
 ]
