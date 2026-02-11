@@ -5,7 +5,7 @@ from __future__ import (
 from typing import TypeAlias, TYPE_CHECKING, Callable, TypeVar
 from jaxtyping import Float, Array, PRNGKeyArray
 
-from jinns.data._Batchs import ODEBatch, PDEStatioBatch, PDENonStatioBatch, ObsBatchDict
+from jinns.data._Batchs import ODEBatch, PDEStatioBatch, PDENonStatioBatch
 from jinns.loss._loss_weights import (
     LossWeightsODE,
     LossWeightsPDEStatio,
@@ -22,7 +22,7 @@ from jinns.loss._loss_components import (
     PDENonStatioComponents,
 )
 
-AnyBatch: TypeAlias = ODEBatch | PDENonStatioBatch | PDEStatioBatch | ObsBatchDict
+AnyBatch: TypeAlias = ODEBatch | PDENonStatioBatch | PDEStatioBatch
 
 AnyDerivativeKeys: TypeAlias = (
     DerivativeKeysODE | DerivativeKeysPDEStatio | DerivativeKeysPDENonStatio

@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import abc
-from typing import Self, Literal, Callable, TypeVar, Generic, Any
+from typing import Self, Literal, Callable, TypeVar, Generic, Any, cast
 from jaxtyping import PRNGKeyArray, Array, PyTree, Float
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import optax
-from jinns.parameters._params import Params
+from jinns.data._Batchs import ObsBatchDict
+from jinns.parameters._params import Params, _get_vmap_in_axes_params, update_eq_params
 from jinns.loss._loss_weight_updates import soft_adapt, lr_annealing, ReLoBRaLo
 from jinns.utils._types import (
     AnyLossComponents,
@@ -60,7 +61,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         opt_params: Params[Array],
         batch: B,
         *,
-        non_opt_params: Params[Array] | None = None,
+        # non_opt_params: Params[Array] | None = None,
         no_reduction: bool = False,
     ) -> tuple[C, C]:
         pass
@@ -90,8 +91,78 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         non_opt_params
             Parameters, which are non optimized, at which the loss is evaluated
         """
-        loss_terms, _ = self.evaluate_by_terms(
-            opt_params, batch, non_opt_params=non_opt_params
+        if non_opt_params is not None:
+            params = eqx.combine(opt_params, non_opt_params)
+        else:
+            params = opt_params
+
+        # Retrieve the optional eq_params_batch
+        # and update eq_params with the latter
+        # and update vmap_in_axes
+        if batch.param_batch_dict is not None:
+            # update params with the batches of generated params
+            params = update_eq_params(params, batch.param_batch_dict)
+
+        # next set of instructions set a XXXBatch with
+        # - 0 at temporal_batch or domain_batch and border_batch
+        # - None at param_batch_dict and obs_batch_dict["eq_params"]
+        # - 0 at obs_batch_dict["pinn_in"] and
+        # obs_batch_dict["val"]
+        # but if obs_batch_dict is None, we just let None.
+        # Note that 0 is always the axis to vmap over for all XDE
+        vmap_in_axes_batch = jax.tree.map(
+            lambda _: 0,  # always 0 for ODE and PDEs
+            batch,
+            is_leaf=lambda x: x is None,
+        )
+        obs_batch_dict_vmap_in_axes = (
+            None
+            if batch.obs_batch_dict is None
+            else (
+                jax.tree.leaves(
+                    ObsBatchDict(
+                        pinn_in=0,  # type: ignore
+                        val=0,  # type: ignore
+                        eq_params=None,
+                    ),
+                    is_leaf=lambda x: x is None,
+                ),
+            )
+        )
+        vmap_in_axes_batch = eqx.tree_at(
+            lambda pt: (pt.param_batch_dict, pt.obs_batch_dict),
+            vmap_in_axes_batch,
+            (None, obs_batch_dict_vmap_in_axes),
+            is_leaf=lambda x: x is None,
+        )
+
+        vmap_in_axes_params = _get_vmap_in_axes_params(
+            cast(eqx.Module, batch.param_batch_dict), params
+        )
+        v_evaluate_by_terms_reduced = lambda p, b: jax.tree.map(
+            lambda red_fun, v_eval: red_fun(v_eval),
+            self.reduction_functions,
+            jax.vmap(
+                self.evaluate_by_terms, vmap_in_axes_params + (vmap_in_axes_batch,)
+            )(p, b),
+        )
+        # print(v_evaluate_by_terms)
+        # v_evaluate_by_terms_reduced = jax.tree.map(
+        #    lambda reduction_fun, v_eval: (
+        #        lambda p, b: reduction_fun(v_eval(p, b)),
+        #    ),
+        #    self.reduction_functions,
+        #    v_evaluate_by_terms
+        # )
+        print(v_evaluate_by_terms_reduced)
+        # jacrev instead of grad to differentiate through the XDEComponents
+        # Pytree
+        grad_terms = jax.tree.map(
+            lambda v_eval: jax.jacrev(v_eval)(params, batch),
+            v_evaluate_by_terms_reduced,
+        )
+        loss_terms = jax.tree.map(
+            lambda v_eval: v_eval(params, batch), v_evaluate_by_terms_reduced
         )
 
         loss_val = self.ponderate_and_sum_loss(loss_terms)

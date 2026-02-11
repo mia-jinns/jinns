@@ -42,7 +42,7 @@ def dynamic_loss_apply(
         | Float[Array, " batch_size 1+dim"]
     ),
     params: Params[Array],
-    vmap_axes: tuple[int, Params[int | None] | None],
+    # vmap_axes: tuple[int, Params[int | None] | None],
     u_type: PINN | HyperPINN | None = None,
     *,
     no_reduction: bool = False,
@@ -52,25 +52,28 @@ def dynamic_loss_apply(
     its type here, hence the last argument
     """
     if u_type == PINN or u_type == HyperPINN or isinstance(u, (PINN, HyperPINN)):
-        v_dyn_loss = vmap(
-            lambda batch, params: dyn_loss(
-                batch,
-                u,
-                params,  # we must place the params at the end
-            ),
-            vmap_axes,
-            0,
-        )
-        residuals = v_dyn_loss(batch, params)
+        # v_dyn_loss = vmap(
+        #    lambda batch, params: dyn_loss(
+        #        batch,
+        #        u,
+        #        params,  # we must place the params at the end
+        #    ),
+        #    vmap_axes,
+        #    0,
+        # )
+        residuals = dyn_loss(batch, u, params)
     elif u_type == SPINN or isinstance(u, SPINN):
         residuals = dyn_loss(batch, u, params)
     else:
         raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
-    if no_reduction:
-        return residuals
-    mse_dyn_loss = jnp.mean(jnp.sum(residuals**2, axis=-1))
+    return residuals
 
-    return mse_dyn_loss
+
+# if no_reduction:
+#        return residuals
+#    mse_dyn_loss = jnp.mean(jnp.sum(residuals**2, axis=-1))
+#
+#    return mse_dyn_loss
 
 
 def normalization_loss_apply(
@@ -243,31 +246,35 @@ def observations_loss_apply(
     u: AbstractPINN,
     batch: Float[Array, " obs_batch_size input_dim"],
     params: Params[Array],
-    vmap_axes: tuple[int, Params[int | None] | None],
+    # vmap_axes: tuple[int, Params[int | None] | None],
     observed_values: Float[Array, " obs_batch_size observation_dim"],
     obs_slice: EllipsisType | slice | None,
 ) -> Float[Array, " "]:
     if isinstance(u, (PINN, HyperPINN)):
-        v_u = vmap(
-            lambda *args: u(*args)[u.slice_solution],
-            vmap_axes,
-            0,
+        u_ = lambda *args: u(*args)[u.slice_solution]
+        # v_u = vmap(
+        #    lambda *args: u(*args)[u.slice_solution],
+        #    vmap_axes,
+        #    0,
+        # )
+        val = u_(batch, params)[:, obs_slice]
+        residuals = _subtract_with_check(
+            observed_values, val, cause="user defined observed_values"
         )
-        val = v_u(batch, params)[:, obs_slice]
-        mse_observation_loss = jnp.mean(
-            jnp.sum(
-                _subtract_with_check(
-                    observed_values, val, cause="user defined observed_values"
-                )
-                ** 2,
-                axis=-1,
-            )
-        )
+        # mse_observation_loss = jnp.mean(
+        #    jnp.sum(
+        #        _subtract_with_check(
+        #            observed_values, val, cause="user defined observed_values"
+        #        )
+        #        ** 2,
+        #        axis=-1,
+        #    )
+        # )
     elif isinstance(u, SPINN):
         raise RuntimeError("observation loss term not yet implemented for SPINNs")
     else:
         raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
-    return mse_observation_loss
+    return residuals
 
 
 def initial_condition_apply(

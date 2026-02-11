@@ -7,7 +7,7 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 from dataclasses import InitVar
-from typing import TYPE_CHECKING, Callable, Any, cast
+from typing import TYPE_CHECKING, Callable, Any
 from types import EllipsisType
 import warnings
 import jax
@@ -21,7 +21,6 @@ from jinns.loss._loss_utils import (
     initial_condition_check,
 )
 from jinns.parameters._params import (
-    _get_vmap_in_axes_params,
     update_eq_params,
 )
 from jinns.parameters._derivative_keys import _set_derivatives, DerivativeKeysODE
@@ -115,6 +114,7 @@ class LossODE(
     initial_condition: InitialCondition | None
     obs_slice: EllipsisType | slice = eqx.field(static=True)
     params: InitVar[Params[Array] | None]
+    reduction_functions: ODEComponents[Callable] = eqx.field(static=True, init=False)
 
     def __init__(
         self,
@@ -235,12 +235,25 @@ class LossODE(
         else:
             self.obs_slice = obs_slice
 
+        self.reduction_functions = ODEComponents(
+            dyn_loss=lambda residual: (jnp.mean(jnp.sum(residual**2, axis=-1)))
+            if residual is not None
+            else None,
+            initial_condition=lambda residual: (jnp.mean(jnp.sum(residual**2, axis=-1)))
+            if residual is not None
+            else None,
+            observations=lambda residual: (jnp.mean(jnp.sum(residual**2, axis=-1)))
+            if residual is not None
+            else None,
+        )
+
     def evaluate_by_terms(
         self,
-        opt_params: Params[Array],
+        params: Params[Array],
         batch: ODEBatch,
         *,
-        non_opt_params: Params[Array] | None = None,
+        # non_opt_params: Params[Array] | None = None,
+        no_reduction: bool = False,
     ) -> tuple[
         ODEComponents[Float[Array, " "] | None], ODEComponents[Float[Array, " "] | None]
     ]:
@@ -251,34 +264,32 @@ class LossODE(
 
         Parameters
         ---------
-        opt_params
-            Parameters, which are optimized, at which the loss is evaluated
+        params
+            Parameters
         batch
             Composed of a batch of points in the
             domain, a batch of points in the domain
             border and an optional additional batch of parameters (eg. for
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
-        non_opt_params
-            Parameters, which are not optimized, at which the loss is evaluated
         """
-        if non_opt_params is not None:
-            params = eqx.combine(opt_params, non_opt_params)
-        else:
-            params = opt_params
+        # if non_opt_params is not None:
+        #    params = eqx.combine(opt_params, non_opt_params)
+        # else:
+        #    params = opt_params
 
         temporal_batch = batch.temporal_batch
 
-        # Retrieve the optional eq_params_batch
-        # and update eq_params with the latter
-        # and update vmap_in_axes
-        if batch.param_batch_dict is not None:
-            # update params with the batches of generated params
-            params = update_eq_params(params, batch.param_batch_dict)
+        ## Retrieve the optional eq_params_batch
+        ## and update eq_params with the latter
+        ## and update vmap_in_axes
+        # if batch.param_batch_dict is not None:
+        #    # update params with the batches of generated params
+        #    params = update_eq_params(params, batch.param_batch_dict)
 
-        vmap_in_axes_params = _get_vmap_in_axes_params(
-            cast(eqx.Module, batch.param_batch_dict), params
-        )
+        # vmap_in_axes_params = _get_vmap_in_axes_params(
+        #    cast(eqx.Module, batch.param_batch_dict), params
+        # )
 
         ## dynamic part
         if self.dynamic_loss is not None:
@@ -289,7 +300,7 @@ class LossODE(
                     self.u,
                     temporal_batch,
                     _set_derivatives(p, self.derivative_keys.dyn_loss),
-                    self.vmap_in_axes + vmap_in_axes_params,
+                    # self.vmap_in_axes + vmap_in_axes_params,
                 )
             )
         else:
@@ -301,43 +312,59 @@ class LossODE(
 
             # first construct the plain init loss no vmaping
             initial_condition_fun__: Callable[[Array, Array, Params[Array]], Array] = (
-                lambda t, u, p: jnp.sum(
-                    (
-                        self.u(
-                            t,
-                            _set_derivatives(
-                                p,
-                                self.derivative_keys.initial_condition,
-                            ),
-                        )
-                        - u
-                    )
-                    ** 2,
-                    axis=0,
+                # lambda t, u, p: jnp.sum(
+                #    (
+                #        self.u(
+                #            t,
+                #            _set_derivatives(
+                #                p,
+                #                self.derivative_keys.initial_condition,
+                #            ),
+                #        )
+                #        - u
+                #    )
+                #    ** 2,
+                #    axis=0,
+                # )
+                lambda t, u, p: self.u(
+                    t,
+                    _set_derivatives(
+                        p,
+                        self.derivative_keys.initial_condition,
+                    ),
                 )
+                - u
             )
             # now vmap over the number of conditions (first dim of t0 and u0)
             # and take the mean
-            initial_condition_fun_: Callable[[Params[Array]], Array] = (
+            initial_condition_fun: Callable[[Params[Array]], Array] = (
                 lambda p: jnp.mean(
                     vmap(initial_condition_fun__, (0, 0, None))(t0, u0, p)
                 )
             )
+
+            ## NOTE that this is the vmap below and its reduction which
+            # disappear since now we vmap over the possible batch of paramter
+            # from outside this function
             # now vmap over the the possible batch of parameters and take the
             # average. Note that we then finally have a cartesian product
             # between the batch of parameters (if any) and the number of
             # conditions (if any)
-            if not jax.tree_util.tree_leaves(vmap_in_axes_params):
-                # if there is no parameter batch to vmap over we cannot call
-                # vmap because calling vmap must be done with at least one non
-                # None in_axes or out_axes
-                initial_condition_fun = initial_condition_fun_
-            else:
-                initial_condition_fun: Callable[[Params[Array]], Array] | None = (
-                    lambda p: jnp.mean(
-                        vmap(initial_condition_fun_, vmap_in_axes_params)(p)
-                    )
-                )
+            # if not jax.tree_util.tree_leaves(vmap_in_axes_params):
+            #    # if there is no parameter batch to vmap over we cannot call
+            #    # vmap because calling vmap must be done with at least one non
+            #    # None in_axes or out_axes
+            #    initial_condition_fun = initial_condition_fun_
+            # else:
+            #    initial_condition_fun: Callable[[Params[Array]], Array] | None = (
+            #        lambda p: jnp.mean(
+            #            vmap(initial_condition_fun_, vmap_in_axes_params)(p)
+            #        )
+            #    )
+            # initial_condition_fun: Callable[[Params[Array]], Array] | None = (
+            #    lambda p: jnp.mean(initial_condition_fun_(p)) # this get vmap
+            #    # over p thanks to vmap_axes_params at outer level
+            # )
         else:
             initial_condition_fun = None
 
@@ -356,7 +383,7 @@ class LossODE(
                     self.u,
                     pinn_in,
                     _set_derivatives(po, self.derivative_keys.observations),
-                    self.vmap_in_axes + vmap_in_axes_params,
+                    # self.vmap_in_axes + vmap_in_axes_params,
                     val,
                     self.obs_slice,
                 )
@@ -372,27 +399,34 @@ class LossODE(
         all_params: ODEComponents[Params[Array] | None] = ODEComponents(
             params, params, params_obs
         )
+        mses = jax.tree.map(
+            lambda f, p: f(p) if f is not None else None,
+            all_funs,
+            all_params,
+            is_leaf=lambda x: x is None,
+        )
+        return mses
 
         # Note that the lambda functions below are with type: ignore just
         # because the lambda are not type annotated, but there is no proper way
         # to do this and we should assign the lambda to a type hinted variable
         # before hand: this is not practical, let us not get mad at this
-        mses_grads = jax.tree.map(
-            self.get_gradients,
-            all_funs,
-            all_params,
-            is_leaf=lambda x: x is None,
-        )
+        # mses_grads = jax.tree.map(
+        #    self.get_gradients,
+        #    all_funs,
+        #    all_params,
+        #    is_leaf=lambda x: x is None,
+        # )
 
-        mses = jax.tree.map(
-            lambda leaf: leaf[0],  # type: ignore
-            mses_grads,
-            is_leaf=lambda x: isinstance(x, tuple),
-        )
-        grads = jax.tree.map(
-            lambda leaf: leaf[1],  # type: ignore
-            mses_grads,
-            is_leaf=lambda x: isinstance(x, tuple),
-        )
+        # mses = jax.tree.map(
+        #    lambda leaf: leaf[0],  # type: ignore
+        #    mses_grads,
+        #    is_leaf=lambda x: isinstance(x, tuple),
+        # )
+        # grads = jax.tree.map(
+        #    lambda leaf: leaf[1],  # type: ignore
+        #    mses_grads,
+        #    is_leaf=lambda x: isinstance(x, tuple),
+        # )
 
-        return mses, grads
+        # return mses, grads
