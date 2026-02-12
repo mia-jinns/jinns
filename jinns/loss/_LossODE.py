@@ -251,14 +251,12 @@ class LossODE(
         self,
         params: Params[Array],
         batch: ODEBatch,
-        *,
-        # non_opt_params: Params[Array] | None = None,
-        no_reduction: bool = False,
     ) -> tuple[
         ODEComponents[Float[Array, " "] | None], ODEComponents[Float[Array, " "] | None]
     ]:
         """
-        Evaluate the loss function at a batch of points for given parameters.
+        Evaluate the loss function at a batch object of single points for given
+        parameters (ie, the vmap is done ouside this function !)
 
         We retrieve two PyTrees with loss values and gradients for each term
 
@@ -312,20 +310,6 @@ class LossODE(
 
             # first construct the plain init loss no vmaping
             initial_condition_fun__: Callable[[Array, Array, Params[Array]], Array] = (
-                # lambda t, u, p: jnp.sum(
-                #    (
-                #        self.u(
-                #            t,
-                #            _set_derivatives(
-                #                p,
-                #                self.derivative_keys.initial_condition,
-                #            ),
-                #        )
-                #        - u
-                #    )
-                #    ** 2,
-                #    axis=0,
-                # )
                 lambda t, u, p: self.u(
                     t,
                     _set_derivatives(
@@ -339,7 +323,8 @@ class LossODE(
             # and take the mean
             initial_condition_fun: Callable[[Params[Array]], Array] = (
                 lambda p: jnp.mean(
-                    vmap(initial_condition_fun__, (0, 0, None))(t0, u0, p)
+                    vmap(initial_condition_fun__, (0, 0, None))(t0, u0, p),
+                axis=0,
                 )
             )
 

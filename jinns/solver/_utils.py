@@ -127,12 +127,13 @@ def _loss_evaluate_and_gradient_step(
     # are its total gradients.
 
     # 1. Compute individual losses and individual gradients
-    loss_terms, grad_terms = loss.evaluate_by_terms(
+    loss_terms, grad_terms = loss.evaluate(
         opt_params_accel
         if opt_state_field_for_acceleration is not None
         else opt_params,
         batch,
         non_opt_params=non_opt_params,
+        ret_grad_terms=True,
     )
 
     if loss.update_weight_method is not None and with_loss_weight_update:

@@ -72,6 +72,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         batch: B,
         *,
         non_opt_params: Params[Array] | None = None,
+        ret_grad_terms: bool = False,
     ) -> tuple[Float[Array, " "], C]:
         """
         Evaluate the loss function at a batch of points for given parameters.
@@ -139,6 +140,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         vmap_in_axes_params = _get_vmap_in_axes_params(
             cast(eqx.Module, batch.param_batch_dict), params
         )
+        # next we vmap over a specific PyTree
         v_evaluate_by_terms_reduced = lambda p, b: jax.tree.map(
             lambda red_fun, v_eval: red_fun(v_eval),
             self.reduction_functions,
@@ -146,24 +148,18 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
                 self.evaluate_by_terms, vmap_in_axes_params + (vmap_in_axes_batch,)
             )(p, b),
         )
-        # print(v_evaluate_by_terms)
-        # v_evaluate_by_terms_reduced = jax.tree.map(
-        #    lambda reduction_fun, v_eval: (
-        #        lambda p, b: reduction_fun(v_eval(p, b)),
-        #    ),
-        #    self.reduction_functions,
-        #    v_evaluate_by_terms
-        # )
-        print(v_evaluate_by_terms_reduced)
-        # jacrev instead of grad to differentiate through the XDEComponents
-        # Pytree
-        grad_terms = jax.tree.map(
-            lambda v_eval: jax.jacrev(v_eval)(params, batch),
-            v_evaluate_by_terms_reduced,
-        )
         loss_terms = jax.tree.map(
             lambda v_eval: v_eval(params, batch), v_evaluate_by_terms_reduced
         )
+
+        if ret_grad_terms:
+            # jacrev instead of grad to differentiate through the XDEComponents
+            # Pytree
+            grad_terms = jax.tree.map(
+                lambda v_eval: jax.jacrev(v_eval)(params, batch),
+                v_evaluate_by_terms_reduced,
+            )
+            return loss_terms, grad_terms
 
         loss_val = self.ponderate_and_sum_loss(loss_terms)
 
