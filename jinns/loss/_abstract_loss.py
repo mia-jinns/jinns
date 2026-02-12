@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import abc
-from typing import Self, Literal, Callable, TypeVar, Generic, Any, cast
+from typing import TYPE_CHECKING, Self, Literal, Callable, TypeVar, Generic, Any, cast
 from jaxtyping import PRNGKeyArray, Array, PyTree, Float
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import optax
-from jinns.data._Batchs import ObsBatchDict
 from jinns.parameters._params import Params, _get_vmap_in_axes_params, update_eq_params
 from jinns.loss._loss_weight_updates import soft_adapt, lr_annealing, ReLoBRaLo
 from jinns.utils._types import (
@@ -19,6 +18,9 @@ from jinns.utils._types import (
 from jinns.nn._pinn import PINN
 from jinns.nn._spinn import SPINN
 from jinns.nn._hyperpinn import HyperPINN
+
+if TYPE_CHECKING:
+    from jinns.nn._abstract_pinn import AbstractPINN
 
 L = TypeVar(
     "L", bound=AnyLossWeights
@@ -50,6 +52,8 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
 
     derivative_keys: eqx.AbstractVar[DK]
     loss_weights: eqx.AbstractVar[L]
+    reduction_functions: eqx.AbstractVar[C]
+    u: eqx.AbstractVar[AbstractPINN]
     update_weight_method: Literal["soft_adapt", "lr_annealing", "ReLoBRaLo"] | None = (
         eqx.field(kw_only=True, default=None, static=True)
     )
@@ -61,11 +65,8 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
     @abc.abstractmethod
     def evaluate_by_terms(
         self,
-        opt_params: Params[Array],
         batch: B,
-        *,
-        # non_opt_params: Params[Array] | None = None,
-        no_reduction: bool = False,
+        params: Params[Array],
     ) -> tuple[C, C]:
         pass
 
@@ -108,71 +109,71 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             params = update_eq_params(params, batch.param_batch_dict)
 
         if isinstance(self.u, (PINN, HyperPINN)):
-                # next set of instructions set a XXXBatch with
-            # - 0 at temporal_batch or domain_batch and border_batch
-            # - None at param_batch_dict and obs_batch_dict["eq_params"]
-            # - 0 at obs_batch_dict["pinn_in"] and
-            # obs_batch_dict["val"]
-            # but if obs_batch_dict is None, we just let None.
-            # Note that 0 is always the axis to vmap over for all XDE
-            vmap_in_axes_batch = jax.tree.map(
-                lambda _: 0,  # always 0 for ODE and PDEs
-                batch,
-                is_leaf=lambda x: x is None,
-            )
-            obs_batch_dict_vmap_in_axes = (
-                None
-                if batch.obs_batch_dict is None
-                else (
-                    jax.tree.leaves(
-                        ObsBatchDict(
-                            pinn_in=0,  # type: ignore
-                            val=0,  # type: ignore
-                            eq_params=None,
-                        ),
-                        is_leaf=lambda x: x is None,
-                    ),
-                )
-            )
-            vmap_in_axes_batch = eqx.tree_at(
-                lambda pt: (pt.param_batch_dict, pt.obs_batch_dict),
-                vmap_in_axes_batch,
-                (None, obs_batch_dict_vmap_in_axes),
-                is_leaf=lambda x: x is None,
-            )
-
             vmap_in_axes_params = _get_vmap_in_axes_params(
                 cast(eqx.Module, batch.param_batch_dict), params
             )
-            # next we vmap over a specific PyTree
-            v_evaluate_by_terms_reduced = lambda p, b: jax.tree.map(
+
+            # create a PyTree of vmapped functions (loss terms)
+            # we could technically vmap evaluate by terms with a PyTree in axes
+            # of type XDEBatch but this would for identical batch length...
+            def vmap_loss_fun(fun, _b, _p, _in_axes):
+                if fun is None:
+                    return None
+                else:
+                    if (
+                        _b is None and _in_axes is None
+                    ):  # some loss_fun does not need batch
+                        if vmap_in_axes_params == (None,):
+                            return fun(_p)[None]  # NOTE we simulate a vmap axis
+                        # for the reduction to be always correct with the outer
+                        # jnp.mean
+                        else:
+                            return jax.vmap(fun, vmap_in_axes_params)(_p)
+                    else:
+                        return jax.vmap(fun, _in_axes + vmap_in_axes_params)(_b, _p)
+
+            # We vmap each function returned by evaluate by terms via the
+            # following tree map. `vmap_loss_fun` is a function which does this
+            # vmap, with some subtleties depending on the function term
+            # NOTE: we keep it as a function of batch and params (b and p)
+            # until then it to be able to call `jax.jacrev`
+            v_evaluate_by_terms = lambda b, p: jax.tree.map(
+                lambda args: vmap_loss_fun(*args),
+                self.evaluate_by_terms(b, p),
+                is_leaf=lambda x: (
+                    isinstance(x, tuple) and (callable(x[0]) or x[0] is None)
+                ),  # only traverse first layer
+            )
+
+            # next we reduce the output of each loss term function
+            # NOTE: we keep it as a function of batch and params (b and p)
+            # until then it to be able to call `jax.jacrev`
+            v_evaluate_by_terms_reduced = lambda b, p: jax.tree.map(
                 lambda red_fun, v_eval: red_fun(v_eval),
                 self.reduction_functions,
-                jax.vmap(
-                    self.evaluate_by_terms, vmap_in_axes_params + (vmap_in_axes_batch,)
-                )(p, b),
+                v_evaluate_by_terms(b, p),
             )
-            loss_terms = jax.tree.map(
-                lambda v_eval: v_eval(params, batch), v_evaluate_by_terms_reduced
-            )
+
+            # if we simply call the previous function we get the value of all
+            # loss terms
+            loss_terms = v_evaluate_by_terms_reduced(batch, params)
         elif isinstance(self.u, SPINN):
-            v_evaluate_by_terms_reduced = lambda p, b: jax.tree.map(
+            v_evaluate_by_terms_reduced = lambda b, p: jax.tree.map(
                 lambda red_fun, v_eval: red_fun(v_eval),
                 self.reduction_functions,
-                self.evaluate_by_terms(p, b),
+                self.evaluate_by_terms(b, p),
             )
-            loss_terms = jax.tree.map(
-                lambda v_eval: v_eval(params, batch), v_evaluate_by_terms_reduced
-            )
+            loss_terms = v_evaluate_by_terms_reduced(batch, params)
         else:
-            raise ValueError(f"Bad type for self.u. Got {type(self.u)}, expected PINN or SPINN")
+            raise ValueError(
+                f"Bad type for self.u. Got {type(self.u)}, expected PINN or SPINN"
+            )
 
         if ret_grad_terms:
             # jacrev instead of grad to differentiate through the XDEComponents
             # Pytree
-            grad_terms = jax.tree.map(
-                lambda v_eval: jax.jacrev(v_eval)(params, batch),
-                v_evaluate_by_terms_reduced,
+            grad_terms = jax.jacrev(v_evaluate_by_terms_reduced, argnums=1)(
+                batch, params
             )
             return loss_terms, grad_terms
 

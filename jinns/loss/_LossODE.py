@@ -249,14 +249,15 @@ class LossODE(
 
     def evaluate_by_terms(
         self,
-        params: Params[Array],
         batch: ODEBatch,
+        params: Params[Array],
     ) -> tuple[
         ODEComponents[Float[Array, " "] | None], ODEComponents[Float[Array, " "] | None]
     ]:
         """
-        Evaluate the loss function at a batch object of single points for given
-        parameters (ie, the vmap is done ouside this function !)
+        Evaluate the loss function at a batch object for given
+        parameters (ie, the vmap is done on the returned functions of
+        evaluate_by_terms)
 
         We retrieve two PyTrees with loss values and gradients for each term
 
@@ -292,11 +293,11 @@ class LossODE(
         ## dynamic part
         if self.dynamic_loss is not None:
             dyn_loss_eval = self.dynamic_loss.evaluate
-            dyn_loss_fun: Callable[[Params[Array]], Array] | None = (
-                lambda p: dynamic_loss_apply(
+            dyn_loss_fun: Callable[[Array, Params[Array]], Array] | None = (
+                lambda b, p: dynamic_loss_apply(
                     dyn_loss_eval,
                     self.u,
-                    temporal_batch,
+                    b,
                     _set_derivatives(p, self.derivative_keys.dyn_loss),
                     # self.vmap_in_axes + vmap_in_axes_params,
                 )
@@ -324,7 +325,7 @@ class LossODE(
             initial_condition_fun: Callable[[Params[Array]], Array] = (
                 lambda p: jnp.mean(
                     vmap(initial_condition_fun__, (0, 0, None))(t0, u0, p),
-                axis=0,
+                    axis=0,
                 )
             )
 
@@ -364,33 +365,54 @@ class LossODE(
 
             # MSE loss wrt to an observed batch
             obs_loss_fun: Callable[[Params[Array]], Array] | None = (
-                lambda po: observations_loss_apply(
+                lambda b, po: observations_loss_apply(
                     self.u,
-                    pinn_in,
+                    b,
                     _set_derivatives(po, self.derivative_keys.observations),
                     # self.vmap_in_axes + vmap_in_axes_params,
-                    val,
                     self.obs_slice,
                 )
             )
         else:
             params_obs = None
             obs_loss_fun = None
+            pinn_in, val = None, None
 
         # get the unweighted mses for each loss term as well as the gradients
-        all_funs: ODEComponents[Callable[[Params[Array]], Array] | None] = (
-            ODEComponents(dyn_loss_fun, initial_condition_fun, obs_loss_fun)
+        # all_funs: ODEComponents[Callable[[Params[Array]], Array] | None] = (
+        #    ODEComponents(dyn_loss_fun, initial_condition_fun, obs_loss_fun)
+        # )
+        # all_params: ODEComponents[Params[Array] | None] = ODEComponents(
+        #    params, params, params_obs
+        # )
+        all_funs_and_params: ODEComponents[
+            tuple[
+                Callable[[Array, Params[Array]], Array] | None,
+                tuple[Array, ...] | Array | None,
+                Params[Array] | None,
+                tuple[int, ...],
+            ]
+        ] = ODEComponents(
+            dyn_loss=(dyn_loss_fun, temporal_batch, params, (0,)),
+            initial_condition=(initial_condition_fun, None, params, None),
+            observations=(
+                obs_loss_fun,
+                (pinn_in, val),
+                params_obs,
+                (
+                    0,
+                    0,
+                ),
+            ),
         )
-        all_params: ODEComponents[Params[Array] | None] = ODEComponents(
-            params, params, params_obs
-        )
-        mses = jax.tree.map(
-            lambda f, p: f(p) if f is not None else None,
-            all_funs,
-            all_params,
-            is_leaf=lambda x: x is None,
-        )
-        return mses
+        return all_funs_and_params
+        # mses = jax.tree.map(
+        #    lambda f, p: f(p) if f is not None else None,
+        #    all_funs,
+        #    all_params,
+        #    is_leaf=lambda x: x is None,
+        # )
+        # return mses
 
         # Note that the lambda functions below are with type: ignore just
         # because the lambda are not type annotated, but there is no proper way

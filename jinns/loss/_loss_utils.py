@@ -15,7 +15,6 @@ from jaxtyping import Float, Array
 
 from jinns.utils._utils import _subtract_with_check, get_grid
 from jinns.data._utils import make_cartesian_product
-from jinns.parameters._params import _get_vmap_in_axes_params
 from jinns.nn._pinn import PINN
 from jinns.nn._spinn import SPINN
 from jinns.nn._hyperpinn import HyperPINN
@@ -173,7 +172,7 @@ def boundary_condition_apply(
 ) -> Float[Array, " "] | tuple[Float[Array, " n_samples eq_dim"], ...]:
     assert batch.border_batch is not None
 
-    #if isinstance(u, PINN):
+    # if isinstance(u, PINN):
     #    # Note that facets are on the last axis as specified by
     #    # `BoundaryCondition` function type hints
     #    v_boundary_condition = vmap(
@@ -188,17 +187,17 @@ def boundary_condition_apply(
     #    residuals = boundary_condition.evaluate(
     #        batch.border_batch, u, params
     #    )
-    #elif isinstance(u, SPINN):
+    # elif isinstance(u, SPINN):
     residuals = boundary_condition.evaluate(batch.border_batch, u, params)
     return residuals
-    #else:
+    # else:
     #    raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
     ## next square the differences and reduce over the dimensions of the
     ## residuals (sum) and reduce over the samples (mean)
     ## we get a tree with a mse for each facet
-    #mse_by_facet = jax.tree.map(lambda r: jnp.mean(jnp.sum(r**2, axis=-1)), residual)
+    # mse_by_facet = jax.tree.map(lambda r: jnp.mean(jnp.sum(r**2, axis=-1)), residual)
     ## next compute the final whole mse by reducing the pytree over the facets
-    #return jax.tree.reduce(jnp.add, mse_by_facet, jnp.array(0.0))
+    # return jax.tree.reduce(jnp.add, mse_by_facet, jnp.array(0.0))
 
 
 def equation_on_all_facets_equal(
@@ -243,10 +242,12 @@ def equation_on_all_facets_equal(
 
 def observations_loss_apply(
     u: AbstractPINN,
-    batch: Float[Array, " obs_batch_size input_dim"],
+    batch: tuple[
+        Float[Array, " obs_batch_size input_dim"],
+        Float[Array, "obs_batch_size observation_dim"],
+    ],
     params: Params[Array],
     # vmap_axes: tuple[int, Params[int | None] | None],
-    observed_values: Float[Array, " obs_batch_size observation_dim"],
     obs_slice: EllipsisType | slice | None,
 ) -> Float[Array, " "]:
     if isinstance(u, (PINN, HyperPINN)):
@@ -256,9 +257,9 @@ def observations_loss_apply(
         #    vmap_axes,
         #    0,
         # )
-        val = u_(batch, params)[:, obs_slice]
+        val = u_(batch[0], params)[:, obs_slice]
         residuals = _subtract_with_check(
-            observed_values, val, cause="user defined observed_values"
+            batch[1], val, cause="user defined observed_values"
         )
         # mse_observation_loss = jnp.mean(
         #    jnp.sum(
@@ -280,44 +281,48 @@ def initial_condition_apply(
     u: AbstractPINN,
     omega_batch: Float[Array, " dimension"],
     params: Params[Array],
-    vmap_axes: tuple[int, Params[int | None] | None],
     initial_condition_fun: Callable,
     t0: Float[Array, " 1"],
 ) -> Float[Array, " "]:
-    n = omega_batch.shape[0]
-    t0_omega_batch = jnp.concatenate([t0 * jnp.ones((n, 1)), omega_batch], axis=1)
+    # t0_omega_batch = jnp.concatenate([t0 * jnp.ones((n, 1)), omega_batch], axis=1)
+    t0_x = jnp.concatenate([t0, omega_batch])  # not a batch anymoer
     if isinstance(u, (PINN, HyperPINN)):
-        v_u_t0 = vmap(
-            lambda t0_x, params: _subtract_with_check(
-                initial_condition_fun(t0_x[1:]),
-                u(t0_x, params),
-                cause="Output of initial_condition_fun",
-            ),
-            vmap_axes,
-            0,
+        # v_u_t0 = vmap(
+        #    lambda t0_x, params: _subtract_with_check(
+        #        initial_condition_fun(t0_x[1:]),
+        #        u(t0_x, params),
+        #        cause="Output of initial_condition_fun",
+        #    ),
+        #    vmap_axes,
+        #    0,
+        # )
+        # res = v_u_t0(t0_omega_batch, params)  # NOTE take the tiled
+        residuals = _subtract_with_check(
+            initial_condition_fun(t0_x[1:]),
+            u(t0_x, params),
+            cause="Output of initial_condition_fun",
         )
-        res = v_u_t0(t0_omega_batch, params)  # NOTE take the tiled
         # omega_batch (ie omega_batch_) to have the same batch
         # dimension as params to be able to vmap.
         # Recall that by convention:
         # param_batch_dict = times_batch_size * omega_batch_size
-        mse_initial_condition = jnp.mean(jnp.sum(res**2, axis=-1))
+        # mse_initial_condition = jnp.mean(jnp.sum(res**2, axis=-1))
     elif isinstance(u, SPINN):
-        values = lambda t_x: u(
-            t_x,
-            params,
-        )[0]
+        # values = lambda t_x: u(
+        #    t_x,
+        #    params,
+        # )[0]
         omega_batch_grid = get_grid(omega_batch)
-        v_ini = values(t0_omega_batch)
-        res = _subtract_with_check(
+        # v_ini = values(t0_omega_batch)
+        residuals = _subtract_with_check(
             initial_condition_fun(omega_batch_grid),
-            v_ini,
+            u(t0_x, params)[0],
             cause="Output of initial_condition_fun",
         )
-        mse_initial_condition = jnp.mean(jnp.sum(res**2, axis=-1))
+        # mse_initial_condition = jnp.mean(jnp.sum(res**2, axis=-1))
     else:
         raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
-    return mse_initial_condition
+    return residuals
 
 
 def initial_condition_check(x, dim_size=None):
