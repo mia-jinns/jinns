@@ -228,18 +228,17 @@ class _LossPDEAbstract(
     def _get_boundary_loss_fun(
         self, batch: B, no_reduction: bool = False
     ) -> Callable[[Params[Array]], Array] | None:
-        #if self.boundary_condition is not None:
-        #    boundary_loss_fun: Callable[[Params[Array]], Array] | None = (
-        #        lambda p: boundary_condition_apply(
-        #            self.boundary_condition,  # type: ignore # we are in lambda...
-        #            self.u,
-        #            batch,
-        #            _set_derivatives(p, self.derivative_keys.boundary_loss),
-        #            no_reduction=no_reduction,
-        #        )
-        #    )
-        #else:
-        boundary_loss_fun = None
+        if self.boundary_condition is not None:
+            boundary_loss_fun: Callable[[Params[Array]], Array] | None = (
+                lambda p: boundary_condition_apply(
+                    self.boundary_condition,  # type: ignore # we are in lambda...
+                    self.u,
+                    batch,
+                    _set_derivatives(p, self.derivative_keys.boundary_loss),
+                )
+            )
+        else:
+            boundary_loss_fun = None
 
         return boundary_loss_fun
 
@@ -403,8 +402,15 @@ class LossPDEStatio(
             dyn_loss=lambda residual: (jnp.mean(jnp.sum(residual**2, axis=-1)))
             if residual is not None
             else None,
-            boundary_loss=lambda residual: (jnp.mean(jnp.sum(residual**2, axis=-1)))
-            if residual is not None
+            boundary_loss=lambda residual_all_facets: jax.tree.reduce(
+                jnp.add,
+                jax.tree.map(
+                    lambda facet_res: jnp.mean(jnp.sum(facet_res**2, axis=-1)),
+                    residual_all_facets
+                ),
+                0.
+            )# outer sum is for the facets
+            if residual_all_facets is not None
             else None,
             norm_loss=lambda residual: (jnp.mean(jnp.sum(residual**2, axis=-1)))
             if residual is not None

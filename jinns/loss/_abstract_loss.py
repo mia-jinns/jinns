@@ -16,6 +16,9 @@ from jinns.utils._types import (
     AnyLossWeights,
     AnyDerivativeKeys,
 )
+from jinns.nn._pinn import PINN
+from jinns.nn._spinn import SPINN
+from jinns.nn._hyperpinn import HyperPINN
 
 L = TypeVar(
     "L", bound=AnyLossWeights
@@ -104,53 +107,65 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             # update params with the batches of generated params
             params = update_eq_params(params, batch.param_batch_dict)
 
-        # next set of instructions set a XXXBatch with
-        # - 0 at temporal_batch or domain_batch and border_batch
-        # - None at param_batch_dict and obs_batch_dict["eq_params"]
-        # - 0 at obs_batch_dict["pinn_in"] and
-        # obs_batch_dict["val"]
-        # but if obs_batch_dict is None, we just let None.
-        # Note that 0 is always the axis to vmap over for all XDE
-        vmap_in_axes_batch = jax.tree.map(
-            lambda _: 0,  # always 0 for ODE and PDEs
-            batch,
-            is_leaf=lambda x: x is None,
-        )
-        obs_batch_dict_vmap_in_axes = (
-            None
-            if batch.obs_batch_dict is None
-            else (
-                jax.tree.leaves(
-                    ObsBatchDict(
-                        pinn_in=0,  # type: ignore
-                        val=0,  # type: ignore
-                        eq_params=None,
-                    ),
-                    is_leaf=lambda x: x is None,
-                ),
+        if isinstance(self.u, (PINN, HyperPINN)):
+                # next set of instructions set a XXXBatch with
+            # - 0 at temporal_batch or domain_batch and border_batch
+            # - None at param_batch_dict and obs_batch_dict["eq_params"]
+            # - 0 at obs_batch_dict["pinn_in"] and
+            # obs_batch_dict["val"]
+            # but if obs_batch_dict is None, we just let None.
+            # Note that 0 is always the axis to vmap over for all XDE
+            vmap_in_axes_batch = jax.tree.map(
+                lambda _: 0,  # always 0 for ODE and PDEs
+                batch,
+                is_leaf=lambda x: x is None,
             )
-        )
-        vmap_in_axes_batch = eqx.tree_at(
-            lambda pt: (pt.param_batch_dict, pt.obs_batch_dict),
-            vmap_in_axes_batch,
-            (None, obs_batch_dict_vmap_in_axes),
-            is_leaf=lambda x: x is None,
-        )
+            obs_batch_dict_vmap_in_axes = (
+                None
+                if batch.obs_batch_dict is None
+                else (
+                    jax.tree.leaves(
+                        ObsBatchDict(
+                            pinn_in=0,  # type: ignore
+                            val=0,  # type: ignore
+                            eq_params=None,
+                        ),
+                        is_leaf=lambda x: x is None,
+                    ),
+                )
+            )
+            vmap_in_axes_batch = eqx.tree_at(
+                lambda pt: (pt.param_batch_dict, pt.obs_batch_dict),
+                vmap_in_axes_batch,
+                (None, obs_batch_dict_vmap_in_axes),
+                is_leaf=lambda x: x is None,
+            )
 
-        vmap_in_axes_params = _get_vmap_in_axes_params(
-            cast(eqx.Module, batch.param_batch_dict), params
-        )
-        # next we vmap over a specific PyTree
-        v_evaluate_by_terms_reduced = lambda p, b: jax.tree.map(
-            lambda red_fun, v_eval: red_fun(v_eval),
-            self.reduction_functions,
-            jax.vmap(
-                self.evaluate_by_terms, vmap_in_axes_params + (vmap_in_axes_batch,)
-            )(p, b),
-        )
-        loss_terms = jax.tree.map(
-            lambda v_eval: v_eval(params, batch), v_evaluate_by_terms_reduced
-        )
+            vmap_in_axes_params = _get_vmap_in_axes_params(
+                cast(eqx.Module, batch.param_batch_dict), params
+            )
+            # next we vmap over a specific PyTree
+            v_evaluate_by_terms_reduced = lambda p, b: jax.tree.map(
+                lambda red_fun, v_eval: red_fun(v_eval),
+                self.reduction_functions,
+                jax.vmap(
+                    self.evaluate_by_terms, vmap_in_axes_params + (vmap_in_axes_batch,)
+                )(p, b),
+            )
+            loss_terms = jax.tree.map(
+                lambda v_eval: v_eval(params, batch), v_evaluate_by_terms_reduced
+            )
+        elif isinstance(self.u, SPINN):
+            v_evaluate_by_terms_reduced = lambda p, b: jax.tree.map(
+                lambda red_fun, v_eval: red_fun(v_eval),
+                self.reduction_functions,
+                self.evaluate_by_terms(p, b),
+            )
+            loss_terms = jax.tree.map(
+                lambda v_eval: v_eval(params, batch), v_evaluate_by_terms_reduced
+            )
+        else:
+            raise ValueError(f"Bad type for self.u. Got {type(self.u)}, expected PINN or SPINN")
 
         if ret_grad_terms:
             # jacrev instead of grad to differentiate through the XDEComponents

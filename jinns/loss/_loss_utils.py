@@ -170,36 +170,35 @@ def boundary_condition_apply(
     u: AbstractPINN,
     batch: PDEStatioBatch | PDENonStatioBatch,
     params: Params[Array],
-    *,
-    no_reduction: bool = False,
 ) -> Float[Array, " "] | tuple[Float[Array, " n_samples eq_dim"], ...]:
     assert batch.border_batch is not None
-    vmap_in_axes = (0,) + _get_vmap_in_axes_params(batch.param_batch_dict, params)
 
-    if isinstance(u, PINN):
-        # Note that facets are on the last axis as specified by
-        # `BoundaryCondition` function type hints
-        v_boundary_condition = vmap(
-            lambda inputs, params: boundary_condition.evaluate(inputs, u, params),
-            vmap_in_axes,
-            0,
-        )
-        residual = v_boundary_condition(
-            batch.border_batch,
-            params,
-        )
-    elif isinstance(u, SPINN):
-        residual = boundary_condition.evaluate(batch.border_batch, u, params)
-    else:
-        raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
-    if no_reduction:
-        return residual
-    # next square the differences and reduce over the dimensions of the
-    # residuals (sum) and reduce over the samples (mean)
-    # we get a tree with a mse for each facet
-    mse_by_facet = jax.tree.map(lambda r: jnp.mean(jnp.sum(r**2, axis=-1)), residual)
-    # next compute the final whole mse by reducing the pytree over the facets
-    return jax.tree.reduce(jnp.add, mse_by_facet, jnp.array(0.0))
+    #if isinstance(u, PINN):
+    #    # Note that facets are on the last axis as specified by
+    #    # `BoundaryCondition` function type hints
+    #    v_boundary_condition = vmap(
+    #        lambda inputs, params: boundary_condition.evaluate(inputs, u, params),
+    #        vmap_in_axes,
+    #        0,
+    #    )
+    #    residual = v_boundary_condition(
+    #        batch.border_batch,
+    #        params,
+    #    )
+    #    residuals = boundary_condition.evaluate(
+    #        batch.border_batch, u, params
+    #    )
+    #elif isinstance(u, SPINN):
+    residuals = boundary_condition.evaluate(batch.border_batch, u, params)
+    return residuals
+    #else:
+    #    raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
+    ## next square the differences and reduce over the dimensions of the
+    ## residuals (sum) and reduce over the samples (mean)
+    ## we get a tree with a mse for each facet
+    #mse_by_facet = jax.tree.map(lambda r: jnp.mean(jnp.sum(r**2, axis=-1)), residual)
+    ## next compute the final whole mse by reducing the pytree over the facets
+    #return jax.tree.reduce(jnp.add, mse_by_facet, jnp.array(0.0))
 
 
 def equation_on_all_facets_equal(
