@@ -251,8 +251,13 @@ class LossODE(
         self,
         batch: ODEBatch,
         params: Params[Array],
-    ) -> tuple[
-        ODEComponents[Float[Array, " "] | None], ODEComponents[Float[Array, " "] | None]
+    ) -> ODEComponents[
+        tuple[
+            Callable | None,
+            tuple[Array | None, ...] | Array | None,
+            Params[Array] | None,
+            tuple[int, ...] | None,
+        ]
     ]:
         """
         Evaluate the loss function at a batch object for given
@@ -272,23 +277,7 @@ class LossODE(
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
         """
-        # if non_opt_params is not None:
-        #    params = eqx.combine(opt_params, non_opt_params)
-        # else:
-        #    params = opt_params
-
         temporal_batch = batch.temporal_batch
-
-        ## Retrieve the optional eq_params_batch
-        ## and update eq_params with the latter
-        ## and update vmap_in_axes
-        # if batch.param_batch_dict is not None:
-        #    # update params with the batches of generated params
-        #    params = update_eq_params(params, batch.param_batch_dict)
-
-        # vmap_in_axes_params = _get_vmap_in_axes_params(
-        #    cast(eqx.Module, batch.param_batch_dict), params
-        # )
 
         ## dynamic part
         if self.dynamic_loss is not None:
@@ -299,7 +288,6 @@ class LossODE(
                     self.u,
                     b,
                     _set_derivatives(p, self.derivative_keys.dyn_loss),
-                    # self.vmap_in_axes + vmap_in_axes_params,
                 )
             )
         else:
@@ -329,6 +317,7 @@ class LossODE(
                 )
             )
 
+            ## NOTE NOTE not clear if below can be totally suppressed
             ## NOTE that this is the vmap below and its reduction which
             # disappear since now we vmap over the possible batch of paramter
             # from outside this function
@@ -364,12 +353,11 @@ class LossODE(
             )  # the reason for this intruction is https://github.com/microsoft/pyright/discussions/8340
 
             # MSE loss wrt to an observed batch
-            obs_loss_fun: Callable[[Params[Array]], Array] | None = (
+            obs_loss_fun: Callable[[tuple[Array, Array], Params[Array]], Array] | None = (
                 lambda b, po: observations_loss_apply(
                     self.u,
                     b,
                     _set_derivatives(po, self.derivative_keys.observations),
-                    # self.vmap_in_axes + vmap_in_axes_params,
                     self.obs_slice,
                 )
             )
@@ -378,19 +366,12 @@ class LossODE(
             obs_loss_fun = None
             pinn_in, val = None, None
 
-        # get the unweighted mses for each loss term as well as the gradients
-        # all_funs: ODEComponents[Callable[[Params[Array]], Array] | None] = (
-        #    ODEComponents(dyn_loss_fun, initial_condition_fun, obs_loss_fun)
-        # )
-        # all_params: ODEComponents[Params[Array] | None] = ODEComponents(
-        #    params, params, params_obs
-        # )
         all_funs_and_params: ODEComponents[
             tuple[
-                Callable[[Array, Params[Array]], Array] | None,
-                tuple[Array, ...] | Array | None,
+                Callable | None,
+                tuple[Array | None, ...] | Array | None,
                 Params[Array] | None,
-                tuple[int, ...],
+                tuple[int, ...] | None,
             ]
         ] = ODEComponents(
             dyn_loss=(dyn_loss_fun, temporal_batch, params, (0,)),
