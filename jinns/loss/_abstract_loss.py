@@ -200,8 +200,9 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
                         if vmap_in_axes_params == (None,):
                             return fun(_p)[None]  # NOTE we simulate a vmap axis
                         # for the reduction to be always correct with the outer
-                        # jnp.mean
+                        # jnp.mean (here _b is None)
                         else:
+                            # here the vmap is only for params
                             return jax.vmap(fun, vmap_in_axes_params)(_p)
                     else:
                         return jax.vmap(fun, _in_axes + vmap_in_axes_params)(_b, _p)

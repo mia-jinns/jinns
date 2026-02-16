@@ -44,6 +44,21 @@ def make_cartesian_product(
     """
     Create the cartesian product of a time and a border omega batches
     by tiling and repeating
+
+    ```{python}
+    >>> b = jnp.array([4, 5, 6])[..., None]
+    >>> a = jnp.array([1, 2, 3])[..., None]
+    >>> make_cartesian_product(a, b)
+    Array([[1, 4],
+        [1, 5],
+        [1, 6],
+        [2, 4],
+        [2, 5],
+        [2, 6],
+        [3, 4],
+        [3, 5],
+        [3, 6]], dtype=int32)
+    ```
     """
     n1 = b1.shape[0]
     n2 = b2.shape[0]

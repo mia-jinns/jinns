@@ -10,11 +10,9 @@ from typing import TYPE_CHECKING, Callable
 from types import EllipsisType
 import jax
 import jax.numpy as jnp
-from jax import vmap
 from jaxtyping import Float, Array
 
 from jinns.utils._utils import _subtract_with_check, get_grid
-from jinns.data._utils import make_cartesian_product
 from jinns.nn._pinn import PINN
 from jinns.nn._spinn import SPINN
 from jinns.nn._hyperpinn import HyperPINN
@@ -63,14 +61,8 @@ def dynamic_loss_apply(
 
 def normalization_loss_apply(
     u: AbstractPINN,
-    batches: (
-        tuple[Float[Array, " nb_norm_samples dim"]]
-        | tuple[
-            Float[Array, " nb_norm_time_slices 1"], Float[Array, " nb_norm_samples dim"]
-        ]
-    ),
+    x_and_norm_weight: tuple[Array, Array],
     params: Params[Array],
-    vmap_axes_params: tuple[Params[int | None] | None],
     norm_weights: Float[Array, " nb_norm_samples"],
 ) -> Float[Array, " "]:
     """
@@ -78,76 +70,59 @@ def normalization_loss_apply(
     they represent probability distributions
     """
     if isinstance(u, (PINN, HyperPINN)):
-        if len(batches) == 1:
-            v_u = vmap(
-                lambda *b: u(*b)[u.slice_solution],
-                (0,) + vmap_axes_params,
-                0,
-            )
-            res = v_u(*batches, params)
-            assert res.shape[-1] == 1, "norm loss expects unidimensional *PINN"
-            # Monte-Carlo integration using importance sampling
-            mse_norm_loss = jnp.abs(jnp.mean(res.squeeze() * norm_weights) - 1) ** 2
-        else:
-            # NOTE this cartesian product is costly
-            batch_cart_prod = make_cartesian_product(
-                batches[0],
-                batches[1],
-            ).reshape(batches[0].shape[0], batches[1].shape[0], -1)
-            v_u = vmap(
-                vmap(
-                    lambda t_x, params_: u(t_x, params_),
-                    in_axes=(0,) + vmap_axes_params,
-                ),
-                in_axes=(0,) + vmap_axes_params,
-            )
-            res = v_u(batch_cart_prod, params)
-            assert res.shape[-1] == 1, "norm loss expects unidimensional *PINN"
-            # For all times t, we perform an integration. Then we average the
-            # losses over times.
-            mse_norm_loss = jnp.mean(
-                jnp.abs(jnp.mean(res.squeeze() * norm_weights, axis=-1) - 1) ** 2
-            )
+        res = u(x_and_norm_weight[0], params)
+        assert res.shape[-1] == 1, "norm loss expects unidimensional *PINN"
+        # Monte-Carlo integration using importance sampling
+        res = res.squeeze() * x_and_norm_weight[1]
+        # else:
+        #    # NOTE this cartesian product is costly
+        #    batch_cart_prod = make_cartesian_product(
+        #        batches[0],
+        #        batches[1],
+        #    ).reshape(batches[0].shape[0], batches[1].shape[0], -1)
+        #    v_u = vmap(
+        #        vmap(
+        #            lambda t_x, params_: u(t_x, params_),
+        #            in_axes=(0,) + vmap_axes_params,
+        #        ),
+        #        in_axes=(0,) + vmap_axes_params,
+        #    )
+        #    res = v_u(batch_cart_prod, params)
+        #    assert res.shape[-1] == 1, "norm loss expects unidimensional *PINN"
+        #    # For all times t, we perform an integration. Then we average the
+        #    # losses over times.
+        #    mse_norm_loss = jnp.mean(
+        #        jnp.abs(jnp.mean(res.squeeze() * norm_weights, axis=-1) - 1) ** 2
+        #    )
     elif isinstance(u, SPINN):
-        if len(batches) == 1:
-            res = u(*batches, params)
-            assert res.shape[-1] == 1, "norm loss expects unidimensional *SPINN"
-            mse_norm_loss = (
-                jnp.abs(
-                    jnp.mean(
-                        res.squeeze(),
-                    )
-                    * norm_weights
-                    - 1
-                )
-                ** 2
-            )
-        else:
-            assert batches[1].shape[0] % batches[0].shape[0] == 0
-            rep_t = batches[1].shape[0] // batches[0].shape[0]
-            res = u(
-                jnp.concatenate(
-                    [jnp.repeat(batches[0], rep_t, axis=0), batches[1]], axis=-1
-                ),
-                params,
-            )
-            assert res.shape[-1] == 1, "norm loss expects unidimensional *SPINN"
-            # the outer mean() below is for the times stamps
-            mse_norm_loss = jnp.mean(
-                jnp.abs(
-                    jnp.mean(
-                        res.squeeze(),
-                        axis=list(d + 1 for d in range(res.ndim - 2)),
-                    )
-                    * norm_weights
-                    - 1
-                )
-                ** 2
-            )
+        # NOTE norm_weight must be scalar here
+        res = u(x_and_norm_weight[0], params)
+        assert res.shape[-1] == 1, "norm loss expects unidimensional *SPINN"
+        res = res.squeeze() * x_and_norm_weight[1]
+        #    jnp.abs(
+        #        jnp.mean(
+        #            res.squeeze(),
+        #        )
+        #        * norm_weights
+        #        - 1
+        #    )
+        #    ** 2
+        # )
+        # mse_norm_loss = jnp.mean(
+        #    jnp.abs(
+        #        jnp.mean(
+        #            res.squeeze(),
+        #            axis=list(d + 1 for d in range(res.ndim - 2)),
+        #        )
+        #        * norm_weights
+        #        - 1
+        #    )
+        #    ** 2
+        # )
     else:
         raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
 
-    return mse_norm_loss
+    return res
 
 
 def boundary_condition_apply(

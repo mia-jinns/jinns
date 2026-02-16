@@ -14,6 +14,7 @@ import jax.numpy as jnp
 import equinox as eqx
 from jaxtyping import PRNGKeyArray, Float, Array
 from jinns.loss._loss_utils import (
+    normalization_loss_apply,
     boundary_condition_apply,
     initial_condition_apply,
     initial_condition_check,
@@ -30,9 +31,13 @@ from jinns.loss._loss_weights import (
     LossWeightsPDEStatio,
     LossWeightsPDENonStatio,
 )
-from jinns.data._Batchs import PDEStatioBatch, PDENonStatioBatch
-from jinns.parameters._params import Params
 from jinns.loss import PDENonStatio, PDEStatio
+from jinns.data._Batchs import PDEStatioBatch, PDENonStatioBatch
+from jinns.data._utils import make_cartesian_product
+from jinns.parameters._params import Params
+from jinns.nn._pinn import PINN
+from jinns.nn._spinn import SPINN
+from jinns.nn._hyperpinn import HyperPINN
 
 
 if TYPE_CHECKING:
@@ -90,6 +95,7 @@ class _LossPDEAbstract(
         made broadcastable to `norm_samples`.
         These corresponds to the weights $w_k = \frac{1}{q(x_k)}$ where
         $q(\cdot)$ is the proposal p.d.f. and $x_k$ are the Monte-Carlo samples.
+        **If using SPINN, `norm_weights` must be a scalar**.
     obs_slice : EllipsisType | slice, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
@@ -120,9 +126,7 @@ class _LossPDEAbstract(
         **kwargs: Any,  # for arguments for super()
     ):
         super().__init__(
-            dynamic_loss=self.dynamic_loss,
             loss_weights=self.loss_weights,
-            derivative_keys=self.derivative_keys,
             u=self.u,
             **kwargs,
         )
@@ -149,27 +153,32 @@ class _LossPDEAbstract(
                         "norm_samples must have the same leading dimension"
                     )
                 self.norm_weights = norm_weights
+                if isinstance(self.u, SPINN):
+                    if not isinstance(norm_weights, (int, float)):
+                        raise ValueError("norm_weights must be scalar when using SPINN")
+                    elif isinstance(norm_weights, Array):
+                        if norm_weights.shape != (1,):
+                            raise ValueError(
+                                "norm_weights must be scalar when using SPINN"
+                            )
         else:
             self.norm_samples = norm_samples
             self.norm_weights = None
 
         self.key = key
 
-    def _get_norm_loss_fun(self, batch: B) -> Callable[[Params[Array]], Array] | None:
-        # if self.norm_samples is not None:
-        #    norm_loss_fun: Callable[[Params[Array]], Array] | None = (
-        #        lambda p: normalization_loss_apply(
-        #            self.u,
-        #            cast(
-        #                tuple[Array, Array], self._get_normalization_loss_batch(batch)
-        #            ),
-        #            _set_derivatives(p, self.derivative_keys.norm_loss),
-        #            vmap_in_axes_params,
-        #            self.norm_weights,  # type: ignore -> can't get the __post_init__ narrowing here
-        #        )
-        #    )
-        # else:
-        norm_loss_fun = None
+    def _get_norm_loss_fun(self) -> Callable[[Array, Params[Array]], Array] | None:
+        if self.norm_samples is not None:
+            norm_loss_fun: Callable[[Array, Params[Array]], Array] | None = (
+                lambda b, p: normalization_loss_apply(
+                    self.u,
+                    b,
+                    _set_derivatives(p, self.derivative_keys.norm_loss),
+                    self.norm_weights,  # type: ignore -> can't get the __post_init__ narrowing here
+                )
+            )
+        else:
+            norm_loss_fun = None
         return norm_loss_fun
 
     def _get_boundary_loss_fun(self) -> Callable[[Array, Params[Array]], Array] | None:
@@ -256,6 +265,7 @@ class LossPDEStatio(
         Alternatively, the user can pass a float or an integer.
         These corresponds to the weights $w_k = \frac{1}{q(x_k)}$ where
         $q(\cdot)$ is the proposal p.d.f. and $x_k$ are the Monte-Carlo samples.
+        **If using SPINN, `norm_weights` must be a scalar**.
     obs_slice : slice, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
@@ -291,7 +301,7 @@ class LossPDEStatio(
             )  # NOTE this boundary component changes ! Outer sum is for the facets
             if residual_all_facets is not None
             else None,
-            norm_loss=mean_sum_reduction,
+            norm_loss=lambda res: jnp.abs(jnp.mean(res) - 1.0) ** 2,
             observations=mean_sum_reduction,
         ),
     )
@@ -332,9 +342,12 @@ class LossPDEStatio(
         )
 
     def _get_normalization_loss_batch(
-        self, batch: PDEStatioBatch
-    ) -> tuple[Float[Array, " nb_norm_samples dimension"] | None,]:
-        return (self.norm_samples,)
+        self, _
+    ) -> tuple[
+        Float[Array, " nb_norm_samples dimension"] | None,
+        Float[Array, " nb_norm_samples"] | None,
+    ]:
+        return (self.norm_samples, self.norm_weights)
 
     def evaluate_by_terms(
         self,
@@ -371,7 +384,8 @@ class LossPDEStatio(
         dyn_loss_fun = self._get_dyn_loss_fun()
 
         # normalization part
-        norm_loss_fun = self._get_norm_loss_fun(batch)
+        norm_batch = self._get_normalization_loss_batch(batch)
+        norm_loss_fun = self._get_norm_loss_fun()
 
         # boundary part
         border_batch = batch.border_batch
@@ -396,7 +410,7 @@ class LossPDEStatio(
             ]
         ] = PDEStatioComponents(
             dyn_loss=(dyn_loss_fun, domain_batch, params, (0,)),
-            norm_loss=(norm_loss_fun, None, params, None),
+            norm_loss=(norm_loss_fun, norm_batch, params, (0,)),
             boundary_loss=(boundary_loss_fun, border_batch, params, (0,)),
             observations=(
                 obs_loss_fun,
@@ -496,6 +510,7 @@ class LossPDENonStatio(
         Alternatively, the user can pass a float or an integer.
         These corresponds to the weights $w_k = \frac{1}{q(x_k)}$ where
         $q(\cdot)$ is the proposal p.d.f. and $x_k$ are the Monte-Carlo samples.
+        **If using SPINN, `norm_weights` must be a scalar**.
     obs_slice : slice, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
@@ -531,7 +546,18 @@ class LossPDENonStatio(
             )  # NOTE this boundary component changes ! Outer sum is for the facets
             if residual_all_facets is not None
             else None,
-            norm_loss=mean_sum_reduction,
+            # TODO here compute mean only on subarrays of axis 1 (ie for a
+            # timestamp)
+            norm_loss=lambda res: jnp.mean(
+                jnp.abs(
+                    jnp.mean(
+                        res,
+                        axis=list(d + 1 for d in range(res.ndim - 1)),
+                    )
+                    - 1
+                )
+                ** 2
+            ),  # the outer mean() below is for the times stamps
             observations=mean_sum_reduction,
         ),
     )
@@ -597,13 +623,41 @@ class LossPDENonStatio(
 
     def _get_normalization_loss_batch(
         self, batch: PDENonStatioBatch
-    ) -> tuple[
-        Float[Array, " nb_norm_time_slices 1"], Float[Array, " nb_norm_samples dim"]
-    ]:
-        return (
+    ) -> tuple[Array, Array]:
+        batches = (
             batch.domain_batch[: self.max_norm_time_slices, 0:1],
             self.norm_samples[: self.max_norm_samples_omega],  # type: ignore -> cannot narrow a class attr
         )
+        assert self.norm_weights is not None
+        if isinstance(self.u, (PINN, HyperPINN)):
+            # norm_weights is a array with n_norm_samples elements
+            # we will tile it so that the norm_samples match the spatial points
+            norm_weights = jnp.tile(
+                self.norm_weights,
+                reps=(batches[1].shape[0],)
+                + tuple(1 for i in self.norm_weights.shape[1:]),
+            )
+            return (
+                make_cartesian_product(
+                    batches[0],
+                    batches[1],
+                ).reshape(batches[0].shape[0], batches[1].shape[0], -1),
+                norm_weights,
+            )
+        elif isinstance(self.u, SPINN):
+            # norm_weights is nec. a scalar as no other case is implemented
+            assert batches[1].shape[0] % batches[0].shape[0] == 0
+            rep_t = batches[1].shape[0] // batches[0].shape[0]
+            return (
+                jnp.concatenate(
+                    [jnp.repeat(batches[0], rep_t, axis=0), batches[1]], axis=-1
+                ),
+                self.norm_weights * jnp.ones_like(batches[1]),
+            )
+        else:
+            raise ValueError(
+                f"Bad type for u. Got {type(self.u)}, expected PINN or SPINN"
+            )
 
     def evaluate_by_terms(
         self,
@@ -640,7 +694,12 @@ class LossPDENonStatio(
         dyn_loss_fun = self._get_dyn_loss_fun()
 
         # normalization part
-        norm_loss_fun = self._get_norm_loss_fun(batch)
+        if self.norm_samples is not None:
+            norm_batch = self._get_normalization_loss_batch(batch)
+            norm_loss_fun = self._get_norm_loss_fun()
+        else:
+            norm_batch = None
+            norm_loss_fun = None
 
         # boundary part
         border_batch = batch.border_batch
@@ -681,7 +740,7 @@ class LossPDENonStatio(
             ]
         ] = PDENonStatioComponents(
             dyn_loss=(dyn_loss_fun, domain_batch, params, (0,)),
-            norm_loss=(norm_loss_fun, None, params, None),
+            norm_loss=(norm_loss_fun, norm_batch, params, (0, 0)),
             boundary_loss=(boundary_loss_fun, border_batch, params, (0,)),
             initial_condition=(
                 initial_condition_fun,
