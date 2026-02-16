@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import abc
 from typing import TYPE_CHECKING, Self, Literal, Callable, TypeVar, Generic, Any, cast
+from types import EllipsisType
+import warnings
 from jaxtyping import PRNGKeyArray, Array, PyTree, Float
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import optax
+from jinns.loss._loss_utils import dynamic_loss_apply, observations_loss_apply
 from jinns.parameters._params import Params, _get_vmap_in_axes_params, update_eq_params
 from jinns.loss._loss_weight_updates import soft_adapt, lr_annealing, ReLoBRaLo
 from jinns.utils._types import (
@@ -15,12 +18,15 @@ from jinns.utils._types import (
     AnyLossWeights,
     AnyDerivativeKeys,
 )
+from jinns.parameters._derivative_keys import _set_derivatives
 from jinns.nn._pinn import PINN
 from jinns.nn._spinn import SPINN
 from jinns.nn._hyperpinn import HyperPINN
 
 if TYPE_CHECKING:
+    from jinns.loss._DynamicLossAbstract import DynamicLoss
     from jinns.nn._abstract_pinn import AbstractPINN
+    from jinns.data._Batchs import ObsBatchDict
 
 L = TypeVar(
     "L", bound=AnyLossWeights
@@ -50,14 +56,33 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
     https://github.com/patrick-kidger/equinox/issues/1002 + https://docs.kidger.site/equinox/pattern/
     """
 
+    dynamic_loss: eqx.AbstractVar[DynamicLoss | None]
     derivative_keys: eqx.AbstractVar[DK]
     loss_weights: eqx.AbstractVar[L]
-    reduction_functions: eqx.AbstractVar[C]
     u: eqx.AbstractVar[AbstractPINN]
+    obs_slice: EllipsisType | slice = eqx.field(static=True, default=None, kw_only=True)
     update_weight_method: Literal["soft_adapt", "lr_annealing", "ReLoBRaLo"] | None = (
         eqx.field(kw_only=True, default=None, static=True)
     )
-    vmap_in_axes: tuple[int] = eqx.field(static=True)
+
+    reduction_functions: eqx.AbstractClassVar[C] = eqx.field(init=False)
+
+    def __post_init__(self):
+        # post processing of the non abstract arguments
+        if self.update_weight_method is not None and jnp.any(
+            jnp.array(jax.tree.leaves(self.loss_weights)) == 0
+        ):
+            warnings.warn(
+                "self.update_weight_method is activated while some loss "
+                "weights are zero. The update weight method will likely "
+                "update the zero weight to some non-zero value. Check that "
+                "this is the desired behaviour."
+            )
+
+        if self.obs_slice is None:
+            self.obs_slice = jnp.s_[...]
+        else:
+            self.obs_slice = self.obs_slice
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self.evaluate(*args, **kwargs)
@@ -69,6 +94,55 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         params: Params[Array],
     ) -> tuple[C, C]:
         pass
+
+    def _get_dyn_loss_fun(
+        self,
+    ) -> Callable[[Array, Params[Array]], Array] | None:
+        """
+        Common for all XDELoss
+        """
+        if self.dynamic_loss is not None:
+            dyn_loss_fun: Callable[[Array, Params[Array]], Array] | None = (
+                lambda b, p: dynamic_loss_apply(
+                    self.dynamic_loss,  # type: ignore
+                    # we are in lambda and the if context is lost
+                    self.u,
+                    b,
+                    _set_derivatives(p, self.derivative_keys.dyn_loss),
+                )
+            )
+        else:
+            dyn_loss_fun = None
+
+        return dyn_loss_fun
+
+    def _get_obs_batch_params_and_loss_fun(
+        self,
+        params: Params[Array],
+        obs_batch_dict: ObsBatchDict,
+    ) -> tuple[
+        tuple[Array, Array],
+        Params[Array],
+        Callable[[tuple[Array, Array], Params[Array]], Array],
+    ]:
+        """
+        Common for all XDELoss
+        """
+        obs_params = update_eq_params(params, obs_batch_dict["eq_params"])
+        obs_batch = (
+            obs_batch_dict["pinn_in"],
+            obs_batch_dict["val"],
+        )
+        obs_loss_fun: Callable[[tuple[Array, Array], Params[Array]], Array] | None = (
+            lambda b, po: observations_loss_apply(
+                self.u,
+                b,
+                _set_derivatives(po, self.derivative_keys.observations),
+                self.obs_slice,
+            )
+        )
+
+        return obs_batch, obs_params, obs_loss_fun
 
     def evaluate(
         self,

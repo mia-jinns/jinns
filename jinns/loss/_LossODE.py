@@ -7,22 +7,14 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 from dataclasses import InitVar
-from typing import TYPE_CHECKING, Callable, Any
-from types import EllipsisType
+from typing import TYPE_CHECKING, Callable, Any, ClassVar
 import warnings
 import jax
 import jax.numpy as jnp
 from jax import vmap
 import equinox as eqx
 from jaxtyping import Float, Array
-from jinns.loss._loss_utils import (
-    dynamic_loss_apply,
-    observations_loss_apply,
-    initial_condition_check,
-)
-from jinns.parameters._params import (
-    update_eq_params,
-)
+from jinns.loss._loss_utils import initial_condition_check, mean_sum_reduction
 from jinns.parameters._derivative_keys import _set_derivatives, DerivativeKeysODE
 from jinns.loss._loss_weights import LossWeightsODE
 from jinns.loss._abstract_loss import AbstractLoss
@@ -112,9 +104,15 @@ class LossODE(
     derivative_keys: DerivativeKeysODE
     loss_weights: LossWeightsODE
     initial_condition: InitialCondition | None
-    obs_slice: EllipsisType | slice = eqx.field(static=True)
     params: InitVar[Params[Array] | None]
-    reduction_functions: ODEComponents[Callable] = eqx.field(static=True, init=False)
+    reduction_functions: ClassVar[ODEComponents[Callable]] = eqx.field(
+        static=True,
+        default=ODEComponents(
+            dyn_loss=mean_sum_reduction,
+            initial_condition=mean_sum_reduction,
+            observations=mean_sum_reduction,
+        ),
+    )
 
     def __init__(
         self,
@@ -124,7 +122,6 @@ class LossODE(
         loss_weights: LossWeightsODE | None = None,
         derivative_keys: DerivativeKeysODE | None = None,
         initial_condition: InitialConditionUser | None = None,
-        obs_slice: EllipsisType | slice | None = None,
         params: Params[Array] | None = None,
         **kwargs: Any,  # this is for arguments for super()
     ):
@@ -140,18 +137,21 @@ class LossODE(
                     "Problem at derivative_keys initialization "
                     f"received {derivative_keys=} and {params=}"
                 )
-            derivative_keys = DerivativeKeysODE(params=params)
+            self.derivative_keys = DerivativeKeysODE(params=params)
         else:
-            derivative_keys = derivative_keys
-
-        super().__init__(
-            loss_weights=self.loss_weights,
-            derivative_keys=derivative_keys,
-            vmap_in_axes=(0,),
-            **kwargs,
-        )
+            self.derivative_keys = derivative_keys
         self.u = u
         self.dynamic_loss = dynamic_loss
+
+        # NOTE unclear why the AbstractVar of super need to be passed
+        # explicitely
+        super().__init__(
+            dynamic_loss=self.dynamic_loss,
+            loss_weights=self.loss_weights,
+            derivative_keys=self.derivative_keys,
+            u=self.u,
+            **kwargs,
+        )
         if self.update_weight_method is not None and jnp.any(
             jnp.array(jax.tree.leaves(self.loss_weights)) == 0
         ):
@@ -230,23 +230,6 @@ class LossODE(
 
             self.initial_condition = (t0, u0)
 
-        if obs_slice is None:
-            self.obs_slice = jnp.s_[...]
-        else:
-            self.obs_slice = obs_slice
-
-        self.reduction_functions = ODEComponents(
-            dyn_loss=lambda residual: (jnp.mean(jnp.sum(residual**2, axis=-1)))
-            if residual is not None
-            else None,
-            initial_condition=lambda residual: (jnp.mean(jnp.sum(residual**2, axis=-1)))
-            if residual is not None
-            else None,
-            observations=lambda residual: (jnp.mean(jnp.sum(residual**2, axis=-1)))
-            if residual is not None
-            else None,
-        )
-
     def evaluate_by_terms(
         self,
         batch: ODEBatch,
@@ -277,21 +260,10 @@ class LossODE(
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
         """
-        temporal_batch = batch.temporal_batch
 
-        ## dynamic part
-        if self.dynamic_loss is not None:
-            dyn_loss_eval = self.dynamic_loss.evaluate
-            dyn_loss_fun: Callable[[Array, Params[Array]], Array] | None = (
-                lambda b, p: dynamic_loss_apply(
-                    dyn_loss_eval,
-                    self.u,
-                    b,
-                    _set_derivatives(p, self.derivative_keys.dyn_loss),
-                )
-            )
-        else:
-            dyn_loss_fun = None
+        # dynamic part
+        temporal_batch = batch.temporal_batch
+        dyn_loss_fun = self._get_dyn_loss_fun()
 
         if self.initial_condition is not None:
             # initial condition
@@ -344,27 +316,13 @@ class LossODE(
             initial_condition_fun = None
 
         if batch.obs_batch_dict is not None:
-            # update params with the batches of observed params
-            params_obs = update_eq_params(params, batch.obs_batch_dict["eq_params"])
-
-            pinn_in, val = (
-                batch.obs_batch_dict["pinn_in"],
-                batch.obs_batch_dict["val"],
-            )  # the reason for this intruction is https://github.com/microsoft/pyright/discussions/8340
-
-            # MSE loss wrt to an observed batch
-            obs_loss_fun: Callable[[tuple[Array, Array], Params[Array]], Array] | None = (
-                lambda b, po: observations_loss_apply(
-                    self.u,
-                    b,
-                    _set_derivatives(po, self.derivative_keys.observations),
-                    self.obs_slice,
-                )
+            obs_batch, obs_params, obs_loss_fun = (
+                self._get_obs_batch_params_and_loss_fun(params, batch.obs_batch_dict)
             )
         else:
-            params_obs = None
+            obs_params = None
             obs_loss_fun = None
-            pinn_in, val = None, None
+            obs_batch = None, None
 
         all_funs_and_params: ODEComponents[
             tuple[
@@ -378,8 +336,8 @@ class LossODE(
             initial_condition=(initial_condition_fun, None, params, None),
             observations=(
                 obs_loss_fun,
-                (pinn_in, val),
-                params_obs,
+                obs_batch,
+                obs_params,
                 (
                     0,
                     0,
@@ -387,34 +345,3 @@ class LossODE(
             ),
         )
         return all_funs_and_params
-        # mses = jax.tree.map(
-        #    lambda f, p: f(p) if f is not None else None,
-        #    all_funs,
-        #    all_params,
-        #    is_leaf=lambda x: x is None,
-        # )
-        # return mses
-
-        # Note that the lambda functions below are with type: ignore just
-        # because the lambda are not type annotated, but there is no proper way
-        # to do this and we should assign the lambda to a type hinted variable
-        # before hand: this is not practical, let us not get mad at this
-        # mses_grads = jax.tree.map(
-        #    self.get_gradients,
-        #    all_funs,
-        #    all_params,
-        #    is_leaf=lambda x: x is None,
-        # )
-
-        # mses = jax.tree.map(
-        #    lambda leaf: leaf[0],  # type: ignore
-        #    mses_grads,
-        #    is_leaf=lambda x: isinstance(x, tuple),
-        # )
-        # grads = jax.tree.map(
-        #    lambda leaf: leaf[1],  # type: ignore
-        #    mses_grads,
-        #    is_leaf=lambda x: isinstance(x, tuple),
-        # )
-
-        # return mses, grads

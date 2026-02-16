@@ -6,24 +6,18 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-import abc
 from dataclasses import InitVar
-from typing import TYPE_CHECKING, Callable, Any, TypeVar, Generic
-from types import EllipsisType
+from typing import TYPE_CHECKING, Callable, Any, TypeVar, Generic, ClassVar
 import warnings
 import jax
 import jax.numpy as jnp
 import equinox as eqx
 from jaxtyping import PRNGKeyArray, Float, Array
 from jinns.loss._loss_utils import (
-    dynamic_loss_apply,
     boundary_condition_apply,
-    observations_loss_apply,
     initial_condition_apply,
     initial_condition_check,
-)
-from jinns.parameters._params import (
-    update_eq_params,
+    mean_sum_reduction,
 )
 from jinns.parameters._derivative_keys import (
     _set_derivatives,
@@ -114,7 +108,6 @@ class _LossPDEAbstract(
     boundary_condition: BoundaryConditionAbstract | None
     norm_samples: Float[Array, " nb_norm_samples dimension"] | None
     norm_weights: Float[Array, " nb_norm_samples"] | None
-    obs_slice: EllipsisType | slice = eqx.field(static=True)
     key: PRNGKeyArray | None
 
     def __init__(
@@ -123,31 +116,16 @@ class _LossPDEAbstract(
         boundary_condition: BoundaryConditionAbstract | None = None,
         norm_samples: Float[Array, " nb_norm_samples dimension"] | None = None,
         norm_weights: Float[Array, " nb_norm_samples"] | float | int | None = None,
-        obs_slice: EllipsisType | slice | None = None,
         key: PRNGKeyArray | None = None,
-        derivative_keys: DKPDE,
         **kwargs: Any,  # for arguments for super()
     ):
         super().__init__(
+            dynamic_loss=self.dynamic_loss,
             loss_weights=self.loss_weights,
-            derivative_keys=derivative_keys,
+            derivative_keys=self.derivative_keys,
+            u=self.u,
             **kwargs,
         )
-
-        if self.update_weight_method is not None and jnp.any(
-            jnp.array(jax.tree.leaves(self.loss_weights)) == 0
-        ):
-            warnings.warn(
-                "self.update_weight_method is activated while some loss "
-                "weights are zero. The update weight method will likely "
-                "update the zero weight to some non-zero value. Check that "
-                "this is the desired behaviour."
-            )
-
-        if obs_slice is None:
-            self.obs_slice = jnp.s_[...]
-        else:
-            self.obs_slice = obs_slice
 
         self.boundary_condition = boundary_condition
         if self.boundary_condition is None:
@@ -177,33 +155,6 @@ class _LossPDEAbstract(
 
         self.key = key
 
-    @abc.abstractmethod
-    def _get_dynamic_loss_batch(self, batch: B) -> Array:
-        pass
-
-    @abc.abstractmethod
-    def _get_normalization_loss_batch(self, batch: B) -> tuple[Array | None, ...]:
-        pass
-
-    def _get_dyn_loss_fun(
-        self,
-        batch: B,
-    ) -> Callable[[Params[Array]], Array] | None:
-        if self.dynamic_loss is not None:
-            dyn_loss_eval = self.dynamic_loss.evaluate
-            dyn_loss_fun: Callable[[Params[Array]], Array] | None = (
-                lambda p: dynamic_loss_apply(
-                    dyn_loss_eval,
-                    self.u,
-                    self._get_dynamic_loss_batch(batch),
-                    _set_derivatives(p, self.derivative_keys.dyn_loss),
-                )
-            )
-        else:
-            dyn_loss_fun = None
-
-        return dyn_loss_fun
-
     def _get_norm_loss_fun(self, batch: B) -> Callable[[Params[Array]], Array] | None:
         # if self.norm_samples is not None:
         #    norm_loss_fun: Callable[[Params[Array]], Array] | None = (
@@ -221,15 +172,13 @@ class _LossPDEAbstract(
         norm_loss_fun = None
         return norm_loss_fun
 
-    def _get_boundary_loss_fun(
-        self, batch: B, no_reduction: bool = False
-    ) -> Callable[[Params[Array]], Array] | None:
+    def _get_boundary_loss_fun(self) -> Callable[[Array, Params[Array]], Array] | None:
         if self.boundary_condition is not None:
-            boundary_loss_fun: Callable[[Params[Array]], Array] | None = (
-                lambda p: boundary_condition_apply(
+            boundary_loss_fun: Callable[[Array, Params[Array]], Array] | None = (
+                lambda b, p: boundary_condition_apply(
                     self.boundary_condition,  # type: ignore # we are in lambda...
                     self.u,
-                    batch,
+                    b,
                     _set_derivatives(p, self.derivative_keys.boundary_loss),
                 )
             )
@@ -237,35 +186,6 @@ class _LossPDEAbstract(
             boundary_loss_fun = None
 
         return boundary_loss_fun
-
-    def _get_obs_params_and_obs_loss_fun(
-        self,
-        batch: B,
-        params: Params[Array],
-    ) -> tuple[Params[Array] | None, Callable[[Params[Array]], Array] | None]:
-        if batch.obs_batch_dict is not None:
-            # update params with the batches of observed params
-            params_obs = update_eq_params(params, batch.obs_batch_dict["eq_params"])
-
-            pinn_in, val = (
-                batch.obs_batch_dict["pinn_in"],
-                batch.obs_batch_dict["val"],
-            )
-
-            obs_loss_fun: Callable[[Params[Array]], Array] | None = (
-                lambda po: observations_loss_apply(
-                    self.u,
-                    pinn_in,
-                    _set_derivatives(po, self.derivative_keys.observations),
-                    val,
-                    self.obs_slice,
-                )
-            )
-        else:
-            params_obs = None
-            obs_loss_fun = None
-
-        return params_obs, obs_loss_fun
 
 
 class LossPDEStatio(
@@ -357,8 +277,23 @@ class LossPDEStatio(
 
     params: InitVar[Params[Array] | None]
 
-    reduction_functions: PDEStatioComponents[Callable] = eqx.field(
-        static=True, init=False
+    reduction_functions: ClassVar[PDEStatioComponents[Callable]] = eqx.field(
+        static=True,
+        default=PDEStatioComponents(
+            dyn_loss=mean_sum_reduction,
+            boundary_loss=lambda residual_all_facets: jax.tree.reduce(
+                jnp.add,
+                jax.tree.map(
+                    mean_sum_reduction,
+                    residual_all_facets,
+                ),
+                0.0,
+            )  # NOTE this boundary component changes ! Outer sum is for the facets
+            if residual_all_facets is not None
+            else None,
+            norm_loss=mean_sum_reduction,
+            observations=mean_sum_reduction,
+        ),
     )
 
     def __init__(
@@ -380,61 +315,39 @@ class LossPDEStatio(
         if derivative_keys is None:
             # be default we only take gradient wrt nn_params
             try:
-                derivative_keys = DerivativeKeysPDEStatio(params=params)
+                self.derivative_keys = DerivativeKeysPDEStatio(params=params)
             except ValueError as exc:
                 raise ValueError(
                     "Problem at derivative_keys initialization "
                     f"received {derivative_keys=} and {params=}"
                 ) from exc
         else:
-            derivative_keys = derivative_keys
+            self.derivative_keys = derivative_keys
 
+        self.dynamic_loss = dynamic_loss
         super().__init__(
-            derivative_keys=derivative_keys,
-            vmap_in_axes=(0,),
+            dynamic_loss=self.dynamic_loss,
+            derivative_keys=self.derivative_keys,
             **kwargs,
         )
-        self.dynamic_loss = dynamic_loss
-
-        self.reduction_functions = PDEStatioComponents(
-            dyn_loss=lambda residual: (jnp.mean(jnp.sum(residual**2, axis=-1)))
-            if residual is not None
-            else None,
-            boundary_loss=lambda residual_all_facets: jax.tree.reduce(
-                jnp.add,
-                jax.tree.map(
-                    lambda facet_res: jnp.mean(jnp.sum(facet_res**2, axis=-1)),
-                    residual_all_facets,
-                ),
-                0.0,
-            )  # outer sum is for the facets
-            if residual_all_facets is not None
-            else None,
-            norm_loss=lambda residual: (jnp.mean(jnp.sum(residual**2, axis=-1)))
-            if residual is not None
-            else None,
-            observations=lambda residual: (jnp.mean(jnp.sum(residual**2, axis=-1)))
-            if residual is not None
-            else None,
-        )
-
-    def _get_dynamic_loss_batch(
-        self, batch: PDEStatioBatch
-    ) -> Float[Array, " batch_size dimension"]:
-        return batch.domain_batch
 
     def _get_normalization_loss_batch(
         self, batch: PDEStatioBatch
     ) -> tuple[Float[Array, " nb_norm_samples dimension"] | None,]:
         return (self.norm_samples,)
 
-    # we could have used typing.cast though
-
     def evaluate_by_terms(
         self,
-        params: Params[Array],
         batch: PDEStatioBatch,
-    ) -> tuple[PDEStatioComponents[Array | None], PDEStatioComponents[Array | None]]:
+        params: Params[Array],
+    ) -> PDEStatioComponents[
+        tuple[
+            Callable | None,
+            tuple[Array | None, ...] | Array | None,
+            Params[Array] | None,
+            tuple[int, ...] | None,
+        ]
+    ]:
         """
         Evaluate the loss function at a batch of points for given parameters.
 
@@ -453,66 +366,49 @@ class LossPDEStatio(
         non_opt_params
             Parameters, which are non optimized, at which the loss is evaluated
         """
-        # if non_opt_params is not None:
-        #    params = eqx.combine(opt_params, non_opt_params)
-        # else:
-        #    params = opt_params
-
-        # Retrieve the optional eq_params_batch
-        # and update eq_params with the latter
-        # and update vmap_in_axes
-        # if batch.param_batch_dict is not None:
-        #    # update eq_params with the batches of generated params
-        #    params = update_eq_params(params, batch.param_batch_dict)
-
-        # vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
-
         # dynamic part
-        dyn_loss_fun = self._get_dyn_loss_fun(batch)
+        domain_batch = batch.domain_batch
+        dyn_loss_fun = self._get_dyn_loss_fun()
 
         # normalization part
         norm_loss_fun = self._get_norm_loss_fun(batch)
 
         # boundary part
-        boundary_loss_fun = self._get_boundary_loss_fun(batch)
+        border_batch = batch.border_batch
+        boundary_loss_fun = self._get_boundary_loss_fun()
 
         # Observation mse
-        params_obs, obs_loss_fun = self._get_obs_params_and_obs_loss_fun(batch, params)
-
-        # get the unweighted mses for each loss term as well as the gradients
-        all_funs: PDEStatioComponents[Callable[[Params[Array]], Array] | None] = (
-            PDEStatioComponents(
-                dyn_loss_fun, norm_loss_fun, boundary_loss_fun, obs_loss_fun
+        if batch.obs_batch_dict is not None:
+            obs_batch, obs_params, obs_loss_fun = (
+                self._get_obs_batch_params_and_loss_fun(params, batch.obs_batch_dict)
             )
-        )
-        all_params: PDEStatioComponents[Params[Array] | None] = PDEStatioComponents(
-            params, params, params, params_obs
-        )
-        mses = jax.tree.map(
-            lambda f, p: f(p) if f is not None else None,
-            all_funs,
-            all_params,
-            is_leaf=lambda x: x is None,
-        )
-        return mses
-        # mses_grads = jax.tree.map(
-        #    self.get_gradients,
-        #    all_funs,
-        #    all_params,
-        #    is_leaf=lambda x: x is None,
-        # )
-        # mses = jax.tree.map(
-        #    lambda leaf: leaf[0],  # type: ignore
-        #    mses_grads,
-        #    is_leaf=lambda x: isinstance(x, tuple),
-        # )
-        # grads = jax.tree.map(
-        #    lambda leaf: leaf[1],  # type: ignore
-        #    mses_grads,
-        #    is_leaf=lambda x: isinstance(x, tuple),
-        # )
+        else:
+            obs_params = None
+            obs_loss_fun = None
+            obs_batch = None, None
 
-        # return mses, grads
+        all_funs_and_params: PDEStatioComponents[
+            tuple[
+                Callable | None,
+                tuple[Array | None, ...] | Array | None,
+                Params[Array] | None,
+                tuple[int, ...] | None,
+            ]
+        ] = PDEStatioComponents(
+            dyn_loss=(dyn_loss_fun, domain_batch, params, (0,)),
+            norm_loss=(norm_loss_fun, None, params, None),
+            boundary_loss=(boundary_loss_fun, border_batch, params, (0,)),
+            observations=(
+                obs_loss_fun,
+                obs_batch,
+                obs_params,
+                (
+                    0,
+                    0,
+                ),
+            ),
+        )
+        return all_funs_and_params
 
 
 class LossPDENonStatio(
@@ -620,8 +516,24 @@ class LossPDENonStatio(
 
     params: InitVar[Params[Array] | None]
 
-    reduction_functions: PDENonStatioComponents[Callable] = eqx.field(
-        static=True, init=False
+    reduction_functions: ClassVar[PDENonStatioComponents[Callable]] = eqx.field(
+        static=True,
+        default=PDENonStatioComponents(
+            dyn_loss=mean_sum_reduction,
+            initial_condition=mean_sum_reduction,
+            boundary_loss=lambda residual_all_facets: jax.tree.reduce(
+                jnp.add,
+                jax.tree.map(
+                    mean_sum_reduction,
+                    residual_all_facets,
+                ),
+                0.0,
+            )  # NOTE this boundary component changes ! Outer sum is for the facets
+            if residual_all_facets is not None
+            else None,
+            norm_loss=mean_sum_reduction,
+            observations=mean_sum_reduction,
+        ),
     )
 
     def __init__(
@@ -637,7 +549,7 @@ class LossPDENonStatio(
         max_norm_time_slices: int = 100,
         max_norm_samples_omega: int = 1000,
         params: Params[Array] | None = None,
-        **kwargs: Any,
+        **kwargs: Any,  # this is arguments for super()
     ):
         self.u = u
         if loss_weights is None:
@@ -648,22 +560,22 @@ class LossPDENonStatio(
         if derivative_keys is None:
             # be default we only take gradient wrt nn_params
             try:
-                derivative_keys = DerivativeKeysPDENonStatio(params=params)
+                self.derivative_keys = DerivativeKeysPDENonStatio(params=params)
             except ValueError as exc:
                 raise ValueError(
                     "Problem at derivative_keys initialization "
                     f"received {derivative_keys=} and {params=}"
                 ) from exc
         else:
-            derivative_keys = derivative_keys
-
-        super().__init__(
-            derivative_keys=derivative_keys,
-            vmap_in_axes=(0,),  # for t_x
-            **kwargs,
-        )
+            derivative_keys = self.derivative_keys
 
         self.dynamic_loss = dynamic_loss
+
+        super().__init__(
+            dynamic_loss=self.dynamic_loss,
+            derivative_keys=self.derivative_keys,
+            **kwargs,
+        )
 
         if initial_condition_fun is None:
             warnings.warn(
@@ -683,36 +595,6 @@ class LossPDENonStatio(
         self.max_norm_time_slices = max_norm_time_slices
         self.max_norm_samples_omega = max_norm_samples_omega
 
-        self.reduction_functions = PDENonStatioComponents(
-            dyn_loss=lambda residual: (jnp.mean(jnp.sum(residual**2, axis=-1)))
-            if residual is not None
-            else None,
-            initial_condition=lambda residual: (jnp.mean(jnp.sum(residual**2, axis=-1)))
-            if residual is not None
-            else None,
-            boundary_loss=lambda residual_all_facets: jax.tree.reduce(
-                jnp.add,
-                jax.tree.map(
-                    lambda facet_res: jnp.mean(jnp.sum(facet_res**2, axis=-1)),
-                    residual_all_facets,
-                ),
-                0.0,
-            )  # outer sum is for the facets
-            if residual_all_facets is not None
-            else None,
-            norm_loss=lambda residual: (jnp.mean(jnp.sum(residual**2, axis=-1)))
-            if residual is not None
-            else None,
-            observations=lambda residual: (jnp.mean(jnp.sum(residual**2, axis=-1)))
-            if residual is not None
-            else None,
-        )
-
-    def _get_dynamic_loss_batch(
-        self, batch: PDENonStatioBatch
-    ) -> Float[Array, " batch_size 1+dimension"]:
-        return batch.domain_batch
-
     def _get_normalization_loss_batch(
         self, batch: PDENonStatioBatch
     ) -> tuple[
@@ -725,10 +607,15 @@ class LossPDENonStatio(
 
     def evaluate_by_terms(
         self,
-        params: Params[Array],
         batch: PDENonStatioBatch,
-    ) -> tuple[
-        PDENonStatioComponents[Array | None], PDENonStatioComponents[Array | None]
+        params: Params[Array],
+    ) -> PDENonStatioComponents[
+        tuple[
+            Callable | None,
+            tuple[Array | None, ...] | Array | None,
+            Params[Array] | None,
+            tuple[int, ...] | None,
+        ]
     ]:
         """
         Evaluate the loss function at a batch of points for given parameters.
@@ -748,84 +635,68 @@ class LossPDENonStatio(
         non_opt_params
             Parameters, which are non optimized, at which the loss is evaluated
         """
-        # if non_opt_params is not None:
-        #    params = eqx.combine(opt_params, non_opt_params)
-        # else:
-        #    params = opt_params
-
-        omega_initial_batch = batch.initial_batch
-        assert omega_initial_batch is not None
-
-        ## Retrieve the optional eq_params_batch
-        ## and update eq_params with the latter
-        ## and update vmap_in_axes
-        if batch.param_batch_dict is not None:
-            # update eq_params with the batches of generated params
-            params = update_eq_params(params, batch.param_batch_dict)
-
-        # vmap_in_axes_params = _get_vmap_in_axes_params(batch.param_batch_dict, params)
-
         # dynamic part
-        dyn_loss_fun = self._get_dyn_loss_fun(batch)
+        domain_batch = batch.domain_batch
+        dyn_loss_fun = self._get_dyn_loss_fun()
 
         # normalization part
         norm_loss_fun = self._get_norm_loss_fun(batch)
 
         # boundary part
-        boundary_loss_fun = self._get_boundary_loss_fun(batch)
+        border_batch = batch.border_batch
+        boundary_loss_fun = self._get_boundary_loss_fun()
 
         # Observation mse
-        params_obs, obs_loss_fun = self._get_obs_params_and_obs_loss_fun(batch, params)
+        if batch.obs_batch_dict is not None:
+            obs_batch, obs_params, obs_loss_fun = (
+                self._get_obs_batch_params_and_loss_fun(params, batch.obs_batch_dict)
+            )
+        else:
+            obs_params = None
+            obs_loss_fun = None
+            obs_batch = None, None
 
         # initial condition
         if self.initial_condition_fun is not None:
-            mse_initial_condition_fun: Callable[[Params[Array]], Array] | None = (
-                lambda p: initial_condition_apply(
+            omega_initial_batch = batch.initial_batch
+            initial_condition_fun: Callable[[Array, Params[Array]], Array] | None = (
+                lambda b, p: initial_condition_apply(
                     self.u,
-                    omega_initial_batch,
+                    b,
                     _set_derivatives(p, self.derivative_keys.initial_condition),
                     self.initial_condition_fun,  # type: ignore
                     self.t0,
                 )
             )
         else:
-            mse_initial_condition_fun = None
+            omega_initial_batch = None
+            initial_condition_fun = None
 
-        # get the unweighted mses for each loss term as well as the gradients
-        all_funs: PDENonStatioComponents[Callable[[Params[Array]], Array] | None] = (
-            PDENonStatioComponents(
-                dyn_loss_fun,
-                norm_loss_fun,
-                boundary_loss_fun,
+        all_funs_and_params: PDENonStatioComponents[
+            tuple[
+                Callable | None,
+                tuple[Array | None, ...] | Array | None,
+                Params[Array] | None,
+                tuple[int, ...] | None,
+            ]
+        ] = PDENonStatioComponents(
+            dyn_loss=(dyn_loss_fun, domain_batch, params, (0,)),
+            norm_loss=(norm_loss_fun, None, params, None),
+            boundary_loss=(boundary_loss_fun, border_batch, params, (0,)),
+            initial_condition=(
+                initial_condition_fun,
+                omega_initial_batch,
+                params,
+                (0,),
+            ),
+            observations=(
                 obs_loss_fun,
-                mse_initial_condition_fun,
-            )
+                obs_batch,
+                obs_params,
+                (
+                    0,
+                    0,
+                ),
+            ),
         )
-        all_params: PDENonStatioComponents[Params[Array] | None] = (
-            PDENonStatioComponents(params, params, params, params_obs, params)
-        )
-        mses = jax.tree.map(
-            lambda f, p: f(p) if f is not None else None,
-            all_funs,
-            all_params,
-            is_leaf=lambda x: x is None,
-        )
-        return mses
-        # mses_grads = jax.tree.map(
-        #    self.get_gradients,
-        #    all_funs,
-        #    all_params,
-        #    is_leaf=lambda x: x is None,
-        # )
-        # mses = jax.tree.map(
-        #    lambda leaf: leaf[0],  # type: ignore
-        #    mses_grads,
-        #    is_leaf=lambda x: isinstance(x, tuple),
-        # )
-        # grads = jax.tree.map(
-        #    lambda leaf: leaf[1],  # type: ignore
-        #    mses_grads,
-        #    is_leaf=lambda x: isinstance(x, tuple),
-        # )
-
-        # return mses, grads
+        return all_funs_and_params
