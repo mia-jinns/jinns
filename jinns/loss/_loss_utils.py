@@ -205,19 +205,20 @@ def initial_condition_apply(
     initial_condition_fun: Callable,
     t0: Float[Array, " 1"],
 ) -> Float[Array, " "]:
-    # t0_omega_batch = jnp.concatenate([t0 * jnp.ones((n, 1)), omega_batch], axis=1)
-    t0_x = jnp.concatenate([t0, omega_batch])  # not a batch anymoer
     if isinstance(u, (PINN, HyperPINN)):
+        t0_x = jnp.concatenate([t0, omega_batch])  # not a batch anymoer
         residuals = _subtract_with_check(
             initial_condition_fun(t0_x[1:]),
             u(t0_x, params),
             cause="Output of initial_condition_fun",
         )
     elif isinstance(u, SPINN):
+        n = omega_batch.shape[0]
+        t0_omega_batch = jnp.concatenate([t0 * jnp.ones((n, 1)), omega_batch], axis=1)
         omega_batch_grid = get_grid(omega_batch)
         residuals = _subtract_with_check(
             initial_condition_fun(omega_batch_grid),
-            u(t0_x, params)[0],
+            u(t0_omega_batch, params)[0],
             cause="Output of initial_condition_fun",
         )
     else:

@@ -239,7 +239,7 @@ class LossODE(
             Callable | None,
             tuple[Array | None, ...] | Array | None,
             Params[Array] | None,
-            tuple[int, ...] | None,
+            tuple[tuple[int, ...]] | tuple[int, ...] | None,
         ]
     ]:
         """
@@ -329,7 +329,7 @@ class LossODE(
                 Callable | None,
                 tuple[Array | None, ...] | Array | None,
                 Params[Array] | None,
-                tuple[int, ...] | None,
+                tuple[tuple[int, ...]] | tuple[int, ...] | None,
             ]
         ] = ODEComponents(
             dyn_loss=(dyn_loss_fun, temporal_batch, params, (0,)),
@@ -338,10 +338,8 @@ class LossODE(
                 obs_loss_fun,
                 obs_batch,
                 obs_params,
-                (
-                    0,
-                    0,
-                ),
+                ((0, 0),),  # nested tuple for generic parametrization of the
+                # vmap when batch is also a tuple
             ),
         )
         return all_funs_and_params

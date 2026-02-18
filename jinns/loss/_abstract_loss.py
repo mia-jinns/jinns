@@ -92,7 +92,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         self,
         batch: B,
         params: Params[Array],
-    ) -> tuple[C, C]:
+    ) -> C:
         pass
 
     def _get_dyn_loss_fun(
@@ -183,6 +183,9 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             params = update_eq_params(params, batch.param_batch_dict)
 
         if isinstance(self.u, (PINN, HyperPINN)):
+            # NOTE each loss function is vmapped generically here
+            # before reduction
+
             vmap_in_axes_params = _get_vmap_in_axes_params(
                 cast(eqx.Module, batch.param_batch_dict), params
             )
@@ -212,7 +215,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             # vmap, with some subtleties depending on the function term
             # NOTE: we keep it as a function of batch and params (b and p)
             # until then it to be able to call `jax.jacrev`
-            v_evaluate_by_terms = lambda b, p: jax.tree.map(
+            evaluate_by_terms = lambda b, p: jax.tree.map(
                 lambda args: vmap_loss_fun(*args),
                 self.evaluate_by_terms(b, p),
                 is_leaf=lambda x: (
@@ -223,22 +226,32 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             # next we reduce the output of each loss term function
             # NOTE: we keep it as a function of batch and params (b and p)
             # until then it to be able to call `jax.jacrev`
-            v_evaluate_by_terms_reduced = lambda b, p: jax.tree.map(
+            evaluate_by_terms_reduced = lambda b, p: jax.tree.map(
                 lambda red_fun, v_eval: red_fun(v_eval),
                 self.reduction_functions,
-                v_evaluate_by_terms(b, p),
+                evaluate_by_terms(b, p),
             )
 
             # if we simply call the previous function we get the value of all
             # loss terms
-            loss_terms = v_evaluate_by_terms_reduced(batch, params)
+            loss_terms = evaluate_by_terms_reduced(batch, params)
         elif isinstance(self.u, SPINN):
-            v_evaluate_by_terms_reduced = lambda b, p: jax.tree.map(
-                lambda red_fun, v_eval: red_fun(v_eval),
+            # NOTE there is no vmap here on each loss functin
+            # as the SPINN expects the full batch
+            def loss_fun(fun, _b, _p, _):
+                if fun is None:
+                    return None
+                return fun(_b, _p)
+
+            evaluate_by_terms_reduced = lambda b, p: jax.tree.map(
+                lambda red_fun, f_b_p_in_axes: red_fun(loss_fun(*f_b_p_in_axes)),
                 self.reduction_functions,
                 self.evaluate_by_terms(b, p),
+                is_leaf=lambda x: (
+                    isinstance(x, tuple) and (callable(x[0]) or x[0] is None)
+                ),  # only traverse first layer
             )
-            loss_terms = v_evaluate_by_terms_reduced(batch, params)
+            loss_terms = evaluate_by_terms_reduced(batch, params)
         else:
             raise ValueError(
                 f"Bad type for self.u. Got {type(self.u)}, expected PINN or SPINN"
@@ -247,9 +260,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         if ret_grad_terms:
             # jacrev instead of grad to differentiate through the XDEComponents
             # Pytree
-            grad_terms = jax.jacrev(v_evaluate_by_terms_reduced, argnums=1)(
-                batch, params
-            )
+            grad_terms = jax.jacrev(evaluate_by_terms_reduced, argnums=1)(batch, params)
             return loss_terms, grad_terms
 
         loss_val = self.ponderate_and_sum_loss(loss_terms)

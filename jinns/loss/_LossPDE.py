@@ -301,7 +301,9 @@ class LossPDEStatio(
             )  # NOTE this boundary component changes ! Outer sum is for the facets
             if residual_all_facets is not None
             else None,
-            norm_loss=lambda res: jnp.abs(jnp.mean(res) - 1.0) ** 2,
+            norm_loss=lambda res: jnp.abs(jnp.mean(res) - 1.0) ** 2
+            if res is not None
+            else None,
             observations=mean_sum_reduction,
         ),
     )
@@ -358,7 +360,7 @@ class LossPDEStatio(
             Callable | None,
             tuple[Array | None, ...] | Array | None,
             Params[Array] | None,
-            tuple[int, ...] | None,
+            tuple[tuple[int, ...]] | tuple[int, ...] | None,
         ]
     ]:
         """
@@ -416,10 +418,7 @@ class LossPDEStatio(
                 obs_loss_fun,
                 obs_batch,
                 obs_params,
-                (
-                    0,
-                    0,
-                ),
+                ((0, 0),),
             ),
         )
         return all_funs_and_params
@@ -557,7 +556,9 @@ class LossPDENonStatio(
                     - 1
                 )
                 ** 2
-            ),  # the outer mean() below is for the times stamps
+            )  # the outer mean() below is for the times stamps
+            if res is not None
+            else None,
             observations=mean_sum_reduction,
         ),
     )
@@ -593,7 +594,7 @@ class LossPDENonStatio(
                     f"received {derivative_keys=} and {params=}"
                 ) from exc
         else:
-            derivative_keys = self.derivative_keys
+            self.derivative_keys = derivative_keys
 
         self.dynamic_loss = dynamic_loss
 
@@ -634,14 +635,14 @@ class LossPDENonStatio(
             # we will tile it so that the norm_samples match the spatial points
             norm_weights = jnp.tile(
                 self.norm_weights,
-                reps=(batches[1].shape[0],)
+                reps=(batches[0].shape[0],)
                 + tuple(1 for i in self.norm_weights.shape[1:]),
             )
             return (
                 make_cartesian_product(
                     batches[0],
                     batches[1],
-                ).reshape(batches[0].shape[0], batches[1].shape[0], -1),
+                ).reshape(batches[0].shape[0] * batches[1].shape[0], -1),
                 norm_weights,
             )
         elif isinstance(self.u, SPINN):
@@ -668,7 +669,7 @@ class LossPDENonStatio(
             Callable | None,
             tuple[Array | None, ...] | Array | None,
             Params[Array] | None,
-            tuple[int, ...] | None,
+            tuple[tuple[int, ...]] | tuple[int, ...] | None,
         ]
     ]:
         """
@@ -736,11 +737,11 @@ class LossPDENonStatio(
                 Callable | None,
                 tuple[Array | None, ...] | Array | None,
                 Params[Array] | None,
-                tuple[int, ...] | None,
+                tuple[tuple[int, ...]] | tuple[int, ...] | None,
             ]
         ] = PDENonStatioComponents(
             dyn_loss=(dyn_loss_fun, domain_batch, params, (0,)),
-            norm_loss=(norm_loss_fun, norm_batch, params, (0, 0)),
+            norm_loss=(norm_loss_fun, norm_batch, params, ((0, 0),)),
             boundary_loss=(boundary_loss_fun, border_batch, params, (0,)),
             initial_condition=(
                 initial_condition_fun,
@@ -752,10 +753,7 @@ class LossPDENonStatio(
                 obs_loss_fun,
                 obs_batch,
                 obs_params,
-                (
-                    0,
-                    0,
-                ),
+                ((0, 0),),
             ),
         )
         return all_funs_and_params
