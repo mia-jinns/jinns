@@ -15,6 +15,9 @@ import equinox as eqx
 from jaxtyping import PyTree, Float, Array, PRNGKeyArray
 import optax
 
+
+from jinns.nn._hyperpinn import _get_param_nb
+
 from jinns.data._utils import append_param_batch, append_obs_batch
 from jinns.utils._utils import _check_nan_in_pytree
 from jinns.data._DataGeneratorODE import DataGeneratorODE
@@ -231,7 +234,8 @@ def _loss_evaluate_and_natural_gradient_step(
 
     # 1. Get the unreduced residuals and their gradient (for each sample)
     # for each loss term
-    loss_terms, grad_terms = loss.evaluate_natural_gradient(
+
+    r, g = loss.evaluate_natural_gradient(
         opt_params_accel
         if opt_state_field_for_acceleration is not None
         else opt_params,
@@ -239,26 +243,81 @@ def _loss_evaluate_and_natural_gradient_step(
         non_opt_params=non_opt_params,
         ret_nat_grad_terms=True,
     )
-    print(loss_terms, grad_terms, opt_params)
-    fs
 
-    # TODO add a proper integration weights support
+    # batch_sizes =
+    def post_process_pytree_of_grad(y):
+        # TODO: document to describe steps
+        # TODO: take loss_weights into account ?
 
-    # 2. Construct Gram matrix
-
-    if loss.update_weight_method is not None and with_loss_weight_update:
-        key, subkey = jax.random.split(key)  # type: ignore because key can
-        # still be None currently
-        # avoid computations of tree_at if no updates
-        loss = loss.update_weights(
-            i, loss_terms, loss_container.stored_loss_terms, grad_terms, subkey
+        l = jax.tree.map(
+            lambda pt: jax.tree.leaves(
+                pt.nn_params, is_leaf=lambda x: eqx.is_inexact_array(x)
+            ),
+            y,
+            is_leaf=lambda x: isinstance(x, Params),
         )
 
-    # 2. total grad
-    grads = loss.ponderate_and_sum_gradient(grad_terms)
+        l2 = jax.tree.map(
+            lambda l1: [a.reshape((a.shape[0], -1)) for a in l1],
+            l,
+            is_leaf=lambda x: isinstance(x, list),
+        )
+
+        l3 = jax.tree.map(
+            lambda leaf: jnp.concatenate(leaf, axis=1),
+            l2,
+            is_leaf=lambda x: isinstance(x, list),
+        )
+
+        return jnp.concatenate(jax.tree.leaves(l3), axis=0)
+
+    # Flatten the pytree of params as a big (n, p) matrix
+    M = post_process_pytree_of_grad(g)
+    R = jnp.concatenate(jax.tree.leaves(r), axis=0)
+
+    # Form euclidean grad
+    # NOTE: beware that euclidean gradient (might) differs from jax.grad(loss.evaluate) here. Indeed jinns takes the sum(mean(loss_type)) while here we compute mean(sum(all_loss_types). These might differs when different number of samples are used.
+    # Equality can be matched by changing the jinns reduction function internally.
+    euclidean_grad = jnp.mean(R * M, axis=0)
+
+    # NOTE: this step is very costly
+    # Assemble Gram Matrix
+    # gram_mat = jnp.mean(jax.vmap(lambda u, v: jnp.outer(u, v), (0, 0))(M, M), axis=0)
+    gram_mat = jnp.mean(M[..., None] @ M[:, None, :], axis=0)
+
+    # Solve the linear system Gx = eucl_grad
+    reg = 1e-5
+    n_param = gram_mat.shape[0]
+    natural_grad = jax.scipy.linalg.solve(
+        gram_mat + reg * jnp.eye(n_param), euclidean_grad, assume_a="sym"
+    )
+    # Final step : restruce the natural gradient as a nn_params PyTree
+    params_cumsum = _get_param_nb(opt_params.nn_params)[1]
+    ng_flat = eqx.tree_at(
+        jax.tree.leaves,
+        opt_params.nn_params,
+        jnp.split(natural_grad, params_cumsum[:-1]),
+    )
+
+    natural_gradient_pt = jax.tree.map(
+        lambda a, b: a.reshape(b.shape),
+        ng_flat,
+        opt_params.nn_params,
+        is_leaf=lambda x: isinstance(x, jnp.ndarray),
+    )
+
+    # Wrap everything in a Params() object
+    # eq_params is unchanged
+    grads = Params(nn_params=natural_gradient_pt, eq_params=params.eq_params)
+
+    # For now, NGD is not compatible with weight renormalization
 
     # total loss
-    train_loss_value = loss.ponderate_and_sum_loss(loss_terms)
+    # TODO: build loss_terms by a reduction on `r`
+    loss_terms = jax.tree.map(lambda _: 0.0, r)
+    train_loss_value = jnp.mean(
+        jnp.concatenate(jax.tree.leaves(jax.tree.map(jnp.square, r)), axis=0)
+    )
 
     opt_grads, _ = grads.partition(
         params_mask
@@ -267,6 +326,12 @@ def _loss_evaluate_and_natural_gradient_step(
     # Here, we only use the gradient step of the Optax optimizer on the
     # parameters specified by params_mask. , no dummy state with filled with zero entries
     # all other entries of the pytrees are None thanks to params_mask)
+
+    # Here we force optax vanilla additive gradient update
+    # since it makes no sense to use other optimizers
+    # TODO: check sgd only
+    # assert isinstance(optimizer, optax.sgd)
+
     opt_params, opt_state = _gradient_step(
         opt_grads,
         optimizer,
