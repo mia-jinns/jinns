@@ -150,7 +150,8 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         batch: B,
         *,
         non_opt_params: Params[Array] | None = None,
-        ret_grad_terms: bool = False,
+        ret_std_grad_terms: bool = False,
+        # ret_std_grad_terms
     ) -> tuple[Float[Array, " "], C]:
         """
         Evaluate the loss function at a batch of points for given parameters.
@@ -257,7 +258,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
                 f"Bad type for self.u. Got {type(self.u)}, expected PINN or SPINN"
             )
 
-        if ret_grad_terms:
+        if ret_std_grad_terms:
             # jacrev instead of grad to differentiate through the XDEComponents
             # Pytree
             grad_terms = jax.jacrev(evaluate_by_terms_reduced, argnums=1)(batch, params)
@@ -266,6 +267,99 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         loss_val = self.ponderate_and_sum_loss(loss_terms)
 
         return loss_val, loss_terms
+
+    def evaluate_natural_gradient(
+        self,
+        opt_params: Params[Array],
+        batch: B,
+        *,
+        non_opt_params: Params[Array] | None = None,
+        ret_nat_grad_terms: bool = False,
+        # ret_std_grad_terms
+    ) -> tuple[Float[Array, " "], C]:
+        """ """
+        if non_opt_params is not None:
+            params = eqx.combine(opt_params, non_opt_params)
+        else:
+            params = opt_params
+
+        # Retrieve the optional eq_params_batch
+        # and update eq_params with the latter
+        # and update vmap_in_axes
+        if batch.param_batch_dict is not None:
+            # update params with the batches of generated params
+            params = update_eq_params(params, batch.param_batch_dict)
+
+        if not isinstance(self.u, (PINN, HyperPINN)):
+            raise ValueError("Not implemented for SPINNs")
+
+        vmap_in_axes_params = _get_vmap_in_axes_params(
+            cast(eqx.Module, batch.param_batch_dict), params
+        )
+
+        # create a PyTree of vmapped functions (loss terms)
+        # we could technically vmap evaluate by terms with a PyTree in axes
+        # of type XDEBatch but this would for identical batch length...
+        def vmap_loss_fun(fun, _b, _p, _in_axes):
+            if fun is None:
+                return None
+            else:
+                if _b is None and _in_axes is None:  # some loss_fun does not need batch
+                    if vmap_in_axes_params == (None,):
+                        return fun(_p)[None]  # NOTE we simulate a vmap axis
+                    # for the reduction to be always correct with the outer
+                    # jnp.mean (here _b is None)
+                    else:
+                        # here the vmap is only for params
+                        return jax.vmap(fun, vmap_in_axes_params)(_p)
+                else:
+                    return jax.vmap(fun, _in_axes + vmap_in_axes_params)(_b, _p)
+
+        def vmap_jacrev_loss_fun(fun, _b, _p, _in_axes):
+            if fun is None:
+                return None
+            else:
+                if _b is None and _in_axes is None:  # some loss_fun does not need batch
+                    if vmap_in_axes_params == (None,):
+                        return jax.jacrev(fun)(_p)[None]  # NOTE we simulate a vmap axis
+                    # for the reduction to be always correct with the outer
+                    # jnp.mean (here _b is None)
+                    else:
+                        # here the vmap is only for params
+                        return jax.vmap(
+                            jax.jacrev(fun, argnums=1), vmap_in_axes_params
+                        )(_p)
+                else:
+                    return jax.vmap(
+                        jax.jacrev(fun, argnums=1), _in_axes + vmap_in_axes_params
+                    )(_b, _p)
+
+        # We vmap each function returned by evaluate by terms via the
+        # following tree map. `vmap_loss_fun` is a function which does this
+        # vmap, with some subtleties depending on the function term
+        # NOTE: we keep it as a function of batch and params (b and p)
+        # until then it to be able to call `jax.jacrev`
+        evaluate_by_terms = lambda b, p: jax.tree.map(
+            lambda args: vmap_loss_fun(*args),
+            self.evaluate_by_terms(b, p),
+            is_leaf=lambda x: (
+                isinstance(x, tuple) and (callable(x[0]) or x[0] is None)
+            ),  # only traverse first layer
+        )
+
+        jacrev_evaluate_by_terms = lambda b, p: jax.tree.map(
+            lambda args: vmap_jacrev_loss_fun(*args),
+            self.evaluate_by_terms(b, p),
+            is_leaf=lambda x: (
+                isinstance(x, tuple) and (callable(x[0]) or x[0] is None)
+            ),  # only traverse first layer
+        )
+
+        # Return the unreduced gradients and loss terms for each sample for
+        # each loss
+        loss_terms = evaluate_by_terms(batch, params)
+        grad_terms = jacrev_evaluate_by_terms(batch, params)
+        return loss_terms, grad_terms
 
     def get_gradients(
         self, fun: Callable[[Params[Array]], Array], params: Params[Array]

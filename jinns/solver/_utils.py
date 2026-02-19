@@ -133,7 +133,7 @@ def _loss_evaluate_and_gradient_step(
         else opt_params,
         batch,
         non_opt_params=non_opt_params,
-        ret_grad_terms=True,
+        ret_std_grad_terms=True,
     )
 
     if loss.update_weight_method is not None and with_loss_weight_update:
@@ -229,14 +229,18 @@ def _loss_evaluate_and_natural_gradient_step(
         params, state, opt_state_field_for_acceleration, params_mask
     )
 
-    # 1. Get the unreduced residuals and their gradient, for each loss term
-    residuals, gradients = loss.evaluate_by_terms(
+    # 1. Get the unreduced residuals and their gradient (for each sample)
+    # for each loss term
+    loss_terms, grad_terms = loss.evaluate_natural_gradient(
         opt_params_accel
         if opt_state_field_for_acceleration is not None
         else opt_params,
         batch,
         non_opt_params=non_opt_params,
+        ret_nat_grad_terms=True,
     )
+    print(loss_terms, grad_terms, opt_params)
+    fs
 
     # TODO add a proper integration weights support
 
