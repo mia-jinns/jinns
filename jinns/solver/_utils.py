@@ -314,7 +314,9 @@ def _loss_evaluate_and_natural_gradient_step(
 
     # total loss
     # TODO: build loss_terms by a reduction on `r`
-    loss_terms = jax.tree.map(lambda _: 0.0, r)
+    loss_terms = jax.tree.map(
+        lambda _: 0.0, r, is_leaf=lambda x: isinstance(x, tuple)
+    )  # leaf check necessary to handle multi-faceted boundaries
     train_loss_value = jnp.mean(
         jnp.concatenate(jax.tree.leaves(jax.tree.map(jnp.square, r)), axis=0)
     )
