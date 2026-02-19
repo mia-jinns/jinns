@@ -82,39 +82,43 @@ def test_new_initial_condition():
     Added in jinns v1.5.1
     """
     key = jax.random.PRNGKey(2)
-    eqx_network = eqx.nn.MLP(1, 2, 128, 3, jax.nn.tanh, key=key)
+    eqx_network = eqx.nn.MLP(1, 1, 0, 0, jax.nn.tanh, key=key)
+    linear = eqx.nn.Linear(1, 1, use_bias=False, key=key)
+    new_linear = eqx.tree_at(lambda l: l.weight, linear, jnp.array([[1.0]]))
+    eqx_network = eqx.tree_at(lambda pt: pt.layers[0], eqx_network, new_linear)
     u, params = jinns.nn.PINN_MLP.create(eqx_network=eqx_network, eq_type="ODE")
     params = jinns.parameters.Params(nn_params=params)
 
-    # we use a dummy u to be able to easily compute expected values but we
-    # still need a fake well formed Param object to construct the loss as well
-    # as a fake well form ODEBatch
+    # we use a dummy u (u is identity)
     loss = jinns.loss.LossODE(
-        u=lambda t, p: t,
+        u=u,
         dynamic_loss=None,
         initial_condition=(1.0, jnp.array([1.0])),
         params=params,
+        loss_weights=jinns.loss.LossWeightsODE(initial_condition=1.0),
     )
-    mses, _ = loss.evaluate_by_terms(params, ODEBatch(None))
+    _, mses = loss.evaluate(params, ODEBatch(None))
     assert jnp.allclose(mses.initial_condition, jnp.array(0.0))
 
     loss = jinns.loss.LossODE(
-        u=lambda t, p: t,
+        u=u,
         dynamic_loss=None,
         initial_condition=(jnp.array([[2.0], [1.0]]), jnp.array([[2.0], [1.0]])),
         params=params,
+        loss_weights=jinns.loss.LossWeightsODE(initial_condition=1.0),
     )
-    mses, _ = loss.evaluate_by_terms(params, ODEBatch(None))
+    _, mses = loss.evaluate(params, ODEBatch(None))
     assert jnp.allclose(mses.initial_condition, jnp.array(0.0))
 
     loss = jinns.loss.LossODE(
-        u=lambda t, p: jnp.concatenate([t, t]),
+        u=u,
         dynamic_loss=None,
         initial_condition=(
             jnp.array([[2.0], [1.0]]),
             jnp.array([[2.0, 2.0], [1.0, 1.0]]),
         ),
         params=params,
+        loss_weights=jinns.loss.LossWeightsODE(initial_condition=1.0),
     )
-    mses, _ = loss.evaluate_by_terms(params, ODEBatch(None))
+    _, mses = loss.evaluate(params, ODEBatch(None))
     assert jnp.allclose(mses.initial_condition, jnp.array(0.0))
