@@ -35,7 +35,7 @@ def plot2d(
     ----------
     fun :
         the function $u$ to plot on the meshgrid, and eventually the time
-        slices. It's suppose to have signature `u(x)` in the stationnary case,, and `u(t, x)` in the non-stationnary case. Use `partial` or `lambda to freeze / reorder any other arguments.
+        slices. It's suppose to have signature `u(x)` in the stationnary case,, and `u(t_x)` in the non-stationnary case.
     xy_data :
         A list of 2 `jnp.Array` providing grid values for meshgrid creation
     times :
@@ -149,7 +149,7 @@ def plot2d(
                     colorbar=False,
                     vmin_vmax=vmin_vmax,
                 )
-            elif spinn:
+            else:
                 t_x = jnp.concatenate(
                     [
                         t * jnp.ones((xy_data[0].shape[0], 1)),
@@ -295,7 +295,7 @@ def plot1d_slice(
             v_u_tfixed = vmap(fun)
             # add an axis to xdata for the concatenate function in the neural net
             values = v_u_tfixed(t_xdata)
-        elif spinn:
+        else:
             values = jnp.squeeze(fun(t_xdata)[0])
         ax.plot(xdata, values, label=f"$t_i={t * Tmax:.2f}$")
     ax.set_xlabel("x")
@@ -360,7 +360,7 @@ def plot1d_image(
         values_grid = v_fun(jnp.vstack([t_grid.flatten(), x_grid.flatten()]).T).reshape(
             t_grid.shape
         )
-    elif spinn:
+    else:
         values_grid = jnp.squeeze(
             fun(jnp.concatenate([times[..., None], xdata[..., None]], axis=-1))
         ).T
