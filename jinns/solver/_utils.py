@@ -280,10 +280,9 @@ def _loss_evaluate_and_natural_gradient_step(
     # Equality can be matched by changing the jinns reduction function internally.
     euclidean_grad = jnp.mean(R * M, axis=0)
 
-    # NOTE: this step is very costly
     # Assemble Gram Matrix
-    # gram_mat = jnp.mean(jax.vmap(lambda u, v: jnp.outer(u, v), (0, 0))(M, M), axis=0)
-    gram_mat = jnp.mean(M[..., None] @ M[:, None, :], axis=0)
+    n = M.shape[0]
+    gram_mat = (1 / n) * M.T @ M
 
     # Solve the linear system Gx = eucl_grad
     reg = 1e-5

@@ -68,6 +68,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
     reduction_functions: eqx.AbstractClassVar[C] = eqx.field(init=False)
 
     def __post_init__(self):
+        # NOTE: warning, currently not called -> need to do an __init__
         # post processing of the non abstract arguments
         if self.update_weight_method is not None and jnp.any(
             jnp.array(jax.tree.leaves(self.loss_weights)) == 0
@@ -103,12 +104,14 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         """
         if self.dynamic_loss is not None:
             dyn_loss_fun: Callable[[Array, Params[Array]], Array] | None = (
-                lambda b, p: dynamic_loss_apply(
-                    self.dynamic_loss,  # type: ignore
-                    # we are in lambda and the if context is lost
-                    self.u,
-                    b,
-                    _set_derivatives(p, self.derivative_keys.dyn_loss),
+                lambda b, p: (
+                    dynamic_loss_apply(
+                        self.dynamic_loss,  # type: ignore
+                        # we are in lambda and the if context is lost
+                        self.u,
+                        b,
+                        _set_derivatives(p, self.derivative_keys.dyn_loss),
+                    )
                 )
             )
         else:
