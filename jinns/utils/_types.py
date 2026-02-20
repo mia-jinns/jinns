@@ -1,8 +1,12 @@
+"""
+Here we define types available for the whole package
+"""
+
 from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-from typing import TypeAlias, TYPE_CHECKING, Callable, TypeVar
+from typing import TypeAlias, TYPE_CHECKING, TypeVar
 from jaxtyping import Float, Array, PRNGKeyArray
 
 from jinns.data._Batchs import ODEBatch, PDEStatioBatch, PDENonStatioBatch, ObsBatchDict
@@ -49,36 +53,6 @@ if TYPE_CHECKING:
     from jinns.loss._abstract_loss import AbstractLoss
     from jinns.loss._LossODE import LossODE
     from jinns.loss._LossPDE import LossPDEStatio, LossPDENonStatio
-    from jinns.parameters._Params import Params
-    from jinns.nn._abstract_pinn import AbstractPINN
-    from jinns.loss._BoundaryConditionAbstract import BoundaryCondition
-
-    # Here we define types available for the whole package
-    BoundaryConditionFun: TypeAlias = Callable[
-        [Float[Array, " dim"] | Float[Array, " dim + 1"]], Float[Array, " dim_solution"]
-    ]
-
-    BoundaryEquationU: TypeAlias = Callable[
-        [
-            BoundaryCondition,
-            Float[Array, " InputDim n_facet"],
-            AbstractPINN,
-            Params[Array],
-        ],
-        tuple[Float[Array, " InputDim"], ...],
-    ]
-    BoundaryEquationF: TypeAlias = Callable[
-        [BoundaryCondition, Float[Array, " InputDim n_facet"], Params[Array], bool],
-        tuple[Float[Array, " InputDim"], ...],
-    ]
-    BoundaryEquationUOnFacet: TypeAlias = Callable[
-        [BoundaryCondition, Float[Array, " InputDim"], AbstractPINN, Params[Array]],
-        Float[Array, " InputDim"],
-    ]
-    BoundaryEquationFOnFacet: TypeAlias = Callable[
-        [BoundaryCondition, Float[Array, " InputDim"], Params[Array], bool],
-        Float[Array, " InputDim"],
-    ]
 
     AnyLoss: TypeAlias = LossODE | LossPDEStatio | LossPDENonStatio
 

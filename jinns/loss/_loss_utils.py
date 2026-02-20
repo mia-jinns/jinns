@@ -6,7 +6,7 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, Concatenate, ParamSpec, TypeVar
 from types import EllipsisType
 import jax
 import jax.numpy as jnp
@@ -24,13 +24,15 @@ from jinns.parameters._params import Params
 
 if TYPE_CHECKING:
     from jinns.loss._BoundaryConditionAbstract import BoundaryConditionAbstract
-    from jinns.utils._types import (
-        BoundaryEquationUOnFacet,
-        BoundaryEquationFOnFacet,
-        BoundaryEquationU,
-        BoundaryEquationF,
-    )
     from jinns.nn._abstract_pinn import AbstractPINN
+
+    P = ParamSpec("P")
+    BC = TypeVar(
+        "BC", bound=BoundaryConditionAbstract
+    )  # https://stackoverflow.com/a/71441339
+    # we want a function that takes a class argument that's an [instance of]
+    # a subclass of
+    # BoundaryConditionAbstract and returns an instance of the corresponding class
 
 
 def dynamic_loss_apply(
@@ -192,8 +194,14 @@ def boundary_condition_apply(
 
 
 def equation_on_all_facets_equal(
-    equation: BoundaryEquationUOnFacet | BoundaryEquationFOnFacet,
-) -> BoundaryEquationU | BoundaryEquationF:
+    equation: Callable[
+        Concatenate[BC, Float[Array, " InputDim"], P],
+        Float[Array, " InputDim"],
+    ],
+) -> Callable[
+    Concatenate[BC, Float[Array, " InputDim n_facet"], P],
+    tuple[Float[Array, " InputDim"], ...],
+]:
     """
     Decorator to be used around `BoundaryCondition.equation_u` or
     `BoundaryCondition.equation_f` if all the facets should be treated
