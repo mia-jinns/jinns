@@ -268,7 +268,11 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             return loss_terms, grad_terms
 
         loss_val = self.ponderate_and_sum_loss(loss_terms)
-
+        # NOTE: @hgangloff: I don't understand why we return a 2-tuple in both
+        # cases but with different arguments ?
+        # I think it would be more readable to be consistant with a
+        # return loss_val, loss_terms, grad_terms if ret_std_grad_terms
+        # else: return loss_val, loss_terms, None
         return loss_val, loss_terms
 
     def evaluate_natural_gradient(
@@ -349,20 +353,24 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
                 isinstance(x, tuple) and (callable(x[0]) or x[0] is None)
             ),  # only traverse first layer
         )
-
-        jacrev_evaluate_by_terms = lambda b, p: jax.tree.map(
-            lambda args: vmap_jacrev_loss_fun(*args),
-            self.evaluate_by_terms(b, p),
-            is_leaf=lambda x: (
-                isinstance(x, tuple) and (callable(x[0]) or x[0] is None)
-            ),  # only traverse first layer
-        )
-
-        # Return the unreduced gradients and loss terms for each sample for
-        # each loss
         loss_terms = evaluate_by_terms(batch, params)
-        grad_terms = jacrev_evaluate_by_terms(batch, params)
-        return loss_terms, grad_terms
+
+        if ret_nat_grad_terms:
+            jacrev_evaluate_by_terms = lambda b, p: jax.tree.map(
+                lambda args: vmap_jacrev_loss_fun(*args),
+                self.evaluate_by_terms(b, p),
+                is_leaf=lambda x: (
+                    isinstance(x, tuple) and (callable(x[0]) or x[0] is None)
+                ),  # only traverse first layer
+            )
+
+            # Return the unreduced gradients and loss terms for each sample for
+            # each loss
+            grad_terms = jacrev_evaluate_by_terms(batch, params)
+            return loss_terms, grad_terms
+
+        # NOTE: (related to my comment at the end of `evaluate`) should we rather keep the same signature and return loss_terms, None ?
+        return loss_terms
 
     def get_gradients(
         self, fun: Callable[[Params[Array]], Array], params: Params[Array]
