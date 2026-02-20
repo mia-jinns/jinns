@@ -278,7 +278,7 @@ def _loss_evaluate_and_natural_gradient_step(
     # Form euclidean grad
     # NOTE: beware that euclidean gradient (might) differs from jax.grad(loss.evaluate) here. Indeed jinns takes the sum(mean(loss_type)) while here we compute mean(sum(all_loss_types). These might differs when different number of samples are used.
     # Equality can be matched by changing the jinns reduction function internally.
-    euclidean_grad = jnp.mean(R * M, axis=0)
+    euclidean_grad_array = jnp.mean(R * M, axis=0)
 
     # Assemble Gram Matrix
     n = M.shape[0]
@@ -287,27 +287,31 @@ def _loss_evaluate_and_natural_gradient_step(
     # Solve the linear system Gx = eucl_grad
     reg = 1e-5
     n_param = gram_mat.shape[0]
-    natural_grad = jax.scipy.linalg.solve(
-        gram_mat + reg * jnp.eye(n_param), euclidean_grad, assume_a="sym"
-    )
-    # Final step : restruce the natural gradient as a nn_params PyTree
-    params_cumsum = _get_param_nb(opt_params.nn_params)[1]
-    ng_flat = eqx.tree_at(
-        jax.tree.leaves,
-        opt_params.nn_params,
-        jnp.split(natural_grad, params_cumsum[:-1]),
+    natural_grad_array = jax.scipy.linalg.solve(
+        gram_mat + reg * jnp.eye(n_param), euclidean_grad_array, assume_a="sym"
     )
 
-    natural_gradient_pt = jax.tree.map(
-        lambda a, b: a.reshape(b.shape),
-        ng_flat,
-        opt_params.nn_params,
-        is_leaf=lambda x: isinstance(x, jnp.ndarray),
-    )
+    # Final step : restructure the natural gradient as a nn_params PyTree
+    def nn_params_array_to_pytree(nn_params_array):
+        _, params_cumsum = _get_param_nb(opt_params.nn_params)
+        ng_flat = eqx.tree_at(
+            jax.tree.leaves,
+            opt_params.nn_params,
+            jnp.split(nn_params_array, params_cumsum[:-1]),
+        )
 
-    # Wrap everything in a Params() object
-    # eq_params is unchanged
-    grads = Params(nn_params=natural_gradient_pt, eq_params=params.eq_params)
+        nn_params_pt = jax.tree.map(
+            lambda a, b: a.reshape(b.shape),
+            ng_flat,
+            opt_params.nn_params,
+            is_leaf=lambda x: isinstance(x, jnp.ndarray),
+        )
+        # Wrap everything in a Params() object
+        # eq_params is unchanged
+        return Params(nn_params=nn_params_pt, eq_params=params.eq_params)
+
+    natural_grads = nn_params_array_to_pytree(natural_grad_array)
+    euclidean_grads = nn_params_array_to_pytree(euclidean_grad_array)
 
     # For now, NGD is not compatible with weight renormalization
 
@@ -320,9 +324,10 @@ def _loss_evaluate_and_natural_gradient_step(
         jnp.concatenate(jax.tree.leaves(jax.tree.map(jnp.square, r)), axis=0)
     )
 
-    opt_grads, _ = grads.partition(
+    opt_natural_grads, _ = natural_grads.partition(params_mask)
+    opt_euclidean_grads, _ = euclidean_grads.partition(
         params_mask
-    )  # because the update cannot be made otherwise
+    )  # useful for backtracking
 
     # Here, we only use the gradient step of the Optax optimizer on the
     # parameters specified by params_mask. , no dummy state with filled with zero entries
@@ -333,13 +338,47 @@ def _loss_evaluate_and_natural_gradient_step(
     # TODO: check sgd only
     # assert isinstance(optimizer, optax.sgd)
 
-    opt_params, opt_state = _gradient_step(
-        opt_grads,
-        optimizer,
-        opt_params,  # NOTE that we never give the accelerated
-        # params here, this would be a wrong procedure
+    # NOTE: we don't use `_gradient_step` here because of its @jit decorator.
+    # Indeed, it cannot be modified to accept extra kwargs for
+    # optimizer.update(). The latter is necessary for backtracking line search
+    # (or any other optax.BaseTransformationExtraArgs).
+    def ngd_value_fn(params):
+        # Not using loss.evaluate here cause of the mean(sum()) vs sum(mean)
+        # remark. This fn computes the loss we are truly minimizing with NGD.
+        r = loss.evaluate_natural_gradient(
+            params,  # it should be ok to pass `params` here, no need to use
+            # _get_masked_optimization_stuff
+            batch,
+            non_opt_params=None,
+            ret_nat_grad_terms=False,
+        )
+        total_loss = jnp.mean(
+            jnp.concatenate(jax.tree.leaves(jax.tree.map(jnp.square, r)), axis=0)
+        )
+        return total_loss
+
+    if not isinstance(optimizer, optax.GradientTransformationExtraArgs):
+        # TODO: maybe just modify type hint instead of raising error ?
+        raise TypeError(
+            f"Natural gradient `update` need an"
+            f"`optax.GradientTransformationExtraArgs`."
+            f"You passed an {type(optimizer)}."
+        )
+
+    # print(f"{opt_euclidean_grads=} \n\n ---------- \n\n")
+    # print(f"{opt_natural_grads=}")
+
+    updates, opt_state = optimizer.update(
+        opt_natural_grads,
         opt_state,
+        opt_params,
+        # extra kwargs passed to backtracking line search `update()` method
+        value=train_loss_value,
+        grad=opt_euclidean_grads,
+        value_fn=ngd_value_fn,
     )
+
+    opt_params = optax.apply_updates(params, updates)  # type: ignore
 
     params, state = _get_unmasked_optimization_stuff(
         opt_params,
@@ -377,7 +416,10 @@ def _gradient_step(
     optimizer cannot be jit-ted.
 
     a plain old gradient step that is compatible with the new masked update
-    stuff
+    stuff.
+
+    All kwargs are passed to `optimizer.update()` in case user provided a
+    optax.GradientTransformationExtraArgs
     """
 
     updates, state = optimizer.update(
