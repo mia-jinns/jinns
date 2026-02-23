@@ -336,6 +336,7 @@ def solve(
         else:
             subkey = None
         (train_loss_value, params, last_non_nan_params, opt_state, loss, loss_terms) = (
+            # TODO: is `params_mask` correctly
             # _loss_evaluate_and_gradient_step(
             _loss_evaluate_and_natural_gradient_step(
                 i,

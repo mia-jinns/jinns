@@ -216,12 +216,11 @@ def _loss_evaluate_and_natural_gradient_step(
 
     NOTE: in this function body, we change naming convention for concision:
      * `state` refers to the general optimizer state
-     * `opt_state` refers to the unmasked optimizer state, i.e. which are
+     * `opt_state` refers to the masked optimizer state, i.e. which are
      really involved in the parameter update as defined by `params_mask`.
      * `non_opt_state` refers to the the optimizer state for non-optimized
      params.
     """
-
     (
         opt_params,
         opt_params_accel,
@@ -231,10 +230,8 @@ def _loss_evaluate_and_natural_gradient_step(
     ) = _get_masked_optimization_stuff(
         params, state, opt_state_field_for_acceleration, params_mask
     )
-
     # 1. Get the unreduced residuals and their gradient (for each sample)
     # for each loss term
-
     r, g = loss.evaluate_natural_gradient(
         opt_params_accel
         if opt_state_field_for_acceleration is not None
@@ -244,7 +241,6 @@ def _loss_evaluate_and_natural_gradient_step(
         ret_nat_grad_terms=True,
     )
 
-    # batch_sizes =
     def post_process_pytree_of_grad(y):
         # TODO: document to describe steps
         # TODO: take loss_weights into account ?
@@ -292,7 +288,7 @@ def _loss_evaluate_and_natural_gradient_step(
     )
 
     # Final step : restructure the natural gradient as a nn_params PyTree
-    def nn_params_array_to_pytree(nn_params_array):
+    def nn_params_array_to_pytree(nn_params_array, _eq_params=None):
         _, params_cumsum = _get_param_nb(opt_params.nn_params)
         ng_flat = eqx.tree_at(
             jax.tree.leaves,
@@ -307,8 +303,14 @@ def _loss_evaluate_and_natural_gradient_step(
             is_leaf=lambda x: isinstance(x, jnp.ndarray),
         )
         # Wrap everything in a Params() object
-        # eq_params is unchanged
-        return Params(nn_params=nn_params_pt, eq_params=params.eq_params)
+        # by default eq_params is filled with Zeros so that additive updates
+        # leave them unchanged.
+        if _eq_params is None:
+            _eq_params = optax.tree.zeros_like(params.eq_params)
+        return Params(
+            nn_params=nn_params_pt,
+            eq_params=_eq_params,
+        )
 
     natural_grads = nn_params_array_to_pytree(natural_grad_array)
     euclidean_grads = nn_params_array_to_pytree(euclidean_grad_array)
@@ -320,6 +322,16 @@ def _loss_evaluate_and_natural_gradient_step(
     loss_terms = jax.tree.map(
         lambda _: 0.0, r, is_leaf=lambda x: isinstance(x, tuple)
     )  # leaf check necessary to handle multi-faceted boundaries
+    # TODO: remove computation of loss_terms below (only for debugging)
+    loss_terms, _ = loss.evaluate(
+        opt_params_accel
+        if opt_state_field_for_acceleration is not None
+        else opt_params,
+        batch,
+        non_opt_params=non_opt_params,
+        ret_std_grad_terms=True,
+    )
+
     train_loss_value = jnp.mean(
         jnp.concatenate(jax.tree.leaves(jax.tree.map(jnp.square, r)), axis=0)
     )
@@ -365,9 +377,6 @@ def _loss_evaluate_and_natural_gradient_step(
             f"You passed an {type(optimizer)}."
         )
 
-    # print(f"{opt_euclidean_grads=} \n\n ---------- \n\n")
-    # print(f"{opt_natural_grads=}")
-
     updates, opt_state = optimizer.update(
         opt_natural_grads,
         opt_state,
@@ -378,7 +387,7 @@ def _loss_evaluate_and_natural_gradient_step(
         value_fn=ngd_value_fn,
     )
 
-    opt_params = optax.apply_updates(params, updates)  # type: ignore
+    opt_params = optax.apply_updates(opt_params, updates)  # type: ignore
 
     params, state = _get_unmasked_optimization_stuff(
         opt_params,
@@ -452,7 +461,7 @@ def _get_masked_optimization_stuff(
     details.
 
     The opposite of `eqx.partition` ie, `eqx.combine` is made in the loss
-    `evaluevaluate_by_terms()` method for the computations and in
+    `evaluate_by_terms()` method for the computations and in
     `_get_unmasked_optimization_stuff` to reconstruct the object after the
     gradient step
     """
