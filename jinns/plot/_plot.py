@@ -177,7 +177,8 @@ def plot2d(
                 vmax=vmin_vmax[1],
             )
             ax.set_title(f"t = {times[idx] * Tmax:.2f}")
-            ax.cax.colorbar(im, format="%0.2f")
+            cbar = ax.cax.colorbar(im, format=lambda x, _: f"{x:.1e}")
+            cbar.ax.tick_params(labelsize=5)
 
 
 def _plot_2D_statio(
@@ -238,7 +239,7 @@ def _plot_2D_statio(
         )
 
         if colorbar:
-            fig.colorbar(im, format="%0.2f")
+            fig.colorbar(im, format=lambda x, _: f"{x:.2e}")
     else:
         return values_grid
 
