@@ -19,6 +19,7 @@ from jinns.solver._utils import (
     _init_stored_weights_terms,
     _init_stored_params,
     _get_break_fun,
+    _loss_evaluate_and_gradient_step,
     _loss_evaluate_and_natural_gradient_step,
     _build_get_batch,
     _store_loss_and_params,
@@ -32,6 +33,7 @@ from jinns.utils._containers import (
     LossContainer,
     StoredObjectContainer,
 )
+from jinns.optimizers._natural_gradient import NGDState
 
 if TYPE_CHECKING:
     from jinns.utils._types import AnyLossComponents, SolveCarry
@@ -335,16 +337,23 @@ def solve(
             key, subkey = jax.random.split(key)
         else:
             subkey = None
+
+        # New in jinns 1.8 : handles natural gradient
+        opt_state = optimization.opt_state
+        # _step = jax.lax.cond()
+        if isinstance(opt_state, NGDState):  # and opt_state.is_ngd:
+            _step = _loss_evaluate_and_natural_gradient_step
+        else:
+            _step = _loss_evaluate_and_gradient_step
+
         (train_loss_value, params, last_non_nan_params, opt_state, loss, loss_terms) = (
-            # TODO: is `params_mask` correctly
-            # _loss_evaluate_and_gradient_step(
-            _loss_evaluate_and_natural_gradient_step(
+            _step(
                 i,
                 batch,
                 loss,
                 optimization.params,
                 optimization.last_non_nan_params,
-                optimization.opt_state,
+                opt_state,
                 optimizer,
                 loss_container,
                 subkey,
