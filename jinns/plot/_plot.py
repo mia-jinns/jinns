@@ -76,7 +76,7 @@ def plot2d(
 
         if not spinn:
             v_fun = vmap(fun, 0, 0)
-            ret = _plot_2D_statio(
+            _ = _plot_2D_statio(
                 v_fun,
                 mesh,
                 colorbar=True,
@@ -86,7 +86,7 @@ def plot2d(
             )
         elif spinn:
             values_grid = jnp.squeeze(fun(jnp.stack([xy_data[0], xy_data[1]], axis=1)))
-            ret = _plot_2D_statio(
+            _ = _plot_2D_statio(
                 values_grid,
                 mesh,
                 colorbar=True,
@@ -94,20 +94,6 @@ def plot2d(
                 figsize=figsize,
                 vmin_vmax=vmin_vmax,
             )
-        else:
-            fig, ax = plt.subplots(1, 1, figsize=figsize)
-
-            im = ax.pcolormesh(
-                mesh[0],
-                mesh[1],
-                ret,
-                cmap=cmap,
-                vmin=vmin_vmax[0],
-                vmax=vmin_vmax[1],
-            )
-
-            ax.set_title(title)
-            fig.cax.colorbar(im, format="%0.2f")
 
     else:
         if not isinstance(times, list):
