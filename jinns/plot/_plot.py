@@ -164,7 +164,7 @@ def plot2d(
             )
             ax.set_title(f"t = {times[idx] * Tmax:.2f}")
             cbar = ax.cax.colorbar(im, format=lambda x, _: f"{x:.1e}")
-            cbar.ax.tick_params(labelsize=5)
+            cbar.ax.tick_params(labelsize=5, rotation=45)
 
 
 def _plot_2D_statio(
