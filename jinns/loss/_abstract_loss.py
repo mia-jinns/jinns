@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import abc
 import warnings
-from typing import Self, Literal, Callable, TypeVar, Generic, Any, get_args
+from typing import Self, Literal, TypeVar, Generic, Any, get_args
 from dataclasses import InitVar
 from jaxtyping import Array, PyTree, Float, PRNGKeyArray
 import equinox as eqx
@@ -141,18 +141,6 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         loss_val = self.ponderate_and_sum_loss(loss_terms)
 
         return loss_val, loss_terms
-
-    def get_gradients(
-        self, fun: Callable[[Params[Array]], Array], params: Params[Array]
-    ) -> tuple[Array, Array]:
-        """
-        params already filtered with derivative keys here
-        """
-        if fun is None:
-            return None, None
-        value_grad_loss = jax.value_and_grad(fun)
-        loss_val, grads = value_grad_loss(params)
-        return loss_val, grads
 
     def ponderate_and_sum_loss(self, terms: C) -> Array:
         """

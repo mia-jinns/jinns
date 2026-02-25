@@ -118,7 +118,7 @@ def test_loss_weights_DummyPDEStatio_10it(train_DummyPDEStatio_init):
         key=key,
     )
     assert jnp.allclose(
-        jnp.asarray(stored_weight_terms.dyn_loss)[0, 1:],
+        stored_weight_terms.dyn_loss.T[0, 1:],
         1
         / 6
         * jnp.ones(
@@ -127,7 +127,7 @@ def test_loss_weights_DummyPDEStatio_10it(train_DummyPDEStatio_init):
         atol=1e-3,
     )  # 1st element will be one
     assert jnp.allclose(
-        jnp.asarray(stored_weight_terms.observations)[0, 1:],
+        stored_weight_terms.observations.T[0, 1:],
         1
         / 6
         * jnp.ones(
@@ -239,8 +239,9 @@ def test_loss_weights_DummyPDENonStatio_10it(train_DummyPDENonStatio_init):
         obs_data=obs_data,
         key=key,
     )
+    print(stored_weight_terms)
     assert jnp.allclose(
-        jnp.asarray(stored_weight_terms.dyn_loss)[0, 1:],
+        stored_weight_terms.dyn_loss.T[0, 1:],
         1
         / 6
         * jnp.ones(
@@ -249,7 +250,7 @@ def test_loss_weights_DummyPDENonStatio_10it(train_DummyPDENonStatio_init):
         atol=1e-3,
     )  # 1st element will be one
     assert jnp.allclose(
-        jnp.asarray(stored_weight_terms.observations)[0, 1:],
+        stored_weight_terms.observations.T[0, 1:],
         1
         / 6
         * jnp.ones(

@@ -519,15 +519,29 @@ def solve(
             # ...but if early stopping, return the parameters at the best_iter_id
             validation_parameters = optimization_extra.best_val_params
 
+    # to get rid of tuples in dyn_loss and obs_loss
+    # which work with tuple because we enabled vectorial loss
+    # we do the following concat :
+    stored_loss_terms_concatenated = jax.tree.map(
+        lambda leaf: jnp.stack(leaf, axis=1) if isinstance(leaf, tuple) else leaf,
+        loss_container.stored_loss_terms,
+        is_leaf=lambda x: isinstance(x, tuple),
+    )
+    stored_weights_terms_concatenated = jax.tree.map(
+        lambda leaf: jnp.stack(leaf, axis=1) if isinstance(leaf, tuple) else leaf,
+        loss_container.stored_weights_terms,
+        is_leaf=lambda x: isinstance(x, tuple),
+    )
+
     return (
         optimization.last_non_nan_params,
         loss_container.train_loss_values,
-        loss_container.stored_loss_terms,
+        stored_loss_terms_concatenated,
         train_data.data,
         loss,
         optimization.opt_state,
         stored_objects.stored_params,
-        loss_container.stored_weights_terms,
+        stored_weights_terms_concatenated,
         train_data.obs_data,
         train_data.param_data,
         validation_crit_values if validation is not None else None,
