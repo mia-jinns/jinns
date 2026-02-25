@@ -340,7 +340,6 @@ def solve(
 
         # New in jinns 1.8 : handles natural gradient
         opt_state = optimization.opt_state
-        # _step = jax.lax.cond()
         if isinstance(opt_state, NGDState):  # and opt_state.is_ngd:
             _step = _loss_evaluate_and_natural_gradient_step
         else:
