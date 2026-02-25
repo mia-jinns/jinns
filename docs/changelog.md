@@ -1,5 +1,9 @@
 # Changelog
 
+* v1.8.1:
+
+    - `stored_weight_terms` and `stored_loss_terms` are now returned as a multidimensional array when working with several observation Data Generators or several Dynamic Losses. This can be a small breaking change in some user code. We also improve internally the way multiple Dynamic Losses or multiple observation Data Generators are handled. Changes are from [!95](https://gitlab.com/mia_jinns/jinns/-/merge_requests/95)
+
 * v1.8.0:
 
     - **Breaking change**: the way to specify boundary conditions in `jinns` has changed. Old workflows are broken but numerical results should not change after a code update. We introduce a much more flexible and intuitive class `BoundaryCondition` which mimick the `DynamicLoss` classes. This resolves [#19](https://gitlab.com/mia_jinns/jinns/-/issues/19). Check out the [tutorial](https://mia_jinns.gitlab.io/jinns/Notebooks/Tutorials/implementing_your_own_PDE_problem/) and the documentation.
