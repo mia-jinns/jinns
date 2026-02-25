@@ -68,9 +68,7 @@ def train_Fisher_init():
     r = 4.0
     g = 3.0
 
-    boundary_condition = "dirichlet"
-
-    omega_boundary_fun = lambda t_dx: 0  # cte func returning 0
+    boundary_condition = jinns.loss.Dirichlet()
 
     init_params = jinns.parameters.Params(
         nn_params=init_nn_params,
@@ -87,8 +85,7 @@ def train_Fisher_init():
         u=u,
         loss_weights=loss_weights,
         dynamic_loss=fisher_dynamic_loss,
-        omega_boundary_fun=omega_boundary_fun,
-        omega_boundary_condition=boundary_condition,
+        boundary_condition=boundary_condition,
         initial_condition_fun=u0,
         params=init_params,
     )
