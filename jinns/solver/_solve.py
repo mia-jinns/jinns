@@ -272,6 +272,7 @@ def solve(
         params=init_params,
         last_non_nan_params=init_params,
         opt_state=opt_state,
+        # params_mask=params_mask,
     )
     optimization_extra = OptimizationExtraContainer(
         curr_seq=curr_seq,
@@ -430,7 +431,9 @@ def solve(
         return (
             i,
             loss,
-            OptimizationContainer(params, last_non_nan_params, opt_state),
+            OptimizationContainer(
+                params, last_non_nan_params, opt_state
+            ),  # , params_mask),
             OptimizationExtraContainer(
                 curr_seq,
                 best_iter_id,

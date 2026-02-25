@@ -77,7 +77,7 @@ class DataGeneratorODE(AbstractDataGenerator):
         nt: int,
         tmin: float,
         tmax: float,
-        temporal_batch_size: int | None,
+        temporal_batch_size: int | None = None,
         method: str = "uniform",
         rar_parameters: None | dict[str, int] = None,
         n_start: None | int = None,
