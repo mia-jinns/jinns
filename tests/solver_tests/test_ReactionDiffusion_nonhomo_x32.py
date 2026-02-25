@@ -10,27 +10,22 @@ import jinns
 
 @pytest.fixture
 def train_ReacDiff_init():
-    jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
-    d = 3
-    r = 256
     eqx_list = (
-        (eqx.nn.Linear, 1, 128),
+        (eqx.nn.Linear, 3, 20),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 128),
+        (eqx.nn.Linear, 20, 20),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 128),
+        (eqx.nn.Linear, 20, 20),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, r),
+        (eqx.nn.Linear, 20, 20),
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 20, 1),
     )
     key, subkey = random.split(key)
-    key, subkey = random.split(key)
-    key, subkey = random.split(key)
-    key, subkey = random.split(key)
-    u_spinn, init_nn_params_spinn = jinns.nn.SPINN_MLP.create(
-        subkey, d, r, eqx_list, "PDENonStatio"
+    u, init_nn_params = jinns.nn.PINN_MLP.create(
+        key=subkey, eqx_list=eqx_list, eq_type="PDENonStatio"
     )
-
     n = 2048
     nb = 500
     ni = 500
@@ -74,7 +69,7 @@ def train_ReacDiff_init():
     g = 1.0
 
     init_params = jinns.parameters.Params(
-        nn_params=init_nn_params_spinn,
+        nn_params=init_nn_params,
         eq_params={
             "D": jnp.array([D]),
             "r": jnp.array([r1, r2, r3]),
@@ -82,36 +77,33 @@ def train_ReacDiff_init():
         },
     )
 
-    from jinns.utils._utils import get_grid
-
-    def r_fun(t_x, u, params):
+    def r_fun(t_x, _, params):
         """must be a jittable function"""
-        x = t_x[:, 1:]
-        x = get_grid(x.squeeze())
         eq_params = params.eq_params
         r1, r2, r3 = eq_params.r
-
-        # By default put r1 everywhere
-        r_map_batch = jnp.full(x.shape[:2], r1)
-        # But if the next cond is True, update to r2
-        r_map_batch = jnp.where(
-            jnp.logical_or(
-                jnp.logical_and(x[..., 0] > 6 / 20, x[..., 0] < 8 / 20),
-                jnp.logical_and(x[..., 1] > 8 / 20, x[..., 1] < 10 / 20),
+        x = t_x[1:]
+        return jax.lax.switch(
+            jnp.amax(
+                jnp.nonzero(
+                    jnp.array(
+                        [
+                            True,
+                            jnp.logical_or(
+                                jnp.logical_and(x[0] > 6 / 20, x[0] < 8 / 20),
+                                jnp.logical_and(x[1] > 8 / 20, x[1] < 10 / 20),
+                            ),
+                            jnp.logical_or(
+                                (x[0] - 0.15) ** 2 + (x[1] - 0.15) ** 2 < 0.015,
+                                (x[0] - 0.8) ** 2 + (x[1] - 0.80) ** 2 < 0.03,
+                            ),
+                        ]
+                    ),
+                    size=3,
+                )[0]
             ),
-            r2,
-            r_map_batch,
+            [lambda _: r1, lambda _: r2, lambda _: r3],
+            (),
         )
-        # Again if the next cond is True, update to r3
-        r_map_batch = jnp.where(
-            jnp.logical_or(
-                (x[..., 0] - 0.15) ** 2 + (x[..., 1] - 0.15) ** 2 < 0.015,
-                (x[..., 0] - 0.8) ** 2 + (x[..., 1] - 0.80) ** 2 < 0.03,
-            ),
-            r3,
-            r_map_batch,
-        )
-        return r_map_batch[None, ..., None]
 
     fisher_dynamic_loss = jinns.loss.FisherKPP(
         Tmax=Tmax,
@@ -128,7 +120,7 @@ def train_ReacDiff_init():
     boundary_condition = jinns.loss.Neumann()
 
     loss = jinns.loss.LossPDENonStatio(
-        u=u_spinn,
+        u=u,
         loss_weights=loss_weights,
         dynamic_loss=fisher_dynamic_loss,
         boundary_condition=boundary_condition,
@@ -159,10 +151,10 @@ def train_ReacDiff_10it(train_ReacDiff_init):
 def test_initial_loss_ReacDiff(train_ReacDiff_init):
     init_params, loss, train_data = train_ReacDiff_init
     assert jnp.allclose(
-        loss.evaluate(init_params, train_data.get_batch()[1])[0], 1.0590025, atol=1e-1
+        loss.evaluate(init_params, train_data.get_batch()[1])[0], 0.8385, atol=1e-1
     )
 
 
 def test_10it_ReacDiff(train_ReacDiff_10it):
     total_loss_val = train_ReacDiff_10it
-    assert jnp.allclose(total_loss_val, 0.572174, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 0.6822, atol=1e-1)

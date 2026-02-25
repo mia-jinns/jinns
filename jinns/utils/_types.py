@@ -1,8 +1,12 @@
+"""
+Here we define types available for the whole package
+"""
+
 from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-from typing import TypeAlias, TYPE_CHECKING, Callable, TypeVar
+from typing import TypeAlias, TYPE_CHECKING, TypeVar
 from jaxtyping import Float, Array, PRNGKeyArray
 
 from jinns.data._Batchs import ODEBatch, PDEStatioBatch, PDENonStatioBatch, ObsBatchDict
@@ -49,11 +53,6 @@ if TYPE_CHECKING:
     from jinns.loss._abstract_loss import AbstractLoss
     from jinns.loss._LossODE import LossODE
     from jinns.loss._LossPDE import LossPDEStatio, LossPDENonStatio
-
-    # Here we define types available for the whole package
-    BoundaryConditionFun: TypeAlias = Callable[
-        [Float[Array, " dim"] | Float[Array, " dim + 1"]], Float[Array, " dim_solution"]
-    ]
 
     AnyLoss: TypeAlias = LossODE | LossPDEStatio | LossPDENonStatio
 

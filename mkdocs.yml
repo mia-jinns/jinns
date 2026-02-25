@@ -121,6 +121,7 @@ nav:
         - Other DataGenerators: 'api/datagenerators/datagenerators_other.md'
       - Loss:
         - Dynamic loss: 'api/loss/dynamic_loss.md'
+        - Boundary Condition: 'api/loss/boundary_condition.md'
         - Total loss: 'api/loss/loss_xde.md'
         - Loss weights: 'api/loss/loss_weights.md'
       - Neural Networks:

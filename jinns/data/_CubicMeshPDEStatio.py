@@ -45,11 +45,11 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         singletons.
     dim : int
         Dimension of $\Omega$ domain
-    min_pts : tuple[tuple[Float, Float], ...]
+    min_pts : tuple[Float, ...]
         A tuple of minimum values of the domain along each dimension. For a sampling
         in `n` dimension, this represents $(x_{1, min}, x_{2,min}, ...,
         x_{n, min})$
-    max_pts : tuple[tuple[Float, Float], ...]
+    max_pts : tuple[Float, ...]
         A tuple of maximum values of the domain along each dimension. For a sampling
         in `n` dimension, this represents $(x_{1, max}, x_{2,max}, ...,
         x_{n,max})$

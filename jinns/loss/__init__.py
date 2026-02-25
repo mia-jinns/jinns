@@ -9,6 +9,8 @@ from ._DynamicLoss import (
     FisherKPP,
     NavierStokesMassConservation2DStatio,
 )
+from ._BoundaryConditionAbstract import BoundaryConditionAbstract
+from ._BoundaryCondition import Dirichlet, Neumann
 from ._loss_weights import (
     LossWeightsODE,
     LossWeightsPDENonStatio,
@@ -24,6 +26,8 @@ from ._operators import (
     vectorial_laplacian_fwd,
     vectorial_laplacian_rev,
 )
+
+from ._loss_utils import equation_on_all_facets_equal
 
 __all__ = [
     "DynamicLoss",
@@ -51,4 +55,8 @@ __all__ = [
     "soft_adapt",
     "lr_annealing",
     "ReLoBRaLo",
+    "Dirichlet",
+    "Neumann",
+    "BoundaryConditionAbstract",
+    "equation_on_all_facets_equal",
 ]

@@ -65,13 +65,14 @@ def train_Burgers_init():
         dyn_loss=1, initial_condition=100, boundary_loss=1
     )
 
+    boundary_condition = jinns.loss.Dirichlet()
+
     loss = jinns.loss.LossPDENonStatio(
         u=u,
         loss_weights=loss_weights,
         dynamic_loss=be_loss,
-        omega_boundary_fun=lambda t_dx: 0,
-        omega_boundary_condition="dirichlet",
         initial_condition_fun=u0,
+        boundary_condition=boundary_condition,
         params=init_params,
     )
 
