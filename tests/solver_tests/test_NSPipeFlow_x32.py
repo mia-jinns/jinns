@@ -96,7 +96,7 @@ def train_NSPipeFlow_init():
     loss_weights = jinns.loss.LossWeightsPDEStatio(dyn_loss=1.0)
 
     # Catching an expected UserWarning since no border condition is given
-    # for this specific PDE (Fokker-Planck).
+    # for this specific PDE (hard constraints in PINN).
     with pytest.warns(UserWarning):
         loss = jinns.loss.LossPDEStatio(
             u=u_p,
