@@ -194,13 +194,13 @@ class _LossPDEAbstract(
 
     def _get_dyn_loss_fun(
         self, batch: B, vmap_in_axes_params: tuple[Params[int | None] | None]
-    ) -> tuple[Callable[[Params[Array]], Array], ...] | None:
+    ) -> Callable[[Params[Array]], tuple[Array, ...]] | None:
         # Note, for the record, multiple dynamic losses
         # have been introduced in MR 92
         if self.dynamic_loss != (None,):
-            dyn_loss_fun: tuple[Callable[[Params[Array]], Array], ...] | None = (
-                jax.tree.map(
-                    lambda d: lambda p: dynamic_loss_apply(
+            dyn_loss_fun: Callable[[Params[Array]], tuple[Array, ...]] | None = (
+                lambda p: jax.tree.map(
+                    lambda d: dynamic_loss_apply(
                         d.evaluate,
                         self.u,
                         self._get_dynamic_loss_batch(batch),
@@ -220,13 +220,9 @@ class _LossPDEAbstract(
 
     def _get_norm_loss_fun(
         self, batch: B, vmap_in_axes_params: tuple[Params[int | None] | None]
-    ) -> tuple[Callable[[Params[Array]], Array], ...] | None:
-        # Note that since MR 92
-        # norm_loss_fun is formed as a tuple for
-        # consistency with dynamic and observation
-        # losses and more modularity for later
+    ) -> Callable[[Params[Array]], Array] | None:
         if self.norm_samples is not None:
-            norm_loss_fun: tuple[Callable[[Params[Array]], Array], ...] | None = (
+            norm_loss_fun: Callable[[Params[Array]], Array] | None = (
                 lambda p: normalization_loss_apply(
                     self.u,
                     cast(
@@ -235,7 +231,7 @@ class _LossPDEAbstract(
                     _set_derivatives(p, self.derivative_keys.norm_loss),
                     vmap_in_axes_params,
                     self.norm_weights,  # type: ignore -> can't get the __post_init__ narrowing here
-                ),
+                )
             )
         else:
             norm_loss_fun = None
@@ -243,19 +239,15 @@ class _LossPDEAbstract(
 
     def _get_boundary_loss_fun(
         self, batch: B
-    ) -> tuple[Callable[[Params[Array]], Array], ...] | None:
+    ) -> Callable[[Params[Array]], Array] | None:
         if self.boundary_condition is not None:
-            # Note that since MR 92
-            # initial_condition_fun is formed as a tuple for
-            # consistency with dynamic and observation
-            # losses and more modularity for later
-            boundary_loss_fun: tuple[Callable[[Params[Array]], Array], ...] | None = (
+            boundary_loss_fun: Callable[[Params[Array]], Array] | None = (
                 lambda p: boundary_condition_apply(
                     self.boundary_condition,  # type: ignore # we are in lambda...
                     self.u,
                     batch,
                     _set_derivatives(p, self.derivative_keys.boundary_loss),
-                ),
+                )
             )
         else:
             boundary_loss_fun = None
@@ -268,7 +260,8 @@ class _LossPDEAbstract(
         vmap_in_axes_params: tuple[Params[int | None] | None],
         params: Params[Array],
     ) -> tuple[
-        Params[Array] | None, tuple[Callable[[Params[Array]], Array], ...] | None
+        tuple[Params[Array], ...] | None,
+        Callable[[Params[Array]], tuple[Array, ...]] | None,
     ]:
         # Note, for the record, multiple DGObs
         # (leading to batch.obs_batch_dict being tuple | None)
@@ -280,17 +273,18 @@ class _LossPDEAbstract(
                     "observation datasets as the number of "
                     "obs_slice"
                 )
-            params_obs = jax.tree.map(
-                lambda d: update_eq_params(params, d["eq_params"]),
-                batch.obs_batch_dict,
-                is_leaf=lambda x: isinstance(x, dict),
-            )
-            obs_loss_fun: tuple[Callable[[Params[Array]], Array], ...] | None = (
-                jax.tree.map(
-                    lambda d, slice_: lambda po: observations_loss_apply(
+            params_obs = params
+            obs_loss_fun: Callable[[Params[Array]], tuple[Array, ...]] | None = (
+                lambda po: jax.tree.map(
+                    lambda d, slice_: observations_loss_apply(
                         self.u,
                         d["pinn_in"],
-                        _set_derivatives(po, self.derivative_keys.observations),
+                        _set_derivatives(
+                            update_eq_params(  # NOTE update_eq_params is here
+                                po, d["eq_params"]
+                            ),
+                            self.derivative_keys.observations,
+                        ),
                         self.vmap_in_axes + vmap_in_axes_params,
                         d["val"],
                         slice_,
@@ -499,44 +493,23 @@ class LossPDEStatio(
 
         # get the unweighted mses for each loss term as well as the gradients
         all_funs: PDEStatioComponents[
-            tuple[Callable[[Params[Array]], Array], ...] | None
+            Callable[[Params[Array]], tuple[Array, ...] | Array] | None
         ] = PDEStatioComponents(
             dyn_loss_fun,
             norm_loss_fun,
             boundary_loss_fun,
             obs_loss_fun,
         )
-        all_params: PDEStatioComponents[tuple[Params[Array], ...] | None] = (
-            PDEStatioComponents(
-                jax.tree.map(lambda l: params, dyn_loss_fun),
-                jax.tree.map(lambda l: params, norm_loss_fun),
-                jax.tree.map(lambda l: params, boundary_loss_fun),
-                params_obs,
-            )
+        all_params: PDEStatioComponents[
+            Params[Array] | tuple[Params[Array], ...] | None
+        ] = PDEStatioComponents(
+            params if dyn_loss_fun is not None else None,
+            params if norm_loss_fun is not None else None,
+            params if boundary_loss_fun is not None else None,
+            params_obs if obs_loss_fun is not None else None,
         )
-        mses_grads = jax.tree.map(
-            self.get_gradients,
-            all_funs,
-            all_params,
-            is_leaf=lambda x: x is None,
-        )
-        # NOTE the is_leaf below is more complex since it must pass possible the tuple
-        # of dyn_loss and then stops (but also account it should not stop when
-        # the tuple of dyn_loss is of length 2)
-        mses = jax.tree.map(
-            lambda leaf: leaf[0],
-            mses_grads,
-            is_leaf=lambda x: isinstance(x, tuple)
-            and len(x) == 2
-            and isinstance(x[1], Params),
-        )
-        grads = jax.tree.map(
-            lambda leaf: leaf[1],
-            mses_grads,
-            is_leaf=lambda x: isinstance(x, tuple)
-            and len(x) == 2
-            and isinstance(x[1], Params),
-        )
+        mses = jax.tree.map(lambda f, p: f(p), all_funs, all_params)
+        grads = jax.tree.map(lambda f, p: jax.jacrev(f)(p), all_funs, all_params)
 
         return mses, grads
 
@@ -784,9 +757,7 @@ class LossPDENonStatio(
             # initial_condition_fun is formed as a tuple for
             # consistency with dynamic and observation
             # losses and more modularity for later
-            initial_condition_fun: (
-                tuple[Callable[[Params[Array]], Array], ...] | None
-            ) = (
+            initial_condition_fun: Callable[[Params[Array]], Array] | None = (
                 lambda p: initial_condition_apply(
                     self.u,
                     omega_initial_batch,
@@ -794,14 +765,14 @@ class LossPDENonStatio(
                     (0,) + vmap_in_axes_params,
                     self.initial_condition_fun,  # type: ignore
                     self.t0,
-                ),
+                )
             )
         else:
             initial_condition_fun = None
 
         # get the unweighted mses for each loss term as well as the gradients
         all_funs: PDENonStatioComponents[
-            tuple[Callable[[Params[Array]], Array], ...] | None
+            Callable[[Params[Array]], tuple[Array, ...] | Array] | None
         ] = PDENonStatioComponents(
             dyn_loss_fun,
             norm_loss_fun,
@@ -809,37 +780,20 @@ class LossPDENonStatio(
             obs_loss_fun,
             initial_condition_fun,
         )
-        all_params: PDENonStatioComponents[tuple[Params[Array], ...] | None] = (
-            PDENonStatioComponents(
-                jax.tree.map(lambda l: params, dyn_loss_fun),
-                jax.tree.map(lambda l: params, norm_loss_fun),
-                jax.tree.map(lambda l: params, boundary_loss_fun),
-                params_obs,
-                jax.tree.map(lambda l: params, initial_condition_fun),
-            )
+        all_params: PDENonStatioComponents[
+            Params[Array] | tuple[Params[Array], ...] | None
+        ] = PDENonStatioComponents(
+            params if dyn_loss_fun is not None else None,
+            params if norm_loss_fun is not None else None,
+            params if boundary_loss_fun is not None else None,
+            params_obs if obs_loss_fun is not None else None,
+            params if initial_condition_fun is not None else None,
         )
-        mses_grads = jax.tree.map(
-            self.get_gradients,
+        mses = jax.tree.map(
+            lambda f, p: f(p),
             all_funs,
             all_params,
-            is_leaf=lambda x: x is None,
         )
-        # NOTE the is_leaf below is more complex since it must pass possible the tuple
-        # of dyn_loss and then stops (but also account it should not stop when
-        # the tuple of dyn_loss is of length 2)
-        mses = jax.tree.map(
-            lambda leaf: leaf[0],
-            mses_grads,
-            is_leaf=lambda x: isinstance(x, tuple)
-            and len(x) == 2
-            and isinstance(x[1], Params),
-        )
-        grads = jax.tree.map(
-            lambda leaf: leaf[1],
-            mses_grads,
-            is_leaf=lambda x: isinstance(x, tuple)
-            and len(x) == 2
-            and isinstance(x[1], Params),
-        )
+        grads = jax.tree.map(lambda f, p: jax.jacrev(f)(p), all_funs, all_params)
 
         return mses, grads
