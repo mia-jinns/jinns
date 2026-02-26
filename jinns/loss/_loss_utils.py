@@ -276,7 +276,7 @@ def observations_loss_apply(
 ) -> Float[Array, " "]:
     if isinstance(u, (PINN, HyperPINN)):
         u_ = lambda *args: u(*args)[u.slice_solution]
-        val = u_(batch[0], params)[:, obs_slice]
+        val = u_(batch[0], params)[obs_slice]
         residuals = _subtract_with_check(
             batch[1], val, cause="user defined observed_values"
         )
