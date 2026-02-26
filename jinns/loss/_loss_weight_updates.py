@@ -13,6 +13,36 @@ if TYPE_CHECKING:
     from jinns.utils._types import AnyLossComponents, AnyLossWeights
 
 
+def prior_loss(
+    loss_weights: AnyLossWeights,
+    iteration_nb: int,
+    stored_loss_terms: AnyLossComponents,
+) -> Array:
+    """
+    Simple adaptative weights according to the prior loss idea:
+    the ponderation in front of a loss term is given by the inverse of the
+    value of that loss term at the previous iteration
+    """
+
+    def do_nothing(loss_weights, _):
+        return jnp.array(
+            jax.tree.leaves(loss_weights, is_leaf=eqx.is_inexact_array), dtype=float
+        )
+
+    def _prior_loss(_, stored_loss_terms):
+        new_weights = jax.tree.map(
+            lambda slt: 1 / (slt[iteration_nb - 1] + 1e-6), stored_loss_terms
+        )
+        return jnp.array(jax.tree.leaves(new_weights), dtype=float)
+
+    return jax.lax.cond(
+        iteration_nb == 0,
+        lambda op: do_nothing(*op),
+        lambda op: _prior_loss(*op),
+        (loss_weights, stored_loss_terms),
+    )
+
+
 def soft_adapt(
     loss_weights: AnyLossWeights,
     iteration_nb: int,

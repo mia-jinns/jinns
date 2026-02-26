@@ -19,6 +19,7 @@ from jinns.loss._loss_utils import (
     initial_condition_apply,
     initial_condition_check,
     mean_sum_reduction,
+    mean_sum_reduction_pytree,
 )
 from jinns.parameters._derivative_keys import (
     _set_derivatives,
@@ -32,7 +33,7 @@ from jinns.loss._loss_weights import (
     LossWeightsPDENonStatio,
 )
 from jinns.loss import PDENonStatio, PDEStatio
-from jinns.data._Batchs import PDEStatioBatch, PDENonStatioBatch
+from jinns.data._Batchs import PDEStatioBatch, PDENonStatioBatch, ObsBatchDict
 from jinns.data._utils import make_cartesian_product
 from jinns.parameters._params import Params
 from jinns.nn._pinn import PINN
@@ -96,7 +97,7 @@ class _LossPDEAbstract(
         These corresponds to the weights $w_k = \frac{1}{q(x_k)}$ where
         $q(\cdot)$ is the proposal p.d.f. and $x_k$ are the Monte-Carlo samples.
         **If using SPINN, `norm_weights` must be a scalar**.
-    obs_slice : EllipsisType | slice, default=None
+    obs_slice : tuple[EllipsisType | slice, ...] | EllipsisType | slice | None, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
     key : Key | None
@@ -110,7 +111,7 @@ class _LossPDEAbstract(
     # NOTE static=True only for leaf attributes that are not valid JAX types
     # (ie. jax.Array cannot be static) and that we do not expect to change
     u: eqx.AbstractVar[AbstractPINN]
-    dynamic_loss: eqx.AbstractVar[Y]
+    dynamic_loss: tuple[eqx.AbstractVar[Y] | None, ...]
     boundary_condition: BoundaryConditionAbstract | None
     norm_samples: Float[Array, " nb_norm_samples dimension"] | None
     norm_weights: Float[Array, " nb_norm_samples"] | None
@@ -130,7 +131,6 @@ class _LossPDEAbstract(
             u=self.u,
             **kwargs,
         )
-
         self.boundary_condition = boundary_condition
         if self.boundary_condition is None:
             warnings.warn("Missing boundary condition.")
@@ -167,29 +167,33 @@ class _LossPDEAbstract(
 
         self.key = key
 
-    def _get_norm_loss_fun(self) -> Callable[[Array, Params[Array]], Array] | None:
+    def _get_norm_loss_fun(
+        self,
+    ) -> Callable[[tuple[Array, Array], Params[Array]], Array] | None:
         if self.norm_samples is not None:
-            norm_loss_fun: Callable[[Array, Params[Array]], Array] | None = (
-                lambda b, p: normalization_loss_apply(
-                    self.u,
-                    b,
-                    _set_derivatives(p, self.derivative_keys.norm_loss),
-                    self.norm_weights,  # type: ignore -> can't get the __post_init__ narrowing here
-                )
+            norm_loss_fun: (
+                Callable[[tuple[Array, Array], Params[Array]], Array] | None
+            ) = lambda b, p: normalization_loss_apply(
+                self.u,
+                b,
+                _set_derivatives(p, self.derivative_keys.norm_loss),
+                self.norm_weights,  # type: ignore -> can't get the __post_init__ narrowing here
             )
         else:
             norm_loss_fun = None
         return norm_loss_fun
 
-    def _get_boundary_loss_fun(self) -> Callable[[Array, Params[Array]], Array] | None:
+    def _get_boundary_loss_fun(
+        self,
+    ) -> Callable[[Array, Params[Array]], tuple[Array, ...]] | None:
         if self.boundary_condition is not None:
-            boundary_loss_fun: Callable[[Array, Params[Array]], Array] | None = (
-                lambda b, p: boundary_condition_apply(
-                    self.boundary_condition,  # type: ignore # we are in lambda...
-                    self.u,
-                    b,
-                    _set_derivatives(p, self.derivative_keys.boundary_loss),
-                )
+            boundary_loss_fun: (
+                Callable[[Array, Params[Array]], tuple[Array, ...]] | None
+            ) = lambda b, p: boundary_condition_apply(
+                self.boundary_condition,  # type: ignore # we are in lambda...
+                self.u,
+                b,
+                _set_derivatives(p, self.derivative_keys.boundary_loss),
             )
         else:
             boundary_loss_fun = None
@@ -220,7 +224,7 @@ class LossPDEStatio(
     ----------
     u : AbstractPINN
         the PINN
-    dynamic_loss : PDEStatio | None
+    dynamic_loss : tuple[PDEStatio, ...] | PDEStatio | None
         the stationary PDE dynamic part of the loss, basically the differential
         operator $\mathcal{N}[u](x)$. Should implement a method
         `dynamic_loss.evaluate(x, u, params)`.
@@ -266,7 +270,7 @@ class LossPDEStatio(
         These corresponds to the weights $w_k = \frac{1}{q(x_k)}$ where
         $q(\cdot)$ is the proposal p.d.f. and $x_k$ are the Monte-Carlo samples.
         **If using SPINN, `norm_weights` must be a scalar**.
-    obs_slice : slice, default=None
+    obs_slice : tuple[EllipsisType | slice, ...] | EllipsisType | slice | None, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
 
@@ -281,7 +285,7 @@ class LossPDEStatio(
     # (ie. jax.Array cannot be static) and that we do not expect to change
 
     u: AbstractPINN
-    dynamic_loss: PDEStatio | None
+    dynamic_loss: tuple[PDEStatio | None, ...]
     loss_weights: LossWeightsPDEStatio
     derivative_keys: DerivativeKeysPDEStatio
 
@@ -290,7 +294,7 @@ class LossPDEStatio(
     reduction_functions: ClassVar[PDEStatioComponents[Callable]] = eqx.field(
         static=True,
         default=PDEStatioComponents(
-            dyn_loss=mean_sum_reduction,
+            dyn_loss=mean_sum_reduction_pytree,
             boundary_loss=lambda residual_all_facets: jax.tree.reduce(
                 jnp.add,
                 jax.tree.map(
@@ -304,7 +308,7 @@ class LossPDEStatio(
             norm_loss=lambda res: jnp.abs(jnp.mean(res) - 1.0) ** 2
             if res is not None
             else None,
-            observations=mean_sum_reduction,
+            observations=mean_sum_reduction_pytree,
         ),
     )
 
@@ -312,7 +316,7 @@ class LossPDEStatio(
         self,
         *,
         u: AbstractPINN,
-        dynamic_loss: PDEStatio | None,
+        dynamic_loss: tuple[PDEStatio, ...] | PDEStatio | None,
         loss_weights: LossWeightsPDEStatio | None = None,
         derivative_keys: DerivativeKeysPDEStatio | None = None,
         params: Params[Array] | None = None,
@@ -335,8 +339,10 @@ class LossPDEStatio(
                 ) from exc
         else:
             self.derivative_keys = derivative_keys
-
-        self.dynamic_loss = dynamic_loss
+        if not isinstance(dynamic_loss, tuple):
+            self.dynamic_loss = (dynamic_loss,)
+        else:
+            self.dynamic_loss = dynamic_loss
         super().__init__(
             dynamic_loss=self.dynamic_loss,
             derivative_keys=self.derivative_keys,
@@ -358,9 +364,9 @@ class LossPDEStatio(
     ) -> PDEStatioComponents[
         tuple[
             Callable | None,
-            tuple[Array | None, ...] | Array | None,
+            tuple[ObsBatchDict, ...] | tuple[Array | None, ...] | Array | None,
             Params[Array] | None,
-            tuple[tuple[int, ...]] | tuple[int, ...] | None,
+            tuple[tuple[int, ...] | None, ...] | tuple[int, ...] | None,
         ]
     ]:
         """
@@ -395,20 +401,23 @@ class LossPDEStatio(
 
         # Observation mse
         if batch.obs_batch_dict is not None:
-            obs_batch, obs_params, obs_loss_fun = (
-                self._get_obs_batch_params_and_loss_fun(params, batch.obs_batch_dict)
+            obs_loss_fun = self._get_obs_batch_params_and_loss_fun(batch.obs_batch_dict)
+            obs_vmap = tuple(
+                (0, 0) if batch.obs_batch_dict is not None else None
+                for _ in range(len(batch.obs_batch_dict))
+                # nested tuple for generic parametrization of the
+                # vmap when batch is also a tuple
             )
         else:
-            obs_params = None
             obs_loss_fun = None
-            obs_batch = None, None
+            obs_vmap = None
 
         all_funs_and_params: PDEStatioComponents[
             tuple[
                 Callable | None,
-                tuple[Array | None, ...] | Array | None,
+                tuple[ObsBatchDict, ...] | tuple[Array | None, ...] | Array | None,
                 Params[Array] | None,
-                tuple[int, ...] | None,
+                tuple[tuple[int, ...] | None, ...] | tuple[int, ...] | None,
             ]
         ] = PDEStatioComponents(
             dyn_loss=(dyn_loss_fun, domain_batch, params, (0,)),
@@ -416,9 +425,9 @@ class LossPDEStatio(
             boundary_loss=(boundary_loss_fun, border_batch, params, (0,)),
             observations=(
                 obs_loss_fun,
-                obs_batch,
-                obs_params,
-                ((0, 0),),
+                batch.obs_batch_dict,
+                params,
+                obs_vmap,
             ),
         )
         return all_funs_and_params
@@ -450,7 +459,7 @@ class LossPDENonStatio(
     ----------
     u : AbstractPINN
         the PINN
-    dynamic_loss : PDENonStatio
+    dynamic_loss : tuple[PDENonStatio, ...] | PDENonStatio | None
         the non stationary PDE dynamic part of the loss, basically the differential
         operator $\mathcal{N}[u](t, x)$. Should implement a method
         `dynamic_loss.evaluate(t, x, u, params)`.
@@ -510,14 +519,13 @@ class LossPDENonStatio(
         These corresponds to the weights $w_k = \frac{1}{q(x_k)}$ where
         $q(\cdot)$ is the proposal p.d.f. and $x_k$ are the Monte-Carlo samples.
         **If using SPINN, `norm_weights` must be a scalar**.
-    obs_slice : slice, default=None
+    obs_slice : tuple[EllipsisType | slice, ...] | EllipsisType | slice | None, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
-
     """
 
     u: AbstractPINN
-    dynamic_loss: PDENonStatio | None
+    dynamic_loss: tuple[PDENonStatio | None, ...]
     loss_weights: LossWeightsPDENonStatio
     derivative_keys: DerivativeKeysPDENonStatio
     params: InitVar[Params[Array] | None]
@@ -533,7 +541,7 @@ class LossPDENonStatio(
     reduction_functions: ClassVar[PDENonStatioComponents[Callable]] = eqx.field(
         static=True,
         default=PDENonStatioComponents(
-            dyn_loss=mean_sum_reduction,
+            dyn_loss=mean_sum_reduction_pytree,
             initial_condition=mean_sum_reduction,
             boundary_loss=lambda residual_all_facets: jax.tree.reduce(
                 jnp.add,
@@ -559,7 +567,7 @@ class LossPDENonStatio(
             )  # the outer mean() below is for the times stamps
             if res is not None
             else None,
-            observations=mean_sum_reduction,
+            observations=mean_sum_reduction_pytree,
         ),
     )
 
@@ -567,7 +575,7 @@ class LossPDENonStatio(
         self,
         *,
         u: AbstractPINN,
-        dynamic_loss: PDENonStatio | None,
+        dynamic_loss: tuple[PDENonStatio, ...] | PDENonStatio | None,
         loss_weights: LossWeightsPDENonStatio | None = None,
         derivative_keys: DerivativeKeysPDENonStatio | None = None,
         initial_condition_fun: Callable[[Float[Array, " dimension"]], Array]
@@ -596,7 +604,10 @@ class LossPDENonStatio(
         else:
             self.derivative_keys = derivative_keys
 
-        self.dynamic_loss = dynamic_loss
+        if not isinstance(dynamic_loss, tuple):
+            self.dynamic_loss = (dynamic_loss,)
+        else:
+            self.dynamic_loss = dynamic_loss
 
         super().__init__(
             dynamic_loss=self.dynamic_loss,
@@ -667,9 +678,12 @@ class LossPDENonStatio(
     ) -> PDENonStatioComponents[
         tuple[
             Callable | None,
-            tuple[Array | None, ...] | Array | None,
+            tuple[ObsBatchDict, ...] | tuple[Array | None, ...] | Array | None,
             Params[Array] | None,
-            tuple[tuple[int, ...]] | tuple[int, ...] | None,
+            tuple[tuple[int, ...] | None, ...]
+            | tuple[tuple[int, ...]]
+            | tuple[int, ...]
+            | None,
         ]
     ]:
         """
@@ -708,13 +722,16 @@ class LossPDENonStatio(
 
         # Observation mse
         if batch.obs_batch_dict is not None:
-            obs_batch, obs_params, obs_loss_fun = (
-                self._get_obs_batch_params_and_loss_fun(params, batch.obs_batch_dict)
+            obs_loss_fun = self._get_obs_batch_params_and_loss_fun(batch.obs_batch_dict)
+            obs_vmap = tuple(
+                (0, 0) if batch.obs_batch_dict is not None else None
+                for _ in range(len(batch.obs_batch_dict))
+                # nested tuple for generic parametrization of the
+                # vmap when batch is also a tuple
             )
         else:
-            obs_params = None
             obs_loss_fun = None
-            obs_batch = None, None
+            obs_vmap = None
 
         # initial condition
         if self.initial_condition_fun is not None:
@@ -735,9 +752,12 @@ class LossPDENonStatio(
         all_funs_and_params: PDENonStatioComponents[
             tuple[
                 Callable | None,
-                tuple[Array | None, ...] | Array | None,
+                tuple[ObsBatchDict, ...] | tuple[Array | None, ...] | Array | None,
                 Params[Array] | None,
-                tuple[tuple[int, ...]] | tuple[int, ...] | None,
+                tuple[tuple[int, ...] | None, ...]
+                | tuple[tuple[int, ...]]
+                | tuple[int, ...]
+                | None,
             ]
         ] = PDENonStatioComponents(
             dyn_loss=(dyn_loss_fun, domain_batch, params, (0,)),
@@ -749,11 +769,6 @@ class LossPDENonStatio(
                 params,
                 (0,),
             ),
-            observations=(
-                obs_loss_fun,
-                obs_batch,
-                obs_params,
-                ((0, 0),),
-            ),
+            observations=(obs_loss_fun, batch.obs_batch_dict, params, obs_vmap),
         )
         return all_funs_and_params

@@ -135,10 +135,12 @@ class Neumann(BoundaryConditionAbstract):
                     return tuple(
                         du_dx_fun(facet) * n[facet] for facet in range(n_facets)
                     )
-                if u.eq_type == "PDENonStatio":
+                elif u.eq_type == "PDENonStatio":
                     return tuple(
                         du_dx_fun(facet)[..., 1] * n[facet] for facet in range(n_facets)
                     )
+                else:
+                    raise ValueError("Wrong u.eq_type")
             elif n_facets == 4:
                 du_dx_fun = lambda tangent_vec, facet: jax.jvp(
                     lambda inputs_: u(inputs_, params),
@@ -167,7 +169,7 @@ class Neumann(BoundaryConditionAbstract):
                         * n[1, facet]
                         for facet in range(n_facets)
                     )
-                if u.eq_type == "PDENonStatio":
+                elif u.eq_type == "PDENonStatio":
                     return tuple(
                         du_dx_fun(
                             jnp.repeat(
@@ -190,8 +192,12 @@ class Neumann(BoundaryConditionAbstract):
                         * n[1, facet]
                         for facet in range(n_facets)
                     )
+                else:
+                    raise ValueError("Wrong u.eq_type")
             else:
                 raise ValueError("Not implemented")
+        else:
+            raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
 
     def equation_f(
         self,

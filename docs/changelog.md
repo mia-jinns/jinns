@@ -1,5 +1,9 @@
 # Changelog
 
+* v1.8.1:
+
+    - `stored_weight_terms` and `stored_loss_terms` are now returned as a multidimensional array when working with several observation Data Generators or several Dynamic Losses. This can be a small breaking change in some user code. We also improve internally the way multiple Dynamic Losses or multiple observation Data Generators are handled. Changes are from [!95](https://gitlab.com/mia_jinns/jinns/-/merge_requests/95)
+
 * v1.8.0:
 
     - **Breaking change**: the way to specify boundary conditions in `jinns` has changed. Old workflows are broken but numerical results should not change after a code update. We introduce a much more flexible and intuitive class `BoundaryCondition` which mimick the `DynamicLoss` classes. This resolves [#19](https://gitlab.com/mia_jinns/jinns/-/issues/19). Check out the [tutorial](https://mia_jinns.gitlab.io/jinns/Notebooks/Tutorials/implementing_your_own_PDE_problem/) and the documentation.
@@ -7,7 +11,8 @@
 * v1.7.1:
 
     - Breaking change: change naming convention of `PINN.eq_type` attribute. It now takes value in `[ODE", "PDEStatio", "PDENonStatio"]` to be consistent with `jinns` class names. See Issue [#27](https://gitlab.com/mia_jinns/jinns/-/issues/27).
-
+    - The possibility to specify tuples of 1D dynamic losses for a loss instead of a vectorial dynamic loss. The original motivation is that **we can now easily add an adaptative loss weight for each dynamic loss channel** while using the existing loss weight update approach of `jinns`. The possibility to **feed several datasets to a `DataGeneratorObservations`. This enables, for example, having datasets (unaligned) for each of the dynamic loss channel**. For more details see [!92](https://gitlab.com/mia_jinns/jinns/-/merge_requests/92) 
+    - Breaking change: change naming convention of `PINN.eq_type` attribute. It now takes value in `[ODE", "PDEStatio", "PDENonStatio"]` to be consistent with `jinns` class names. See Issue [#27](https://gitlab.com/mia_jinns/jinns/-/issues/27).
 
 * v1.7.0
 

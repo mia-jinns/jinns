@@ -19,13 +19,13 @@ from jinns.parameters._derivative_keys import _set_derivatives, DerivativeKeysOD
 from jinns.loss._loss_weights import LossWeightsODE
 from jinns.loss._abstract_loss import AbstractLoss
 from jinns.loss._loss_components import ODEComponents
+from jinns.loss import ODE
 from jinns.parameters._params import Params
-from jinns.data._Batchs import ODEBatch
+from jinns.data._Batchs import ODEBatch, ObsBatchDict
 
 if TYPE_CHECKING:
     # imports only used in type hints
     from jinns.nn._abstract_pinn import AbstractPINN
-    from jinns.loss import ODE
 
     InitialConditionUser = (
         tuple[Float[Array, " n_cond "], Float[Array, " n_cond dim"]]
@@ -56,39 +56,42 @@ class LossODE(
     ----------
     u : eqx.Module
         the PINN
-    dynamic_loss : ODE
+    dynamic_loss : tuple[ODE, ...] | ODE | None
         the ODE dynamic part of the loss, basically the differential
         operator $\mathcal{N}[u](t)$. Should implement a method
         `dynamic_loss.evaluate(t, u, params)`.
         Can be None in order to access only some part of the evaluate call.
-    loss_weights : LossWeightsODE, default=None
+    loss_weights : LossWeightsODE | None, default=None
         The loss weights for the differents term : dynamic loss,
         initial condition and eventually observations if any.
         Can be updated according to a specific algorithm. See
         `update_weight_method`
-    update_weight_method : Literal['soft_adapt', 'lr_annealing', 'ReLoBRaLo'], default=None
+    update_weight_method : Literal['soft_adapt', 'lr_annealing', 'ReLoBRaLo'] | None, default=None
         Default is None meaning no update for loss weights. Otherwise a string
-    derivative_keys : DerivativeKeysODE, default=None
+    keep_initial_loss_weight_scales : bool, default=True
+        Only used if an update weight method is specified. It decides whether
+        the updated loss weights are multiplied by the initial `loss_weights`
+        passed by the user at initialization. This is useful to force some
+        scale difference between the adaptative loss weights even after the
+        update method is applied.
+    derivative_keys : DerivativeKeysODE | None, default=None
         Specify which field of `params` should be differentiated for each
         composant of the total loss. Particularily useful for inverse problems.
         Fields can be "nn_params", "eq_params" or "both". Those that should not
         be updated will have a `jax.lax.stop_gradient` called on them. Default
         is `"nn_params"` for each composant of the loss.
-    initial_condition : tuple[
-            Float[Array, "n_cond "],
-            Float[Array, "n_cond dim"]
-        ] |
-        tuple[int | float | Float[Array, " "],
-              int | float | Float[Array, " dim"]
-        ], default=None
+    initial_condition : InitialConditionUser | None, default=None
         Most of the time, a tuple of length 2 with initial condition $(t_0, u_0)$.
         From jinns v1.5.1 we accept tuples of jnp arrays with shape (n_cond, 1) for t0 and (n_cond, dim) for u0. This is useful to include observed conditions at different time points, such as *e.g* final conditions. It was designed to implement $\mathcal{L}^{aux}$ from _Systems biology informed deep learning for inferring parameters and hidden dynamics_, Alireza Yazdani et al., 2020
-    obs_slice : EllipsisType | slice, default=None
+    obs_slice : tuple[EllipsisType | slice, ...] | EllipsisType | slice | None, default=None
         Slice object specifying the begininning/ending
         slice of u output(s) that is observed. This is useful for
         multidimensional PINN, with partially observed outputs.
         Default is None (whole output is observed).
-    params : InitVar[Params[Array]], default=None
+        **Note**: If several observation datasets are passed this arguments need to be set as a
+        tuple of jnp.slice objects with the same length as the number of
+        observation datasets
+    params : InitVar[Params[Array]] | None, default=None
         The main Params object of the problem needed to instanciate the
         DerivativeKeysODE if the latter is not specified.
     Raises
@@ -100,7 +103,8 @@ class LossODE(
     # NOTE static=True only for leaf attributes that are not valid JAX types
     # (ie. jax.Array cannot be static) and that we do not expect to change
     u: AbstractPINN
-    dynamic_loss: ODE | None
+    dynamic_loss: tuple[ODE | None, ...]
+    vmap_in_axes: tuple[int] = eqx.field(static=True)
     derivative_keys: DerivativeKeysODE
     loss_weights: LossWeightsODE
     initial_condition: InitialCondition | None
@@ -118,7 +122,7 @@ class LossODE(
         self,
         *,
         u: AbstractPINN,
-        dynamic_loss: ODE | None,
+        dynamic_loss: tuple[ODE, ...] | ODE | None,
         loss_weights: LossWeightsODE | None = None,
         derivative_keys: DerivativeKeysODE | None = None,
         initial_condition: InitialConditionUser | None = None,
@@ -141,7 +145,10 @@ class LossODE(
         else:
             self.derivative_keys = derivative_keys
         self.u = u
-        self.dynamic_loss = dynamic_loss
+        if not isinstance(dynamic_loss, tuple):
+            self.dynamic_loss = (dynamic_loss,)
+        else:
+            self.dynamic_loss = dynamic_loss
 
         # NOTE unclear why the AbstractVar of super need to be passed
         # explicitely
@@ -152,6 +159,7 @@ class LossODE(
             u=self.u,
             **kwargs,
         )
+
         if self.update_weight_method is not None and jnp.any(
             jnp.array(jax.tree.leaves(self.loss_weights)) == 0
         ):
@@ -237,9 +245,9 @@ class LossODE(
     ) -> ODEComponents[
         tuple[
             Callable | None,
-            tuple[Array | None, ...] | Array | None,
+            tuple[ObsBatchDict, ...] | tuple[Array | None, ...] | Array | None,
             Params[Array] | None,
-            tuple[tuple[int, ...]] | tuple[int, ...] | None,
+            tuple[tuple[int, ...] | None, ...] | tuple[int, ...] | None,
         ]
     ]:
         """
@@ -266,7 +274,8 @@ class LossODE(
         dyn_loss_fun = self._get_dyn_loss_fun()
 
         if self.initial_condition is not None:
-            # initial condition
+            # Note, for the record, multiple initial conditions for LossODEs
+            # have been introduced in MR 77
             t0, u0 = self.initial_condition
 
             # first construct the plain init loss no vmaping
@@ -282,13 +291,14 @@ class LossODE(
             )
             # now vmap over the number of conditions (first dim of t0 and u0)
             # and take the mean
-            initial_condition_fun: Callable[[Params[Array]], Array] = (
+            initial_condition_fun: Callable[[Params[Array]], Array] | None = (
                 lambda p: jnp.mean(
                     vmap(initial_condition_fun__, (0, 0, None))(t0, u0, p),
                     axis=0,
                 )
             )
 
+            ## TODO TODO
             ## NOTE NOTE not clear if below can be totally suppressed
             ## NOTE that this is the vmap below and its reduction which
             # disappear since now we vmap over the possible batch of paramter
@@ -316,30 +326,32 @@ class LossODE(
             initial_condition_fun = None
 
         if batch.obs_batch_dict is not None:
-            obs_batch, obs_params, obs_loss_fun = (
-                self._get_obs_batch_params_and_loss_fun(params, batch.obs_batch_dict)
+            obs_loss_fun = self._get_obs_batch_params_and_loss_fun(batch.obs_batch_dict)
+            obs_vmap = tuple(
+                (0, 0) if batch.obs_batch_dict is not None else None
+                for _ in range(len(batch.obs_batch_dict))
+                # nested tuple for generic parametrization of the
+                # vmap when batch is also a tuple
             )
         else:
-            obs_params = None
             obs_loss_fun = None
-            obs_batch = None, None
+            obs_vmap = None
 
         all_funs_and_params: ODEComponents[
             tuple[
                 Callable | None,
-                tuple[Array | None, ...] | Array | None,
+                tuple[ObsBatchDict, ...] | tuple[Array | None, ...] | Array | None,
                 Params[Array] | None,
-                tuple[tuple[int, ...]] | tuple[int, ...] | None,
+                tuple[tuple[int, ...] | None, ...] | tuple[int, ...] | None,
             ]
         ] = ODEComponents(
             dyn_loss=(dyn_loss_fun, temporal_batch, params, (0,)),
             initial_condition=(initial_condition_fun, None, params, None),
             observations=(
                 obs_loss_fun,
-                obs_batch,
-                obs_params,
-                ((0, 0),),  # nested tuple for generic parametrization of the
-                # vmap when batch is also a tuple
+                batch.obs_batch_dict,
+                params,
+                obs_vmap,
             ),
         )
         return all_funs_and_params

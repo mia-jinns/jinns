@@ -834,18 +834,24 @@ def _check_batch_size(other_data, main_data, attr_name):
                         " vectorization"
                     )
     if isinstance(main_data, DataGeneratorParameter):
-        if main_data.param_batch_size is not None:
-            if getattr(other_data, attr_name) != main_data.param_batch_size:
-                raise ValueError(
-                    f"{other_data.__class__}.{attr_name} must be equal"
-                    f" to {main_data.__class__}.param_batch_size for correct"
-                    " vectorization"
-                )
-        else:
-            if main_data.n is not None:
-                if getattr(other_data, attr_name) != main_data.n:
+        batch_size = getattr(other_data, attr_name)  # this can be a tuple with
+        # DataGeneratorObservations
+        if not isinstance(batch_size, tuple):
+            batch_size = (batch_size,)
+
+        for bs in batch_size:
+            if main_data.param_batch_size is not None:
+                if bs != main_data.param_batch_size:
                     raise ValueError(
                         f"{other_data.__class__}.{attr_name} must be equal"
-                        f" to {main_data.__class__}.n for correct"
+                        f" to {main_data.__class__}.param_batch_size for correct"
                         " vectorization"
                     )
+            else:
+                if main_data.n is not None:
+                    if bs != main_data.n:
+                        raise ValueError(
+                            f"{other_data.__class__}.{attr_name} must be equal"
+                            f" to {main_data.__class__}.n for correct"
+                            " vectorization"
+                        )

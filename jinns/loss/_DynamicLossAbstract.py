@@ -39,6 +39,7 @@ def _decorator_heteregeneous_params(evaluate):
             self._eval_heterogeneous_parameters(
                 inputs, u, params, self.eq_params_heterogeneity
             ),
+            is_leaf=lambda x: x is None,
         )
         new_args = args[:-1] + (_params,)
         res = evaluate(*new_args)
@@ -145,7 +146,10 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
         u: AbstractPINN,
         params: Params[Array],
     ) -> Float[Array, " eq_dim"]:
-        evaluation = self.vectorial_dyn_loss_ponderation * self.equation(
+        # below pyright error because self.vectorial_dyn_loss_ponderation can
+        # be None in dataclass type hint (We would need an __init__ to solve
+        # it)
+        evaluation = self.vectorial_dyn_loss_ponderation * self.equation(  # type: ignore
             inputs, u, params
         )
         if len(evaluation.shape) == 0:

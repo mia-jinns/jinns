@@ -18,6 +18,10 @@ from jinns.loss._loss_components import (
 def lw_converter(x: Array | None) -> Array | None:
     if x is None:
         return x
+    elif isinstance(x, tuple):
+        # user might input tuple of scalar loss weights to account for cases
+        # when dyn loss is also a tuple of (possibly 1D) dyn_loss
+        return tuple(jnp.asarray(x_) for x_ in x)
     else:
         return jnp.asarray(x)
 

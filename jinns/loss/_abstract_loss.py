@@ -1,7 +1,18 @@
 from __future__ import annotations
 
 import abc
-from typing import TYPE_CHECKING, Self, Literal, Callable, TypeVar, Generic, Any, cast
+from typing import (
+    TYPE_CHECKING,
+    Self,
+    Literal,
+    Callable,
+    TypeVar,
+    Generic,
+    Any,
+    cast,
+    get_args,
+)
+from dataclasses import InitVar
 from types import EllipsisType
 import warnings
 from jaxtyping import PRNGKeyArray, Array, PyTree, Float
@@ -11,7 +22,13 @@ import jax.numpy as jnp
 import optax
 from jinns.loss._loss_utils import dynamic_loss_apply, observations_loss_apply
 from jinns.parameters._params import Params, _get_vmap_in_axes_params, update_eq_params
-from jinns.loss._loss_weight_updates import soft_adapt, lr_annealing, ReLoBRaLo
+from jinns.loss._loss_weight_updates import (
+    soft_adapt,
+    lr_annealing,
+    ReLoBRaLo,
+    prior_loss,
+)
+from jinns.loss._DynamicLossAbstract import DynamicLoss
 from jinns.utils._types import (
     AnyLossComponents,
     AnyBatch,
@@ -50,26 +67,43 @@ DK = TypeVar("DK", bound=AnyDerivativeKeys)
 # the return types of evaluate_by_terms for example!
 
 
+AvailableUpdateWeightMethods = Literal[
+    "softadapt", "soft_adapt", "prior_loss", "lr_annealing", "ReLoBRaLo"
+]
+
+
 class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
     """
     About the call:
     https://github.com/patrick-kidger/equinox/issues/1002 + https://docs.kidger.site/equinox/pattern/
     """
 
-    dynamic_loss: eqx.AbstractVar[DynamicLoss | None]
+    dynamic_loss: eqx.AbstractVar[tuple[DynamicLoss, ...] | None]
     derivative_keys: eqx.AbstractVar[DK]
     loss_weights: eqx.AbstractVar[L]
     u: eqx.AbstractVar[AbstractPINN]
-    obs_slice: EllipsisType | slice = eqx.field(static=True, default=None, kw_only=True)
-    update_weight_method: Literal["soft_adapt", "lr_annealing", "ReLoBRaLo"] | None = (
-        eqx.field(kw_only=True, default=None, static=True)
+    reduction_functions: eqx.AbstractClassVar[C] = eqx.field(init=False)
+    obs_slice: tuple[EllipsisType | slice, ...] = eqx.field(static=True, kw_only=True)
+    loss_weight_scales: L = eqx.field(init=False)
+    update_weight_method: AvailableUpdateWeightMethods | None = eqx.field(
+        kw_only=True, default=None, static=True
+    )
+    keep_initial_loss_weight_scales: InitVar[bool] = eqx.field(
+        default=True, kw_only=True
     )
 
-    reduction_functions: eqx.AbstractClassVar[C] = eqx.field(init=False)
-
-    def __post_init__(self):
-        # NOTE: warning, currently not called -> need to do an __init__
-        # post processing of the non abstract arguments
+    def __init__(
+        self,
+        *,
+        dynamic_loss,
+        u,
+        loss_weights,
+        derivative_keys,
+        vmap_in_axes,
+        obs_slice=None,
+        update_weight_method=None,
+        keep_initial_loss_weight_scales=False,
+    ):
         if self.update_weight_method is not None and jnp.any(
             jnp.array(jax.tree.leaves(self.loss_weights)) == 0
         ):
@@ -79,11 +113,31 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
                 "update the zero weight to some non-zero value. Check that "
                 "this is the desired behaviour."
             )
-
-        if self.obs_slice is None:
-            self.obs_slice = jnp.s_[...]
+        if update_weight_method is not None and update_weight_method not in get_args(
+            AvailableUpdateWeightMethods
+        ):
+            raise ValueError(f"{update_weight_method=} is not a valid method")
+        self.update_weight_method = update_weight_method
+        self.loss_weights = loss_weights
+        self.derivative_keys = derivative_keys
+        if keep_initial_loss_weight_scales:
+            self.loss_weight_scales = self.loss_weights
+            if self.update_weight_method is not None:
+                warnings.warn(
+                    "Loss weights out from update_weight_method will still be"
+                    " multiplied by the initial input loss_weights"
+                )
         else:
-            self.obs_slice = self.obs_slice
+            self.loss_weight_scales = optax.tree_utils.tree_ones_like(self.loss_weights)
+            # self.loss_weight_scales will contain None where self.loss_weights
+            # has None
+
+        if obs_slice is None:
+            self.obs_slice = (jnp.s_[...],)
+        elif not isinstance(obs_slice, tuple):
+            self.obs_slice = (obs_slice,)
+        else:
+            self.obs_slice = obs_slice
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self.evaluate(*args, **kwargs)
@@ -98,20 +152,26 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
 
     def _get_dyn_loss_fun(
         self,
-    ) -> Callable[[Array, Params[Array]], Array] | None:
+    ) -> Callable[[Array, Params[Array]], tuple[Array, ...]] | None:
         """
         Common for all XDELoss
         """
-        if self.dynamic_loss is not None:
-            dyn_loss_fun: Callable[[Array, Params[Array]], Array] | None = (
-                lambda b, p: (
-                    dynamic_loss_apply(
-                        self.dynamic_loss,  # type: ignore
-                        # we are in lambda and the if context is lost
+        if self.dynamic_loss != (None,):
+            # Note, for the record, multiple dynamic losses
+            # have been introduced in MR 92
+            # As opposed to obs_loss_fun, here the batch is the same for all
+            # dyn loss
+            dyn_loss_fun: Callable[[Array, Params[Array]], tuple[Array, ...]] | None = (
+                lambda b, p: jax.tree.map(
+                    lambda d: dynamic_loss_apply(
+                        d.evaluate,
                         self.u,
                         b,
                         _set_derivatives(p, self.derivative_keys.dyn_loss),
-                    )
+                    ),
+                    self.dynamic_loss,
+                    is_leaf=lambda x: isinstance(x, DynamicLoss),  # do not traverse
+                    # further than first level
                 )
             )
         else:
@@ -121,31 +181,45 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
 
     def _get_obs_batch_params_and_loss_fun(
         self,
-        params: Params[Array],
-        obs_batch_dict: ObsBatchDict,
-    ) -> tuple[
-        tuple[Array, Array],
-        Params[Array],
-        Callable[[tuple[Array, Array], Params[Array]], Array],
-    ]:
+        obs_batch_dict: tuple[ObsBatchDict, ...],
+    ) -> Callable[[tuple[tuple[Array, Array], ...], Params[Array]], tuple[Array, ...]]:
         """
         Common for all XDELoss
         """
-        obs_params = update_eq_params(params, obs_batch_dict["eq_params"])
-        obs_batch = (
-            obs_batch_dict["pinn_in"],
-            obs_batch_dict["val"],
-        )
-        obs_loss_fun: Callable[[tuple[Array, Array], Params[Array]], Array] | None = (
-            lambda b, po: observations_loss_apply(
-                self.u,
-                b,
-                _set_derivatives(po, self.derivative_keys.observations),
-                self.obs_slice,
+        # Note, for the record, multiple DGObs
+        # (leading to batch.obs_batch_dict being tuple | None)
+        # have been introduced in MR 92
+        # As opposed to dyn_loss_fun, here the batch is different for each
+        # obs_loss_fun
+        if len(obs_batch_dict) != len(self.obs_slice):
+            raise ValueError(
+                "There must be the same number of "
+                "observation datasets as the number of "
+                "obs_slice"
             )
+        obs_loss_fun: (
+            Callable[
+                [tuple[tuple[Array, Array], ...], Params[Array]], tuple[Array, ...]
+            ]
+            | None
+        ) = lambda b, po: jax.tree.map(
+            lambda b_, slice_: observations_loss_apply(
+                self.u,
+                (b_["pinn_in"], b_["val"]),
+                _set_derivatives(
+                    update_eq_params(  # NOTE update_eq_params is here
+                        po, b_["eq_params"]
+                    ),
+                    self.derivative_keys.observations,
+                ),
+                slice_,
+            ),
+            b,  # this is obs_batch_dict which is a tuple
+            self.obs_slice,
+            is_leaf=lambda x: isinstance(x, dict),
         )
 
-        return obs_batch, obs_params, obs_loss_fun
+        return obs_loss_fun
 
     def evaluate(
         self,
@@ -372,18 +446,6 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         # NOTE: (related to my comment at the end of `evaluate`) should we rather keep the same signature and return loss_terms, None ?
         return loss_terms
 
-    def get_gradients(
-        self, fun: Callable[[Params[Array]], Array], params: Params[Array]
-    ) -> tuple[Array, Array]:
-        """
-        params already filtered with derivative keys here
-        """
-        if fun is None:
-            return None, None
-        value_grad_loss = jax.value_and_grad(fun)
-        loss_val, grads = value_grad_loss(params)
-        return loss_val, grads
-
     def ponderate_and_sum_loss(self, terms: C) -> Array:
         """
         Get total loss from individual loss terms and weights
@@ -402,7 +464,11 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         raise ValueError(
             "The numbers of declared loss weights and "
             "declared loss terms do not concord "
-            f" got {len(weights)} and {len(terms_list)}"
+            f" got {len(weights)} and {len(terms_list)}. "
+            "If you passed tuple of dyn_loss, make sure to pass "
+            "tuple of loss weights at LossWeights.dyn_loss."
+            "If you passed tuple of obs datasets, make sure to pass "
+            "tuple of loss weights at LossWeights.observations."
         )
 
     def ponderate_and_sum_gradient(self, terms: C) -> Params[Array | None]:
@@ -446,6 +512,8 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             new_weights = soft_adapt(
                 self.loss_weights, iteration_nb, loss_terms, stored_loss_terms
             )
+        elif self.update_weight_method == "prior_loss":
+            new_weights = prior_loss(self.loss_weights, iteration_nb, stored_loss_terms)
         elif self.update_weight_method == "lr_annealing":
             new_weights = lr_annealing(self.loss_weights, grad_terms)
         elif self.update_weight_method == "ReLoBRaLo":
@@ -458,6 +526,13 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         # Below we update the non None entry in the PyTree self.loss_weights
         # we directly get the non None entries because None is not treated as a
         # leaf
+
+        new_weights = jax.lax.cond(
+            iteration_nb == 0,
+            lambda nw: nw,
+            lambda nw: jnp.array(jax.tree.leaves(self.loss_weight_scales)) * nw,
+            new_weights,
+        )
         return eqx.tree_at(
             lambda pt: jax.tree.leaves(pt.loss_weights), self, new_weights
         )

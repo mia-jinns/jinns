@@ -1,7 +1,4 @@
-"""
-Test the soft adapt implementation
-https://docs.nvidia.com/deeplearning/physicsnemo/physicsnemo-sym/user_guide/theory/advanced_schemes.html#softadapt
-"""
+""" """
 
 import pytest
 import jax

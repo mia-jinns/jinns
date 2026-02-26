@@ -2,8 +2,6 @@
 Test the lr annealing algorithm
 """
 
-import pytest
-
 import jax.numpy as jnp
 import jinns
 from jinns.loss._loss_components import PDENonStatioComponents
@@ -44,15 +42,14 @@ def test_lr_annealing_update():
         initial_condition=jnp.array(0.5),
     )
 
-    with pytest.warns(UserWarning):
-        loss = jinns.loss.LossPDENonStatio(
-            u=None,
-            dynamic_loss=None,
-            loss_weights=loss_weights,
-            update_weight_method="lr_annealing",
-            params=jinns.parameters.Params(eq_params={"a": jnp.array([0])}),
-        )
-
+    loss = jinns.loss.LossPDENonStatio(
+        u=None,
+        dynamic_loss=None,
+        loss_weights=loss_weights,
+        update_weight_method="lr_annealing",
+        params=jinns.parameters.Params(eq_params={"a": jnp.array([0])}),
+        keep_initial_loss_weight_scales=False,
+    )
     if loss.update_weight_method is not None:
         loss_new = loss.update_weights(
             1, loss_terms, stored_loss_terms, grad_terms, None
