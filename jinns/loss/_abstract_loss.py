@@ -43,7 +43,6 @@ from jinns.nn._hyperpinn import HyperPINN
 if TYPE_CHECKING:
     from jinns.loss._DynamicLossAbstract import DynamicLoss
     from jinns.nn._abstract_pinn import AbstractPINN
-    from jinns.data._Batchs import ObsBatchDict
 
 L = TypeVar(
     "L", bound=AnyLossWeights
@@ -83,6 +82,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
     loss_weights: eqx.AbstractVar[L]
     u: eqx.AbstractVar[AbstractPINN]
     reduction_functions: eqx.AbstractClassVar[C] = eqx.field(init=False)
+    vmap_loss_fun: eqx.AbstractClassVar[C] = eqx.field(init=False)
     obs_slice: tuple[EllipsisType | slice, ...] = eqx.field(static=True, kw_only=True)
     loss_weight_scales: L = eqx.field(init=False)
     update_weight_method: AvailableUpdateWeightMethods | None = eqx.field(
@@ -99,7 +99,6 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         u,
         loss_weights,
         derivative_keys,
-        vmap_in_axes,
         obs_slice=None,
         update_weight_method=None,
         keep_initial_loss_weight_scales=False,
@@ -120,6 +119,8 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         self.update_weight_method = update_weight_method
         self.loss_weights = loss_weights
         self.derivative_keys = derivative_keys
+        self.dynamic_loss = dynamic_loss
+        self.u = u
         if keep_initial_loss_weight_scales:
             self.loss_weight_scales = self.loss_weights
             if self.update_weight_method is not None:
@@ -164,7 +165,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             dyn_loss_fun: Callable[[Array, Params[Array]], tuple[Array, ...]] | None = (
                 lambda b, p: jax.tree.map(
                     lambda d: dynamic_loss_apply(
-                        d.evaluate,
+                        d,
                         self.u,
                         b,
                         _set_derivatives(p, self.derivative_keys.dyn_loss),
@@ -179,10 +180,9 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
 
         return dyn_loss_fun
 
-    def _get_obs_batch_params_and_loss_fun(
+    def _get_obs_loss_fun(
         self,
-        obs_batch_dict: tuple[ObsBatchDict, ...],
-    ) -> Callable[[tuple[tuple[Array, Array], ...], Params[Array]], tuple[Array, ...]]:
+    ) -> Callable[[tuple[Array, Array], Params[Array], Array, EllipsisType], Array]:
         """
         Common for all XDELoss
         """
@@ -191,32 +191,19 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         # have been introduced in MR 92
         # As opposed to dyn_loss_fun, here the batch is different for each
         # obs_loss_fun
-        if len(obs_batch_dict) != len(self.obs_slice):
-            raise ValueError(
-                "There must be the same number of "
-                "observation datasets as the number of "
-                "obs_slice"
-            )
-        obs_loss_fun: (
-            Callable[
-                [tuple[tuple[Array, Array], ...], Params[Array]], tuple[Array, ...]
-            ]
-            | None
-        ) = lambda b, po: jax.tree.map(
-            lambda b_, slice_: observations_loss_apply(
-                self.u,
-                (b_["pinn_in"], b_["val"]),
-                _set_derivatives(
-                    update_eq_params(  # NOTE update_eq_params is here
-                        po, b_["eq_params"]
-                    ),
-                    self.derivative_keys.observations,
+        # See more explanation in vmap_loss_fun_observations
+        obs_loss_fun: Callable[
+            [tuple[Array, Array], Params[Array], Array, EllipsisType], Array
+        ] = lambda b, po, obs_eq_params, slice_: observations_loss_apply(
+            self.u,
+            b,
+            _set_derivatives(
+                update_eq_params(  # NOTE update_eq_params is here
+                    po, obs_eq_params
                 ),
-                slice_,
+                self.derivative_keys.observations,
             ),
-            b,  # this is obs_batch_dict which is a tuple
-            self.obs_slice,
-            is_leaf=lambda x: isinstance(x, dict),
+            slice_,
         )
 
         return obs_loss_fun
@@ -271,22 +258,6 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             # create a PyTree of vmapped functions (loss terms)
             # we could technically vmap evaluate by terms with a PyTree in axes
             # of type XDEBatch but this would for identical batch length...
-            def vmap_loss_fun(fun, _b, _p, _in_axes):
-                if fun is None:
-                    return None
-                else:
-                    if (
-                        _b is None and _in_axes is None
-                    ):  # some loss_fun does not need batch
-                        if vmap_in_axes_params == (None,):
-                            return fun(_p)[None]  # NOTE we simulate a vmap axis
-                        # for the reduction to be always correct with the outer
-                        # jnp.mean (here _b is None)
-                        else:
-                            # here the vmap is only for params
-                            return jax.vmap(fun, vmap_in_axes_params)(_p)
-                    else:
-                        return jax.vmap(fun, _in_axes + vmap_in_axes_params)(_b, _p)
 
             # We vmap each function returned by evaluate by terms via the
             # following tree map. `vmap_loss_fun` is a function which does this
@@ -294,7 +265,8 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             # NOTE: we keep it as a function of batch and params (b and p)
             # until then it to be able to call `jax.jacrev`
             evaluate_by_terms = lambda b, p: jax.tree.map(
-                lambda args: vmap_loss_fun(*args),
+                lambda vlf, args: vlf(*args, vmap_in_axes_params=vmap_in_axes_params),
+                self.vmap_loss_fun,
                 self.evaluate_by_terms(b, p),
                 is_leaf=lambda x: (
                     isinstance(x, tuple) and (callable(x[0]) or x[0] is None)
@@ -316,7 +288,11 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         elif isinstance(self.u, SPINN):
             # NOTE there is no vmap here on each loss functin
             # as the SPINN expects the full batch
-            def loss_fun(fun, _b, _p, _):
+            def loss_fun(fun, _b, _p, *args):
+                """
+                *args because for PINN and their vmap we needed to pass more
+                arguments
+                """
                 if fun is None:
                     return None
                 return fun(_b, _p)
@@ -381,47 +357,14 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         # create a PyTree of vmapped functions (loss terms)
         # we could technically vmap evaluate by terms with a PyTree in axes
         # of type XDEBatch but this would for identical batch length...
-        def vmap_loss_fun(fun, _b, _p, _in_axes):
-            if fun is None:
-                return None
-            else:
-                if _b is None and _in_axes is None:  # some loss_fun does not need batch
-                    if vmap_in_axes_params == (None,):
-                        return fun(_p)[None]  # NOTE we simulate a vmap axis
-                    # for the reduction to be always correct with the outer
-                    # jnp.mean (here _b is None)
-                    else:
-                        # here the vmap is only for params
-                        return jax.vmap(fun, vmap_in_axes_params)(_p)
-                else:
-                    return jax.vmap(fun, _in_axes + vmap_in_axes_params)(_b, _p)
-
-        def vmap_jacrev_loss_fun(fun, _b, _p, _in_axes):
-            if fun is None:
-                return None
-            else:
-                if _b is None and _in_axes is None:  # some loss_fun does not need batch
-                    if vmap_in_axes_params == (None,):
-                        return jax.jacrev(fun)(_p)[None]  # NOTE we simulate a vmap axis
-                    # for the reduction to be always correct with the outer
-                    # jnp.mean (here _b is None)
-                    else:
-                        # here the vmap is only for params
-                        return jax.vmap(
-                            jax.jacrev(fun, argnums=1), vmap_in_axes_params
-                        )(_p)
-                else:
-                    return jax.vmap(
-                        jax.jacrev(fun, argnums=1), _in_axes + vmap_in_axes_params
-                    )(_b, _p)
-
         # We vmap each function returned by evaluate by terms via the
         # following tree map. `vmap_loss_fun` is a function which does this
         # vmap, with some subtleties depending on the function term
         # NOTE: we keep it as a function of batch and params (b and p)
         # until then it to be able to call `jax.jacrev`
         evaluate_by_terms = lambda b, p: jax.tree.map(
-            lambda args: vmap_loss_fun(*args),
+            lambda vlf, args: vlf(*args, vmap_in_axes_params=vmap_in_axes_params),
+            self.vmap_loss_fun,
             self.evaluate_by_terms(b, p),
             is_leaf=lambda x: (
                 isinstance(x, tuple) and (callable(x[0]) or x[0] is None)
@@ -431,7 +374,12 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
 
         if ret_nat_grad_terms:
             jacrev_evaluate_by_terms = lambda b, p: jax.tree.map(
-                lambda args: vmap_jacrev_loss_fun(*args),
+                lambda vlf, args: vlf(
+                    *args,
+                    vmap_in_axes_params=vmap_in_axes_params,
+                    jacrev=True,
+                ),
+                self.vmap_loss_fun,
                 self.evaluate_by_terms(b, p),
                 is_leaf=lambda x: (
                     isinstance(x, tuple) and (callable(x[0]) or x[0] is None)

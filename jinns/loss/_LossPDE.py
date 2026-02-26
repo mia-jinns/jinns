@@ -20,6 +20,8 @@ from jinns.loss._loss_utils import (
     initial_condition_check,
     mean_sum_reduction,
     mean_sum_reduction_pytree,
+    vmap_loss_fun_classical,
+    vmap_loss_fun_observations,
 )
 from jinns.parameters._derivative_keys import (
     _set_derivatives,
@@ -33,7 +35,7 @@ from jinns.loss._loss_weights import (
     LossWeightsPDENonStatio,
 )
 from jinns.loss import PDENonStatio, PDEStatio
-from jinns.data._Batchs import PDEStatioBatch, PDENonStatioBatch, ObsBatchDict
+from jinns.data._Batchs import PDEStatioBatch, PDENonStatioBatch
 from jinns.data._utils import make_cartesian_product
 from jinns.parameters._params import Params
 from jinns.nn._pinn import PINN
@@ -311,6 +313,15 @@ class LossPDEStatio(
             observations=mean_sum_reduction_pytree,
         ),
     )
+    vmap_loss_fun: ClassVar[PDEStatioComponents[Callable]] = eqx.field(
+        static=True,
+        default=PDEStatioComponents(
+            dyn_loss=vmap_loss_fun_classical,
+            boundary_loss=vmap_loss_fun_classical,
+            norm_loss=vmap_loss_fun_classical,
+            observations=vmap_loss_fun_observations,
+        ),
+    )
 
     def __init__(
         self,
@@ -364,9 +375,12 @@ class LossPDEStatio(
     ) -> PDEStatioComponents[
         tuple[
             Callable | None,
-            tuple[ObsBatchDict, ...] | tuple[Array | None, ...] | Array | None,
+            tuple[tuple[Array, Array] | None, ...]
+            | tuple[Array | None, ...]
+            | Array
+            | None,
             Params[Array] | None,
-            tuple[tuple[int, ...] | None, ...] | tuple[int, ...] | None,
+            tuple[tuple[int, ...]] | tuple[int, ...] | None,
         ]
     ]:
         """
@@ -401,23 +415,21 @@ class LossPDEStatio(
 
         # Observation mse
         if batch.obs_batch_dict is not None:
-            obs_loss_fun = self._get_obs_batch_params_and_loss_fun(batch.obs_batch_dict)
-            obs_vmap = tuple(
-                (0, 0) if batch.obs_batch_dict is not None else None
-                for _ in range(len(batch.obs_batch_dict))
-                # nested tuple for generic parametrization of the
-                # vmap when batch is also a tuple
-            )
+            obs_loss_fun = self._get_obs_loss_fun()
+            obs_batch = tuple((b["pinn_in"], b["val"]) for b in batch.obs_batch_dict)
         else:
             obs_loss_fun = None
-            obs_vmap = None
+            obs_batch = None
 
         all_funs_and_params: PDEStatioComponents[
             tuple[
                 Callable | None,
-                tuple[ObsBatchDict, ...] | tuple[Array | None, ...] | Array | None,
+                tuple[tuple[Array, Array] | None, ...]
+                | tuple[Array | None, ...]
+                | Array
+                | None,
                 Params[Array] | None,
-                tuple[tuple[int, ...] | None, ...] | tuple[int, ...] | None,
+                tuple[tuple[int, ...]] | tuple[int, ...] | None,
             ]
         ] = PDEStatioComponents(
             dyn_loss=(dyn_loss_fun, domain_batch, params, (0,)),
@@ -425,9 +437,11 @@ class LossPDEStatio(
             boundary_loss=(boundary_loss_fun, border_batch, params, (0,)),
             observations=(
                 obs_loss_fun,
-                batch.obs_batch_dict,
+                obs_batch,
                 params,
-                obs_vmap,
+                ((0, 0),),
+                batch.obs_batch_dict,
+                self.obs_slice,
             ),
         )
         return all_funs_and_params
@@ -570,6 +584,16 @@ class LossPDENonStatio(
             observations=mean_sum_reduction_pytree,
         ),
     )
+    vmap_loss_fun: ClassVar[PDENonStatioComponents[Callable]] = eqx.field(
+        static=True,
+        default=PDENonStatioComponents(
+            dyn_loss=vmap_loss_fun_classical,
+            initial_condition=vmap_loss_fun_classical,
+            boundary_loss=vmap_loss_fun_classical,
+            norm_loss=vmap_loss_fun_classical,
+            observations=vmap_loss_fun_observations,
+        ),
+    )
 
     def __init__(
         self,
@@ -678,12 +702,12 @@ class LossPDENonStatio(
     ) -> PDENonStatioComponents[
         tuple[
             Callable | None,
-            tuple[ObsBatchDict, ...] | tuple[Array | None, ...] | Array | None,
-            Params[Array] | None,
-            tuple[tuple[int, ...] | None, ...]
-            | tuple[tuple[int, ...]]
-            | tuple[int, ...]
+            tuple[tuple[Array, Array] | None, ...]
+            | tuple[Array | None, ...]
+            | Array
             | None,
+            Params[Array] | None,
+            tuple[tuple[int, ...]] | tuple[int, ...] | None,
         ]
     ]:
         """
@@ -722,16 +746,11 @@ class LossPDENonStatio(
 
         # Observation mse
         if batch.obs_batch_dict is not None:
-            obs_loss_fun = self._get_obs_batch_params_and_loss_fun(batch.obs_batch_dict)
-            obs_vmap = tuple(
-                (0, 0) if batch.obs_batch_dict is not None else None
-                for _ in range(len(batch.obs_batch_dict))
-                # nested tuple for generic parametrization of the
-                # vmap when batch is also a tuple
-            )
+            obs_loss_fun = self._get_obs_loss_fun()
+            obs_batch = tuple((b["pinn_in"], b["val"]) for b in batch.obs_batch_dict)
         else:
             obs_loss_fun = None
-            obs_vmap = None
+            obs_batch = None
 
         # initial condition
         if self.initial_condition_fun is not None:
@@ -752,12 +771,13 @@ class LossPDENonStatio(
         all_funs_and_params: PDENonStatioComponents[
             tuple[
                 Callable | None,
-                tuple[ObsBatchDict, ...] | tuple[Array | None, ...] | Array | None,
-                Params[Array] | None,
-                tuple[tuple[int, ...] | None, ...]
-                | tuple[tuple[int, ...]]
-                | tuple[int, ...]
+                tuple[tuple[Array, Array] | None, ...]
+                | tuple[Array | None, ...]
+                | Array
                 | None,
+                Params[Array] | None,
+                tuple[tuple[int, ...]] | tuple[int, ...] | None,
+                Any,
             ]
         ] = PDENonStatioComponents(
             dyn_loss=(dyn_loss_fun, domain_batch, params, (0,)),
@@ -769,6 +789,13 @@ class LossPDENonStatio(
                 params,
                 (0,),
             ),
-            observations=(obs_loss_fun, batch.obs_batch_dict, params, obs_vmap),
+            observations=(
+                obs_loss_fun,
+                obs_batch,
+                params,
+                ((0, 0),),
+                batch.obs_batch_dict,
+                self.obs_slice,
+            ),
         )
         return all_funs_and_params

@@ -14,14 +14,21 @@ import jax.numpy as jnp
 from jax import vmap
 import equinox as eqx
 from jaxtyping import Float, Array
-from jinns.loss._loss_utils import initial_condition_check, mean_sum_reduction
+from jinns.loss._loss_utils import (
+    initial_condition_check,
+    mean_sum_reduction,
+    mean_sum_reduction_pytree,
+    vmap_loss_fun_classical,
+    no_vmap_loss_fun_no_batch,
+    vmap_loss_fun_observations,
+)
 from jinns.parameters._derivative_keys import _set_derivatives, DerivativeKeysODE
 from jinns.loss._loss_weights import LossWeightsODE
 from jinns.loss._abstract_loss import AbstractLoss
 from jinns.loss._loss_components import ODEComponents
 from jinns.loss import ODE
 from jinns.parameters._params import Params
-from jinns.data._Batchs import ODEBatch, ObsBatchDict
+from jinns.data._Batchs import ODEBatch
 
 if TYPE_CHECKING:
     # imports only used in type hints
@@ -104,7 +111,6 @@ class LossODE(
     # (ie. jax.Array cannot be static) and that we do not expect to change
     u: AbstractPINN
     dynamic_loss: tuple[ODE | None, ...]
-    vmap_in_axes: tuple[int] = eqx.field(static=True)
     derivative_keys: DerivativeKeysODE
     loss_weights: LossWeightsODE
     initial_condition: InitialCondition | None
@@ -112,9 +118,17 @@ class LossODE(
     reduction_functions: ClassVar[ODEComponents[Callable]] = eqx.field(
         static=True,
         default=ODEComponents(
-            dyn_loss=mean_sum_reduction,
+            dyn_loss=mean_sum_reduction_pytree,
             initial_condition=mean_sum_reduction,
-            observations=mean_sum_reduction,
+            observations=mean_sum_reduction_pytree,
+        ),
+    )
+    vmap_loss_fun: ClassVar[ODEComponents[Callable]] = eqx.field(
+        static=True,
+        default=ODEComponents(
+            dyn_loss=vmap_loss_fun_classical,
+            initial_condition=no_vmap_loss_fun_no_batch,
+            observations=vmap_loss_fun_observations,
         ),
     )
 
@@ -245,9 +259,13 @@ class LossODE(
     ) -> ODEComponents[
         tuple[
             Callable | None,
-            tuple[ObsBatchDict, ...] | tuple[Array | None, ...] | Array | None,
+            tuple[tuple[Array, Array] | None, ...]
+            | tuple[Array | None, ...]
+            | Array
+            | None,
             Params[Array] | None,
-            tuple[tuple[int, ...] | None, ...] | tuple[int, ...] | None,
+            tuple[tuple[int, ...], ...] | tuple[int, ...] | None,
+            Any,
         ]
     ]:
         """
@@ -326,32 +344,33 @@ class LossODE(
             initial_condition_fun = None
 
         if batch.obs_batch_dict is not None:
-            obs_loss_fun = self._get_obs_batch_params_and_loss_fun(batch.obs_batch_dict)
-            obs_vmap = tuple(
-                (0, 0) if batch.obs_batch_dict is not None else None
-                for _ in range(len(batch.obs_batch_dict))
-                # nested tuple for generic parametrization of the
-                # vmap when batch is also a tuple
-            )
+            obs_loss_fun = self._get_obs_loss_fun()
+            obs_batch = tuple((b["pinn_in"], b["val"]) for b in batch.obs_batch_dict)
         else:
             obs_loss_fun = None
-            obs_vmap = None
+            obs_batch = None
 
         all_funs_and_params: ODEComponents[
             tuple[
                 Callable | None,
-                tuple[ObsBatchDict, ...] | tuple[Array | None, ...] | Array | None,
+                tuple[tuple[Array, Array] | None, ...]
+                | tuple[Array | None, ...]
+                | Array
+                | None,
                 Params[Array] | None,
-                tuple[tuple[int, ...] | None, ...] | tuple[int, ...] | None,
+                tuple[tuple[int, ...], ...] | tuple[int, ...] | None,
+                Any,
             ]
         ] = ODEComponents(
             dyn_loss=(dyn_loss_fun, temporal_batch, params, (0,)),
             initial_condition=(initial_condition_fun, None, params, None),
             observations=(
                 obs_loss_fun,
-                batch.obs_batch_dict,
+                obs_batch,
                 params,
-                obs_vmap,
+                ((0, 0),),
+                batch.obs_batch_dict,
+                self.obs_slice,
             ),
         )
         return all_funs_and_params

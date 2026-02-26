@@ -32,6 +32,80 @@ if TYPE_CHECKING:
     # BoundaryConditionAbstract and returns an instance of the corresponding class
 
 
+def vmap_loss_fun_classical(f, b, p, in_axes, *, vmap_in_axes_params, jacrev=False):
+    if f is None:
+        return None
+    if jacrev:
+        f = jax.jacrev(f, argnums=1)
+    return jax.vmap(f, in_axes + vmap_in_axes_params)(b, p)
+
+
+def vmap_loss_fun_observations(
+    f, b, p, in_axes, obs_batch_dict, obs_slice, *, vmap_in_axes_params, jacrev=False
+):
+    """
+    NOTE as opposed to get_dyn_loss_fun, it is not possible to vmap over the
+    tree map because each obs_batch might have different lengths. Of course
+    this function _get_obs_loss_fun is more complex than
+    _get_dyn_loss_fun because of the next paragraph but what really forbids the
+    vmap over tree map (and a similar signature between _get_dyn_loss and
+    _get_obs_loss_fun) really is the batch sizes.
+
+    Specific for observations where we have a tuple of tuples
+    b=(obs_batch_dict["pinn_in"], obs_batch_dict["val"]) and a tuple of
+    obs_batch_dict["eq_params"] which need to be tree mapped together but the
+    vmap is only on each element of b because the vmap on each element of
+    obs_batch_dict["eq_params"] is done through p
+    """
+    if f is None:
+        return None
+    if len(obs_batch_dict) != len(obs_slice):
+        raise ValueError(
+            "There must be the same number of "
+            "observation datasets as the number of "
+            "obs_slice"
+        )
+    if jacrev:
+        f = jax.jacrev(f, argnums=1)
+    return jax.tree.map(
+        lambda _b, obs_batch_dict_, obs_slice_: jax.vmap(
+            lambda __b, __p: f(__b, __p, obs_batch_dict_["eq_params"], obs_slice_),
+            in_axes + vmap_in_axes_params,
+        )(_b, p),
+        b,
+        obs_batch_dict,
+        obs_slice,
+        is_leaf=lambda x: (
+            isinstance(x, tuple) and isinstance(x[0], Array)
+        ),  # stop at lowest level of
+        # tuples as leaves
+    )
+
+
+def vmap_loss_fun_only_params(f, _, p, __, *, vmap_in_axes_params, jacrev=False):
+    """
+    Typically for initial_condition of LossODE
+    """
+    if f is None:
+        return None
+    if jacrev:
+        f = jax.jacrev(f, argnums=1)
+    return jax.vmap(f, vmap_in_axes_params)(p)
+
+
+def no_vmap_loss_fun_no_batch(f, b, p, in_axes, *, vmap_in_axes_params, jacrev=False):
+    """
+    NOTE we simulate a vmap axis
+    for the reduction to be always correct with the outer
+    jnp.mean (here _b is None)
+    """
+    if f is None:
+        return None
+    if jacrev:
+        f = jax.jacrev(f)
+    return f(p)[None]
+
+
 def mean_sum_reduction_pytree(residuals: PyTree[Array | None]) -> PyTree[Array | None]:
     """
     Sum over the solution dimensions then average over the samples
