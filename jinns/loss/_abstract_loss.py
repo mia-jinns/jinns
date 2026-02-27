@@ -271,6 +271,8 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         elif isinstance(self.u, SPINN):
             # NOTE there is no vmap here on each loss functin
             # as the SPINN expects the full batch
+            vmap_in_axes_params = None
+
             def loss_fun(fun, _b, _p, *args):
                 """
                 *args because for PINN and their vmap we needed to pass more
