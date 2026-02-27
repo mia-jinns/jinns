@@ -236,39 +236,14 @@ def _loss_evaluate_and_natural_gradient_step(
         non_opt_params=non_opt_params,
     )
 
-    def post_process_pytree_of_grad(y):
-        # TODO: document to describe steps
-        # TODO: take loss_weights into account ?
-
-        l = jax.tree.map(
-            lambda pt: jax.tree.leaves(
-                pt.nn_params, is_leaf=lambda x: eqx.is_inexact_array(x)
-            ),
-            y,
-            is_leaf=lambda x: isinstance(x, Params),
-        )
-
-        l2 = jax.tree.map(
-            lambda l1: [a.reshape((a.shape[0], -1)) for a in l1],
-            l,
-            is_leaf=lambda x: isinstance(x, list),
-        )
-
-        l3 = jax.tree.map(
-            lambda leaf: jnp.concatenate(leaf, axis=1),
-            l2,
-            is_leaf=lambda x: isinstance(x, list),
-        )
-
-        return jnp.concatenate(jax.tree.leaves(l3), axis=0)
-
     # Flatten the pytree of params as a big (n, p) matrix
-    M = post_process_pytree_of_grad(g)
+    M = _post_process_pytree_of_grad(g)
     R = jnp.concatenate(jax.tree.leaves(r), axis=0)
 
     # Form euclidean grad
     # NOTE: beware that euclidean gradient (might) differs from jax.grad(loss.evaluate) here. Indeed jinns takes the sum(mean(loss_type)) while here we compute mean(sum(all_loss_types). These might differs when different number of samples are used.
     # Equality can be matched by changing the jinns reduction function internally.
+    # See tests/optimizer_tests/test_euclidean_gradient_equality.py
     euclidean_grad_array = jnp.mean(R * M, axis=0)
 
     # Assemble Gram Matrix
@@ -283,32 +258,11 @@ def _loss_evaluate_and_natural_gradient_step(
     )
 
     # Final step : restructure the natural gradient as a nn_params PyTree
-    def nn_params_array_to_pytree(nn_params_array, _eq_params=None):
-        _, params_cumsum = _get_param_nb(opt_params.nn_params)
-        ng_flat = eqx.tree_at(
-            jax.tree.leaves,
-            opt_params.nn_params,
-            jnp.split(nn_params_array, params_cumsum[:-1]),
-        )
 
-        nn_params_pt = jax.tree.map(
-            lambda a, b: a.reshape(b.shape),
-            ng_flat,
-            opt_params.nn_params,
-            is_leaf=lambda x: isinstance(x, jnp.ndarray),
-        )
-        # Wrap everything in a Params() object
-        # by default eq_params is filled with Zeros so that additive updates
-        # leave them unchanged.
-        if _eq_params is None:
-            _eq_params = optax.tree.zeros_like(params.eq_params)
-        return Params(
-            nn_params=nn_params_pt,
-            eq_params=_eq_params,
-        )
-
-    natural_grads = nn_params_array_to_pytree(natural_grad_array)
-    euclidean_grads = nn_params_array_to_pytree(euclidean_grad_array)
+    natural_grads = _nn_params_array_to_pytree(natural_grad_array, opt_params, params)
+    euclidean_grads = _nn_params_array_to_pytree(
+        euclidean_grad_array, opt_params, params
+    )
 
     # For now, NGD is not compatible with weight renormalization
 
@@ -390,6 +344,58 @@ def _loss_evaluate_and_natural_gradient_step(
         None,
     )
     return train_loss_value, params, last_non_nan_params, state, loss, loss_terms
+
+
+def _post_process_pytree_of_grad(y):
+    # TODO: document to describe steps
+    # TODO: take loss_weights into account ?
+
+    l = jax.tree.map(
+        lambda pt: jax.tree.leaves(
+            pt.nn_params, is_leaf=lambda x: eqx.is_inexact_array(x)
+        ),
+        y,
+        is_leaf=lambda x: isinstance(x, Params),
+    )
+
+    l2 = jax.tree.map(
+        lambda l1: [a.reshape((a.shape[0], -1)) for a in l1],
+        l,
+        is_leaf=lambda x: isinstance(x, list),
+    )
+
+    l3 = jax.tree.map(
+        lambda leaf: jnp.concatenate(leaf, axis=1),
+        l2,
+        is_leaf=lambda x: isinstance(x, list),
+    )
+
+    return jnp.concatenate(jax.tree.leaves(l3), axis=0)
+
+
+def _nn_params_array_to_pytree(nn_params_array, opt_params, params, _eq_params=None):
+    _, params_cumsum = _get_param_nb(opt_params.nn_params)
+    ng_flat = eqx.tree_at(
+        jax.tree.leaves,
+        opt_params.nn_params,
+        jnp.split(nn_params_array, params_cumsum[:-1]),
+    )
+
+    nn_params_pt = jax.tree.map(
+        lambda a, b: a.reshape(b.shape),
+        ng_flat,
+        opt_params.nn_params,
+        is_leaf=lambda x: isinstance(x, jnp.ndarray),
+    )
+    # Wrap everything in a Params() object
+    # by default eq_params is filled with Zeros so that additive updates
+    # leave them unchanged.
+    if _eq_params is None:
+        _eq_params = optax.tree.zeros_like(params.eq_params)
+    return Params(
+        nn_params=nn_params_pt,
+        eq_params=_eq_params,
+    )
 
 
 @partial(
