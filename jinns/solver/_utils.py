@@ -130,13 +130,12 @@ def _loss_evaluate_and_gradient_step(
     # are its total gradients.
 
     # 1. Compute individual losses and individual gradients
-    loss_terms, grad_terms = loss.evaluate(
+    train_loss_value, loss_terms, grad_terms = loss.evaluate_with_standard_gradient(
         opt_params_accel
         if opt_state_field_for_acceleration is not None
         else opt_params,
         batch,
         non_opt_params=non_opt_params,
-        ret_std_grad_terms=True,
     )
 
     if loss.update_weight_method is not None and with_loss_weight_update:
@@ -149,9 +148,6 @@ def _loss_evaluate_and_gradient_step(
 
     # 2. total grad
     grads = loss.ponderate_and_sum_gradient(grad_terms)
-
-    # total loss
-    train_loss_value = loss.ponderate_and_sum_loss(loss_terms)
 
     opt_grads, _ = grads.partition(
         params_mask
@@ -232,13 +228,12 @@ def _loss_evaluate_and_natural_gradient_step(
     )
     # 1. Get the unreduced residuals and their gradient (for each sample)
     # for each loss term
-    r, g = loss.evaluate_natural_gradient(
+    r, g = loss.evaluate_with_natural_gradient(
         opt_params_accel
         if opt_state_field_for_acceleration is not None
         else opt_params,
         batch,
         non_opt_params=non_opt_params,
-        ret_nat_grad_terms=True,
     )
 
     def post_process_pytree_of_grad(y):
@@ -318,18 +313,8 @@ def _loss_evaluate_and_natural_gradient_step(
     # For now, NGD is not compatible with weight renormalization
 
     # total loss
-    # TODO: build loss_terms by a reduction on `r`
     loss_terms = jax.tree.map(
-        lambda _: 0.0, r, is_leaf=lambda x: isinstance(x, tuple)
-    )  # leaf check necessary to handle multi-faceted boundaries
-    # TODO: remove computation of loss_terms below (only for debugging)
-    loss_terms, _ = loss.evaluate(
-        opt_params_accel
-        if opt_state_field_for_acceleration is not None
-        else opt_params,
-        batch,
-        non_opt_params=non_opt_params,
-        ret_std_grad_terms=True,
+        lambda red_fun, r_: red_fun(r_), loss.reduction_functions, r
     )
 
     train_loss_value = jnp.mean(
@@ -357,12 +342,11 @@ def _loss_evaluate_and_natural_gradient_step(
     def ngd_value_fn(params):
         # Not using loss.evaluate here cause of the mean(sum()) vs sum(mean)
         # remark. This fn computes the loss we are truly minimizing with NGD.
-        r = loss.evaluate_natural_gradient(
+        r, _ = loss.evaluate_with_natural_gradient(
             params,  # it should be ok to pass `params` here, no need to use
             # _get_masked_optimization_stuff
             batch,
             non_opt_params=None,
-            ret_nat_grad_terms=False,
         )
         total_loss = jnp.mean(
             jnp.concatenate(jax.tree.leaves(jax.tree.map(jnp.square, r)), axis=0)
