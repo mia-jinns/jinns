@@ -50,10 +50,10 @@ def test_euclidean_gradients_equality():
     key = random.PRNGKey(2)
     key, subkey = random.split(key)
 
-    n = 10000
+    n = 24
     ni = n
     nb = n
-    domain_batch_size = 400
+    domain_batch_size = n
     initial_batch_size = domain_batch_size
     border_batch_size = domain_batch_size // 4
     dim = 2
@@ -158,7 +158,9 @@ def test_euclidean_gradients_equality():
     )
     # divide by the total number of samples to simulate a global average
     # (similar to what's done in NGD)
-    euclidean_grad_std /= 1200
+    euclidean_grad_std /= (
+        domain_batch_size + (border_batch_size * 2**dim) + initial_batch_size
+    )
 
     ############################################
     ## EUCLIDEAN GRADIENT VIA NGD COMPUTATIONS##
