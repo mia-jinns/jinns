@@ -239,9 +239,45 @@ def _loss_evaluate_and_natural_gradient_step(
         non_opt_params=non_opt_params,
     )
 
-    # Flatten the pytree of params as a big (n, p) matrix
-    M = _post_process_pytree_of_grad(g)
-    R = jnp.concatenate(jax.tree.leaves(r), axis=0)
+    def post_process_pytree_of_grad(y):
+        # TODO: document to describe steps
+        # TODO: take loss_weights into account ?
+
+        l = jax.tree.map(
+            lambda pt: jax.tree.leaves(
+                pt.nn_params, is_leaf=lambda x: eqx.is_inexact_array(x)
+            ),
+            y,
+            is_leaf=lambda x: isinstance(x, Params),
+        )
+
+        l2 = jax.tree.map(
+            lambda l1: [a.reshape((a.shape[0], -1)) for a in l1],
+            l,
+            is_leaf=lambda x: isinstance(x, list),
+        )
+
+        l3 = jax.tree.map(
+            lambda leaf: jnp.concatenate(leaf, axis=1),
+            l2,
+            is_leaf=lambda x: isinstance(x, list),
+        )
+
+        return jnp.concatenate(jax.tree.leaves(l3), axis=0)
+
+    # Flatten the pytree of params gradient as a big (n, p) matrix
+    M = post_process_pytree_of_grad(g)
+
+    # Same for the loss values as a (n, 1) matrix
+    R = jnp.concatenate(
+        jax.tree.leaves(r),
+        axis=0,
+    )
+    # If we have only 1 dyn loss the line above is sufficient.
+    # However, we return a tuple of len (n_loss,) and we need to average
+    # over each loss (channels).
+    # TODO: should we account for loss_weights or not ?
+    R = R.mean(axis=1, keepdims=True)
 
     # Form euclidean grad
     # NOTE: beware that euclidean gradient (might) differs from jax.grad(loss.evaluate) here. Indeed jinns takes the sum(mean(loss_type)) while here we compute mean(sum(all_loss_types). These might differs when different number of samples are used.
