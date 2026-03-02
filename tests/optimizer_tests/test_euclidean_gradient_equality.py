@@ -136,7 +136,7 @@ def test_euclidean_gradients_equality():
     # thanks to the custom loss, we retrieve gradients that have not been
     # averaged (over samples) in each loss terms (also summed in the reduction operation)
     # we will make the average (over samples) globally later on
-    _, _, euclidean_grad_std = loss.evaluate_with_standard_gradient(
+    _, euclidean_grad_std = loss.evaluate_with_standard_gradient(
         init_params,
         batch,
     )
