@@ -115,7 +115,7 @@ class LossODE(
     loss_weights: LossWeightsODE
     initial_condition: InitialCondition | None
     params: InitVar[Params[Array] | None]
-    reduction_functions: ClassVar[ODEComponents[Callable]] = eqx.field(
+    _reduction_functions: ClassVar[ODEComponents[Callable]] = eqx.field(
         static=True,
         default=ODEComponents(
             dyn_loss=mean_sum_reduction_pytree,
@@ -123,7 +123,7 @@ class LossODE(
             observations=mean_sum_reduction_pytree,
         ),
     )
-    vmap_loss_fun: ClassVar[ODEComponents[Callable]] = eqx.field(
+    _vmap_loss_fun: ClassVar[ODEComponents[Callable]] = eqx.field(
         static=True,
         default=ODEComponents(
             dyn_loss=vmap_loss_fun_classical,
@@ -252,37 +252,19 @@ class LossODE(
 
             self.initial_condition = (t0, u0)
 
-    def evaluate_by_terms(
+    def _prepare_loss_terms(
         self,
         batch: ODEBatch,
-        params: Params[Array],
-    ) -> ODEComponents[
-        tuple[
-            Callable | None,
-            tuple[tuple[Array, Array] | None, ...]
-            | tuple[Array | None, ...]
-            | Array
-            | None,
-            Params[Array] | None,
-            tuple[tuple[int, ...], ...] | tuple[int, ...] | None,
-            Any,
-        ]
-    ]:
+    ) -> ODEComponents:
         """
-        Evaluate the loss function at a batch object for given
-        parameters (ie, the vmap is done on the returned functions of
-        evaluate_by_terms)
-
-        We retrieve two PyTrees with loss values and gradients for each term
+        Parse the batch module to get the kwargs for each vmap loss fun
+        associated to each loss term
 
         Parameters
         ---------
-        params
-            Parameters
         batch
-            Composed of a batch of points in the
-            domain, a batch of points in the domain
-            border and an optional additional batch of parameters (eg. for
+            Composed of a batch of points in the time interval
+            an optional additional batch of parameters (eg. for
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
         """
@@ -350,27 +332,14 @@ class LossODE(
             obs_loss_fun = None
             obs_batch = None
 
-        all_funs_and_params: ODEComponents[
-            tuple[
-                Callable | None,
-                tuple[tuple[Array, Array] | None, ...]
-                | tuple[Array | None, ...]
-                | Array
-                | None,
-                Params[Array] | None,
-                tuple[tuple[int, ...], ...] | tuple[int, ...] | None,
-                Any,
-            ]
-        ] = ODEComponents(
-            dyn_loss=(dyn_loss_fun, temporal_batch, params, (0,)),
-            initial_condition=(initial_condition_fun, None, params, None),
-            observations=(
-                obs_loss_fun,
-                obs_batch,
-                params,
-                ((0, 0),),
-                batch.obs_batch_dict,
-                self.obs_slice,
-            ),
+        all_funs_and_params = ODEComponents(
+            dyn_loss={"f": dyn_loss_fun, "b": temporal_batch},
+            initial_condition={"f": initial_condition_fun, "b": None},
+            observations={
+                "f": obs_loss_fun,
+                "b": obs_batch,
+                "obs_batch_dict": batch.obs_batch_dict,
+                "obs_slice": self.obs_slice,
+            },
         )
         return all_funs_and_params

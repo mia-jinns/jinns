@@ -32,7 +32,15 @@ if TYPE_CHECKING:
     # BoundaryConditionAbstract and returns an instance of the corresponding class
 
 
-def vmap_loss_fun_classical(f, b, p, in_axes, *, vmap_in_axes_params, jacrev=False):
+def vmap_loss_fun_classical(
+    *, f, b, p, vmap_in_axes_params, in_axes=(0,), jacrev=False
+):
+    """
+    Typically used for vmapping dynamic loss functions of type:
+    `Callable[[Array, Params[Array]], tuple[Array, ...]] | None`. But also
+    normalization loss (with in_axes=(0, 0) !), initial condition loss (PDE)
+    and boundary condition loss
+    """
     if f is None:
         return None
     if jacrev:
@@ -41,21 +49,27 @@ def vmap_loss_fun_classical(f, b, p, in_axes, *, vmap_in_axes_params, jacrev=Fal
 
 
 def vmap_loss_fun_observations(
-    f, b, p, in_axes, obs_batch_dict, obs_slice, *, vmap_in_axes_params, jacrev=False
+    *,
+    f,
+    b,
+    obs_batch_dict,
+    obs_slice,
+    p,
+    vmap_in_axes_params,
+    in_axes=((0, 0),),
+    jacrev=False,
 ):
     """
+    Typically made for vmapping observation loss function of type:
+    `Callable[[tuple[Array, Array], Params[Array], Array, EllipsisType],
+    Array]`
+
     NOTE as opposed to get_dyn_loss_fun, it is not possible to vmap over the
     tree map because each obs_batch might have different lengths. Of course
     this function _get_obs_loss_fun is more complex than
     _get_dyn_loss_fun because of the next paragraph but what really forbids the
     vmap over tree map (and a similar signature between _get_dyn_loss and
-    _get_obs_loss_fun) really is the batch sizes.
-
-    Specific for observations where we have a tuple of tuples
-    b=(obs_batch_dict["pinn_in"], obs_batch_dict["val"]) and a tuple of
-    obs_batch_dict["eq_params"] which need to be tree mapped together but the
-    vmap is only on each element of b because the vmap on each element of
-    obs_batch_dict["eq_params"] is done through p
+    _get_obs_loss_fun) really is the batch sizes.  Specific for observations where we have a tuple of tuples b=(obs_batch_dict["pinn_in"], obs_batch_dict["val"]) and a tuple of obs_batch_dict["eq_params"] which need to be tree mapped together but the vmap is only on each element of b because the vmap on each element of obs_batch_dict["eq_params"] is done through p
     """
     if f is None:
         return None
@@ -82,7 +96,7 @@ def vmap_loss_fun_observations(
     )
 
 
-def vmap_loss_fun_only_params(f, _, p, __, *, vmap_in_axes_params, jacrev=False):
+def vmap_loss_fun_only_params(*, f, p, vmap_in_axes_params, jacrev=False, **kwargs):
     """
     Typically for initial_condition of LossODE
     """
@@ -93,8 +107,11 @@ def vmap_loss_fun_only_params(f, _, p, __, *, vmap_in_axes_params, jacrev=False)
     return jax.vmap(f, vmap_in_axes_params)(p)
 
 
-def no_vmap_loss_fun_no_batch(f, b, p, in_axes, *, vmap_in_axes_params, jacrev=False):
+def no_vmap_loss_fun_no_batch(*, f, p, jacrev=False, **kwargs):
     """
+    Typically made for vmapping initial condition loss (ODE) of type:
+    `Callable[[Params[Array]], Array]`
+
     NOTE we simulate a vmap axis
     for the reduction to be always correct with the outer
     jnp.mean (here _b is None)
@@ -135,10 +152,7 @@ def dynamic_loss_apply(
     ),
     params: Params[Array],
 ) -> Float[Array, " "] | Float[Array, " n_samples eq_dim"]:
-    """
-    Sometimes when u is a lambda function a or dict we do not have access to
-    its type here, hence the last argument
-    """
+    """ """
     return dyn_loss.evaluate(batch, u, params)
 
 

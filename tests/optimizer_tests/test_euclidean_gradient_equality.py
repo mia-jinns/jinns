@@ -27,7 +27,7 @@ class LossPDENonStatio_(jinns.loss.LossPDENonStatio):
     We workaround this by creating a subclass only for the test
     """
 
-    reduction_functions: Any = eqx.field(
+    _reduction_functions: Any = eqx.field(
         static=True,
         default=PDENonStatioComponents(
             dyn_loss=lambda r: jax.tree.map(

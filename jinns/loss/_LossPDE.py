@@ -293,7 +293,7 @@ class LossPDEStatio(
 
     params: InitVar[Params[Array] | None]
 
-    reduction_functions: ClassVar[PDEStatioComponents[Callable]] = eqx.field(
+    _reduction_functions: ClassVar[PDEStatioComponents[Callable]] = eqx.field(
         static=True,
         default=PDEStatioComponents(
             dyn_loss=mean_sum_reduction_pytree,
@@ -313,7 +313,7 @@ class LossPDEStatio(
             observations=mean_sum_reduction_pytree,
         ),
     )
-    vmap_loss_fun: ClassVar[PDEStatioComponents[Callable]] = eqx.field(
+    _vmap_loss_fun: ClassVar[PDEStatioComponents[Callable]] = eqx.field(
         static=True,
         default=PDEStatioComponents(
             dyn_loss=vmap_loss_fun_classical,
@@ -368,38 +368,22 @@ class LossPDEStatio(
     ]:
         return (self.norm_samples, self.norm_weights)
 
-    def evaluate_by_terms(
+    def _prepare_loss_terms(
         self,
         batch: PDEStatioBatch,
-        params: Params[Array],
-    ) -> PDEStatioComponents[
-        tuple[
-            Callable | None,
-            tuple[tuple[Array, Array] | None, ...]
-            | tuple[Array | None, ...]
-            | Array
-            | None,
-            Params[Array] | None,
-            tuple[tuple[int, ...]] | tuple[int, ...] | None,
-        ]
-    ]:
+    ) -> PDEStatioComponents:
         """
-        Evaluate the loss function at a batch of points for given parameters.
-
-        We retrieve two PyTrees with loss values and gradients for each term
+        Parse the batch module to get the kwargs for each vmap loss fun
+        associated to each loss term
 
         Parameters
         ---------
-        opt_params
-            Parameters, which are optimized, at which the loss is evaluated
         batch
             Composed of a batch of points in the
             domain, a batch of points in the domain
             border and an optional additional batch of parameters (eg. for
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
-        non_opt_params
-            Parameters, which are non optimized, at which the loss is evaluated
         """
         # dynamic part
         domain_batch = batch.domain_batch
@@ -421,28 +405,16 @@ class LossPDEStatio(
             obs_loss_fun = None
             obs_batch = None
 
-        all_funs_and_params: PDEStatioComponents[
-            tuple[
-                Callable | None,
-                tuple[tuple[Array, Array] | None, ...]
-                | tuple[Array | None, ...]
-                | Array
-                | None,
-                Params[Array] | None,
-                tuple[tuple[int, ...]] | tuple[int, ...] | None,
-            ]
-        ] = PDEStatioComponents(
-            dyn_loss=(dyn_loss_fun, domain_batch, params, (0,)),
-            norm_loss=(norm_loss_fun, norm_batch, params, (0,)),
-            boundary_loss=(boundary_loss_fun, border_batch, params, (0,)),
-            observations=(
-                obs_loss_fun,
-                obs_batch,
-                params,
-                ((0, 0),),
-                batch.obs_batch_dict,
-                self.obs_slice,
-            ),
+        all_funs_and_params: PDEStatioComponents = PDEStatioComponents(
+            dyn_loss={"f": dyn_loss_fun, "b": domain_batch},
+            norm_loss={"f": norm_loss_fun, "b": norm_batch},
+            boundary_loss={"f": boundary_loss_fun, "b": border_batch},
+            observations={
+                "f": obs_loss_fun,
+                "b": obs_batch,
+                "obs_batch_dict": batch.obs_batch_dict,
+                "obs_slice": self.obs_slice,
+            },
         )
         return all_funs_and_params
 
@@ -552,7 +524,7 @@ class LossPDENonStatio(
 
     params: InitVar[Params[Array] | None]
 
-    reduction_functions: ClassVar[PDENonStatioComponents[Callable]] = eqx.field(
+    _reduction_functions: ClassVar[PDENonStatioComponents[Callable]] = eqx.field(
         static=True,
         default=PDENonStatioComponents(
             dyn_loss=mean_sum_reduction_pytree,
@@ -584,7 +556,7 @@ class LossPDENonStatio(
             observations=mean_sum_reduction_pytree,
         ),
     )
-    vmap_loss_fun: ClassVar[PDENonStatioComponents[Callable]] = eqx.field(
+    _vmap_loss_fun: ClassVar[PDENonStatioComponents[Callable]] = eqx.field(
         static=True,
         default=PDENonStatioComponents(
             dyn_loss=vmap_loss_fun_classical,
@@ -695,38 +667,22 @@ class LossPDENonStatio(
                 f"Bad type for u. Got {type(self.u)}, expected PINN or SPINN"
             )
 
-    def evaluate_by_terms(
+    def _prepare_loss_terms(
         self,
         batch: PDENonStatioBatch,
-        params: Params[Array],
-    ) -> PDENonStatioComponents[
-        tuple[
-            Callable | None,
-            tuple[tuple[Array, Array] | None, ...]
-            | tuple[Array | None, ...]
-            | Array
-            | None,
-            Params[Array] | None,
-            tuple[tuple[int, ...]] | tuple[int, ...] | None,
-        ]
-    ]:
+    ) -> PDENonStatioComponents:
         """
-        Evaluate the loss function at a batch of points for given parameters.
-
-        We retrieve two PyTrees with loss values and gradients for each term
+        Parse the batch module to get the kwargs for each vmap loss fun
+        associated to each loss term
 
         Parameters
         ---------
-        opt_params
-            Parameters, which are optimized, at which the loss is evaluated
         batch
             Composed of a batch of points in the
             domain, a batch of points in the domain
             border and an optional additional batch of parameters (eg. for
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
-        non_opt_params
-            Parameters, which are non optimized, at which the loss is evaluated
         """
         # dynamic part
         domain_batch = batch.domain_batch
@@ -768,34 +724,21 @@ class LossPDENonStatio(
             omega_initial_batch = None
             initial_condition_fun = None
 
-        all_funs_and_params: PDENonStatioComponents[
-            tuple[
-                Callable | None,
-                tuple[tuple[Array, Array] | None, ...]
-                | tuple[Array | None, ...]
-                | Array
-                | None,
-                Params[Array] | None,
-                tuple[tuple[int, ...]] | tuple[int, ...] | None,
-                Any,
-            ]
-        ] = PDENonStatioComponents(
-            dyn_loss=(dyn_loss_fun, domain_batch, params, (0,)),
-            norm_loss=(norm_loss_fun, norm_batch, params, ((0, 0),)),
-            boundary_loss=(boundary_loss_fun, border_batch, params, (0,)),
-            initial_condition=(
-                initial_condition_fun,
-                omega_initial_batch,
-                params,
-                (0,),
-            ),
-            observations=(
-                obs_loss_fun,
-                obs_batch,
-                params,
-                ((0, 0),),
-                batch.obs_batch_dict,
-                self.obs_slice,
-            ),
+        all_funs_and_params: PDENonStatioComponents = PDENonStatioComponents(
+            dyn_loss={"f": dyn_loss_fun, "b": domain_batch},
+            norm_loss={"f": norm_loss_fun, "b": norm_batch, "in_axes": ((0, 0),)},
+            # here since the specifities of norm_loss we need to rewrite the
+            # defaults in_axes=(0,) argument
+            boundary_loss={"f": boundary_loss_fun, "b": border_batch},
+            initial_condition={
+                "f": initial_condition_fun,
+                "b": omega_initial_batch,
+            },
+            observations={
+                "f": obs_loss_fun,
+                "b": obs_batch,
+                "obs_batch_dict": batch.obs_batch_dict,
+                "obs_slice": self.obs_slice,
+            },
         )
         return all_funs_and_params

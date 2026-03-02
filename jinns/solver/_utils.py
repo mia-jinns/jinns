@@ -271,7 +271,7 @@ def _loss_evaluate_and_natural_gradient_step(
 
     # total loss
     loss_terms = jax.tree.map(
-        lambda red_fun, r_: red_fun(r_), loss.reduction_functions, r
+        lambda red_fun, r_: red_fun(r_), loss._reduction_functions, r
     )
 
     train_loss_value = jnp.mean(

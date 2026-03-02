@@ -81,8 +81,8 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
     derivative_keys: eqx.AbstractVar[DK]
     loss_weights: eqx.AbstractVar[L]
     u: eqx.AbstractVar[AbstractPINN]
-    reduction_functions: eqx.AbstractClassVar[C] = eqx.field(init=False)
-    vmap_loss_fun: eqx.AbstractClassVar[C] = eqx.field(init=False)
+    _reduction_functions: eqx.AbstractClassVar[C] = eqx.field(init=False)
+    _vmap_loss_fun: eqx.AbstractClassVar[C] = eqx.field(init=False)
     obs_slice: tuple[EllipsisType | slice, ...] = eqx.field(static=True, kw_only=True)
     loss_weight_scales: L = eqx.field(init=False)
     update_weight_method: AvailableUpdateWeightMethods | None = eqx.field(
@@ -144,11 +144,14 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         return self.evaluate(*args, **kwargs)
 
     @abc.abstractmethod
-    def evaluate_by_terms(
+    def _prepare_loss_terms(
         self,
         batch: B,
-        params: Params[Array],
     ) -> C:
+        """
+        Parse the batch module to get the kwargs for each vmap loss fun
+        associated to each loss term
+        """
         pass
 
     def _get_dyn_loss_fun(
@@ -245,14 +248,16 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             # of type XDEBatch but this would for identical batch length...
 
             # We vmap each function returned by evaluate by terms via the
-            # following tree map. `vmap_loss_fun` is a function which does this
+            # following tree map. `_vmap_loss_fun` is a function which does this
             # vmap, with some subtleties depending on the function term
             # NOTE: we keep it as a function of batch and params (b and p)
             # until then it to be able to call `jax.jacrev`
             evaluate_by_terms = lambda b, p: jax.tree.map(
-                lambda vlf, args: vlf(*args, vmap_in_axes_params=vmap_in_axes_params),
-                self.vmap_loss_fun,
-                self.evaluate_by_terms(b, p),
+                lambda vlf, kwargs: vlf(
+                    **kwargs, p=p, vmap_in_axes_params=vmap_in_axes_params
+                ),
+                self._vmap_loss_fun,
+                self._prepare_loss_terms(b),
                 is_leaf=lambda x: (
                     isinstance(x, tuple) and (callable(x[0]) or x[0] is None)
                 ),  # only traverse first layer
@@ -265,7 +270,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             # until then it to be able to call `jax.jacrev`
             evaluate_by_terms_reduced = lambda b, p: jax.tree.map(
                 lambda red_fun, v_eval: red_fun(v_eval),
-                self.reduction_functions,
+                self._reduction_functions,
                 evaluate_by_terms(b, p),
             )
         elif isinstance(self.u, SPINN):
@@ -273,19 +278,19 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             # as the SPINN expects the full batch
             vmap_in_axes_params = None
 
-            def loss_fun(fun, _b, _p, *args):
+            def loss_fun(*, f, b, p, **kwargs):
                 """
                 *args because for PINN and their vmap we needed to pass more
                 arguments
                 """
-                if fun is None:
+                if f is None:
                     return None
-                return fun(_b, _p)
+                return f(b, p)
 
             evaluate_by_terms_reduced = lambda b, p: jax.tree.map(
-                lambda red_fun, f_b_p_in_axes: red_fun(loss_fun(*f_b_p_in_axes)),
-                self.reduction_functions,
-                self.evaluate_by_terms(b, p),
+                lambda red_fun, kwargs: red_fun(loss_fun(**kwargs, p=p)),
+                self._reduction_functions,
+                self._prepare_loss_terms(b),
                 is_leaf=lambda x: (
                     isinstance(x, tuple) and (callable(x[0]) or x[0] is None)
                 ),  # only traverse first layer
@@ -369,13 +374,14 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         loss_terms = evaluate_by_terms(batch, params)
 
         jacrev_evaluate_by_terms = lambda b, p: jax.tree.map(
-            lambda vlf, args: vlf(
-                *args,
+            lambda vlf, kwargs: vlf(
+                **kwargs,
+                p=p,
                 vmap_in_axes_params=vmap_in_axes_params,
                 jacrev=True,
             ),
-            self.vmap_loss_fun,
-            self.evaluate_by_terms(b, p),
+            self._vmap_loss_fun,
+            self._prepare_loss_terms(b),
             is_leaf=lambda x: (
                 isinstance(x, tuple) and (callable(x[0]) or x[0] is None)
             ),  # only traverse first layer
