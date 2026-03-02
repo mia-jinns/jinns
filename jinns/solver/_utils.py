@@ -239,34 +239,8 @@ def _loss_evaluate_and_natural_gradient_step(
         non_opt_params=non_opt_params,
     )
 
-    def post_process_pytree_of_grad(y):
-        # TODO: document to describe steps
-        # TODO: take loss_weights into account ?
-
-        l = jax.tree.map(
-            lambda pt: jax.tree.leaves(
-                pt.nn_params, is_leaf=lambda x: eqx.is_inexact_array(x)
-            ),
-            y,
-            is_leaf=lambda x: isinstance(x, Params),
-        )
-
-        l2 = jax.tree.map(
-            lambda l1: [a.reshape((a.shape[0], -1)) for a in l1],
-            l,
-            is_leaf=lambda x: isinstance(x, list),
-        )
-
-        l3 = jax.tree.map(
-            lambda leaf: jnp.concatenate(leaf, axis=1),
-            l2,
-            is_leaf=lambda x: isinstance(x, list),
-        )
-
-        return jnp.concatenate(jax.tree.leaves(l3), axis=0)
-
     # Flatten the pytree of params gradient as a big (n, p) matrix
-    M = post_process_pytree_of_grad(g)
+    M = _post_process_pytree_of_grad(g)
 
     # Same for the loss values as a (n, 1) matrix
     R = jnp.concatenate(
@@ -412,7 +386,18 @@ def _post_process_pytree_of_grad(y):
     return jnp.concatenate(jax.tree.leaves(l3), axis=0)
 
 
-def _nn_params_array_to_pytree(nn_params_array, opt_params, params, _eq_params=None):
+def _nn_params_array_to_pytree(
+    nn_params_array: Array, opt_params: Params, params: Params, _eq_params=None
+):
+    """Helper function for NGD.
+
+    This function converts the raw matrix representation of the network
+    trainable parameters into a `Params` object that can be handled by optax
+    for the updates.
+
+    By default, the field `eq_params` is filled with zeros, as NGD is not
+    meant for eq_params.
+    """
     _, params_cumsum = _get_param_nb(opt_params.nn_params)
     ng_flat = eqx.tree_at(
         jax.tree.leaves,
