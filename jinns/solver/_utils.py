@@ -130,7 +130,7 @@ def _loss_evaluate_and_gradient_step(
     # are its total gradients.
 
     # 1. Compute individual losses and individual gradients
-    train_loss_value, loss_terms, grad_terms = loss.evaluate_with_standard_gradient(
+    loss_terms, grad_terms = loss.evaluate_with_standard_gradient(
         opt_params_accel
         if opt_state_field_for_acceleration is not None
         else opt_params,
@@ -148,6 +148,9 @@ def _loss_evaluate_and_gradient_step(
 
     # 2. total grad
     grads = loss.ponderate_and_sum_gradient(grad_terms)
+
+    # 3. total loss after possible weight update
+    train_loss_value = loss.ponderate_and_sum_loss(loss_terms)
 
     opt_grads, _ = grads.partition(
         params_mask

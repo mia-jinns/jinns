@@ -338,7 +338,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         batch: B,
         *,
         non_opt_params: Params[Array] | None = None,
-    ) -> tuple[Float[Array, " "], C, C]:
+    ) -> tuple[C, C]:
         """ """
 
         evaluate_by_terms_reduced, params, _ = (
@@ -347,12 +347,11 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             )
         )
         loss_terms = evaluate_by_terms_reduced(batch, params)
-        loss_val = self.ponderate_and_sum_loss(loss_terms)
 
         # jacrev instead of grad to differentiate through the XDEComponents
         # Pytree
         grad_terms = jax.jacrev(evaluate_by_terms_reduced, argnums=1)(batch, params)
-        return loss_val, loss_terms, grad_terms
+        return loss_terms, grad_terms
 
     def evaluate_with_natural_gradient(
         self,
