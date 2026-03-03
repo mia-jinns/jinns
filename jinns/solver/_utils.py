@@ -361,29 +361,50 @@ def _loss_evaluate_and_natural_gradient_step(
 
 def _post_process_pytree_of_grad(y):
     # TODO: document to describe steps
-    # TODO: take loss_weights into account ?
+    # NOTE: for now we don't take a) loss_weights and b) vectorial weights for dyn_loss into account.
 
+    # First, get the PyTree of all trainable parameters for each loss terms,
+    # e.g. `dyn_loss`, `init`, `BC` etc.
     l = jax.tree.map(
-        lambda pt: jax.tree.leaves(
-            pt.nn_params, is_leaf=lambda x: eqx.is_inexact_array(x)
-        ),
+        lambda pt: jax.tree.leaves(pt.nn_params, is_leaf=eqx.is_inexact_array),
         y,
         is_leaf=lambda x: isinstance(x, Params),
     )
 
-    l2 = jax.tree.map(
-        lambda l1: [a.reshape((a.shape[0], -1)) for a in l1],
+    # Then, sum over the "channels"/equations in case `dyn_loss.equation` is
+    # vector-valued. For `n` collocation points and `C` channels/equations, the
+    # Array of parameters in each layer should be of shape (n, C, *). Thus, we
+    # sum over the 2nd axis.
+    # - If there is only 1 channel (i.e. scalar `dyn_loss.equation`), then this
+    # operation is the identity.
+    # - The same operation is done for other type of vector-valued loss (BC,
+    # init, etc.)
+    l = jax.tree.map(
+        lambda arr: jnp.sum(arr, axis=1),  # sum over channel (2nd axis)
+        l,
+        is_leaf=eqx.is_inexact_array,
+    )
+
+    # Then, flatten each layer of trainable parameters.
+    l = jax.tree.map(
+        lambda leaf: [a.reshape((a.shape[0], -1)) for a in leaf],
         l,
         is_leaf=lambda x: isinstance(x, list),
     )
 
-    l3 = jax.tree.map(
+    # Then, flatten everything into a shape (n, p) where p is total # free
+    # parameters.
+    l = jax.tree.map(
         lambda leaf: jnp.concatenate(leaf, axis=1),
-        l2,
+        l,
         is_leaf=lambda x: isinstance(x, list),
     )
 
-    return jnp.concatenate(jax.tree.leaves(l3), axis=0)
+    # Finally, concatenate all the different type of loss (dyn, init, BC, etc.)
+    # into one big (n, p) matrix
+    M = jnp.concatenate(jax.tree.leaves(l), axis=0)
+
+    return M
 
 
 def _nn_params_array_to_pytree(
