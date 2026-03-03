@@ -93,11 +93,13 @@ def train_Fisher_init():
     return init_params, loss, train_data
 
 
-@pytest.fixture
-def train_Fisher_10it(train_Fisher_init):
-    """
-    Fixture that requests a fixture
-    """
+def test_initial_loss_Fisher(train_Fisher_init):
+    init_params, loss, train_data = train_Fisher_init
+    train_data, batch = train_data.get_batch()
+    assert jnp.allclose(loss.evaluate(init_params, batch)[0], 25.842087, atol=1e-1)
+
+
+def test_Fisher_10it_adamw(train_Fisher_init):
     init_params, loss, train_data = train_Fisher_init
 
     params = init_params
@@ -107,15 +109,25 @@ def train_Fisher_10it(train_Fisher_init):
     params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _, _, _, _ = jinns.solve(
         init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
     )
-    return total_loss_list[9]
+    # test final loss
+    assert jnp.allclose(total_loss_list[-1], 21.80751, atol=1e-1)
 
 
-def test_initial_loss_Fisher(train_Fisher_init):
+def test_Fisher_10it_ngd(train_Fisher_init):
     init_params, loss, train_data = train_Fisher_init
-    train_data, batch = train_data.get_batch()
-    assert jnp.allclose(loss.evaluate(init_params, batch)[0], 25.842087, atol=1e-1)
 
+    params = init_params
 
-def test_10it_Fisher(train_Fisher_10it):
-    total_loss_val = train_Fisher_10it
-    assert jnp.allclose(total_loss_val, 21.80751, atol=1e-1)
+    ngd_optim = optax.chain(
+        optax.sgd(learning_rate=1.0),
+        optax.scale_by_backtracking_linesearch(max_backtracking_steps=15, verbose=True),
+    )
+    tx = jinns.optimizers.vanilla_ngd(
+        ngd_optim
+    )  # use jinns custom wrapper to tell `solve` to use ngd
+    n_iter = 10
+    params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _, _, _, _ = jinns.solve(
+        init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
+    )
+    todo = jnp.inf
+    assert jnp.allclose(total_loss_list[-1], todo, atol=1e-1)
