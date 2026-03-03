@@ -248,10 +248,10 @@ def _loss_evaluate_and_natural_gradient_step(
         axis=0,
     )
     # If we have only 1 dyn loss the line above is sufficient.
-    # However, we return a tuple of len (n_loss,) and we need to average
+    # However, we return a tuple of len (n_loss,) and we need to sum
     # over each loss (channels).
     # TODO: should we account for loss_weights or not ?
-    R = R.mean(axis=1, keepdims=True)
+    R = jnp.sum(R, axis=1, keepdims=True)
 
     # Form euclidean grad
     # NOTE: beware that euclidean gradient (might) differs from jax.grad(loss.evaluate) here. Indeed jinns takes the sum(mean(loss_type)) while here we compute mean(sum(all_loss_types). These might differs when different number of samples are used.
@@ -409,7 +409,7 @@ def _nn_params_array_to_pytree(
         lambda a, b: a.reshape(b.shape),
         ng_flat,
         opt_params.nn_params,
-        is_leaf=lambda x: isinstance(x, jnp.ndarray),
+        is_leaf=eqx.is_inexact_array,
     )
     # Wrap everything in a Params() object
     # by default eq_params is filled with Zeros so that additive updates
