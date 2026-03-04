@@ -252,7 +252,9 @@ def _loss_evaluate_and_natural_gradient_step(
     # NOTE: beware that euclidean gradient (might) differs from jax.grad(loss.evaluate) here. Indeed jinns takes the sum(mean(loss_type)) while here we compute mean(sum(all_loss_types). These might differs when different number of samples are used.
     # Equality can be matched by changing the jinns reduction function internally.
     # See tests/optimizer_tests/test_euclidean_gradient_equality.py
-    euclidean_grad_array = jnp.mean(M.transpose((0, 2, 1)) @ R[..., None], axis=0)
+    euclidean_grad_array = jnp.mean(
+        M.transpose((0, 2, 1)) @ R[..., None], axis=0
+    ).squeeze()  # shape (n_params,)
 
     # Assemble Gram Matrix
     #   1. Do the mean over the `n` collocation points -> get a `(C, p, p)` array.
@@ -263,7 +265,7 @@ def _loss_evaluate_and_natural_gradient_step(
     gram_mat = (1 / n) * M.transpose((1, 2, 0)) @ M.transpose((1, 0, 2))
     gram_mat = gram_mat.sum(axis=0)
 
-    # Solve the linear system Gx = eucl_grad
+    # Solve the linear system G natural_grad = eucl_grad
     reg = 1e-5
     n_param = gram_mat.shape[0]
     natural_grad_array = jax.scipy.linalg.solve(

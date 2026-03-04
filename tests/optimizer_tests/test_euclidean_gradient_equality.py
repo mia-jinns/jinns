@@ -171,12 +171,18 @@ def test_euclidean_gradients_equality():
         batch,
     )
 
-    # Flatten the pytree of params as a big (n, p) matrix
+    # Flatten the pytree of params gradient as a big (n, n_equations, p) array
     M = _post_process_pytree_of_grad(g)
-    R = jnp.concatenate(jax.tree.leaves(r), axis=0)
 
-    euclidean_grad_ngd = jnp.mean(R * M, axis=0)
+    # Same for the loss values (residuals) as a `(n, n_equations)` matrix
+    R = jnp.concatenate(
+        jax.tree.leaves(r),
+        axis=0,
+    )
 
+    euclidean_grad_ngd = jnp.mean(
+        M.transpose((0, 2, 1)) @ R[..., None], axis=0
+    ).squeeze()
     # multiply by 2 which is a factor that appears in a complete derivation of
     # NGD (from the mean square error)
     euclidean_grad_ngd *= 2
