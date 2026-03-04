@@ -19,7 +19,7 @@ from jinns.loss._loss_utils import (
     mean_sum_reduction,
     mean_sum_reduction_pytree,
     vmap_loss_fun_classical,
-    no_vmap_loss_fun_no_batch,
+    vmap_loss_fun_only_params,
     vmap_loss_fun_observations,
 )
 from jinns.parameters._derivative_keys import _set_derivatives, DerivativeKeysODE
@@ -127,7 +127,7 @@ class LossODE(
         static=True,
         default=ODEComponents(
             dyn_loss=vmap_loss_fun_classical,
-            initial_condition=no_vmap_loss_fun_no_batch,
+            initial_condition=vmap_loss_fun_only_params,
             observations=vmap_loss_fun_observations,
         ),
     )
@@ -297,31 +297,8 @@ class LossODE(
                     axis=0,
                 )
             )
-
-            ## TODO TODO
-            ## NOTE NOTE not clear if below can be totally suppressed
-            ## NOTE that this is the vmap below and its reduction which
-            # disappear since now we vmap over the possible batch of paramter
+            ## NOTE now we vmap over the possible batch of parameters
             # from outside this function
-            # now vmap over the the possible batch of parameters and take the
-            # average. Note that we then finally have a cartesian product
-            # between the batch of parameters (if any) and the number of
-            # conditions (if any)
-            # if not jax.tree_util.tree_leaves(vmap_in_axes_params):
-            #    # if there is no parameter batch to vmap over we cannot call
-            #    # vmap because calling vmap must be done with at least one non
-            #    # None in_axes or out_axes
-            #    initial_condition_fun = initial_condition_fun_
-            # else:
-            #    initial_condition_fun: Callable[[Params[Array]], Array] | None = (
-            #        lambda p: jnp.mean(
-            #            vmap(initial_condition_fun_, vmap_in_axes_params)(p)
-            #        )
-            #    )
-            # initial_condition_fun: Callable[[Params[Array]], Array] | None = (
-            #    lambda p: jnp.mean(initial_condition_fun_(p)) # this get vmap
-            #    # over p thanks to vmap_axes_params at outer level
-            # )
         else:
             initial_condition_fun = None
 

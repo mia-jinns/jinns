@@ -94,18 +94,7 @@ def vmap_loss_fun_observations(
 
 def vmap_loss_fun_only_params(*, f, p, vmap_in_axes_params, jacrev=False, **kwargs):
     """
-    Typically for initial_condition of LossODE
-    """
-    if f is None:
-        return None
-    if jacrev:
-        f = jax.jacrev(f, argnums=1)
-    return jax.vmap(f, vmap_in_axes_params)(p)
-
-
-def no_vmap_loss_fun_no_batch(*, f, p, jacrev=False, **kwargs):
-    """
-    Typically made for vmapping initial condition loss (ODE) of type:
+    Typically for initial_condition of LossODE of type:
     `Callable[[Params[Array]], Array]`
 
     NOTE we simulate a vmap axis
@@ -116,7 +105,11 @@ def no_vmap_loss_fun_no_batch(*, f, p, jacrev=False, **kwargs):
     if f is None:
         return None
     if jacrev:
-        f = jax.jacrev(f)
+        f = jax.jacrev(f, argnums=1)
+    if vmap_in_axes_params != (None,):
+        # Note that here we use the reduction as defined in
+        # self._reduction_functions
+        f = jax.vmap(f, vmap_in_axes_params)(p)
     return jax.tree.map(lambda array: array[None], f(p), is_leaf=eqx.is_inexact_array)
 
 
