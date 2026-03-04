@@ -326,20 +326,31 @@ class LossODE(
             initial_condition_fun = None
 
         if batch.obs_batch_dict is not None:
+            if len(batch.obs_batch_dict) != len(self.obs_slice):
+                raise ValueError(
+                    "There must be the same number of "
+                    "observation datasets as the number of "
+                    "obs_slice"
+                )
             obs_loss_fun = self._get_obs_loss_fun()
-            obs_batch = tuple((b["pinn_in"], b["val"]) for b in batch.obs_batch_dict)
+            obs_batch_and_slice = tuple(
+                (b["pinn_in"], b["val"], b["eq_params"], sl_)
+                for b, sl_ in zip(batch.obs_batch_dict, self.obs_slice)
+            )
+            # obs_eq_params = tuple(b["eq_params"] for b in batch.obs_batch_dict)
         else:
             obs_loss_fun = None
-            obs_batch = None
+            obs_batch_and_slice = None
+            # obs_eq_params = None
 
         all_funs_and_params = ODEComponents(
             dyn_loss={"f": dyn_loss_fun, "b": temporal_batch},
             initial_condition={"f": initial_condition_fun, "b": None},
             observations={
                 "f": obs_loss_fun,
-                "b": obs_batch,
-                "obs_batch_dict": batch.obs_batch_dict,
-                "obs_slice": self.obs_slice,
+                "b": obs_batch_and_slice,
+                #    "obs_batch_dict": obs_eq_params,
+                # "obs_slice": self.obs_slice,
             },
         )
         return all_funs_and_params

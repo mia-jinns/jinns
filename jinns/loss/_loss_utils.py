@@ -11,6 +11,7 @@ from types import EllipsisType
 import jax
 import jax.numpy as jnp
 from jaxtyping import Float, Array, PyTree
+import equinox as eqx
 
 from jinns.utils._utils import _subtract_with_check, get_grid
 from jinns.nn._pinn import PINN
@@ -52,11 +53,9 @@ def vmap_loss_fun_observations(
     *,
     f,
     b,
-    obs_batch_dict,
-    obs_slice,
     p,
     vmap_in_axes_params,
-    in_axes=((0, 0),),
+    in_axes=((0, 0, None, None),),
     jacrev=False,
 ):
     """
@@ -73,24 +72,16 @@ def vmap_loss_fun_observations(
     """
     if f is None:
         return None
-    if len(obs_batch_dict) != len(obs_slice):
-        raise ValueError(
-            "There must be the same number of "
-            "observation datasets as the number of "
-            "obs_slice"
-        )
     if jacrev:
         f = jax.jacrev(f, argnums=1)
     return jax.tree.map(
-        lambda _b, obs_batch_dict_, obs_slice_: jax.vmap(
-            lambda __b, __p: f(__b, __p, obs_batch_dict_["eq_params"], obs_slice_),
+        lambda _b: jax.vmap(
+            lambda __b, __p: f(__b[:2], __p, __b[2], _b[3]),
             in_axes + vmap_in_axes_params,
         )(_b, p),
         b,
-        obs_batch_dict,
-        obs_slice,
         is_leaf=lambda x: (
-            isinstance(x, tuple) and isinstance(x[0], Array)
+            isinstance(x, tuple) and eqx.is_inexact_array(x[0])
         ),  # stop at lowest level of
         # tuples as leaves
     )

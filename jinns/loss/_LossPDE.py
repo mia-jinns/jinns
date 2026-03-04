@@ -400,10 +400,13 @@ class LossPDEStatio(
         # Observation mse
         if batch.obs_batch_dict is not None:
             obs_loss_fun = self._get_obs_loss_fun()
-            obs_batch = tuple((b["pinn_in"], b["val"]) for b in batch.obs_batch_dict)
+            obs_batch_and_slice = tuple(
+                (b["pinn_in"], b["val"], b["eq_params"], sl_)
+                for b, sl_ in zip(batch.obs_batch_dict, self.obs_slice)
+            )
         else:
             obs_loss_fun = None
-            obs_batch = None
+            obs_batch_and_slice = None
 
         all_funs_and_params: PDEStatioComponents = PDEStatioComponents(
             dyn_loss={"f": dyn_loss_fun, "b": domain_batch},
@@ -411,9 +414,7 @@ class LossPDEStatio(
             boundary_loss={"f": boundary_loss_fun, "b": border_batch},
             observations={
                 "f": obs_loss_fun,
-                "b": obs_batch,
-                "obs_batch_dict": batch.obs_batch_dict,
-                "obs_slice": self.obs_slice,
+                "b": obs_batch_and_slice,
             },
         )
         return all_funs_and_params
@@ -703,10 +704,13 @@ class LossPDENonStatio(
         # Observation mse
         if batch.obs_batch_dict is not None:
             obs_loss_fun = self._get_obs_loss_fun()
-            obs_batch = tuple((b["pinn_in"], b["val"]) for b in batch.obs_batch_dict)
+            obs_batch_and_slice = tuple(
+                (b["pinn_in"], b["val"], b["eq_params"], sl_)
+                for b, sl_ in zip(batch.obs_batch_dict, self.obs_slice)
+            )
         else:
             obs_loss_fun = None
-            obs_batch = None
+            obs_batch_and_slice = None
 
         # initial condition
         if self.initial_condition_fun is not None:
@@ -736,9 +740,7 @@ class LossPDENonStatio(
             },
             observations={
                 "f": obs_loss_fun,
-                "b": obs_batch,
-                "obs_batch_dict": batch.obs_batch_dict,
-                "obs_slice": self.obs_slice,
+                "b": obs_batch_and_slice,
             },
         )
         return all_funs_and_params
