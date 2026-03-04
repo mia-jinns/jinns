@@ -252,12 +252,17 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             # vmap, with some subtleties depending on the function term
             # NOTE: we keep it as a function of batch and params (b and p)
             # until then it to be able to call `jax.jacrev`
-            evaluate_by_terms = lambda b, p: jax.tree.map(
-                lambda vlf, kwargs: vlf(
-                    **kwargs, p=p, vmap_in_axes_params=vmap_in_axes_params
-                ),
+            evaluate_by_terms = jax.tree.map(
+                lambda vlf, kwargs: (
+                    lambda p: vlf(
+                        **kwargs, p=p, vmap_in_axes_params=vmap_in_axes_params
+                    )
+                )
+                if kwargs["f"] is not None
+                else None,  # note the parentheses
+                # around the lambda function
                 self._vmap_loss_fun,
-                self._prepare_loss_terms(b),
+                self._prepare_loss_terms(batch),
                 is_leaf=lambda x: (
                     isinstance(x, tuple) and (callable(x[0]) or x[0] is None)
                 ),  # only traverse first layer
@@ -268,10 +273,13 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             # next we reduce the output of each loss term function
             # NOTE: we keep it as a function of batch and params (b and p)
             # until then it to be able to call `jax.jacrev`
-            evaluate_by_terms_reduced = lambda b, p: jax.tree.map(
-                lambda red_fun, v_eval: red_fun(v_eval),
+            evaluate_by_terms_reduced = jax.tree.map(
+                lambda red_fun, v_eval: (lambda p: red_fun(v_eval(p)))
+                if v_eval  # note the parenthesis around the lambda function
+                is not None
+                else None,
                 self._reduction_functions,
-                evaluate_by_terms(b, p),
+                evaluate_by_terms,
             )
         elif isinstance(self.u, SPINN):
             # NOTE there is no vmap here on each loss functin
@@ -287,10 +295,12 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
                     return None
                 return f(b, p)
 
-            evaluate_by_terms_reduced = lambda b, p: jax.tree.map(
-                lambda red_fun, kwargs: red_fun(loss_fun(**kwargs, p=p)),
+            evaluate_by_terms_reduced = jax.tree.map(
+                lambda red_fun, kwargs: (lambda p: red_fun(loss_fun(**kwargs, p=p)))
+                if kwargs["f"] is not None
+                else None,
                 self._reduction_functions,
-                self._prepare_loss_terms(b),
+                self._prepare_loss_terms(batch),
                 is_leaf=lambda x: (
                     isinstance(x, tuple) and (callable(x[0]) or x[0] is None)
                 ),  # only traverse first layer
@@ -332,7 +342,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
                 opt_params, batch, non_opt_params=non_opt_params
             )
         )
-        loss_terms = evaluate_by_terms_reduced(batch, params)
+        loss_terms = jax.tree.map(lambda fun: fun(params), evaluate_by_terms_reduced)
 
         loss_val = self.ponderate_and_sum_loss(loss_terms)
         return loss_val, loss_terms
@@ -351,11 +361,13 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
                 opt_params, batch, non_opt_params=non_opt_params
             )
         )
-        loss_terms = evaluate_by_terms_reduced(batch, params)
+        loss_terms = jax.tree.map(lambda fun: fun(params), evaluate_by_terms_reduced)
 
-        # jacrev instead of grad to differentiate through the XDEComponents
-        # Pytree
-        grad_terms = jax.jacrev(evaluate_by_terms_reduced, argnums=1)(batch, params)
+        # jacrev instead of grad to differentiate through the tuples fields
+        grad_terms = jax.tree.map(
+            lambda fun: jax.jacrev(fun)(params),
+            evaluate_by_terms_reduced,
+        )
         return loss_terms, grad_terms
 
     def evaluate_with_natural_gradient(
@@ -371,9 +383,9 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
                 opt_params, batch, non_opt_params=non_opt_params, unreduced=True
             )
         )
-        loss_terms = evaluate_by_terms(batch, params)
+        loss_terms = jax.tree.map(lambda fun: fun(params), evaluate_by_terms)
 
-        jacrev_evaluate_by_terms = lambda b, p: jax.tree.map(
+        jacrev_evaluate_by_terms = lambda p: jax.tree.map(
             lambda vlf, kwargs: vlf(
                 **kwargs,
                 p=p,
@@ -381,7 +393,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
                 jacrev=True,
             ),
             self._vmap_loss_fun,
-            self._prepare_loss_terms(b),
+            self._prepare_loss_terms(batch),
             is_leaf=lambda x: (
                 isinstance(x, tuple) and (callable(x[0]) or x[0] is None)
             ),  # only traverse first layer
@@ -389,7 +401,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
 
         # Return the unreduced gradients and loss terms for each sample for
         # each loss
-        grad_terms = jacrev_evaluate_by_terms(batch, params)
+        grad_terms = jacrev_evaluate_by_terms(params)
         return loss_terms, grad_terms
 
     def ponderate_and_sum_loss(self, terms: C) -> Array:

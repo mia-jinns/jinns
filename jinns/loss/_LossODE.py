@@ -337,11 +337,9 @@ class LossODE(
                 (b["pinn_in"], b["val"], b["eq_params"], sl_)
                 for b, sl_ in zip(batch.obs_batch_dict, self.obs_slice)
             )
-            # obs_eq_params = tuple(b["eq_params"] for b in batch.obs_batch_dict)
         else:
             obs_loss_fun = None
             obs_batch_and_slice = None
-            # obs_eq_params = None
 
         all_funs_and_params = ODEComponents(
             dyn_loss={"f": dyn_loss_fun, "b": temporal_batch},
@@ -349,8 +347,6 @@ class LossODE(
             observations={
                 "f": obs_loss_fun,
                 "b": obs_batch_and_slice,
-                #    "obs_batch_dict": obs_eq_params,
-                # "obs_slice": self.obs_slice,
             },
         )
         return all_funs_and_params
