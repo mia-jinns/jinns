@@ -105,13 +105,14 @@ def no_vmap_loss_fun_no_batch(*, f, p, jacrev=False, **kwargs):
 
     NOTE we simulate a vmap axis
     for the reduction to be always correct with the outer
-    jnp.mean (here _b is None)
+    jnp.mean (here _b is None). Hence the [None] via a PyTree in order to work
+    in standard gradient (only an Array) and in NGD (a whole Params[Array])
     """
     if f is None:
         return None
     if jacrev:
         f = jax.jacrev(f)
-    return f(p)[None]
+    return jax.tree.map(lambda array: array[None], f(p), is_leaf=eqx.is_inexact_array)
 
 
 def mean_sum_reduction_pytree(residuals: PyTree[Array | None]) -> PyTree[Array | None]:
