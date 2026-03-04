@@ -55,7 +55,12 @@ def vmap_loss_fun_observations(
     b,
     p,
     vmap_in_axes_params,
-    in_axes=((0, 0, None, None),),
+    in_axes=(
+        (
+            0,
+            0,
+        ),
+    ),
     jacrev=False,
 ):
     """
@@ -76,9 +81,9 @@ def vmap_loss_fun_observations(
         f = jax.jacrev(f, argnums=1)
     return jax.tree.map(
         lambda _b: jax.vmap(
-            lambda __b, __p: f(__b[:2], __p, __b[2], _b[3]),
+            lambda __b, __p: f(__b, __p, _b[2], _b[3]),
             in_axes + vmap_in_axes_params,
-        )(_b, p),
+        )(_b[:2], p),
         b,
         is_leaf=lambda x: (
             isinstance(x, tuple) and eqx.is_inexact_array(x[0])
