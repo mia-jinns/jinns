@@ -239,29 +239,29 @@ def _loss_evaluate_and_natural_gradient_step(
         non_opt_params=non_opt_params,
     )
 
-    # Flatten the pytree of params gradient as a big (n, p) matrix
+    # Flatten the pytree of params gradient as a big (n, n_equations, p) array
     M = _post_process_pytree_of_grad(g)
 
-    # Same for the loss values as a (n, 1) matrix
+    # Same for the loss values (residuals) as a `(n, n_equations)` matrix
     R = jnp.concatenate(
         jax.tree.leaves(r),
         axis=0,
     )
-    # If we have only 1 dyn loss the line above is sufficient.
-    # However, we return a tuple of len (n_loss,) and we need to sum
-    # over each loss (channels).
-    # TODO: should we account for loss_weights or not ?
-    R = jnp.sum(R, axis=1, keepdims=True)
 
     # Form euclidean grad
     # NOTE: beware that euclidean gradient (might) differs from jax.grad(loss.evaluate) here. Indeed jinns takes the sum(mean(loss_type)) while here we compute mean(sum(all_loss_types). These might differs when different number of samples are used.
     # Equality can be matched by changing the jinns reduction function internally.
     # See tests/optimizer_tests/test_euclidean_gradient_equality.py
-    euclidean_grad_array = jnp.mean(R * M, axis=0)
+    euclidean_grad_array = jnp.mean(M.transpose((0, 2, 1)) @ R[..., None], axis=0)
 
     # Assemble Gram Matrix
+    #   1. Do the mean over the `n` collocation points -> get a `(C, p, p)` array.
+    #   2. Then, do the sum over `C` (axis=0)
+    # TODO: maybe add a check for which is bigger between `C` and `n` for the
+    # order of operations. Or write this as a jnp.einsum ? :)
     n = M.shape[0]
-    gram_mat = (1 / n) * M.T @ M
+    gram_mat = (1 / n) * M.transpose((1, 2, 0)) @ M.transpose((1, 0, 2))
+    gram_mat = gram_mat.sum(axis=0)
 
     # Solve the linear system Gx = eucl_grad
     reg = 1e-5
@@ -359,7 +359,9 @@ def _loss_evaluate_and_natural_gradient_step(
     return train_loss_value, params, last_non_nan_params, state, loss, loss_terms
 
 
-def _post_process_pytree_of_grad(y):
+def _post_process_pytree_of_grad(
+    y: Params,
+) -> Float[Array, "n n_equations n_parameters"]:
     # TODO: document to describe steps
     # NOTE: for now we don't take a) loss_weights and b) vectorial weights for dyn_loss into account.
 
@@ -371,45 +373,39 @@ def _post_process_pytree_of_grad(y):
         is_leaf=lambda x: isinstance(x, Params),
     )
 
-    # Then, sum over the "channels"/equations in case `dyn_loss.equation` is
-    # vector-valued. For `n` collocation points and `C` channels/equations, the
-    # Array of parameters in each layer should be of shape (n, C, *). Thus, we
-    # sum over the 2nd axis.
-    # - If there is only 1 channel (i.e. scalar `dyn_loss.equation`), then this
-    # operation is the identity.
-    # - The same operation is done for other type of vector-valued loss (BC,
-    # init, etc.)
+    # Then, flatten each layer of trainable parameters into shape (nb, C, *)
+    # where
+    #  - `C` is the number of channels (i.e. equations) for vector valued
+    # system of equations.
+    #  - `nb` is the number of point in the (mini-)batch for each the loss-type
+    #  - Here * means the number of free parameters of the layer.
     l = jax.tree.map(
-        lambda arr: jnp.sum(arr, axis=1),  # sum over channel (2nd axis)
-        l,
-        is_leaf=eqx.is_inexact_array,
-    )
-
-    # Then, flatten each layer of trainable parameters.
-    l = jax.tree.map(
-        lambda leaf: [a.reshape((a.shape[0], -1)) for a in leaf],
+        lambda leaf: [a.reshape((a.shape[0], a.shape[1], -1)) for a in leaf],
         l,
         is_leaf=lambda x: isinstance(x, list),
     )
 
-    # Then, flatten everything into a shape (n, p) where p is total # free
-    # parameters.
+    # Then, concatenate all layers into a shape (nb, C, p) where p is the total
+    # number of free parameters.
     l = jax.tree.map(
-        lambda leaf: jnp.concatenate(leaf, axis=1),
+        lambda leaf: jnp.concatenate(leaf, axis=2),
         l,
         is_leaf=lambda x: isinstance(x, list),
     )
 
     # Finally, concatenate all the different type of loss (dyn, init, BC, etc.)
-    # into one big (n, p) matrix
+    # into one big (n_tot, C, p) matrix
     M = jnp.concatenate(jax.tree.leaves(l), axis=0)
 
     return M
 
 
 def _nn_params_array_to_pytree(
-    nn_params_array: Array, opt_params: Params, params: Params, _eq_params=None
-):
+    nn_params_array: Float[Array, " n_parameters"],
+    opt_params: Params,
+    params: Params,
+    _eq_params=None,
+) -> Params:
     """Helper function for NGD.
 
     This function converts the raw matrix representation of the network
