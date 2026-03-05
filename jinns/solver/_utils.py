@@ -239,25 +239,31 @@ def _loss_evaluate_and_natural_gradient_step(
         non_opt_params=non_opt_params,
     )
 
-    # Flatten the pytree of params gradient as a big (n, n_equations, p) array
-    M = _post_process_pytree_of_grad(g)
-
-    print(r)
-
-    # Same for the loss values (residuals) as a `(n, n_equations)` matrix
-    _lw = eqx.tree_at(
-        lambda pt: pt.boundary_loss,
-        loss.loss_weights,
-        tuple(loss.loss_weights.boundary_loss for _ in range(len(r.boundary_loss))),
+    # restructure loss_weights as the proper XDEComponents object being handled
+    loss_weights_ = jax.tree.unflatten(
+        jax.tree.structure(r), jax.tree.leaves(loss.loss_weights)
     )
-    print(_lw)
 
-    temp_weights = jax.tree.unflatten(jax.tree.structure(r), jax.tree.leaves(_lw))
+    # to ponderate r and g, at the sample level, we somehow invert the
+    # reduction function : use sqrt of actual loss weight and divide by the
+    # number of samples in the batch taking into account multidimensationality
+    # NOTE this is currently only for mean_sum_reduction
+    loss_weights_samples = jax.tree.unflatten(
+        jax.tree.structure(r),
+        jnp.sqrt(jnp.array(jax.tree.leaves(loss.loss_weights)))
+        / (
+            jnp.array(
+                jax.tree.leaves(jax.tree.map(lambda l: l.shape[0] * l.shape[1], r))
+            )
+        ),
+    )
 
-    def reweight_pytree(pt):
-        return jax.tree.map(lambda w, residual: w * residual, temp_weights, pt)
+    reweighted_r = _reweight_pytree(r, loss_weights_samples)
+    reweighted_g = _reweight_pytree(g, loss_weights_samples)
 
-    reweighted_r = reweight_pytree(r)
+    # Flatten the pytree of params gradient as a big (n, n_equations, p) array
+    M = _post_process_pytree_of_grad(reweighted_g)
+
     R = jnp.concatenate(
         jax.tree.leaves(reweighted_r),
         axis=0,
@@ -297,13 +303,17 @@ def _loss_evaluate_and_natural_gradient_step(
     # For now, NGD is not compatible with weight renormalization
 
     # total loss
-    loss_terms = reweight_pytree(
-        jax.tree.map(lambda red_fun, r_: red_fun(r_), loss._reduction_functions, r)
+    loss_terms = _reweight_pytree(
+        jax.tree.map(lambda red_fun, r_: red_fun(r_), loss._reduction_functions, r),
+        loss_weights_,
     )
 
     train_loss_value = jnp.mean(
         jnp.concatenate(
-            jax.tree.leaves(reweight_pytree(jax.tree.map(jnp.square, r))), axis=0
+            jax.tree.leaves(
+                _reweight_pytree(jax.tree.map(jnp.square, r), loss_weights_)
+            ),
+            axis=0,
         )
     )
 
@@ -336,7 +346,10 @@ def _loss_evaluate_and_natural_gradient_step(
         )
         total_loss = jnp.mean(
             jnp.concatenate(
-                jax.tree.leaves(reweight_pytree(jax.tree.map(jnp.square, r))), axis=0
+                jax.tree.leaves(
+                    _reweight_pytree(jax.tree.map(jnp.square, r), loss_weights_)
+                ),
+                axis=0,
             )
         )
         return total_loss
@@ -457,6 +470,24 @@ def _nn_params_array_to_pytree(
     return Params(
         nn_params=nn_params_pt,
         eq_params=_eq_params,
+    )
+
+
+def _reweight_pytree(pt, lw):
+    """
+    Multiply all the arrays at leaves of pt (`leaf`) by the saclar at leaves of
+    lw (`w`).
+    If `leaf` is again a pytree, multiply each leaf of `leaf` by `w`.
+    """
+    return jax.tree.map(
+        lambda w, leaf: w * leaf
+        if eqx.is_inexact_array(leaf)
+        else jax.tree.map(  # leaf is a Params when reweighting g
+            lambda arr: w * arr, leaf, is_leaf=eqx.is_inexact_array
+        ),
+        lw,
+        pt,
+        is_leaf=lambda x: eqx.is_inexact_array(x) or isinstance(x, Params),
     )
 
 
