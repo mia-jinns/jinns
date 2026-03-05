@@ -239,19 +239,14 @@ def _loss_evaluate_and_natural_gradient_step(
         non_opt_params=non_opt_params,
     )
 
-    # restructure loss_weights as the proper XDEComponents object being handled
-    loss_weights_ = jax.tree.unflatten(
-        jax.tree.structure(r), jax.tree.leaves(loss.loss_weights)
-    )
-
     # to ponderate r and g, at the sample level, we somehow invert the
     # reduction function : use sqrt of actual loss weight and divide by the
     # number of samples in the batch taking into account multidimensationality
     # NOTE this is currently only for mean_sum_reduction
     loss_weights_samples = jax.tree.unflatten(
         jax.tree.structure(r),
-        jnp.sqrt(jnp.array(jax.tree.leaves(loss.loss_weights)))
-        / (
+        1
+        / jnp.sqrt(
             jnp.array(
                 jax.tree.leaves(jax.tree.map(lambda l: l.shape[0] * l.shape[1], r))
             )
@@ -303,15 +298,16 @@ def _loss_evaluate_and_natural_gradient_step(
     # For now, NGD is not compatible with weight renormalization
 
     # total loss
-    loss_terms = _reweight_pytree(
-        jax.tree.map(lambda red_fun, r_: red_fun(r_), loss._reduction_functions, r),
-        loss_weights_,
+    loss_terms = jax.tree.map(
+        lambda red_fun, r_: red_fun(r_),
+        loss._reduction_functions,
+        _reweight_pytree(r, loss_weights_samples),
     )
 
     train_loss_value = jnp.mean(
         jnp.concatenate(
             jax.tree.leaves(
-                _reweight_pytree(jax.tree.map(jnp.square, r), loss_weights_)
+                jax.tree.map(jnp.square, _reweight_pytree(r, loss_weights_samples)),
             ),
             axis=0,
         )
@@ -347,7 +343,7 @@ def _loss_evaluate_and_natural_gradient_step(
         total_loss = jnp.mean(
             jnp.concatenate(
                 jax.tree.leaves(
-                    _reweight_pytree(jax.tree.map(jnp.square, r), loss_weights_)
+                    jax.tree.map(jnp.square, _reweight_pytree(r, loss_weights_samples)),
                 ),
                 axis=0,
             )
