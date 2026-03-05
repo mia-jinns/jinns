@@ -105,7 +105,7 @@ def vmap_loss_fun_only_params(*, f, p, vmap_in_axes_params, jacrev=False, **kwar
     if f is None:
         return None
     if jacrev:
-        f = jax.jacrev(f, argnums=1)
+        f = jax.jacrev(f, argnums=0)
     if vmap_in_axes_params != (None,):
         # Note that here we use the reduction as defined in
         # self._reduction_functions
