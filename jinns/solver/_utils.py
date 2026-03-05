@@ -242,9 +242,24 @@ def _loss_evaluate_and_natural_gradient_step(
     # Flatten the pytree of params gradient as a big (n, n_equations, p) array
     M = _post_process_pytree_of_grad(g)
 
+    print(r)
+
     # Same for the loss values (residuals) as a `(n, n_equations)` matrix
+    _lw = eqx.tree_at(
+        lambda pt: pt.boundary_loss,
+        loss.loss_weights,
+        tuple(loss.loss_weights.boundary_loss for _ in range(len(r.boundary_loss))),
+    )
+    print(_lw)
+
+    temp_weights = jax.tree.unflatten(jax.tree.structure(r), jax.tree.leaves(_lw))
+
+    def reweight_pytree(pt):
+        return jax.tree.map(lambda w, residual: w * residual, temp_weights, pt)
+
+    reweighted_r = reweight_pytree(r)
     R = jnp.concatenate(
-        jax.tree.leaves(r),
+        jax.tree.leaves(reweighted_r),
         axis=0,
     )
 
@@ -282,12 +297,14 @@ def _loss_evaluate_and_natural_gradient_step(
     # For now, NGD is not compatible with weight renormalization
 
     # total loss
-    loss_terms = jax.tree.map(
-        lambda red_fun, r_: red_fun(r_), loss._reduction_functions, r
+    loss_terms = reweight_pytree(
+        jax.tree.map(lambda red_fun, r_: red_fun(r_), loss._reduction_functions, r)
     )
 
     train_loss_value = jnp.mean(
-        jnp.concatenate(jax.tree.leaves(jax.tree.map(jnp.square, r)), axis=0)
+        jnp.concatenate(
+            jax.tree.leaves(reweight_pytree(jax.tree.map(jnp.square, r))), axis=0
+        )
     )
 
     opt_natural_grads, _ = natural_grads.partition(params_mask)
@@ -318,7 +335,9 @@ def _loss_evaluate_and_natural_gradient_step(
             non_opt_params=None,
         )
         total_loss = jnp.mean(
-            jnp.concatenate(jax.tree.leaves(jax.tree.map(jnp.square, r)), axis=0)
+            jnp.concatenate(
+                jax.tree.leaves(reweight_pytree(jax.tree.map(jnp.square, r))), axis=0
+            )
         )
         return total_loss
 
