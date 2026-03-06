@@ -6,7 +6,7 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-from typing import TYPE_CHECKING, Callable, Concatenate, ParamSpec, TypeVar
+from typing import TYPE_CHECKING, Callable, Concatenate, ParamSpec, TypeVar, cast
 from types import EllipsisType
 import jax
 import jax.numpy as jnp
@@ -47,6 +47,48 @@ def vmap_loss_fun_classical(
     if jacrev:
         f = jax.jacrev(f, argnums=1)
     return jax.vmap(f, in_axes + vmap_in_axes_params)(b, p)
+
+
+def vmap_vmap_fun_normalization(
+    *, f, b, p, vmap_in_axes_params, jacrev=False, **kwargs
+):
+    """
+    Specific to t+x (spatio temporal cases)!
+    This function is the recipe to vmap normalization_loss_apply
+    It goes with the reduction function specific to norm_loss in t+x
+
+    We have a cartesian product of t and samples points (`b[0]`, with 3
+    dimensions) in order to
+    perform a numerical integration for each t. We have a scalar or array of
+    integration weights (`b[1]` broadcastable to the second dimension of
+    `b[0]`)
+
+    The outer vmap means we vmap for each time step the
+    normalization_loss_apply that is itself vmapped (inner vmap)over the x
+    samples (or their weights if weights are arrays, hence the two possible
+    values for in_axes_norm_weights).
+    """
+    if f is None:
+        return None
+    if jacrev:
+        f = jax.jacrev(f, argnums=1)
+
+    cart_prod_t_x = b[0]
+    norm_weights_for_x = b[1]
+
+    if norm_weights_for_x.ndim > 1:
+        in_axes_norm_weights = (1,)
+    else:
+        in_axes_norm_weights = (None,)
+
+    v_u = jax.vmap(  # outer vmap over t
+        jax.vmap(  # inner vmap over x and norm_weights if it is an array
+            lambda t_x_nw, params_: f(t_x_nw, params_),
+            in_axes=(((0,) + in_axes_norm_weights),) + vmap_in_axes_params,
+        ),
+        in_axes=(((0,) + (None,)),) + vmap_in_axes_params,
+    )
+    return v_u((cart_prod_t_x, norm_weights_for_x), p)
 
 
 def vmap_loss_fun_observations(
@@ -135,77 +177,39 @@ def mean_sum_reduction(residuals: Array | None) -> Array | None:
 def dynamic_loss_apply(
     dyn_loss: DynamicLoss,
     u: AbstractPINN,
-    batch: (
-        Float[Array, " batch_size 1"]
-        | Float[Array, " batch_size dim"]
-        | Float[Array, " batch_size 1+dim"]
-    ),
+    point: (Float[Array, " dim"] | Float[Array, " batch_size dim"]),
     params: Params[Array],
 ) -> Float[Array, " "] | Float[Array, " n_samples eq_dim"]:
-    """ """
-    return dyn_loss.evaluate(batch, u, params)
+    """
+    `point` is not batched in the case of PINN or HyperPINN
+    `point` is batched in the case of SPINN
+    """
+    return dyn_loss.evaluate(point, u, params)
 
 
 def normalization_loss_apply(
     u: AbstractPINN,
-    x_and_norm_weight: tuple[Array, Array],
+    x: (Float[Array, " batch_size dim"] | Float[Array, " dim"]),
+    norm_weight: Array,
     params: Params[Array],
-    norm_weights: Float[Array, " nb_norm_samples"],
 ) -> Float[Array, " "]:
     """
     Note the squeezing on each result. We expect unidimensional *PINN since
-    they represent probability distributions
+    they represent probability distributions.
+
+    `x` is not batched in the case of PINN or HyperPINN
+    `x` is batched in the case of SPINN
     """
     if isinstance(u, (PINN, HyperPINN)):
-        res = u(x_and_norm_weight[0], params)
+        res = u(x, params)
         assert res.shape[-1] == 1, "norm loss expects unidimensional *PINN"
         # Monte-Carlo integration using importance sampling
-        res = res.squeeze() * x_and_norm_weight[1]
-        # else:
-        #    # NOTE this cartesian product is costly
-        #    batch_cart_prod = make_cartesian_product(
-        #        batches[0],
-        #        batches[1],
-        #    ).reshape(batches[0].shape[0], batches[1].shape[0], -1)
-        #    v_u = vmap(
-        #        vmap(
-        #            lambda t_x, params_: u(t_x, params_),
-        #            in_axes=(0,) + vmap_axes_params,
-        #        ),
-        #        in_axes=(0,) + vmap_axes_params,
-        #    )
-        #    res = v_u(batch_cart_prod, params)
-        #    assert res.shape[-1] == 1, "norm loss expects unidimensional *PINN"
-        #    # For all times t, we perform an integration. Then we average the
-        #    # losses over times.
-        #    mse_norm_loss = jnp.mean(
-        #        jnp.abs(jnp.mean(res.squeeze() * norm_weights, axis=-1) - 1) ** 2
-        #    )
+        res = res.squeeze() * norm_weight
     elif isinstance(u, SPINN):
         # NOTE norm_weight must be scalar here
-        res = u(x_and_norm_weight[0], params)
+        res = u(x, params)
         assert res.shape[-1] == 1, "norm loss expects unidimensional *SPINN"
-        res = res.squeeze() * x_and_norm_weight[1]
-        #    jnp.abs(
-        #        jnp.mean(
-        #            res.squeeze(),
-        #        )
-        #        * norm_weights
-        #        - 1
-        #    )
-        #    ** 2
-        # )
-        # mse_norm_loss = jnp.mean(
-        #    jnp.abs(
-        #        jnp.mean(
-        #            res.squeeze(),
-        #            axis=list(d + 1 for d in range(res.ndim - 2)),
-        #        )
-        #        * norm_weights
-        #        - 1
-        #    )
-        #    ** 2
-        # )
+        res = res.squeeze() * norm_weight
     else:
         raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")
 
@@ -215,10 +219,14 @@ def normalization_loss_apply(
 def boundary_condition_apply(
     boundary_condition: BoundaryConditionAbstract,
     u: AbstractPINN,
-    border_batch: Array,
+    border_point: Array,
     params: Params[Array],
 ) -> Float[Array, " "] | tuple[Float[Array, " n_samples eq_dim"], ...]:
-    residuals = boundary_condition.evaluate(border_batch, u, params)
+    """
+    `border_point` is not batched in the case of PINN or HyperPINN
+    `border_point` is batched in the case of SPINN
+    """
+    residuals = boundary_condition.evaluate(border_point, u, params)
     return residuals
 
 
@@ -270,9 +278,9 @@ def equation_on_all_facets_equal(
 
 def observations_loss_apply(
     u: AbstractPINN,
-    batch: tuple[
-        Float[Array, " obs_batch_size input_dim"],
-        Float[Array, "obs_batch_size observation_dim"],
+    obs_point: tuple[
+        Float[Array, " input_dim"],
+        Float[Array, " observation_dim"],
     ],
     params: Params[Array],
     # vmap_axes: tuple[int, Params[int | None] | None],
@@ -280,9 +288,12 @@ def observations_loss_apply(
 ) -> Float[Array, " "]:
     if isinstance(u, (PINN, HyperPINN)):
         u_ = lambda *args: u(*args)[u.slice_solution]
-        val = u_(batch[0], params)[obs_slice]
-        residuals = _subtract_with_check(
-            batch[1], val, cause="user defined observed_values"
+        val = u_(obs_point[0], params)[obs_slice]
+        residuals = cast(
+            Array,
+            _subtract_with_check(
+                obs_point[1], val, cause="user defined observed_values"
+            ),
         )
     elif isinstance(u, SPINN):
         raise RuntimeError("observation loss term not yet implemented for SPINNs")
@@ -293,26 +304,38 @@ def observations_loss_apply(
 
 def initial_condition_apply(
     u: AbstractPINN,
-    omega_batch: Float[Array, " dimension"],
+    omega_initial_point: (Float[Array, " dim"] | Float[Array, " batch_size dim"]),
     params: Params[Array],
     initial_condition_fun: Callable,
     t0: Float[Array, " 1"],
 ) -> Float[Array, " "]:
+    """
+    `omega_initial_point` is not batched in the case of PINN or HyperPINN
+    `omega_initial_point` is batched in the case of SPINN
+    """
     if isinstance(u, (PINN, HyperPINN)):
-        t0_x = jnp.concatenate([t0, omega_batch])  # not a batch anymoer
-        residuals = _subtract_with_check(
-            initial_condition_fun(t0_x[1:]),
-            u(t0_x, params),
-            cause="Output of initial_condition_fun",
+        t0_x = jnp.concatenate([t0, omega_initial_point])  # not a batch anymoer
+        residuals = cast(
+            Array,
+            _subtract_with_check(
+                initial_condition_fun(t0_x[1:]),
+                u(t0_x, params),
+                cause="Output of initial_condition_fun",
+            ),
         )
     elif isinstance(u, SPINN):
-        n = omega_batch.shape[0]
-        t0_omega_batch = jnp.concatenate([t0 * jnp.ones((n, 1)), omega_batch], axis=1)
-        omega_batch_grid = get_grid(omega_batch)
-        residuals = _subtract_with_check(
-            initial_condition_fun(omega_batch_grid),
-            u(t0_omega_batch, params)[0],
-            cause="Output of initial_condition_fun",
+        n = omega_initial_point.shape[0]
+        t0_omega_initial_point = jnp.concatenate(
+            [t0 * jnp.ones((n, 1)), omega_initial_point], axis=1
+        )
+        omega_initial_point_grid = get_grid(omega_initial_point)
+        residuals = cast(
+            Array,
+            _subtract_with_check(
+                initial_condition_fun(omega_initial_point_grid),
+                u(t0_omega_initial_point, params)[0],
+                cause="Output of initial_condition_fun",
+            ),
         )
     else:
         raise ValueError(f"Bad type for u. Got {type(u)}, expected PINN or SPINN")

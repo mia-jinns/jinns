@@ -22,6 +22,7 @@ from jinns.loss._loss_utils import (
     mean_sum_reduction_pytree,
     vmap_loss_fun_classical,
     vmap_loss_fun_observations,
+    vmap_vmap_fun_normalization,
 )
 from jinns.parameters._derivative_keys import (
     _set_derivatives,
@@ -144,9 +145,13 @@ class _LossPDEAbstract(
                     "`norm_weights` must be provided when `norm_samples` is used!"
                 )
             if isinstance(norm_weights, (int, float)):
-                self.norm_weights = norm_weights * jnp.ones(
-                    (self.norm_samples.shape[0],)
-                )
+                self.norm_weights = jnp.array(norm_weights)
+            elif isinstance(norm_weights, Array) and (
+                norm_weights.shape == (1,) or norm_weights.ndim == 0
+            ):
+                # if user provided norm_weights=jnp.array([0.1]) or
+                # jnp.array(0.1)...
+                self.norm_weights = norm_weights
             else:
                 assert isinstance(norm_weights, Array)
                 if not (norm_weights.shape[0] == norm_samples.shape[0]):
@@ -177,9 +182,9 @@ class _LossPDEAbstract(
                 Callable[[tuple[Array, Array], Params[Array]], Array] | None
             ) = lambda b, p: normalization_loss_apply(
                 self.u,
-                b,
+                b[0],
+                b[1],
                 _set_derivatives(p, self.derivative_keys.norm_loss),
-                self.norm_weights,  # type: ignore -> can't get the __post_init__ narrowing here
             )
         else:
             norm_loss_fun = None
@@ -410,7 +415,7 @@ class LossPDEStatio(
 
         all_funs_and_params: PDEStatioComponents = PDEStatioComponents(
             dyn_loss={"f": dyn_loss_fun, "b": domain_batch},
-            norm_loss={"f": norm_loss_fun, "b": norm_batch},
+            norm_loss={"f": norm_loss_fun, "b": norm_batch, "in_axes": ((0, None),)},
             boundary_loss={"f": boundary_loss_fun, "b": border_batch},
             observations={
                 "f": obs_loss_fun,
@@ -537,7 +542,7 @@ class LossPDENonStatio(
                     residual_all_facets,
                 ),
                 0.0,
-            )  # NOTE this boundary component changes ! Outer sum is for the facets
+            )  # NOTE this boundary component is different ! Outer sum is for the facets
             if residual_all_facets is not None
             else None,
             # TODO here compute mean only on subarrays of axis 1 (ie for a
@@ -563,7 +568,7 @@ class LossPDENonStatio(
             dyn_loss=vmap_loss_fun_classical,
             initial_condition=vmap_loss_fun_classical,
             boundary_loss=vmap_loss_fun_classical,
-            norm_loss=vmap_loss_fun_classical,
+            norm_loss=vmap_vmap_fun_normalization,
             observations=vmap_loss_fun_observations,
         ),
     )
@@ -639,19 +644,12 @@ class LossPDENonStatio(
         )
         assert self.norm_weights is not None
         if isinstance(self.u, (PINN, HyperPINN)):
-            # norm_weights is a array with n_norm_samples elements
-            # we will tile it so that the norm_samples match the spatial points
-            norm_weights = jnp.tile(
-                self.norm_weights,
-                reps=(batches[0].shape[0],)
-                + tuple(1 for i in self.norm_weights.shape[1:]),
-            )
             return (
                 make_cartesian_product(
                     batches[0],
                     batches[1],
-                ).reshape(batches[0].shape[0] * batches[1].shape[0], -1),
-                norm_weights,
+                ).reshape(batches[0].shape[0], batches[1].shape[0], -1),
+                self.norm_weights,
             )
         elif isinstance(self.u, SPINN):
             # norm_weights is nec. a scalar as no other case is implemented
@@ -661,7 +659,7 @@ class LossPDENonStatio(
                 jnp.concatenate(
                     [jnp.repeat(batches[0], rep_t, axis=0), batches[1]], axis=-1
                 ),
-                self.norm_weights * jnp.ones_like(batches[1]),
+                self.norm_weights,
             )
         else:
             raise ValueError(
@@ -730,7 +728,7 @@ class LossPDENonStatio(
 
         all_funs_and_params: PDENonStatioComponents = PDENonStatioComponents(
             dyn_loss={"f": dyn_loss_fun, "b": domain_batch},
-            norm_loss={"f": norm_loss_fun, "b": norm_batch, "in_axes": ((0, 0),)},
+            norm_loss={"f": norm_loss_fun, "b": norm_batch},
             # here since the specifities of norm_loss we need to rewrite the
             # defaults in_axes=(0,) argument
             boundary_loss={"f": boundary_loss_fun, "b": border_batch},
