@@ -151,7 +151,7 @@ def vmap_loss_fun_only_params(*, f, p, vmap_in_axes_params, jacrev=False, **kwar
     if vmap_in_axes_params != (None,):
         # Note that here we use the reduction as defined in
         # self._reduction_functions
-        f = jax.vmap(f, vmap_in_axes_params)(p)
+        f = jax.vmap(f, vmap_in_axes_params)
     return jax.tree.map(lambda array: array[None], f(p), is_leaf=eqx.is_inexact_array)
 
 
