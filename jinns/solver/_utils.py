@@ -239,22 +239,40 @@ def _loss_evaluate_and_natural_gradient_step(
         non_opt_params=non_opt_params,
     )
 
-    # to ponderate r and g, at the sample level, we somehow invert the
-    # reduction function : use sqrt of actual loss weight and divide by the
-    # number of samples in the batch taking into account multidimensationality
-    # NOTE this is currently only for mean_sum_reduction
-    loss_weights_samples = jax.tree.unflatten(
+    if r.boundary_loss is not None:
+        lw_ = eqx.tree_at(
+            lambda pt: pt.boundary_loss,
+            loss.loss_weights,
+            tuple(loss.loss_weights.boundary_loss for _ in range(len(r.boundary_loss))),
+        )
+    else:
+        lw_ = loss.loss_weights
+
+    loss_weights_samples_g = jax.tree.unflatten(
         jax.tree.structure(r),
-        1
+        jnp.sqrt(jnp.array(jax.tree.leaves(lw_)))
         / jnp.sqrt(
             jnp.array(
                 jax.tree.leaves(jax.tree.map(lambda l: l.shape[0] * l.shape[1], r))
             )
         ),
     )
+    loss_weights_samples_r = jax.tree.unflatten(
+        jax.tree.structure(r),
+        jnp.sqrt(jnp.array(jax.tree.leaves(lw_)))
+        / jnp.sqrt(
+            jnp.array(
+                jax.tree.leaves(jax.tree.map(lambda l: l.shape[0] * l.shape[1], r))
+            )
+        ),
+    )
+    loss_weights_samples_only_lw = jax.tree.unflatten(
+        jax.tree.structure(r), jnp.sqrt(jnp.array(jax.tree.leaves(lw_)))
+    )
+    # to ponderate r at the sample level
 
-    reweighted_r = _reweight_pytree(r, loss_weights_samples)
-    reweighted_g = _reweight_pytree(g, loss_weights_samples)
+    reweighted_r = _reweight_pytree(r, loss_weights_samples_r)
+    reweighted_g = _reweight_pytree(g, loss_weights_samples_g)
 
     # Flatten the pytree of params gradient as a big (n, n_equations, p) array
     M = _post_process_pytree_of_grad(reweighted_g)
@@ -268,21 +286,33 @@ def _loss_evaluate_and_natural_gradient_step(
     # NOTE: beware that euclidean gradient (might) differs from jax.grad(loss.evaluate) here. Indeed jinns takes the sum(mean(loss_type)) while here we compute mean(sum(all_loss_types). These might differs when different number of samples are used.
     # Equality can be matched by changing the jinns reduction function internally.
     # See tests/optimizer_tests/test_euclidean_gradient_equality.py
-    euclidean_grad_array = jnp.mean(
-        M.transpose((0, 2, 1)) @ R[..., None], axis=0
+    euclidean_grad_array = jnp.sum(  # NOTE sum because averageing is thanks to
+        # reweighting
+        M.transpose((0, 2, 1)) @ R[..., None],
+        axis=0,
     ).squeeze()  # shape (n_params,)
+    # euclidean_grad_array = jnp.einsum(
+    #    "ijk,ij->k", M, R
+    # )
+    # jax.debug.print("{x}", x=jnp.allclose(euclidean_grad_array,
+    #                                    euclidean_grad_array_)
+    # ) # TRUE
 
     # Assemble Gram Matrix
     #   1. Do the mean over the `n` collocation points -> get a `(C, p, p)` array.
     #   2. Then, do the sum over `C` (axis=0)
     # TODO: maybe add a check for which is bigger between `C` and `n` for the
     # order of operations. Or write this as a jnp.einsum ? :)
-    n = M.shape[0]
-    gram_mat = (1 / n) * M.transpose((1, 2, 0)) @ M.transpose((1, 0, 2))
+    gram_mat = M.transpose((1, 2, 0)) @ M.transpose((1, 0, 2))
+    # NOTE no 1/n * because averaging is in reweighting
     gram_mat = gram_mat.sum(axis=0)
+    # gram_mat = jnp.einsum("ijk,ijl->kl", M, M)
+    # jax.debug.print("{x}", x=jnp.allclose(gram_mat,
+    #                                    gram_mat_)
+    # ) -> check
 
     # Solve the linear system G natural_grad = eucl_grad
-    reg = 1e-5
+    reg = 1e-5  # NOTE might be useful to tune this reg e.g. ANAGRAM
     n_param = gram_mat.shape[0]
     natural_grad_array = jax.scipy.linalg.solve(
         gram_mat + reg * jnp.eye(n_param), euclidean_grad_array, assume_a="sym"
@@ -301,17 +331,22 @@ def _loss_evaluate_and_natural_gradient_step(
     loss_terms = jax.tree.map(
         lambda red_fun, r_: red_fun(r_),
         loss._reduction_functions,
-        _reweight_pytree(r, loss_weights_samples),
+        _reweight_pytree(r, loss_weights_samples_only_lw),
     )
 
-    train_loss_value = jnp.mean(
-        jnp.concatenate(
-            jax.tree.leaves(
-                jax.tree.map(jnp.square, _reweight_pytree(r, loss_weights_samples)),
-            ),
-            axis=0,
+    train_loss_value = (
+        jnp.sum(  # NOTE
+            jnp.concatenate(
+                jax.tree.leaves(
+                    jax.tree.map(
+                        jnp.square, _reweight_pytree(r, loss_weights_samples_r)
+                    ),
+                ),
+                axis=0,
+            )
         )
-    )
+        / 4
+    )  # NOTE NOTE
 
     opt_natural_grads, _ = natural_grads.partition(params_mask)
     opt_euclidean_grads, _ = euclidean_grads.partition(
@@ -340,14 +375,19 @@ def _loss_evaluate_and_natural_gradient_step(
             batch,
             non_opt_params=None,
         )
-        total_loss = jnp.mean(
-            jnp.concatenate(
-                jax.tree.leaves(
-                    jax.tree.map(jnp.square, _reweight_pytree(r, loss_weights_samples)),
-                ),
-                axis=0,
+        total_loss = (
+            jnp.sum(  # NOTE
+                jnp.concatenate(
+                    jax.tree.leaves(
+                        jax.tree.map(
+                            jnp.square, _reweight_pytree(r, loss_weights_samples_r)
+                        ),
+                    ),
+                    axis=0,
+                )
             )
-        )
+            / 4
+        )  # NOTE NOTE
         return total_loss
 
     if not isinstance(optimizer, optax.GradientTransformationExtraArgs):
