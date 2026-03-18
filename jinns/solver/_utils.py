@@ -17,7 +17,7 @@ import optax
 
 
 from jinns.nn._hyperpinn import _get_param_nb
-
+from jinns.loss._loss_components import ODEComponents
 from jinns.data._utils import append_param_batch, append_obs_batch
 from jinns.utils._utils import _check_nan_in_pytree
 from jinns.data._DataGeneratorODE import DataGeneratorODE
@@ -239,7 +239,7 @@ def _loss_evaluate_and_natural_gradient_step(
         non_opt_params=non_opt_params,
     )
 
-    if r.boundary_loss is not None:
+    if not isinstance(r, ODEComponents) and r.boundary_loss is not None:
         lw_ = eqx.tree_at(
             lambda pt: pt.boundary_loss,
             loss.loss_weights,
