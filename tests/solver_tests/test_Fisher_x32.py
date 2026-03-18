@@ -129,5 +129,4 @@ def test_Fisher_10it_ngd(train_Fisher_init):
     params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _, _, _, _ = jinns.solve(
         init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
     )
-    todo = jnp.inf
-    assert jnp.allclose(total_loss_list[-1], todo, atol=1e-1)
+    assert jnp.allclose(total_loss_list[-1], 0.9451259, atol=1e-1)

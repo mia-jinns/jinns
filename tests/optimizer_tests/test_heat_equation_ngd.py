@@ -10,6 +10,7 @@ import equinox as eqx
 
 import optax
 from jinns.optimizers import vanilla_ngd
+from jinns.loss import PDENonStatio
 
 
 @pytest.fixture
@@ -64,8 +65,6 @@ def train_heat_init():
         nn_params=init_sol_nn_params,
         eq_params={"D": D},
     )
-
-    from jinns.loss import PDENonStatio
 
     class HeatEquation(PDENonStatio):
         def equation(self, t_x, u, params):
