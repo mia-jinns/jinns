@@ -239,6 +239,9 @@ def _loss_evaluate_and_natural_gradient_step(
         non_opt_params=non_opt_params,
     )
 
+    nb_loss_terms = len(jax.tree.leaves(r))
+
+    # Preprocess loss_weights if needed: we might have tuples at some fields
     if not isinstance(r, ODEComponents) and r.boundary_loss is not None:
         lw_ = eqx.tree_at(
             lambda pt: pt.boundary_loss,
@@ -335,7 +338,7 @@ def _loss_evaluate_and_natural_gradient_step(
     )
 
     train_loss_value = (
-        jnp.sum(  # NOTE
+        jnp.sum(
             jnp.concatenate(
                 jax.tree.leaves(
                     jax.tree.map(
@@ -345,8 +348,10 @@ def _loss_evaluate_and_natural_gradient_step(
                 axis=0,
             )
         )
-        / 4
-    )  # NOTE NOTE
+        / nb_loss_terms  # NOTE this outer average is only with
+        # nb_loss_terms because inner average with respective sample weights is
+        # already done via _reweight_pytree
+    )
 
     opt_natural_grads, _ = natural_grads.partition(params_mask)
     opt_euclidean_grads, _ = euclidean_grads.partition(
@@ -381,7 +386,7 @@ def _loss_evaluate_and_natural_gradient_step(
             non_opt_params=non_opt_params,
         )
         total_loss = (
-            jnp.sum(  # NOTE
+            jnp.sum(
                 jnp.concatenate(
                     jax.tree.leaves(
                         jax.tree.map(
@@ -391,8 +396,10 @@ def _loss_evaluate_and_natural_gradient_step(
                     axis=0,
                 )
             )
-            / 4
-        )  # NOTE NOTE
+            / nb_loss_terms  # NOTE this outer average is only with
+            # nb_loss_terms because inner average with respective sample weights is
+            # already done via _reweight_pytree
+        )
         return total_loss
 
     if not isinstance(optimizer, optax.GradientTransformationExtraArgs):
