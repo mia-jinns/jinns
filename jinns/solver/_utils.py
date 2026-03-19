@@ -363,17 +363,22 @@ def _loss_evaluate_and_natural_gradient_step(
     # assert isinstance(optimizer, optax.sgd)
 
     # NOTE: we don't use `_gradient_step` here because of its @jit decorator.
+    # TODO `_gradient_step` (and others) do not need their jit decorator right?
     # Indeed, it cannot be modified to accept extra kwargs for
     # optimizer.update(). The latter is necessary for backtracking line search
     # (or any other optax.BaseTransformationExtraArgs).
-    def ngd_value_fn(params):
+    def ngd_value_fn(params, *, non_opt_params):
+        """
+        non_opt_params is another extra_args needed to reform the correct
+        params (with non None values at non optimized params - this is done in
+        loss.evaluate) in order to be able to evaluate
+        """
         # Not using loss.evaluate here cause of the mean(sum()) vs sum(mean)
         # remark. This fn computes the loss we are truly minimizing with NGD.
         r, _ = loss.evaluate_with_natural_gradient(
-            params,  # it should be ok to pass `params` here, no need to use
-            # _get_masked_optimization_stuff
+            params,
             batch,
-            non_opt_params=None,
+            non_opt_params=non_opt_params,
         )
         total_loss = (
             jnp.sum(  # NOTE
@@ -406,6 +411,7 @@ def _loss_evaluate_and_natural_gradient_step(
         value=train_loss_value,
         grad=opt_euclidean_grads,
         value_fn=ngd_value_fn,
+        non_opt_params=non_opt_params,
     )
 
     opt_params = optax.apply_updates(opt_params, updates)  # type: ignore

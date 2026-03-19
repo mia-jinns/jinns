@@ -20,6 +20,7 @@ from jinns.solver._utils import (
     _init_stored_params,
     _get_break_fun,
     _loss_evaluate_and_gradient_step,
+    _loss_evaluate_and_natural_gradient_step,
     _build_get_batch,
     _store_loss_and_params,
     _print_fn,
@@ -31,6 +32,7 @@ from jinns.utils._containers import (
     LossContainer,
     StoredObjectContainer,
 )
+from jinns.optimizers._natural_gradient import NGDState
 
 if TYPE_CHECKING:
     from typing import Any
@@ -526,6 +528,13 @@ def solve_alternate(
                 key, subkey = jax.random.split(key)
             else:
                 subkey = None
+
+            # New in jinns 1.8 : handles natural gradient
+            if isinstance(nn_opt_state, NGDState):  # and opt_state.is_ngd:
+                _step = _loss_evaluate_and_natural_gradient_step
+            else:
+                _step = _loss_evaluate_and_gradient_step
+
             (
                 train_loss_value,
                 params,
@@ -533,7 +542,7 @@ def solve_alternate(
                 nn_opt_state,
                 loss,
                 loss_terms,
-            ) = _loss_evaluate_and_gradient_step(
+            ) = _step(
                 i,
                 batch,
                 loss,
@@ -545,7 +554,6 @@ def solve_alternate(
                 subkey,
                 nn_params_mask,
                 nn_opt_state_field_for_acceleration,
-                with_loss_weight_update=True,
             )
 
             # save loss value and selected parameters
