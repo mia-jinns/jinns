@@ -239,8 +239,6 @@ def _loss_evaluate_and_natural_gradient_step(
         non_opt_params=non_opt_params,
     )
 
-    nb_loss_terms = len(jax.tree.leaves(r))
-
     # Preprocess loss_weights if needed: we might have tuples at some fields
     if not isinstance(r, ODEComponents) and r.boundary_loss is not None:
         lw_ = eqx.tree_at(
@@ -337,20 +335,13 @@ def _loss_evaluate_and_natural_gradient_step(
         _reweight_pytree(r, loss_weights_samples_only_lw),
     )
 
-    train_loss_value = (
-        jnp.sum(
-            jnp.concatenate(
-                jax.tree.leaves(
-                    jax.tree.map(
-                        jnp.square, _reweight_pytree(r, loss_weights_samples_r)
-                    ),
-                ),
-                axis=0,
-            )
+    train_loss_value = jnp.sum(
+        jnp.concatenate(
+            jax.tree.leaves(
+                jax.tree.map(jnp.square, _reweight_pytree(r, loss_weights_samples_r)),
+            ),
+            axis=0,
         )
-        / nb_loss_terms  # NOTE this outer average is only with
-        # nb_loss_terms because inner average with respective sample weights is
-        # already done via _reweight_pytree
     )
 
     opt_natural_grads, _ = natural_grads.partition(params_mask)
@@ -385,20 +376,15 @@ def _loss_evaluate_and_natural_gradient_step(
             batch,
             non_opt_params=non_opt_params,
         )
-        total_loss = (
-            jnp.sum(
-                jnp.concatenate(
-                    jax.tree.leaves(
-                        jax.tree.map(
-                            jnp.square, _reweight_pytree(r, loss_weights_samples_r)
-                        ),
+        total_loss = jnp.sum(
+            jnp.concatenate(
+                jax.tree.leaves(
+                    jax.tree.map(
+                        jnp.square, _reweight_pytree(r, loss_weights_samples_r)
                     ),
-                    axis=0,
-                )
+                ),
+                axis=0,
             )
-            / nb_loss_terms  # NOTE this outer average is only with
-            # nb_loss_terms because inner average with respective sample weights is
-            # already done via _reweight_pytree
         )
         return total_loss
 

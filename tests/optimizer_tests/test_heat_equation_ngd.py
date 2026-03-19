@@ -131,5 +131,5 @@ def test_heat_ngd_10it(train_heat_init):
         print_loss_every=n_iter // 10,
     )
 
-    assert jnp.allclose(total_loss_list[-1], 0.05048845, atol=1e-1)
+    assert jnp.allclose(total_loss_list[-1], 0.28049362, atol=1e-1)
     assert ngd_params.eq_params.D == init_params.eq_params.D  # should not move
