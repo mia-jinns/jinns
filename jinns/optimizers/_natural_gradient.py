@@ -23,10 +23,10 @@ def vanilla_ngd(
         return NGDState(tx_state=tx_state, is_ngd=True)
 
     def update(
-        updates, state, params=None, **extra_args
+        updates, state, params=None, **extra_kwargs
     ) -> tuple[optax.Updates, NGDState]:
         tx_state = state.tx_state
-        updates, new_tx_state = tx.update(updates, tx_state, params, **extra_args)
+        updates, new_tx_state = tx.update(updates, tx_state, params, **extra_kwargs)
         return (updates, NGDState(tx_state=new_tx_state, is_ngd=True))
 
     return optax.GradientTransformationExtraArgs(
