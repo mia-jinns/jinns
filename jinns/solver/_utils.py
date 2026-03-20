@@ -7,7 +7,6 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 from typing import TYPE_CHECKING, Callable
-from functools import partial
 import jax
 from jax import jit
 import jax.numpy as jnp
@@ -77,7 +76,7 @@ def _init_stored_params(tracked_params, params, n_iter):
     )
 
 
-@partial(jit, static_argnames=["optimizer", "params_mask", "with_loss_weight_update"])
+# @partial(jit, static_argnames=["optimizer", "params_mask", "with_loss_weight_update"])
 def _loss_evaluate_and_gradient_step(
     i,
     batch: AnyBatch,
@@ -186,7 +185,7 @@ def _loss_evaluate_and_gradient_step(
     return train_loss_value, params, last_non_nan_params, state, loss, loss_terms
 
 
-@partial(jit, static_argnames=["optimizer", "params_mask", "with_loss_weight_update"])
+# @partial(jit, static_argnames=["optimizer", "params_mask", "with_loss_weight_update"])
 def _loss_evaluate_and_natural_gradient_step(
     i,
     batch: AnyBatch,
@@ -279,10 +278,6 @@ def _loss_evaluate_and_natural_gradient_step(
     # arrays
     Ms = _post_process_pytree_of_grad(reweighted_g)
 
-    # R = jnp.concatenate(
-    #    jax.tree.leaves(reweighted_r),
-    #    axis=0,
-    # )
     Rs = reweighted_r
 
     # Form euclidean grad
@@ -342,7 +337,7 @@ def _loss_evaluate_and_natural_gradient_step(
         jnp.concatenate(
             jax.tree.leaves(
                 jax.tree.map(
-                    lambda arr: jnp.sum(arr, axis=-1) ** 2,
+                    lambda arr: jnp.sum(arr**2, axis=-1),
                     _reweight_pytree(r, loss_weights_samples_r),
                 ),
             ),
@@ -386,7 +381,7 @@ def _loss_evaluate_and_natural_gradient_step(
             jnp.concatenate(
                 jax.tree.leaves(
                     jax.tree.map(
-                        lambda arr: jnp.sum(arr, axis=-1) ** 2,
+                        lambda arr: jnp.sum(arr**2, axis=-1),
                         _reweight_pytree(r, loss_weights_samples_r),
                     ),
                 ),
@@ -527,10 +522,10 @@ def _reweight_pytree(pt, lw):
     )
 
 
-@partial(
-    jit,
-    static_argnames=["optimizer"],
-)
+# @partial(
+#    jit,
+#    static_argnames=["optimizer"],
+# )
 def _gradient_step(
     grads: Params[Array],
     optimizer: optax.GradientTransformation,
@@ -563,7 +558,7 @@ def _gradient_step(
     )
 
 
-@partial(jit, static_argnames=["params_mask"])
+# @partial(jit, static_argnames=["params_mask"])
 def _get_masked_optimization_stuff(
     params, state, state_field_for_acceleration, params_mask
 ):
@@ -611,7 +606,7 @@ def _get_masked_optimization_stuff(
     )
 
 
-@partial(jit, static_argnames=["params_mask"])
+# @partial(jit, static_argnames=["params_mask"])
 def _get_unmasked_optimization_stuff(
     opt_params, non_opt_params, state, opt_state, non_opt_state, params_mask
 ):
@@ -637,7 +632,7 @@ def _get_unmasked_optimization_stuff(
     return params, state
 
 
-@partial(jit, static_argnames=["prefix"])
+# @partial(jit, static_argnames=["prefix"])
 def _print_fn(i: int, loss_val: Float, print_loss_every: int, prefix: str = ""):
     # note that if the following is not jitted in the main for loop, it is
     # super slow
