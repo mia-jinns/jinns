@@ -14,17 +14,11 @@ def train_Fisher_init():
     jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
     eqx_list = (
-        (eqx.nn.Linear, 2, 50),
+        (eqx.nn.Linear, 2, 16),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 50, 50),
+        (eqx.nn.Linear, 16, 16),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 50, 50),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 50, 50),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 50, 50),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 50, 1),
+        (eqx.nn.Linear, 16, 1),
         (jnp.exp,),
     )
     key, subkey = random.split(key)
@@ -113,9 +107,28 @@ def train_Fisher_10it(train_Fisher_init):
 def test_initial_loss_Fisher(train_Fisher_init):
     init_params, loss, train_data = train_Fisher_init
     train_data, batch = train_data.get_batch()
-    assert jnp.allclose(loss.evaluate(init_params, batch)[0], 42.47814883, atol=1e-1)
+    assert jnp.allclose(loss.evaluate(init_params, batch)[0], 50.05214172, atol=1e-4)
 
 
 def test_10it_Fisher(train_Fisher_10it):
     total_loss_val = train_Fisher_10it
-    assert jnp.allclose(total_loss_val, 38.52351677, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 49.2611449, atol=1e-4)
+
+
+def test_Fisher_10it_ngd(train_Fisher_init):
+    init_params, loss, train_data = train_Fisher_init
+
+    params = init_params
+
+    ngd_optim = optax.chain(
+        optax.sgd(learning_rate=1.0),
+        optax.scale_by_backtracking_linesearch(max_backtracking_steps=15, verbose=True),
+    )
+    tx = jinns.optimizers.vanilla_ngd(
+        ngd_optim
+    )  # use jinns custom wrapper to tell `solve` to use ngd
+    n_iter = 10
+    params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _, _, _, _ = jinns.solve(
+        init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
+    )
+    assert jnp.allclose(total_loss_list[-1], 3.59596884, atol=1e-4)

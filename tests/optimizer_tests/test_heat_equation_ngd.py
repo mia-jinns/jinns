@@ -15,6 +15,7 @@ from jinns.loss import PDENonStatio
 
 @pytest.fixture
 def train_heat_init():
+    jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
     key, subkey = random.split(key)
 
@@ -131,5 +132,5 @@ def test_heat_ngd_10it(train_heat_init):
         print_loss_every=n_iter // 10,
     )
 
-    assert jnp.allclose(total_loss_list[-1], 0.28049362, atol=1e-1)
+    assert jnp.allclose(total_loss_list[-1], 0.23563605, atol=1e-4)
     assert ngd_params.eq_params.D == init_params.eq_params.D  # should not move

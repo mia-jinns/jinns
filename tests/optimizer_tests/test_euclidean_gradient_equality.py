@@ -47,6 +47,7 @@ class LossPDENonStatio_(jinns.loss.LossPDENonStatio):
 
 
 def test_euclidean_gradients_equality():
+    jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
     key, subkey = random.split(key)
 
