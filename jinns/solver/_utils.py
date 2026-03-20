@@ -275,42 +275,45 @@ def _loss_evaluate_and_natural_gradient_step(
     reweighted_r = _reweight_pytree(r, loss_weights_samples_r)
     reweighted_g = _reweight_pytree(g, loss_weights_samples_g)
 
-    # Flatten the pytree of params gradient as a big (n, n_equations, p) array
-    M = _post_process_pytree_of_grad(reweighted_g)
+    # Flatten the pytree of params gradient as a tuple of (n, n_equations, p)
+    # arrays
+    Ms = _post_process_pytree_of_grad(reweighted_g)
 
-    R = jnp.concatenate(
-        jax.tree.leaves(reweighted_r),
-        axis=0,
-    )
+    # R = jnp.concatenate(
+    #    jax.tree.leaves(reweighted_r),
+    #    axis=0,
+    # )
+    Rs = reweighted_r
 
     # Form euclidean grad
     # NOTE: beware that euclidean gradient (might) differs from jax.grad(loss.evaluate) here. Indeed jinns takes the sum(mean(loss_type)) while here we compute mean(sum(all_loss_types). These might differs when different number of samples are used.
     # Equality can be matched by changing the jinns reduction function internally.
     # See tests/optimizer_tests/test_euclidean_gradient_equality.py
-    euclidean_grad_array = jnp.sum(  # NOTE sum because averageing is thanks to
-        # reweighting
-        M.transpose((0, 2, 1)) @ R[..., None],
-        axis=0,
-    ).squeeze()  # shape (n_params,)
-    # euclidean_grad_array = jnp.einsum(
-    #    "ijk,ij->k", M, R
-    # )
-    # jax.debug.print("{x}", x=jnp.allclose(euclidean_grad_array,
-    #                                    euclidean_grad_array_)
-    # ) # TRUE
+
+    euclidean_grad_pytree = jax.tree.map(
+        lambda M, R: jnp.einsum("ijk,ij->k", M, R), Ms, Rs
+    )
+    # <=>
+    # euclidean_grad_array = jnp.sum(  # NOTE sum because averageing is thanks to reweighting
+    #    M.transpose((0, 2, 1)) @ R[..., None],
+    #    axis=0,
+    # ).squeeze()  # shape (n_params,)
+
+    euclidean_grad_array = jax.tree.reduce(jnp.add, euclidean_grad_pytree)
 
     # Assemble Gram Matrix
     #   1. Do the mean over the `n` collocation points -> get a `(C, p, p)` array.
     #   2. Then, do the sum over `C` (axis=0)
     # TODO: maybe add a check for which is bigger between `C` and `n` for the
     # order of operations. Or write this as a jnp.einsum ? :)
-    gram_mat = M.transpose((1, 2, 0)) @ M.transpose((1, 0, 2))
+    gram_mat_pytree = jax.tree.map(
+        lambda M: jnp.einsum("ijk,ijl->kl", M, M),
+        # <=> lambda M: (M.transpose((1, 2, 0)) @ M.transpose((1, 0, 2))).sum(axis=0),
+        Ms,
+    )
     # NOTE no 1/n * because averaging is in reweighting
-    gram_mat = gram_mat.sum(axis=0)
-    # gram_mat = jnp.einsum("ijk,ijl->kl", M, M)
-    # jax.debug.print("{x}", x=jnp.allclose(gram_mat,
-    #                                    gram_mat_)
-    # ) -> check
+
+    gram_mat = jax.tree.reduce(jnp.add, gram_mat_pytree)
 
     # Solve the linear system G natural_grad = eucl_grad
     reg = 1e-5  # NOTE might be useful to tune this reg e.g. ANAGRAM
@@ -338,7 +341,10 @@ def _loss_evaluate_and_natural_gradient_step(
     train_loss_value = jnp.sum(
         jnp.concatenate(
             jax.tree.leaves(
-                jax.tree.map(jnp.square, _reweight_pytree(r, loss_weights_samples_r)),
+                jax.tree.map(
+                    lambda arr: jnp.sum(arr, axis=-1) ** 2,
+                    _reweight_pytree(r, loss_weights_samples_r),
+                ),
             ),
             axis=0,
         )
@@ -380,7 +386,8 @@ def _loss_evaluate_and_natural_gradient_step(
             jnp.concatenate(
                 jax.tree.leaves(
                     jax.tree.map(
-                        jnp.square, _reweight_pytree(r, loss_weights_samples_r)
+                        lambda arr: jnp.sum(arr, axis=-1) ** 2,
+                        _reweight_pytree(r, loss_weights_samples_r),
                     ),
                 ),
                 axis=0,
@@ -430,7 +437,7 @@ def _loss_evaluate_and_natural_gradient_step(
 
 def _post_process_pytree_of_grad(
     y: Params,
-) -> Float[Array, "n n_equations n_parameters"]:
+) -> tuple[Float[Array, "n n_equations n_parameters"], ...]:
     # TODO: document to describe steps
     # NOTE: for now we don't take a) loss_weights and b) vectorial weights for dyn_loss into account.
 
@@ -456,17 +463,11 @@ def _post_process_pytree_of_grad(
 
     # Then, concatenate all layers into a shape (nb, C, p) where p is the total
     # number of free parameters.
-    l = jax.tree.map(
+    return jax.tree.map(
         lambda leaf: jnp.concatenate(leaf, axis=2),
         l,
         is_leaf=lambda x: isinstance(x, list),
     )
-
-    # Finally, concatenate all the different type of loss (dyn, init, BC, etc.)
-    # into one big (n_tot, C, p) matrix
-    M = jnp.concatenate(jax.tree.leaves(l), axis=0)
-
-    return M
 
 
 def _nn_params_array_to_pytree(
