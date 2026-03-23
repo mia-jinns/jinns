@@ -8,10 +8,12 @@ import equinox as eqx
 class NGDState(eqx.Module):
     tx_state: optax.OptState
     is_ngd: bool = True  # useful to
+    gram_reg: float = 1e-5  # small ridge regularization on diag(G) when inverting
 
 
 def vanilla_ngd(
     tx: optax.GradientTransformationExtraArgs,
+    gram_reg=1e-5,
 ) -> optax.GradientTransformationExtraArgs:
     """
     An optax optimizer for Natural Gradient Descent in its vanilla version.
@@ -20,7 +22,7 @@ def vanilla_ngd(
 
     def init(params: optax.Params) -> NGDState:
         tx_state = tx.init(params)
-        return NGDState(tx_state=tx_state, is_ngd=True)
+        return NGDState(tx_state=tx_state, is_ngd=True, gram_reg=gram_reg)
 
     def update(
         updates, state, params=None, **extra_kwargs

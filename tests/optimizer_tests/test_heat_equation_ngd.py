@@ -106,7 +106,9 @@ def test_heat_ngd_10it(train_heat_init):
         optax.sgd(learning_rate=1.0),
         optax.scale_by_backtracking_linesearch(max_backtracking_steps=15, verbose=True),
     )
-    tx = vanilla_ngd(ngd_optim)  # use jinns custom wrapper to tell `solve` to use ngd
+    tx = vanilla_ngd(
+        ngd_optim, gram_reg=1e-5
+    )  # use jinns custom wrapper to tell `solve` to use ngd
     ngd_params = init_params
 
     key, subkey = random.split(key, 2)

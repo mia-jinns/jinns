@@ -311,7 +311,7 @@ def _loss_evaluate_and_natural_gradient_step(
     gram_mat = jax.tree.reduce(jnp.add, gram_mat_pytree)
 
     # Solve the linear system G natural_grad = eucl_grad
-    reg = 1e-5  # NOTE might be useful to tune this reg e.g. ANAGRAM
+    reg = state.gram_reg  # NOTE might be useful to tune this reg e.g. ANAGRAM
     n_param = gram_mat.shape[0]
     natural_grad_array = jax.scipy.linalg.solve(
         gram_mat + reg * jnp.eye(n_param), euclidean_grad_array, assume_a="sym"
@@ -511,10 +511,12 @@ def _reweight_pytree(pt, lw):
     If `leaf` is again a pytree, multiply each leaf of `leaf` by `w`.
     """
     return jax.tree.map(
-        lambda w, leaf: w * leaf
-        if eqx.is_inexact_array(leaf)
-        else jax.tree.map(  # leaf is a Params when reweighting g
-            lambda arr: w * arr, leaf, is_leaf=eqx.is_inexact_array
+        lambda w, leaf: (
+            w * leaf
+            if eqx.is_inexact_array(leaf)
+            else jax.tree.map(  # leaf is a Params when reweighting g
+                lambda arr: w * arr, leaf, is_leaf=eqx.is_inexact_array
+            )
         ),
         lw,
         pt,
