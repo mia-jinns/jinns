@@ -28,6 +28,7 @@ from jinns.utils._containers import (
     LossContainer,
     StoredObjectContainer,
 )
+from jinns.optimizers._natural_gradient import NGDState
 
 if TYPE_CHECKING:
     from jinns.utils._types import AnyBatch, SolveCarry, SolveAlternateCarry
@@ -76,8 +77,8 @@ def _init_stored_params(tracked_params, params, n_iter):
     )
 
 
-# @partial(jit, static_argnames=["optimizer", "params_mask", "with_loss_weight_update"])
 def _loss_evaluate_and_gradient_step(
+    *,
     i,
     batch: AnyBatch,
     loss: AbstractLoss,
@@ -92,7 +93,8 @@ def _loss_evaluate_and_gradient_step(
     with_loss_weight_update: bool = True,
 ):
     """
-    # The crux of our new approach is partitioning and recombining the parameters and optimization state according to params_mask.
+    The crux of our new approach is partitioning and recombining the parameters
+    and optimization state according to params_mask.
 
     params_mask:
         A jinns.parameters.Params object with boolean as leaves, specifying
@@ -185,23 +187,21 @@ def _loss_evaluate_and_gradient_step(
     return train_loss_value, params, last_non_nan_params, state, loss, loss_terms
 
 
-# @partial(jit, static_argnames=["optimizer", "params_mask", "with_loss_weight_update"])
 def _loss_evaluate_and_natural_gradient_step(
-    i,
+    *,
     batch: AnyBatch,
     loss: AbstractLoss,
     params: Params[Array],
     last_non_nan_params: Params[Array],
-    state: optax.OptState,
+    state: NGDState,
     optimizer: optax.GradientTransformation,
-    loss_container: LossContainer,
-    key: PRNGKeyArray,
     params_mask: Params[bool] | None = None,
     opt_state_field_for_acceleration: str | None = None,
-    with_loss_weight_update: bool = True,
+    **__,  # to ignore more arguments
 ):
     """
-    # The crux of our new approach is partitioning and recombining the parameters and optimization state according to params_mask.
+    The crux of our new approach is partitioning and recombining the parameters
+    and optimization state according to params_mask.
 
     params_mask:
         A jinns.parameters.Params object with boolean as leaves, specifying
@@ -299,8 +299,6 @@ def _loss_evaluate_and_natural_gradient_step(
     # Assemble Gram Matrix
     #   1. Do the mean over the `n` collocation points -> get a `(C, p, p)` array.
     #   2. Then, do the sum over `C` (axis=0)
-    # TODO: maybe add a check for which is bigger between `C` and `n` for the
-    # order of operations. Or write this as a jnp.einsum ? :)
     gram_mat_pytree = jax.tree.map(
         lambda M: jnp.einsum("ijk,ijl->kl", M, M),
         # <=> lambda M: (M.transpose((1, 2, 0)) @ M.transpose((1, 0, 2))).sum(axis=0),
@@ -354,16 +352,6 @@ def _loss_evaluate_and_natural_gradient_step(
     # parameters specified by params_mask. , no dummy state with filled with zero entries
     # all other entries of the pytrees are None thanks to params_mask)
 
-    # Here we force optax vanilla additive gradient update
-    # since it makes no sense to use other optimizers
-    # TODO: check sgd only
-    # assert isinstance(optimizer, optax.sgd)
-
-    # NOTE: we don't use `_gradient_step` here because of its @jit decorator.
-    # TODO `_gradient_step` (and others) do not need their jit decorator right?
-    # Indeed, it cannot be modified to accept extra kwargs for
-    # optimizer.update(). The latter is necessary for backtracking line search
-    # (or any other optax.BaseTransformationExtraArgs).
     def ngd_value_fn(params, *, non_opt_params):
         """
         non_opt_params is another extra_args needed to reform the correct
@@ -398,18 +386,17 @@ def _loss_evaluate_and_natural_gradient_step(
             f"You passed an {type(optimizer)}."
         )
 
-    updates, opt_state = optimizer.update(
+    opt_params, opt_state = _gradient_step(
         opt_natural_grads,
-        opt_state,
+        optimizer,
         opt_params,
+        opt_state,
         # extra kwargs passed to backtracking line search `update()` method
         value=train_loss_value,
         grad=opt_euclidean_grads,
         value_fn=ngd_value_fn,
         non_opt_params=non_opt_params,
     )
-
-    opt_params = optax.apply_updates(opt_params, updates)  # type: ignore
 
     params, state = _get_unmasked_optimization_stuff(
         opt_params,
@@ -433,8 +420,8 @@ def _loss_evaluate_and_natural_gradient_step(
 def _post_process_pytree_of_grad(
     y: Params,
 ) -> tuple[Float[Array, "n n_equations n_parameters"], ...]:
-    # TODO: document to describe steps
-    # NOTE: for now we don't take a) loss_weights and b) vectorial weights for dyn_loss into account.
+    # NOTE: for now we don't take a) loss_weights and b) vectorial weights for
+    # dyn_loss into account.
 
     # First, get the PyTree of all trainable parameters for each loss terms,
     # e.g. `dyn_loss`, `init`, `BC` etc.
@@ -524,15 +511,12 @@ def _reweight_pytree(pt, lw):
     )
 
 
-# @partial(
-#    jit,
-#    static_argnames=["optimizer"],
-# )
 def _gradient_step(
     grads: Params[Array],
     optimizer: optax.GradientTransformation,
     params: Params[Array],
     state: optax.OptState,
+    **kwargs,
 ) -> tuple[
     Params[Array],
     optax.OptState,
@@ -551,6 +535,7 @@ def _gradient_step(
         grads,  # type: ignore
         state,
         params,  # type: ignore
+        **kwargs,
     )  # Also see optimizer.init for explanation of type ignore
     params = optax.apply_updates(params, updates)  # type: ignore
 
@@ -560,7 +545,6 @@ def _gradient_step(
     )
 
 
-# @partial(jit, static_argnames=["params_mask"])
 def _get_masked_optimization_stuff(
     params, state, state_field_for_acceleration, params_mask
 ):
@@ -608,7 +592,6 @@ def _get_masked_optimization_stuff(
     )
 
 
-# @partial(jit, static_argnames=["params_mask"])
 def _get_unmasked_optimization_stuff(
     opt_params, non_opt_params, state, opt_state, non_opt_state, params_mask
 ):
@@ -634,7 +617,7 @@ def _get_unmasked_optimization_stuff(
     return params, state
 
 
-# @partial(jit, static_argnames=["prefix"])
+@jit(static_argnames=["prefix"])  # new in jax 0.8.1
 def _print_fn(i: int, loss_val: Float, print_loss_every: int, prefix: str = ""):
     # note that if the following is not jitted in the main for loop, it is
     # super slow
@@ -650,7 +633,6 @@ def _print_fn(i: int, loss_val: Float, print_loss_every: int, prefix: str = ""):
     )
 
 
-@jit
 def _store_loss_and_params(
     i: int,
     params: Params[Array],
@@ -832,7 +814,6 @@ def _build_get_batch(
             batch = append_obs_batch(batch, obs_batch)
         return batch, data, param_data, obs_data
 
-    @jit
     def get_batch(data, param_data, obs_data):
         """
         Original get_batch with no sharding

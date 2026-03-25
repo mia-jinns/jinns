@@ -380,17 +380,19 @@ def solve_alternate(
                     loss,
                     loss_terms,
                 ) = _loss_evaluate_and_gradient_step(
-                    i,
-                    batch,
-                    loss,
-                    optimization.params,
-                    optimization.last_non_nan_params,
-                    getattr(eq_opt_states, eq_param),
-                    eq_optim,
-                    loss_container,
-                    subkey,
-                    getattr(eq_params_masks, eq_param),
-                    getattr(eq_params_opt_state_field_for_accel, eq_param),
+                    i=i,
+                    batch=batch,
+                    loss=loss,
+                    params=optimization.params,
+                    last_non_nan_params=optimization.last_non_nan_params,
+                    state=getattr(eq_opt_states, eq_param),
+                    optimizer=eq_optim,
+                    loss_container=loss_container,
+                    key=subkey,
+                    params_mask=getattr(eq_params_masks, eq_param),
+                    opt_state_field_for_acceleration=getattr(
+                        eq_params_opt_state_field_for_accel, eq_param
+                    ),
                     with_loss_weight_update=True,
                 )
 
@@ -530,7 +532,7 @@ def solve_alternate(
                 subkey = None
 
             # New in jinns 1.8 : handles natural gradient
-            if isinstance(nn_opt_state, NGDState):  # and opt_state.is_ngd:
+            if isinstance(nn_opt_state, NGDState):
                 _step = _loss_evaluate_and_natural_gradient_step
             else:
                 _step = _loss_evaluate_and_gradient_step
@@ -543,17 +545,17 @@ def solve_alternate(
                 loss,
                 loss_terms,
             ) = _step(
-                i,
-                batch,
-                loss,
-                optimization.params,
-                optimization.last_non_nan_params,
-                nn_opt_state,
-                nn_optimizer,
-                loss_container,
-                subkey,
-                nn_params_mask,
-                nn_opt_state_field_for_acceleration,
+                i=i,
+                batch=batch,
+                loss=loss,
+                params=optimization.params,
+                last_non_nan_params=optimization.last_non_nan_params,
+                state=nn_opt_state,
+                optimizer=nn_optimizer,
+                loss_container=loss_container,
+                key=subkey,
+                params_mask=nn_params_mask,
+                opt_state_field_for_acceleration=nn_opt_state_field_for_acceleration,
             )
 
             # save loss value and selected parameters
