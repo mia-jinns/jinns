@@ -120,13 +120,7 @@ def test_Fisher_10it_ngd(train_Fisher_init):
 
     params = init_params
 
-    ngd_optim = optax.chain(
-        optax.sgd(learning_rate=1.0),
-        optax.scale_by_backtracking_linesearch(max_backtracking_steps=15, verbose=True),
-    )
-    tx = jinns.optimizers.vanilla_ngd(
-        ngd_optim
-    )  # use jinns custom wrapper to tell `solve` to use ngd
+    tx = jinns.optimizers.vanilla_ngd()
     n_iter = 10
     params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _, _, _, _ = jinns.solve(
         init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter

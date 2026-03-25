@@ -8,7 +8,6 @@ from jax import random
 import jax.numpy as jnp
 import equinox as eqx
 
-import optax
 from jinns.optimizers import vanilla_ngd
 from jinns.loss import PDENonStatio
 
@@ -102,13 +101,7 @@ def train_heat_init():
 def test_heat_ngd_10it(train_heat_init):
     init_params, loss, train_data, key = train_heat_init
     n_iter = 10
-    ngd_optim = optax.chain(
-        optax.sgd(learning_rate=1.0),
-        optax.scale_by_backtracking_linesearch(max_backtracking_steps=15, verbose=True),
-    )
-    tx = vanilla_ngd(
-        ngd_optim, gram_reg=1e-5
-    )  # use jinns custom wrapper to tell `solve` to use ngd
+    tx = vanilla_ngd()
     ngd_params = init_params
 
     key, subkey = random.split(key, 2)
