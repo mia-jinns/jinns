@@ -370,7 +370,7 @@ def _loss_evaluate_and_natural_gradient_step(
     # parameters specified by params_mask. , no dummy state with filled with zero entries
     # all other entries of the pytrees are None thanks to params_mask)
 
-    def ngd_value_fn(params, *, non_opt_params):
+    def ngd_value_fn(opt_params, *, non_opt_params):
         """
         non_opt_params is another extra_args needed to reform the correct
         params (with non None values at non optimized params - this is done in
@@ -379,7 +379,7 @@ def _loss_evaluate_and_natural_gradient_step(
         # Not using loss.evaluate here cause of the mean(sum()) vs sum(mean)
         # remark. This fn computes the loss we are truly minimizing with NGD.
         r, _ = loss.evaluate_with_natural_gradient(
-            params,
+            opt_params,
             batch,
             non_opt_params=non_opt_params,
         )
@@ -408,7 +408,12 @@ def _loss_evaluate_and_natural_gradient_step(
         # Following https://github.com/google-deepmind/optax/issues/1649
         def fill_eq_params_value_fn(ngd_value_fn, params):
             """Reconstructs the full parameter tree from the masked one.
-            Specific case: this is always eq_params that will be masked"""
+            Specific case: this is always eq_params that will be masked
+
+
+            We need to pass the full params (`params`) because opt_params might contain
+            None at eq_params, which would fail the last instruction
+            """
 
             def wrapper(masked_params):  # this is what will be called by the
                 # backtracking line search callback
@@ -507,6 +512,9 @@ def _nn_params_array_to_pytree(
 
     By default, the field `eq_params` is filled with zeros, as NGD is not
     meant for eq_params.
+
+    We need to pass the full params (`params`) because opt_params might contain
+    None at eq_params, which would fail the last instruction
     """
     _, params_cumsum = _get_param_nb(opt_params.nn_params)
     ng_flat = eqx.tree_at(
