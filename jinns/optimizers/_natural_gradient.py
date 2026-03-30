@@ -27,6 +27,9 @@ def vanilla_ngd(
     An optax optimizer for Natural Gradient Descent in its vanilla version.
     For now we force to internally use optax vanilla additive gradient update
     since it makes no sense to use other optimizers
+
+    eq_params_tx is a dictionnary with keys corresponding to eq_params and
+    fields being optax optimizer
     """
     ngd_optim_ = optax.chain(
         optax.sgd(learning_rate=1.0),
