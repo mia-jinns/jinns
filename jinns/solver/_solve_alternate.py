@@ -7,6 +7,7 @@ from __future__ import annotations
 import time
 import operator
 from dataclasses import fields
+from functools import partial
 from typing import TYPE_CHECKING
 import jax
 import jax.numpy as jnp
@@ -533,7 +534,10 @@ def solve_alternate(
 
             # New in jinns 1.8 : handles natural gradient
             if isinstance(nn_opt_state, NGDState):
-                _step = _loss_evaluate_and_natural_gradient_step
+                _step = partial(
+                    _loss_evaluate_and_natural_gradient_step,
+                    with_eq_params_update=False,  # in solve_alternate, we never update eq_params during an NGD step
+                )
             else:
                 _step = _loss_evaluate_and_gradient_step
 
