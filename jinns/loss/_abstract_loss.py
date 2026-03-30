@@ -284,7 +284,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         elif isinstance(self.u, SPINN):
             # NOTE there is no vmap here on each loss functin
             # as the SPINN expects the full batch
-            vmap_in_axes_params = None
+            vmap_in_axes_params = (None,)
 
             def loss_fun(*, f, b, p, **kwargs):
                 """
@@ -295,15 +295,23 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
                     return None
                 return f(b, p)
 
-            evaluate_by_terms_reduced = jax.tree.map(
-                lambda red_fun, kwargs: (lambda p: red_fun(loss_fun(**kwargs, p=p)))
+            evaluate_by_terms = jax.tree.map(
+                lambda kwargs: (lambda p: loss_fun(**kwargs, p=p))
                 if kwargs["f"] is not None
                 else None,
-                self._reduction_functions,
                 self._prepare_loss_terms(batch),
-                is_leaf=lambda x: (
-                    isinstance(x, tuple) and (callable(x[0]) or x[0] is None)
-                ),  # only traverse first layer
+                is_leaf=lambda x: isinstance(x, dict),  # only traverse first layer
+            )
+
+            if unreduced:
+                return evaluate_by_terms, params, vmap_in_axes_params
+            evaluate_by_terms_reduced = jax.tree.map(
+                lambda red_fun, loss_fun: (lambda p: red_fun(loss_fun(p)))
+                if loss_fun is not None
+                else None,
+                self._reduction_functions,
+                evaluate_by_terms,
+                is_leaf=lambda x: isinstance(x, dict),  # only traverse first layer
             )
         else:
             raise ValueError(
@@ -385,19 +393,37 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         )
         loss_terms = jax.tree.map(lambda fun: fun(params), evaluate_by_terms)
 
-        jacrev_evaluate_by_terms = lambda p: jax.tree.map(
-            lambda vlf, kwargs: vlf(
-                **kwargs,
-                p=p,
-                vmap_in_axes_params=vmap_in_axes_params,
-                jacrev=True,
-            ),
-            self._vmap_loss_fun,
-            self._prepare_loss_terms(batch),
-            is_leaf=lambda x: (
-                isinstance(x, tuple) and (callable(x[0]) or x[0] is None)
-            ),  # only traverse first layer
-        )
+        if isinstance(self.u, (PINN, HyperPINN)):
+            jacrev_evaluate_by_terms = lambda p: jax.tree.map(
+                lambda vlf, kwargs: vlf(
+                    **kwargs,
+                    p=p,
+                    vmap_in_axes_params=vmap_in_axes_params,
+                    jacrev=True,
+                ),
+                self._vmap_loss_fun,
+                self._prepare_loss_terms(batch),
+                is_leaf=lambda x: (
+                    isinstance(x, tuple) and (callable(x[0]) or x[0] is None)
+                ),  # only traverse first layer
+            )
+        elif isinstance(self.u, SPINN):
+            raise ValueError("Natural gradient is not implemented for SPINN")
+            # Below is a way to start implementing NGD for SPINN
+            # Then we need to modify the gradient computations and M and R
+            # manipulations for SPINN since shapes are different!
+
+            # jacrev_evaluate_by_terms = lambda p: jax.tree.map(
+            #    lambda kwargs: jax.jacrev(kwargs['f'], argnums=1)(kwargs['b'],
+            #                                                      p) if
+            #    kwargs['f'] is not None else None,
+            #    self._prepare_loss_terms(batch),
+            #    is_leaf=lambda x: isinstance(x, dict) # only traverse first layer
+            # )
+        else:
+            raise ValueError(
+                f"Bad type for self.u. Got {type(self.u)}, expected PINN or SPINN"
+            )
 
         # Return the unreduced gradients and loss terms for each sample for
         # each loss
