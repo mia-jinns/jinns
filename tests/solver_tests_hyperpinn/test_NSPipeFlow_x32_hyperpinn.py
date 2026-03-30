@@ -12,7 +12,7 @@ from jinns.parameters._params import update_eq_params
 
 @pytest.fixture
 def train_NSPipeFlow_init():
-    jax.config.update("jax_enable_x64", False)
+    jax.config.update("jax_enable_x64", True)
 
     key = random.PRNGKey(2)
 
@@ -22,10 +22,8 @@ def train_NSPipeFlow_init():
     p_out = 0
     p_in = 0.1
 
-    n = 10000
+    n = 1024
     nb = None
-    omega_batch_size = 128
-    omega_border_batch_size = None
     dim = 2
     xmin = 0
     xmax = xmin + L
@@ -40,8 +38,6 @@ def train_NSPipeFlow_init():
         key=subkey,
         n=n,
         nb=nb,
-        omega_batch_size=omega_batch_size,
-        omega_border_batch_size=omega_border_batch_size,
         dim=dim,
         min_pts=(xmin, ymin),
         max_pts=(xmax, ymax),
@@ -50,12 +46,11 @@ def train_NSPipeFlow_init():
 
     method = "grid"
     key, subkey = random.split(key)
-    np = 1000
-    param_batch_size = 128  # must be equal to batch size of the main DataGenerator
+    np = 1024
     param_train_data = jinns.data.DataGeneratorParameter(
         key=subkey,
         n=np,
-        param_batch_size=param_batch_size,
+        param_batch_size=np,
         param_ranges={"nu": (2e-4, 1.9e-3)},
         method=method,
     )
@@ -72,29 +67,21 @@ def train_NSPipeFlow_init():
         )
 
     eqx_list = (
-        (eqx.nn.Linear, 2, 50),
+        (eqx.nn.Linear, 2, 8),
         (jax.nn.swish,),
-        (eqx.nn.Linear, 50, 50),
+        (eqx.nn.Linear, 8, 8),
         (jax.nn.swish,),
-        (eqx.nn.Linear, 50, 50),
-        (jax.nn.swish,),
-        (eqx.nn.Linear, 50, 50),
-        (jax.nn.swish,),
-        (eqx.nn.Linear, 50, 3),
+        (eqx.nn.Linear, 8, 3),
     )
 
     eqx_list_hyper = (
-        (eqx.nn.Linear, 1, 32),  # input is of size 1 for scalar viscosity nu
+        (eqx.nn.Linear, 1, 20),  # input is of size 1 for scalar viscosity nu
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 32, 32),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 32, 32),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 32, 32),
+        (eqx.nn.Linear, 20, 20),
         (jax.nn.tanh,),
         (
             eqx.nn.Linear,
-            32,
+            20,
             1000,
         ),  # 1000 is a random guess, it will automatically be filled with the correct value
     )
@@ -160,4 +147,32 @@ def train_NSPipeFlow_10it(train_NSPipeFlow_init):
 
 def test_10it_NSPipeFlow(train_NSPipeFlow_10it):
     total_loss_val = train_NSPipeFlow_10it
-    assert jnp.allclose(total_loss_val, 0.00970628, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 0.02592982, atol=1e-4)
+
+
+@pytest.fixture
+def train_NSPipeFlow_10it_ngd(train_NSPipeFlow_init):
+    """
+    Fixture that requests a fixture
+    """
+    init_params, loss, train_data, param_train_data = train_NSPipeFlow_init
+
+    params = init_params
+
+    tx = jinns.optimizers.vanilla_ngd()
+    n_iter = 10
+
+    params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _, _, _, _ = jinns.solve(
+        init_params=params,
+        data=train_data,
+        param_data=param_train_data,
+        optimizer=tx,
+        loss=loss,
+        n_iter=n_iter,
+    )
+    return total_loss_list[9]
+
+
+def test_10it_NSPipeFlow_ngd(train_NSPipeFlow_10it_ngd):
+    total_loss_val = train_NSPipeFlow_10it_ngd
+    assert jnp.allclose(total_loss_val, 0.00060798, atol=1e-4)
