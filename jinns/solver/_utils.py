@@ -292,10 +292,11 @@ def _loss_evaluate_and_natural_gradient_step(
         lambda M, R: jnp.einsum("ijk,ij->k", M, R), Ms, Rs
     )
     # <=>
-    # euclidean_grad_array = jnp.sum(  # NOTE sum because averageing is thanks to reweighting
+    # euclidean_grad_array = jnp.sum(
     #    M.transpose((0, 2, 1)) @ R[..., None],
     #    axis=0,
     # ).squeeze()  # shape (n_params,)
+    # # NOTE jnp.sum because averageing is done via the (1 / sqrt(n)) reweighting
     euclidean_grad_array = jax.tree.reduce(jnp.add, euclidean_grad_pytree)
 
     # Assemble Gram Matrix
@@ -310,7 +311,7 @@ def _loss_evaluate_and_natural_gradient_step(
 
     gram_mat = jax.tree.reduce(jnp.add, gram_mat_pytree)
 
-    # Solve the linear system G natural_grad = eucl_grad
+    # Solve the linear system G @ natural_grad = eucl_grad
     reg = state.gram_reg  # NOTE might be useful to tune this reg e.g. ANAGRAM
     n_param = gram_mat.shape[0]
     natural_grad_array = jax.scipy.linalg.solve(
