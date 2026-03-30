@@ -1,18 +1,18 @@
 # Wrapper on `optax.GradientTransformationExtraArgs` to carry info about
 # wether to use NGD gradient_step() in solve (instead of regular)
 
-from typing import NamedTuple
+import equinox as eqx
 import optax
 import jinns
 
 
-class NGDState(NamedTuple):
+class NGDState(eqx.Module):
     tx_state: optax.OptState
     sgd_learning_rate: float = 1.0
     gram_reg: float = 1e-5  # small ridge regularization on diag(G) when inverting
     max_backtracking_steps: int = 15
     verbose_linesearch: bool = True
-    with_eq_params_update: bool = True
+    with_eq_params_update: bool = eqx.field(static=True, default=False)
 
 
 def vanilla_ngd(
@@ -72,7 +72,7 @@ def vanilla_ngd(
         updates, new_tx_state = ngd_optim.update(
             updates, tx_state, params, **extra_kwargs
         )
-        return (updates, ngd_state._replace(tx_state=new_tx_state))
+        return (updates, eqx.tree_at(lambda pt: pt.tx_state, ngd_state, new_tx_state))
 
     return optax.GradientTransformationExtraArgs(
         init, update

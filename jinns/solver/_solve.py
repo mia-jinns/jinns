@@ -344,7 +344,7 @@ def solve(
         extra_args = {}
         if isinstance(opt_state, NGDState):
             _step = _loss_evaluate_and_natural_gradient_step
-            extra_args["with_eq_params_update"] = NGDState.with_eq_params_update
+            extra_args["with_eq_params_update"] = opt_state.with_eq_params_update
         else:
             _step = _loss_evaluate_and_gradient_step
 
