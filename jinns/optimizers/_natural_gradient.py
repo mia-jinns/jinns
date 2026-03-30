@@ -37,7 +37,7 @@ def vanilla_ngd(
             nn_params="ngd", eq_params={key: key for key, _ in eq_params_tx.items()}
         )
 
-        ngd_optim = optax.multi_transform(
+        ngd_optim = optax.partition(
             {
                 **{
                     "ngd": ngd_optim_,
@@ -45,6 +45,7 @@ def vanilla_ngd(
                 **eq_params_tx,
             },
             param_labels,
+            mask_compatible_extra_args=True,  # https://github.com/google-deepmind/optax/issues/1649
         )
         with_eq_params_update = True
     else:

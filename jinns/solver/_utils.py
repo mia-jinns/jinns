@@ -404,7 +404,28 @@ def _loss_evaluate_and_natural_gradient_step(
             f"You passed an {type(optimizer)}."
         )
 
-    print(opt_natural_grads, opt_params, opt_state)
+    if with_eq_params_update:
+        # Following https://github.com/google-deepmind/optax/issues/1649
+        def fill_eq_params_value_fn(ngd_value_fn, params):
+            """Reconstructs the full parameter tree from the masked one.
+            Specific case: this is always eq_params that will be masked"""
+
+            def wrapper(masked_params):  # this is what will be called by the
+                # backtracking line search callback
+                # ie., it will contain masked params that we need to fill in
+                full_params = eqx.tree_at(
+                    lambda pt: pt.eq_params, masked_params, params.eq_params
+                )
+                return ngd_value_fn(full_params, non_opt_params=non_opt_params)
+
+            return wrapper
+
+        value_fn = fill_eq_params_value_fn(ngd_value_fn, params)
+    else:
+        # if we are not doing an inverse problem, there is no optax.partition
+        # to handle
+        value_fn = lambda x: ngd_value_fn(x, non_opt_params=non_opt_params)
+
     opt_params, opt_state = _gradient_step(
         opt_natural_grads,
         optimizer,
@@ -413,8 +434,7 @@ def _loss_evaluate_and_natural_gradient_step(
         # extra kwargs passed to backtracking line search `update()` method
         value=train_loss_value,
         grad=opt_euclidean_grads,
-        value_fn=ngd_value_fn,
-        non_opt_params=non_opt_params,
+        value_fn=value_fn,
     )
 
     params, state = _get_unmasked_optimization_stuff(
