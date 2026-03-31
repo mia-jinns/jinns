@@ -91,10 +91,11 @@ def _loss_evaluate_and_gradient_step(
     params_mask: Params[bool] | None = None,
     opt_state_field_for_acceleration: str | None = None,
     with_loss_weight_update: bool = True,
-    **__,  # ignore supplementary parameters that are for
+    **__,  # ignore supplementary kwargs that are for
     # _loss_evaluate_and_natural_gradient_step
 ):
     """
+    This functions
     The crux of our new approach is partitioning and recombining the parameters
     and optimization state according to params_mask.
 
@@ -133,7 +134,7 @@ def _loss_evaluate_and_gradient_step(
     # are its total gradients.
 
     # 1. Compute individual losses and individual gradients
-    loss_terms, grad_terms = loss.evaluate_with_standard_gradient(
+    loss_terms, grad_terms = loss.values_and_grads(
         opt_params_accel
         if opt_state_field_for_acceleration is not None
         else opt_params,
@@ -203,24 +204,22 @@ def _loss_evaluate_and_natural_gradient_step(
     **__,  # to ignore more arguments
 ):
     """
-    The crux of our new approach is partitioning and recombining the parameters
-    and optimization state according to params_mask.
+    This step function
+        1. Computes the loss on the current `batch` and current `params`
+        2. Computes the natural gradient descent (NGD) updates
+        3. Feed these NGD updates to the optimizer provided by user.
+           NOTE this optimizer needs to use an `NGDState`.
 
-    params_mask:
-        A jinns.parameters.Params object with boolean as leaves, specifying
-        over which parameters optimization is enabled. This usually implies
-        important computational gains. Internally, it is used as the
-        filter_spec of a eqx.partition function on the parameters. Note that this
-        differs from (and complement) DerivativeKeys, as the latter allows
-        for more granularity by freezing some gradients with respect to
-        different loss terms, but do not subset the optimized parameters globally.
+    For more details see docstring in jinns/optimizers/_natural_gradient.py
 
-    NOTE: in this function body, we change naming convention for concision:
-     * `state` refers to the general optimizer state
-     * `opt_state` refers to the masked optimizer state, i.e. which are
-     really involved in the parameter update as defined by `params_mask`.
-     * `non_opt_state` refers to the the optimizer state for non-optimized
-     params.
+    All arguments are similar to `_loss_evaluate_and_gradient_step` above except for
+    one extra argument
+    with_eq_params_update: bool, default = True
+        A boolean specifying if the updates for `params.eq_params` should be applied or not.
+        If True, parameters update for eq_params are passed through. If False, they are set to
+        zero.
+        This is useful in `solve_alternate`, as users may want to perform NGD on nn_params
+        while leaving the eq_params untouched during a few steps.
     """
     (
         opt_params,
@@ -231,9 +230,10 @@ def _loss_evaluate_and_natural_gradient_step(
     ) = _get_masked_optimization_stuff(
         params, state, opt_state_field_for_acceleration, params_mask
     )
+
     # 1. Get the unreduced residuals and their gradient (for each sample)
     # for each loss term
-    r, g = loss.evaluate_with_natural_gradient(
+    r, g = loss.values_and_grad_per_sample(
         opt_params_accel
         if opt_state_field_for_acceleration is not None
         else opt_params,
@@ -284,7 +284,9 @@ def _loss_evaluate_and_natural_gradient_step(
     Rs = reweighted_r
 
     # Form euclidean grad
-    # NOTE: beware that euclidean gradient (might) differs from jax.grad(loss.evaluate) here. Indeed jinns takes the sum(mean(loss_type)) while here we compute mean(sum(all_loss_types). These might differs when different number of samples are used.
+    # NOTE: beware that euclidean gradient (might) differs from jax.grad(loss.evaluate) here.
+    # Indeed jinns takes the sum(mean(loss_type)) while here we compute mean(sum(all_loss_types).
+    # These might differs when different number of samples are used.
     # Equality can be matched by changing the jinns reduction function internally.
     # See tests/optimizer_tests/test_euclidean_gradient_equality.py
 
@@ -296,7 +298,7 @@ def _loss_evaluate_and_natural_gradient_step(
     #    M.transpose((0, 2, 1)) @ R[..., None],
     #    axis=0,
     # ).squeeze()  # shape (n_params,)
-    # # NOTE jnp.sum because averageing is done via the (1 / sqrt(n)) reweighting
+    # # NOTE jnp.sum because averaging is done via the (1 / sqrt(n)) reweighting
     euclidean_grad_array = jax.tree.reduce(jnp.add, euclidean_grad_pytree)
 
     # Assemble Gram Matrix
@@ -307,7 +309,7 @@ def _loss_evaluate_and_natural_gradient_step(
         # <=> lambda M: (M.transpose((1, 2, 0)) @ M.transpose((1, 0, 2))).sum(axis=0),
         Ms,
     )
-    # NOTE no 1/n * because averaging is in reweighting
+    # NOTE no *1/n  because averaging is in reweighting
 
     gram_mat = jax.tree.reduce(jnp.add, gram_mat_pytree)
 
@@ -320,7 +322,7 @@ def _loss_evaluate_and_natural_gradient_step(
 
     if with_eq_params_update:
         # if we want to update eq_params (inverse problem), this is done using
-        # the euclidean gradients that we can form from M and R
+        # the euclidean gradients.  We can form it from M and R.
         Ms_eq_params = _post_process_pytree_of_grad(reweighted_g, "eq_params")
         euclidean_grad_pytree_eq_params = jax.tree.map(
             lambda M, R: jnp.einsum("ijk,ij->k", M, R), Ms_eq_params, Rs
@@ -379,7 +381,7 @@ def _loss_evaluate_and_natural_gradient_step(
         """
         # Not using loss.evaluate here cause of the mean(sum()) vs sum(mean)
         # remark. This fn computes the loss we are truly minimizing with NGD.
-        r, _ = loss.evaluate_with_natural_gradient(
+        r, _ = loss.values_and_grad_per_sample(
             opt_params,
             batch,
             non_opt_params=non_opt_params,

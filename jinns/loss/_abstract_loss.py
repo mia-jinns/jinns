@@ -254,12 +254,14 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             # until then it to be able to call `jax.jacrev`
             evaluate_by_terms = jax.tree.map(
                 lambda vlf, kwargs: (
-                    lambda p: vlf(
-                        **kwargs, p=p, vmap_in_axes_params=vmap_in_axes_params
+                    (
+                        lambda p: vlf(
+                            **kwargs, p=p, vmap_in_axes_params=vmap_in_axes_params
+                        )
                     )
-                )
-                if kwargs["f"] is not None
-                else None,  # note the parentheses
+                    if kwargs["f"] is not None
+                    else None
+                ),  # note the parentheses
                 # around the lambda function
                 self._vmap_loss_fun,
                 self._prepare_loss_terms(batch),
@@ -274,10 +276,12 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             # NOTE: we keep it as a function of batch and params (b and p)
             # until then it to be able to call `jax.jacrev`
             evaluate_by_terms_reduced = jax.tree.map(
-                lambda red_fun, v_eval: (lambda p: red_fun(v_eval(p)))
-                if v_eval  # note the parenthesis around the lambda function
-                is not None
-                else None,
+                lambda red_fun, v_eval: (
+                    (lambda p: red_fun(v_eval(p)))
+                    if v_eval  # note the parenthesis around the lambda function
+                    is not None
+                    else None
+                ),
                 self._reduction_functions,
                 evaluate_by_terms,
             )
@@ -296,9 +300,11 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
                 return f(b, p)
 
             evaluate_by_terms = jax.tree.map(
-                lambda kwargs: (lambda p: loss_fun(**kwargs, p=p))
-                if kwargs["f"] is not None
-                else None,
+                lambda kwargs: (
+                    (lambda p: loss_fun(**kwargs, p=p))
+                    if kwargs["f"] is not None
+                    else None
+                ),
                 self._prepare_loss_terms(batch),
                 is_leaf=lambda x: isinstance(x, dict),  # only traverse first layer
             )
@@ -306,9 +312,9 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             if unreduced:
                 return evaluate_by_terms, params, vmap_in_axes_params
             evaluate_by_terms_reduced = jax.tree.map(
-                lambda red_fun, loss_fun: (lambda p: red_fun(loss_fun(p)))
-                if loss_fun is not None
-                else None,
+                lambda red_fun, loss_fun: (
+                    (lambda p: red_fun(loss_fun(p))) if loss_fun is not None else None
+                ),
                 self._reduction_functions,
                 evaluate_by_terms,
                 is_leaf=lambda x: isinstance(x, dict),  # only traverse first layer
@@ -355,14 +361,17 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         loss_val = self.ponderate_and_sum_loss(loss_terms)
         return loss_val, loss_terms
 
-    def evaluate_with_standard_gradient(
+    def values_and_grads(
         self,
         opt_params: Params[Array],
         batch: B,
         *,
         non_opt_params: Params[Array] | None = None,
     ) -> tuple[C, C]:
-        """ """
+        """
+        This evaluates each term of the loss as well as its gradient w.r.t. to all PyTrees in
+        `params`.
+        """
 
         evaluate_by_terms_reduced, params, _ = (
             self._get_evaluate_by_terms_lambda_and_params(
@@ -378,14 +387,19 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         )
         return loss_terms, grad_terms
 
-    def evaluate_with_natural_gradient(
+    def values_and_grad_per_sample(
         self,
         opt_params: Params[Array],
         batch: B,
         *,
         non_opt_params: Params[Array] | None = None,
     ) -> tuple[C, C]:
-        """ """
+        """
+        This evaluates the loss and its gradient for each loss term AND **each sample**.
+        Gradients are computed w.r.t to `params`.
+        This is useful for natural gradient methods which requires these atomic quantities
+        to compute a preconditioner on the euclidean gradient.
+        """
         evaluate_by_terms, params, vmap_in_axes_params = (
             self._get_evaluate_by_terms_lambda_and_params(
                 opt_params, batch, non_opt_params=non_opt_params, unreduced=True
