@@ -704,15 +704,31 @@ def solve_alternate(
     if verbose:
         print("\nTraining took\n", end - start, "\n")
 
+    # to get rid of tuples in dyn_loss and obs_loss
+    # which work with tuple because we enabled vectorial loss
+    # we do the following concat :
+    loss_container = carry[5]
+    stored_loss_terms_concatenated = jax.tree.map(
+        lambda leaf: jnp.stack(leaf, axis=1) if isinstance(leaf, tuple) else leaf,
+        loss_container.stored_loss_terms,
+        is_leaf=lambda x: isinstance(x, tuple),
+    )
+    stored_weights_terms_concatenated = jax.tree.map(
+        lambda leaf: jnp.stack(leaf, axis=1) if isinstance(leaf, tuple) else leaf,
+        loss_container.stored_weights_terms,
+        is_leaf=lambda x: isinstance(x, tuple),
+    )
+
+    # re-arange return signature to be consistant with jinns.solve_alternate
     return (
         carry[2].params,
-        carry[5].train_loss_values,
-        carry[5].stored_loss_terms,
+        loss_container.train_loss_values,
+        stored_loss_terms_concatenated,
         carry[4].data,
         carry[1],  # loss
         carry[2].opt_state,
         carry[6].stored_params,
-        carry[5].stored_weights_terms,
+        stored_weights_terms_concatenated,
         carry[4].obs_data,
         carry[4].param_data,
     )
