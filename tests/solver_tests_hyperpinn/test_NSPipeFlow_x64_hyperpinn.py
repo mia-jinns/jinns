@@ -22,7 +22,7 @@ def train_NSPipeFlow_init():
     p_out = 0
     p_in = 0.1
 
-    n = 1024
+    n = 10
     nb = None
     dim = 2
     xmin = 0
@@ -46,7 +46,7 @@ def train_NSPipeFlow_init():
 
     method = "grid"
     key, subkey = random.split(key)
-    np = 1024
+    np = 10
     param_train_data = jinns.data.DataGeneratorParameter(
         key=subkey,
         n=np,
@@ -69,19 +69,15 @@ def train_NSPipeFlow_init():
     eqx_list = (
         (eqx.nn.Linear, 2, 8),
         (jax.nn.swish,),
-        (eqx.nn.Linear, 8, 8),
-        (jax.nn.swish,),
         (eqx.nn.Linear, 8, 3),
     )
 
     eqx_list_hyper = (
-        (eqx.nn.Linear, 1, 20),  # input is of size 1 for scalar viscosity nu
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
+        (eqx.nn.Linear, 1, 8),  # input is of size 1 for scalar viscosity nu
         (jax.nn.tanh,),
         (
             eqx.nn.Linear,
-            20,
+            8,
             1000,
         ),  # 1000 is a random guess, it will automatically be filled with the correct value
     )
@@ -147,7 +143,7 @@ def train_NSPipeFlow_10it(train_NSPipeFlow_init):
 
 def test_10it_NSPipeFlow(train_NSPipeFlow_10it):
     total_loss_val = train_NSPipeFlow_10it
-    assert jnp.allclose(total_loss_val, 0.02592982, atol=1e-4)
+    assert jnp.allclose(total_loss_val, 0.02899213, atol=1e-5)
 
 
 @pytest.fixture
@@ -175,4 +171,4 @@ def train_NSPipeFlow_10it_ngd(train_NSPipeFlow_init):
 
 def test_10it_NSPipeFlow_ngd(train_NSPipeFlow_10it_ngd):
     total_loss_val = train_NSPipeFlow_10it_ngd
-    assert jnp.allclose(total_loss_val, 0.00060798, atol=1e-4)
+    assert jnp.allclose(total_loss_val, 0.00196479, atol=1e-5)

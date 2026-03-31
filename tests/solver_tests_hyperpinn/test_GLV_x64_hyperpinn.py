@@ -12,14 +12,10 @@ from jinns.loss import ODE
 
 @pytest.fixture
 def train_GLV_init():
-    jax.config.update("jax_enable_x64", False)
+    jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
     eqx_list = (
         (eqx.nn.Linear, 1, 8),
-        (jax.nn.swish,),
-        (eqx.nn.Linear, 8, 8),
-        (jax.nn.swish,),
-        (eqx.nn.Linear, 8, 8),
         (jax.nn.swish,),
         (eqx.nn.Linear, 8, 1),
     )
@@ -27,13 +23,9 @@ def train_GLV_init():
     eqx_list_hyper = (
         (eqx.nn.Linear, 1, 15),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 15, 15),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 15, 16),
-        (jax.nn.tanh,),
         (
             eqx.nn.Linear,
-            16,
+            15,
             1000,
         ),  # 1000 is a random guess, it will automatically be filled with the correct value
     )
@@ -48,7 +40,7 @@ def train_GLV_init():
         hypernet_input_size=hypernet_input_size,
         eqx_list_hyper=eqx_list_hyper,
     )
-    n = 320
+    n = 32
     batch_size = 32
     method = "uniform"
     tmin = 0
@@ -144,11 +136,11 @@ def test_initial_loss_GLV(train_GLV_init):
     batch = jinns.data.append_param_batch(batch, param_batch)
     assert jnp.allclose(
         loss_hyper.evaluate(init_params_hyper, batch)[0],
-        10.1186075,
-        atol=1e-1,
+        12.27783293,
+        atol=1e-5,
     )
 
 
 def test_10it_GLV(train_GLV_10it):
     total_loss_val = train_GLV_10it
-    assert jnp.allclose(total_loss_val, 13.512146, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 13.51906343, atol=1e-5)
