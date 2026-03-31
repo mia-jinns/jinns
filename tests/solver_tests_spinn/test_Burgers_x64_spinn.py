@@ -10,18 +10,14 @@ import jinns
 
 @pytest.fixture
 def train_Burgers_init():
-    jax.config.update("jax_enable_x64", False)
+    jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
     d = 2
-    r = 256
+    r = 25
     eqx_list = (
-        (eqx.nn.Linear, 1, 128),
+        (eqx.nn.Linear, 1, 8),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 128),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 128),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, r),
+        (eqx.nn.Linear, 8, r),
     )
     key, subkey = random.split(key)
     key, subkey = random.split(key)
@@ -29,9 +25,9 @@ def train_Burgers_init():
         subkey, d, r, eqx_list, "PDENonStatio"
     )
 
-    n = 5000
-    ni = 200
-    nb = 200
+    n = 50
+    ni = 20
+    nb = 20
     dim = 1
     xmin = -1
     xmax = 1
@@ -45,9 +41,6 @@ def train_Burgers_init():
         n=n,
         nb=nb,
         ni=ni,
-        domain_batch_size=32,
-        border_batch_size=32,
-        initial_batch_size=32,
         dim=dim,
         min_pts=(xmin,),
         max_pts=(xmax,),
@@ -105,10 +98,10 @@ def test_initial_loss_Burgers(train_Burgers_init):
     init_params, loss, train_data = train_Burgers_init
 
     assert jnp.allclose(
-        loss.evaluate(init_params, train_data.get_batch()[1])[0], 5.701347, atol=1e-1
+        loss.evaluate(init_params, train_data.get_batch()[1])[0], 12.709747, atol=1e-5
     )
 
 
 def test_10it_Burgers(train_Burgers_10it):
     total_loss_val = train_Burgers_10it
-    assert jnp.allclose(total_loss_val, 2.710215, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 11.66003097, atol=1e-5)

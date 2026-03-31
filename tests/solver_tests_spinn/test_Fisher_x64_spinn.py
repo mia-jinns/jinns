@@ -11,18 +11,14 @@ import jinns
 
 @pytest.fixture
 def train_Fisher_init():
-    jax.config.update("jax_enable_x64", False)
+    jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
     d = 2
-    r = 256
+    r = 25
     eqx_list = (
-        (eqx.nn.Linear, 1, 128),
+        (eqx.nn.Linear, 1, 8),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 128),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 128),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, r),
+        (eqx.nn.Linear, 8, r),
     )
     key, subkey = random.split(key)
     key, subkey = random.split(key)
@@ -30,12 +26,9 @@ def train_Fisher_init():
         subkey, d, r, eqx_list, "PDENonStatio"
     )
 
-    n = 2500
-    nb = 500
-    ni = 500
-    domain_batch_size = 32
-    initial_batch_size = 32
-    border_batch_size = 32
+    n = 25
+    nb = 40
+    ni = 40
     dim = 1
     xmin = -1
     xmax = 1
@@ -51,9 +44,6 @@ def train_Fisher_init():
         n=n,
         nb=nb,
         ni=ni,
-        domain_batch_size=domain_batch_size,
-        border_batch_size=border_batch_size,
-        initial_batch_size=initial_batch_size,
         dim=dim,
         min_pts=(xmin,),
         max_pts=(xmax,),
@@ -117,10 +107,10 @@ def train_Fisher_10it(train_Fisher_init):
 def test_initial_loss_Fisher(train_Fisher_init):
     init_params, loss, train_data = train_Fisher_init
     assert jnp.allclose(
-        loss.evaluate(init_params, train_data.get_batch()[1])[0], 9.163609, atol=1e-1
+        loss.evaluate(init_params, train_data.get_batch()[1])[0], 16.00568561, atol=1e-5
     )
 
 
 def test_10it_Fisher(train_Fisher_10it):
     total_loss_val = train_Fisher_10it
-    assert jnp.allclose(total_loss_val, 0.7936549, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 14.24510319, atol=1e-5)
