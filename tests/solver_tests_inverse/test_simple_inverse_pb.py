@@ -12,6 +12,7 @@ import jinns
 
 @pytest.fixture
 def create_problem():
+    jax.config.update("jax_enable_x64", True)
     key = jax.random.PRNGKey(42)
     # True is : theta = 1 / (100 * jnp.pi)
     key, subkey = jax.random.split(key)
@@ -127,4 +128,4 @@ def test_loss_eval(create_problem):
 
     batch = jinns.data.append_obs_batch(train_batch, obs_batch)
 
-    assert jnp.allclose(loss.evaluate(params, batch)[0], 1.7419804, atol=1e-1)
+    assert jnp.allclose(loss.evaluate(params, batch)[0], 1.03584692, atol=1e-5)
