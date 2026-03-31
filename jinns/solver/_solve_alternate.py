@@ -20,7 +20,7 @@ from jinns.solver._utils import (
     _init_stored_weights_terms,
     _init_stored_params,
     _get_break_fun,
-    _loss_evaluate_and_gradient_step,
+    _loss_evaluate_and_euclidean_gradient_step,
     _loss_evaluate_and_natural_gradient_step,
     _build_get_batch,
     _store_loss_and_params,
@@ -380,7 +380,7 @@ def solve_alternate(
                     eq_opt_state,
                     loss,
                     loss_terms,
-                ) = _loss_evaluate_and_gradient_step(
+                ) = _loss_evaluate_and_euclidean_gradient_step(
                     i=i,
                     batch=batch,
                     loss=loss,
@@ -539,7 +539,7 @@ def solve_alternate(
                     with_eq_params_update=False,  # in solve_alternate, we never update eq_params during an NGD step
                 )
             else:
-                _step = _loss_evaluate_and_gradient_step
+                _step = _loss_evaluate_and_euclidean_gradient_step
 
             (
                 train_loss_value,
