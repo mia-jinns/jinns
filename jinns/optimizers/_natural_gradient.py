@@ -29,15 +29,24 @@ def vanilla_ngd(
     since it makes no sense to use other optimizers
 
     eq_params_tx is a dictionnary with keys corresponding to eq_params and
-    fields being optax optimizer
+    values being optax optimizer. For parameters that are not updatd, values
+    should be None
     """
     ngd_optim_ = optax.chain(
         optax.sgd(learning_rate=1.0),
         optax.scale_by_backtracking_linesearch(max_backtracking_steps=15, verbose=True),
     )
     if eq_params_tx is not None:
+        # In the line below, parameters that are not updated are assigned the
+        # "freeze" label. The "freeze" label is then associated to the null
+        # update. We resort to the "freeze" label when a None value is found.
+        # see https://github.com/google-deepmind/optax/blob/main/examples/freezing_parameters.ipynb
         param_labels = jinns.parameters.Params(
-            nn_params="ngd", eq_params={key: key for key, _ in eq_params_tx.items()}
+            nn_params="ngd",
+            eq_params={
+                key: (key if val is not None else "freeze")
+                for key, val in eq_params_tx.items()
+            },
         )
 
         ngd_optim = optax.partition(
@@ -45,7 +54,12 @@ def vanilla_ngd(
                 **{
                     "ngd": ngd_optim_,
                 },
-                **eq_params_tx,
+                **{
+                    (key if val is not None else "freeze"): (
+                        val if val is not None else optax.set_to_zero()
+                    )
+                    for key, val in eq_params_tx.items()
+                },
             },
             param_labels,
             mask_compatible_extra_args=True,  # https://github.com/google-deepmind/optax/issues/1649

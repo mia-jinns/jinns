@@ -82,9 +82,7 @@ def create_problem():
     )
     init_params = jinns.parameters.Params(
         nn_params=init_nn_params,
-        eq_params={
-            "nu": theta,
-        },
+        eq_params={"nu": theta, "test": 5.0},
     )
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
         dyn_loss=1.0,
@@ -100,9 +98,7 @@ def create_problem():
     derivative_keys_nu_and_theta = jinns.parameters.DerivativeKeysPDENonStatio.from_str(
         dyn_loss=jinns.parameters.Params(
             nn_params=True,
-            eq_params={
-                "nu": True,
-            },
+            eq_params={"nu": True, "test": False},
         ),
         boundary_loss="nn_params",
         initial_condition="nn_params",
@@ -142,7 +138,9 @@ def train_Burgers_10it(create_problem):
 
     loss, params, train_data, obs_data = create_problem
 
-    tx = jinns.optimizers.vanilla_ngd(eq_params_tx={"nu": optax.adam(1e-3)})
+    tx = jinns.optimizers.vanilla_ngd(
+        eq_params_tx={"nu": optax.adam(1e-3), "test": None}
+    )
 
     n_iter = 10
     params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _, _, _, _ = jinns.solve(
@@ -153,9 +151,10 @@ def train_Burgers_10it(create_problem):
         n_iter=n_iter,
         obs_data=obs_data,
     )
-    return total_loss_list[9]
+    return total_loss_list[9], params
 
 
 def test_10it_Burgers(train_Burgers_10it):
-    total_loss_val = train_Burgers_10it
+    total_loss_val, params = train_Burgers_10it
     assert jnp.allclose(total_loss_val, 0.48387596, atol=1e-5)
+    assert jnp.allclose(params.eq_params.test, 5)
