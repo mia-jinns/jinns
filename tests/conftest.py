@@ -1,6 +1,5 @@
 import pytest
 import os
-import jinns
 
 """
 Here we set up the env variable to run on GPU if available or on CPU. Such set
@@ -36,6 +35,10 @@ def pytest_configure(config):
 # affected to each test
 @pytest.fixture(autouse=True)
 def run_around_tests():
+    # Below we import jinns in the middle of the file because we absolutely need to
+    # set environment variable before importing jinns (which imports jax)
+    import jinns  # noqa # type: ignore # pylint: disable=wrong-import-position
+
     # code to be run before each test: important to clear here cause there can
     # be some remnants of previous aborted test sessions it looks
     jinns.parameters.EqParams.clear()  # needed to reset the set of eq_params
