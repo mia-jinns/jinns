@@ -39,8 +39,8 @@ def run_around_tests():
     # set environment variable before importing jinns (which imports jax)
     import jinns  # noqa # type: ignore # pylint: disable=wrong-import-position
 
-    # code to be run before each test: important to clear here cause there can
-    # be some remnants of previous aborted test sessions it looks
+    # code to be run before each test: important to clear here cause it looks like there can
+    # be some remnants of previous aborted test sessions
     jinns.parameters.EqParams.clear()  # needed to reset the set of eq_params
     # between tests as it is not automatically done
     jinns.data.DGParams.clear()  # needed to reset the set of eq_params
