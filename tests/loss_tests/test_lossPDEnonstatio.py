@@ -8,8 +8,9 @@ import jinns.data
 
 
 def test_t0_checks():
+    jax.config.update("jax_enable_x64", True)
     key = jax.random.PRNGKey(2)
-    eqx_network = eqx.nn.MLP(2, 1, 128, 3, jax.nn.tanh, key=key)
+    eqx_network = eqx.nn.MLP(2, 1, 8, 3, jax.nn.tanh, key=key)
     u, params = jinns.nn.PINN_MLP.create(
         eqx_network=eqx_network, eq_type="PDENonStatio"
     )

@@ -10,16 +10,12 @@ from jinns.nn import save_pinn, load_pinn
 
 @pytest.fixture
 def save_reload_with_params(tmpdir):
-    jax.config.update("jax_enable_x64", False)
+    jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
     eqx_list = (
-        (eqx.nn.Linear, 2, 128),
+        (eqx.nn.Linear, 2, 8),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 128),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 128),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 1),
+        (eqx.nn.Linear, 8, 1),
     )
     key, subkey = random.split(key)
     kwargs_creation = {
@@ -52,7 +48,6 @@ def test_equality_save_reload_with_params(save_reload_with_params):
     assert jnp.allclose(
         v_u(test_points, params),
         v_u_reloaded(test_points, params_reloaded),
-        atol=1e-3,
     )
 
 

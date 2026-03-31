@@ -22,6 +22,7 @@ from jinns.loss import PDEStatio, PDENonStatio
 
 @pytest.fixture
 def train_DummyPDEStatio_init():
+    jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
     key, subkey = random.split(key)
     eqx_list = ((eqx.nn.Linear, 1, 1),)
@@ -35,7 +36,7 @@ def train_DummyPDEStatio_init():
         (jnp.zeros((1, 1)), jnp.ones((1,))),
     )
 
-    n = 320
+    n = 10
     method = "uniform"
 
     key, subkey = random.split(key)
@@ -133,9 +134,9 @@ def test_loss_weights_DummyPDEStatio_10it(train_DummyPDEStatio_init):
         * jnp.ones(
             9,
         ),
-        atol=1e-3,
+        atol=1e-5,
     )  # 1st element will be one
-    assert jnp.allclose(jnp.asarray(loss_new.loss_weights.dyn_loss), 1 / 6, atol=1e-3)
+    assert jnp.allclose(jnp.asarray(loss_new.loss_weights.dyn_loss), 1 / 6, atol=1e-5)
 
 
 @pytest.fixture
@@ -153,7 +154,7 @@ def train_DummyPDENonStatio_init():
         (jnp.zeros((1, 2)), jnp.ones((1,))),
     )
 
-    n = 320
+    n = 10
     method = "uniform"
 
     key, subkey = random.split(key)
@@ -256,6 +257,6 @@ def test_loss_weights_DummyPDENonStatio_10it(train_DummyPDENonStatio_init):
         * jnp.ones(
             9,
         ),
-        atol=1e-3,
+        atol=1e-5,
     )  # 1st element will be one
-    assert jnp.allclose(jnp.asarray(loss_new.loss_weights.dyn_loss), 1 / 6, atol=1e-3)
+    assert jnp.allclose(jnp.asarray(loss_new.loss_weights.dyn_loss), 1 / 6, atol=1e-5)

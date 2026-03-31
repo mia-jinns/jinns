@@ -10,18 +10,14 @@ from jinns.nn import save_pinn, load_pinn
 
 @pytest.fixture
 def save_reload(tmpdir):
-    jax.config.update("jax_enable_x64", False)
+    jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
     d = 2
     r = 256
     eqx_list = (
-        (eqx.nn.Linear, 1, 128),
+        (eqx.nn.Linear, 1, 8),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 128),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 128),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, r),
+        (eqx.nn.Linear, 8, r),
     )
     key, subkey = random.split(key)
     u, params = jinns.nn.SPINN_MLP.create(subkey, d, r, eqx_list, "PDENonStatio")
@@ -55,7 +51,6 @@ def test_equality_save_reload(save_reload):
     assert jnp.allclose(
         u(test_points, params),
         u_reloaded(test_points, params_reloaded),
-        atol=1e-3,
     )
 
 

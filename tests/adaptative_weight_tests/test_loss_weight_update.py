@@ -14,6 +14,7 @@ def test_weight_history():
     constant value we know that the history of loss weights should be full of
     0.5 values
     """
+    jax.config.update("jax_enable_x64", True)
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
         dyn_loss=jnp.array(1.0),
         initial_condition=jnp.array(1.0),
@@ -21,13 +22,9 @@ def test_weight_history():
 
     key = jax.random.PRNGKey(2)
     eqx_list = (
-        (eqx.nn.Linear, 2, 32),
+        (eqx.nn.Linear, 2, 10),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 32, 32),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 32, 32),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 32, 1),
+        (eqx.nn.Linear, 10, 1),
     )
     key, subkey = jax.random.split(key)
     u, init_nn_params = jinns.nn.PINN_MLP.create(
@@ -121,13 +118,9 @@ def test_loss_value():
 
     key = jax.random.PRNGKey(2)
     eqx_list = (
-        (eqx.nn.Linear, 2, 32),
+        (eqx.nn.Linear, 2, 10),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 32, 32),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 32, 32),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 32, 1),
+        (eqx.nn.Linear, 10, 1),
     )
     key, subkey = jax.random.split(key)
     u, init_nn_params = jinns.nn.PINN_MLP.create(

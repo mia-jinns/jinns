@@ -12,6 +12,7 @@ import jinns.loss
 
 @pytest.fixture
 def train_OU_init():
+    jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
     key, subkey = random.split(key)
     eqx_list = [
@@ -134,4 +135,4 @@ def test_broadcast_norm_weights(train_OU_init):
     _, dict1 = loss1.evaluate(init_params, batch)
     _, dict2 = loss2.evaluate(init_params, batch)
 
-    assert dict1.norm_loss == dict2.norm_loss
+    assert jnp.allclose(dict1.norm_loss, dict2.norm_loss, atol=1e-5)

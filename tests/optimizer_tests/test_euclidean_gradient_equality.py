@@ -81,11 +81,9 @@ def test_euclidean_gradients_equality():
     )
 
     eqx_list = (
-        (eqx.nn.Linear, 3, 25),  # 3 = t + x (2D)
+        (eqx.nn.Linear, 3, 2),  # 3 = t + x (2D)
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 25, 25),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 25, 1),
+        (eqx.nn.Linear, 2, 1),
     )
 
     key, subkey = random.split(key)

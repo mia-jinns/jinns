@@ -9,13 +9,9 @@ import jinns
 def create_u_statio():
     key = jax.random.PRNGKey(2)
     eqx_list = (
-        (eqx.nn.Linear, 2, 20),
+        (eqx.nn.Linear, 2, 5),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 2),
+        (eqx.nn.Linear, 5, 2),
     )
     key, subkey = jax.random.split(key)
     return jinns.nn.PINN_MLP.create(key=subkey, eqx_list=eqx_list, eq_type="PDEStatio")
@@ -36,13 +32,9 @@ def test_divergence_rev_statio(create_u_statio):
 def create_u_nonstatio():
     key = jax.random.PRNGKey(2)
     eqx_list = (
-        (eqx.nn.Linear, 3, 20),
+        (eqx.nn.Linear, 3, 5),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 3),
+        (eqx.nn.Linear, 5, 3),
     )
     key, subkey = jax.random.split(key)
     return jinns.nn.PINN_MLP.create(

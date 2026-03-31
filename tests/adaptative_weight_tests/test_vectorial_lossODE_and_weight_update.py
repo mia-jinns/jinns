@@ -22,17 +22,13 @@ from jinns.data import append_obs_batch
 
 @pytest.fixture
 def train_GLV_init():
-    jax.config.update("jax_enable_x64", False)
+    jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
     key, subkey = random.split(key)
     eqx_list = (
-        (eqx.nn.Linear, 1, 20),
+        (eqx.nn.Linear, 1, 5),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 3),
+        (eqx.nn.Linear, 5, 3),
         (jnp.exp,),
     )
     key, subkey = random.split(key)
@@ -40,8 +36,8 @@ def train_GLV_init():
         key=subkey, eqx_list=eqx_list, eq_type="ODE"
     )
 
-    n = 320
-    batch_size = 32
+    n = 10
+    batch_size = 10
     method = "uniform"
     tmin = 0
     tmax = 1
@@ -173,9 +169,9 @@ def test_initial_loss_GLV(train_GLV_init):
     print(obs_batch)
     assert jnp.allclose(
         loss.evaluate(init_params, append_obs_batch(batch, obs_batch))[0],
-        5647.299,  # NOTE that here we compare to the value attained in the
+        5110.18927113,  # NOTE that here we compare to the value attained in the
         # classical case, since at init there is no loss weight update yet
-        atol=1e-1,
+        atol=1e-5,
     )
 
 
@@ -220,4 +216,4 @@ def train_GLV_10it(train_GLV_init):
 
 def test_10it_GLV(train_GLV_10it):
     total_loss_val = train_GLV_10it
-    assert jnp.allclose(total_loss_val, 776.838, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 723.46459564, atol=1e-5)

@@ -9,13 +9,9 @@ import jinns
 def create_u_statio():
     key = jax.random.PRNGKey(2)
     eqx_list = (
-        (eqx.nn.Linear, 1, 20),
+        (eqx.nn.Linear, 1, 5),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 10 * 4),
+        (eqx.nn.Linear, 5, 10 * 4),
     )
     key, subkey = jax.random.split(key)
     return jinns.nn.SPINN_MLP.create(subkey, 2, 10, eqx_list, "PDEStatio", 4)
@@ -63,13 +59,9 @@ def test_laplacian_fwd_statio(create_u_statio):
 def create_u_nonstatio():
     key = jax.random.PRNGKey(2)
     eqx_list = (
-        (eqx.nn.Linear, 1, 20),
+        (eqx.nn.Linear, 1, 5),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 10 * 3),
+        (eqx.nn.Linear, 5, 10 * 3),
     )
     key, subkey = jax.random.split(key)
     return jinns.nn.SPINN_MLP.create(subkey, 3, 10, eqx_list, "PDENonStatio", 3)

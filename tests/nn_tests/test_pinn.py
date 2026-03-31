@@ -18,9 +18,9 @@ d = 5
 def create_pinn_ode():
     key = random.PRNGKey(2)
     eqx_list = (
-        (eqx.nn.Linear, 1, 128),
+        (eqx.nn.Linear, 1, 5),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 1),
+        (eqx.nn.Linear, 5, 1),
     )
     key, subkey = random.split(key)
     u_statio = PINN_MLP.create(key=subkey, eqx_list=eqx_list, eq_type="ODE")[0]
@@ -32,9 +32,9 @@ def create_pinn_ode():
 def create_pinn_statio():
     key = random.PRNGKey(2)
     eqx_list = (
-        (eqx.nn.Linear, d, 128),
+        (eqx.nn.Linear, d, 5),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 1),
+        (eqx.nn.Linear, 5, 1),
     )
     key, subkey = random.split(key)
     u_statio = PINN_MLP.create(key=subkey, eqx_list=eqx_list, eq_type="PDEStatio")[0]
@@ -46,9 +46,9 @@ def create_pinn_statio():
 def create_pinn_nonstatio():
     key = random.PRNGKey(2)
     eqx_list = (
-        (eqx.nn.Linear, d, 128),
+        (eqx.nn.Linear, d, 5),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 1),
+        (eqx.nn.Linear, 5, 1),
     )
     key, subkey = random.split(key)
     u_nonstatio = PINN_MLP.create(

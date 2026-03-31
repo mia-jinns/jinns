@@ -9,8 +9,9 @@ from jinns.data import ODEBatch
 
 
 def test_initial_condition_checks():
+    jax.config.update("jax_enable_x64", True)
     key = jax.random.PRNGKey(2)
-    eqx_network = eqx.nn.MLP(2, 1, 128, 3, jax.nn.tanh, key=key)
+    eqx_network = eqx.nn.MLP(2, 1, 8, 3, jax.nn.tanh, key=key)
     u, params = jinns.nn.PINN_MLP.create(eqx_network=eqx_network, eq_type="ODE")
     params = jinns.parameters.Params(nn_params=params)
 
@@ -81,6 +82,7 @@ def test_new_initial_condition():
     """
     Added in jinns v1.5.1
     """
+    jax.config.update("jax_enable_x64", True)
     key = jax.random.PRNGKey(2)
     eqx_network = eqx.nn.MLP(1, 1, 0, 0, jax.nn.tanh, key=key)
     linear = eqx.nn.Linear(1, 1, use_bias=False, key=key)
