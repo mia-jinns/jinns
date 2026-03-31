@@ -8,6 +8,7 @@ import jax
 import jax.numpy as jnp
 import equinox as eqx
 import jinns
+import optax
 
 
 @pytest.fixture
@@ -129,3 +130,32 @@ def test_loss_eval(create_problem):
     batch = jinns.data.append_obs_batch(train_batch, obs_batch)
 
     assert jnp.allclose(loss.evaluate(params, batch)[0], 1.03584692, atol=1e-5)
+
+
+@pytest.fixture
+def train_Burgers_10it(create_problem):
+    """
+    Simple test for inverse problem workflow with NGD on nn_params and a SGD on eq_params
+    This tests the specific construction in the NGD workflow which needs to be done since
+    using NGD on eq_params does not make sense
+    """
+
+    loss, params, train_data, obs_data = create_problem
+
+    tx = jinns.optimizers.vanilla_ngd(eq_params_tx={"nu": optax.adam(1e-3)})
+
+    n_iter = 10
+    params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _, _, _, _ = jinns.solve(
+        init_params=params,
+        data=train_data,
+        optimizer=tx,
+        loss=loss,
+        n_iter=n_iter,
+        obs_data=obs_data,
+    )
+    return total_loss_list[9]
+
+
+def test_10it_Burgers(train_Burgers_10it):
+    total_loss_val = train_Burgers_10it
+    assert jnp.allclose(total_loss_val, 0.48387596, atol=1e-5)
