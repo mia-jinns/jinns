@@ -14,13 +14,9 @@ def train_GLV_init():
     key = random.PRNGKey(2)
     key, subkey = random.split(key)
     eqx_list = (
-        (eqx.nn.Linear, 1, 20),
+        (eqx.nn.Linear, 1, 8),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 1),
+        (eqx.nn.Linear, 8, 1),
         (jnp.exp,),
     )
     key, subkey = random.split(key)
@@ -28,8 +24,8 @@ def train_GLV_init():
         key=subkey, eqx_list=eqx_list, eq_type="ODE"
     )
 
-    n = 320
-    batch_size = 32
+    n = 20
+    batch_size = 20
     method = "uniform"
     tmin = 0
     tmax = 1
@@ -113,11 +109,11 @@ def test_initial_loss_GLV(train_GLV_init):
     init_params, loss, train_data = train_GLV_init
     assert jnp.allclose(
         loss.evaluate(init_params, train_data.get_batch()[1])[0],
-        4770.75105231,
-        atol=1e-1,
+        4436.11625511,
+        atol=1e-5,
     )
 
 
 def test_10it_GLV(train_GLV_10it):
     total_loss_val = train_GLV_10it
-    assert jnp.allclose(total_loss_val, 4571.6202204, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 4369.26174334, atol=1e-5)

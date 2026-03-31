@@ -24,13 +24,9 @@ def train_init():
     jax.config.update("jax_enable_x64", False)
     key = random.PRNGKey(2)
     eqx_list = (
-        (eqx.nn.Linear, 1, 20),
+        (eqx.nn.Linear, 1, 2),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 1),
+        (eqx.nn.Linear, 2, 1),
     )
     key, subkey = random.split(key)
     u, init_nn_params = jinns.nn.PINN_MLP.create(

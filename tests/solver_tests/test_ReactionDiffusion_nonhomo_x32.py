@@ -10,28 +10,23 @@ import jinns
 
 @pytest.fixture
 def train_ReacDiff_init():
+    jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
     eqx_list = (
-        (eqx.nn.Linear, 3, 20),
+        (eqx.nn.Linear, 3, 4),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 1),
+        (eqx.nn.Linear, 4, 1),
     )
     key, subkey = random.split(key)
     u, init_nn_params = jinns.nn.PINN_MLP.create(
         key=subkey, eqx_list=eqx_list, eq_type="PDENonStatio"
     )
-    n = 2048
-    nb = 500
-    ni = 500
-    domain_batch_size = 32
-    initial_batch_size = 32
-    border_batch_size = 32
+    n = 20
+    nb = 20
+    ni = 20
+    domain_batch_size = 20
+    initial_batch_size = 20
+    border_batch_size = None
     dim = 2
     xmin = 0
     xmax = 1
@@ -151,10 +146,10 @@ def train_ReacDiff_10it(train_ReacDiff_init):
 def test_initial_loss_ReacDiff(train_ReacDiff_init):
     init_params, loss, train_data = train_ReacDiff_init
     assert jnp.allclose(
-        loss.evaluate(init_params, train_data.get_batch()[1])[0], 0.8385, atol=1e-1
+        loss.evaluate(init_params, train_data.get_batch()[1])[0], 8.80360525, atol=1e-5
     )
 
 
 def test_10it_ReacDiff(train_ReacDiff_10it):
     total_loss_val = train_ReacDiff_10it
-    assert jnp.allclose(total_loss_val, 0.6822, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 7.81874937, atol=1e-5)

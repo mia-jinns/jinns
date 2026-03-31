@@ -10,10 +10,10 @@ import jinns
 
 @pytest.fixture
 def train_OU_init():
-    jax.config.update("jax_enable_x64", False)
+    jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(12345)
-    n = 1000
-    omega_batch_size = 1000
+    n = 10
+    omega_batch_size = 10
     xmin = -3
     xmax = 3
     method = "uniform"
@@ -32,15 +32,9 @@ def train_OU_init():
 
     key, subkey = random.split(key)
     eqx_list = (
-        (eqx.nn.Linear, 1, 30),
+        (eqx.nn.Linear, 1, 4),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 30, 30),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 30, 30),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 30, 30),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 30, 1),
+        (eqx.nn.Linear, 4, 1),
         (jnp.exp,),  # force positivity of the PINN output
     )
     key, subkey = random.split(key)
@@ -62,7 +56,7 @@ def train_OU_init():
     volume = good_mc_params["int_xmax"] - good_mc_params["int_xmin"]
     good_mc_params["norm_weights"] = volume
 
-    n_mc = 1000
+    n_mc = 10
     key, subkey = jax.random.split(key, 2)
     good_mc_samples = jax.random.uniform(
         subkey,
@@ -122,9 +116,9 @@ def test_initial_loss_OU(train_OU_init):
     init_params, loss, train_data = train_OU_init
     _, batch = train_data.get_batch()
     l_init, _ = loss.evaluate(init_params, batch)
-    assert jnp.allclose(l_init, 2.4449294, atol=1e-1)
+    assert jnp.allclose(l_init, 5.4723706, atol=1e-5)
 
 
 def test_10it_OU(train_OU_10it):
     total_loss_val = train_OU_10it
-    assert jnp.allclose(total_loss_val, 2.2827492, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 5.42388546, atol=1e-5)

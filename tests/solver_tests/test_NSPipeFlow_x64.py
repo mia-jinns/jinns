@@ -18,7 +18,7 @@ def train_NSPipeFlow_init():
     p_out = 0
     p_in = 0.1
 
-    n = 1000
+    n = 32
     nb = None
     omega_batch_size = 32
     omega_border_batch_size = None
@@ -47,22 +47,14 @@ def train_NSPipeFlow_init():
         key=subkey,
         eqx_list_list=[
             (
-                (eqx.nn.Linear, 2, 50),
+                (eqx.nn.Linear, 2, 5),
                 (jax.nn.tanh,),
-                (eqx.nn.Linear, 50, 50),
-                (jax.nn.tanh,),
-                (eqx.nn.Linear, 50, 50),
-                (jax.nn.tanh,),
-                (eqx.nn.Linear, 50, 2),
+                (eqx.nn.Linear, 5, 2),
             ),
             (
-                (eqx.nn.Linear, 2, 50),
+                (eqx.nn.Linear, 2, 5),
                 (jax.nn.tanh,),
-                (eqx.nn.Linear, 50, 50),
-                (jax.nn.tanh,),
-                (eqx.nn.Linear, 50, 50),
-                (jax.nn.tanh,),
-                (eqx.nn.Linear, 50, 1),
+                (eqx.nn.Linear, 5, 1),
             ),
         ],
         eq_type="PDEStatio",
@@ -136,10 +128,10 @@ def test_initial_loss_NSPipeFlow(train_NSPipeFlow_init):
     init_params, loss, train_data = train_NSPipeFlow_init
 
     assert jnp.allclose(
-        loss.evaluate(init_params, train_data.get_batch()[1])[0], 0.01055, atol=1e-1
+        loss.evaluate(init_params, train_data.get_batch()[1])[0], 0.01114236, atol=1e-5
     )
 
 
 def test_10it_NSPipeFlow(train_NSPipeFlow_10it):
     total_loss_val = train_NSPipeFlow_10it
-    assert jnp.allclose(total_loss_val, 0.01061, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 0.01099278, atol=1e-5)

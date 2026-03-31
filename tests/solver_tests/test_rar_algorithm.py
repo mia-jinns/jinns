@@ -12,6 +12,8 @@ import jinns
 import equinox as eqx
 from jax.scipy.stats import multivariate_normal
 
+jax.config.update("jax_enable_x64", True)
+
 # because we did not write a fixture
 jinns.parameters.EqParams.clear()
 jinns.data.DGParams.clear()
@@ -38,21 +40,17 @@ norm_weights = volume
 key, subkey1, subkey2 = random.split(key, 3)
 mc_samples = jnp.concatenate(
     [
-        random.uniform(subkey1, shape=(100, 1), minval=int_xmin, maxval=int_xmax),
-        random.uniform(subkey2, shape=(100, 1), minval=int_ymin, maxval=int_ymax),
+        random.uniform(subkey1, shape=(10, 1), minval=int_xmin, maxval=int_xmax),
+        random.uniform(subkey2, shape=(10, 1), minval=int_ymin, maxval=int_ymax),
     ],
     axis=-1,
 )
 
 
 eqx_list = (
-    (eqx.nn.Linear, 3, 30),
+    (eqx.nn.Linear, 3, 3),
     (jax.nn.tanh,),
-    (eqx.nn.Linear, 30, 30),
-    (jax.nn.tanh,),
-    (eqx.nn.Linear, 30, 30),
-    (jax.nn.tanh,),
-    (eqx.nn.Linear, 30, 1),
+    (eqx.nn.Linear, 3, 1),
     (jnp.exp,),
 )
 key, subkey = random.split(key)
@@ -177,15 +175,11 @@ def test_rar_error_with_SPINN(all_tests):
         train_data, rar_parameters = get_datagenerator_rar(0, 1)
         # ensure same batch size in time & space for SPINN
         d = 3
-        r = 256
+        r = 25
         eqx_list = [
-            [eqx.nn.Linear, 1, 128],
+            [eqx.nn.Linear, 1, 8],
             [jax.nn.tanh],
-            [eqx.nn.Linear, 128, 128],
-            [jax.nn.tanh],
-            [eqx.nn.Linear, 128, 128],
-            [jax.nn.tanh],
-            [eqx.nn.Linear, 128, r],
+            [eqx.nn.Linear, 8, r],
         ]
         key = jax.random.PRNGKey(12345)
         key, subkey = random.split(key)
