@@ -34,7 +34,13 @@ if TYPE_CHECKING:
 
 
 def vmap_loss_fun_classical(
-    *, f, b, p, vmap_in_axes_params, in_axes=(0,), jacrev=False
+    *,
+    fun: Callable,
+    batch: Array,
+    params: Params[Array],
+    vmap_in_axes_params: tuple[Params[int | None] | None],
+    in_axes: tuple[int, ...] = (0,),
+    jacrev: bool = False,
 ):
     """
     Typically used for vmapping dynamic loss functions of type:
@@ -42,15 +48,21 @@ def vmap_loss_fun_classical(
     normalization loss (with in_axes=(0, 0) !), initial condition loss (PDE)
     and boundary condition loss
     """
-    if f is None:
+    if fun is None:
         return None
     if jacrev:
-        f = jax.jacrev(f, argnums=1)
-    return jax.vmap(f, in_axes + vmap_in_axes_params)(b, p)
+        fun = jax.jacrev(fun, argnums=1)
+    return jax.vmap(fun, in_axes + vmap_in_axes_params)(batch, params)
 
 
 def vmap_vmap_fun_normalization(
-    *, f, b, p, vmap_in_axes_params, jacrev=False, **kwargs
+    *,
+    fun: Callable,
+    batch: Array,
+    params: Params[Array],
+    vmap_in_axes_params: tuple[Params[int | None] | None],
+    jacrev: bool = False,
+    **_,
 ):
     """
     Specific to t+x (spatio temporal cases)!
@@ -68,13 +80,13 @@ def vmap_vmap_fun_normalization(
     samples (or their weights if weights are arrays, hence the two possible
     values for in_axes_norm_weights).
     """
-    if f is None:
+    if fun is None:
         return None
     if jacrev:
-        f = jax.jacrev(f, argnums=1)
+        fun = jax.jacrev(fun, argnums=1)
 
-    cart_prod_t_x = b[0]
-    norm_weights_for_x = b[1]
+    cart_prod_t_x = batch[0]
+    norm_weights_for_x = batch[1]
 
     if norm_weights_for_x.ndim > 1:
         in_axes_norm_weights = (1,)
@@ -83,27 +95,27 @@ def vmap_vmap_fun_normalization(
 
     v_u = jax.vmap(  # outer vmap over t
         jax.vmap(  # inner vmap over x and norm_weights if it is an array
-            lambda t_x_nw, params_: f(t_x_nw, params_),
+            fun,
             in_axes=(((0,) + in_axes_norm_weights),) + vmap_in_axes_params,
         ),
         in_axes=(((0,) + (None,)),) + vmap_in_axes_params,
     )
-    return v_u((cart_prod_t_x, norm_weights_for_x), p)
+    return v_u((cart_prod_t_x, norm_weights_for_x), params)
 
 
 def vmap_loss_fun_observations(
     *,
-    f,
-    b,
-    p,
-    vmap_in_axes_params,
-    in_axes=(
+    fun: Callable,
+    batch: Array,
+    params: Params[Array],
+    vmap_in_axes_params: tuple[Params[int | None] | None],
+    in_axes: tuple[tuple[int, ...]] = (
         (
             0,
             0,
         ),
     ),
-    jacrev=False,
+    jacrev: bool = False,
 ):
     """
     Typically made for vmapping observation loss function of type:
@@ -115,18 +127,23 @@ def vmap_loss_fun_observations(
     this function _get_obs_loss_fun is more complex than
     _get_dyn_loss_fun because of the next paragraph but what really forbids the
     vmap over tree map (and a similar signature between _get_dyn_loss and
-    _get_obs_loss_fun) really is the batch sizes.  Specific for observations where we have a tuple of tuples b=(obs_batch_dict["pinn_in"], obs_batch_dict["val"]) and a tuple of obs_batch_dict["eq_params"] which need to be tree mapped together but the vmap is only on each element of b because the vmap on each element of obs_batch_dict["eq_params"] is done through p
+    _get_obs_loss_fun) really is the batch sizes.  Specific for observations
+    where we have a tuple of tuples b=(obs_batch_dict["pinn_in"],
+    obs_batch_dict["val"]) and a tuple of obs_batch_dict["eq_params"] which
+    need to be tree mapped together but the vmap is only on each element of b
+    because the vmap on each element of obs_batch_dict["eq_params"] is done
+    through p
     """
-    if f is None:
+    if fun is None:
         return None
     if jacrev:
-        f = jax.jacrev(f, argnums=1)
+        fun = jax.jacrev(fun, argnums=1)
     return jax.tree.map(
         lambda _b: jax.vmap(
-            lambda __b, __p: f(__b, __p, _b[2], _b[3]),
+            lambda __b, __p: fun(__b, __p, _b[2], _b[3]),
             in_axes + vmap_in_axes_params,
-        )(_b[:2], p),
-        b,
+        )(_b[:2], params),
+        batch,
         is_leaf=lambda x: (
             isinstance(x, tuple) and eqx.is_inexact_array(x[0])
         ),  # stop at lowest level of
@@ -134,7 +151,13 @@ def vmap_loss_fun_observations(
     )
 
 
-def vmap_loss_fun_only_params(*, f, p, vmap_in_axes_params, jacrev=False, **kwargs):
+def vmap_loss_fun_only_params(
+    fun: Callable,
+    params: Params[Array],
+    vmap_in_axes_params: tuple[Params[int | None] | None],
+    jacrev=False,
+    **_,
+):
     """
     Typically for initial_condition of LossODE of type:
     `Callable[[Params[Array]], Array]`
@@ -144,20 +167,23 @@ def vmap_loss_fun_only_params(*, f, p, vmap_in_axes_params, jacrev=False, **kwar
     jnp.mean (here _b is None). Hence the [None] via a PyTree in order to work
     in standard gradient (only an Array) and in NGD (a whole Params[Array])
     """
-    if f is None:
+    if fun is None:
         return None
     if jacrev:
-        f = jax.jacrev(f, argnums=0)
+        fun = jax.jacrev(fun, argnums=0)
     if vmap_in_axes_params != (None,):
         # Note that here we use the reduction as defined in
         # self._reduction_functions
-        f = jax.vmap(f, vmap_in_axes_params)
-    return jax.tree.map(lambda array: array[None], f(p), is_leaf=eqx.is_inexact_array)
+        fun = jax.vmap(fun, vmap_in_axes_params)
+    return jax.tree.map(
+        lambda array: array[None], fun(params), is_leaf=eqx.is_inexact_array
+    )
 
 
 def mean_sum_reduction_pytree(residuals: PyTree[Array | None]) -> PyTree[Array | None]:
     """
-    Sum over the solution dimensions then average over the samples
+    Sum over the solution dimensions then average over the samples for each
+    leaf of a pytree
     """
     return jax.tree.map(mean_sum_reduction, residuals)
 

@@ -166,12 +166,12 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             # As opposed to obs_loss_fun, here the batch is the same for all
             # dyn loss
             dyn_loss_fun: Callable[[Array, Params[Array]], tuple[Array, ...]] | None = (
-                lambda b, p: jax.tree.map(
+                lambda batch, params: jax.tree.map(
                     lambda d: dynamic_loss_apply(
                         d,
                         self.u,
-                        b,
-                        _set_derivatives(p, self.derivative_keys.dyn_loss),
+                        batch,
+                        _set_derivatives(params, self.derivative_keys.dyn_loss),
                     ),
                     self.dynamic_loss,
                     is_leaf=lambda x: isinstance(x, DynamicLoss),  # do not traverse
@@ -197,12 +197,12 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         # See more explanation in vmap_loss_fun_observations
         obs_loss_fun: Callable[
             [tuple[Array, Array], Params[Array], Array, EllipsisType], Array
-        ] = lambda b, po, obs_eq_params, slice_: observations_loss_apply(
+        ] = lambda batch, params_obs, obs_eq_params, slice_: observations_loss_apply(
             self.u,
-            b,
+            batch,
             _set_derivatives(
                 update_eq_params(  # NOTE update_eq_params is here
-                    po, obs_eq_params
+                    params_obs, obs_eq_params
                 ),
                 self.derivative_keys.observations,
             ),
@@ -280,10 +280,10 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
                 lambda vlf, kwargs: (
                     (
                         lambda p: vlf(
-                            **kwargs, p=p, vmap_in_axes_params=vmap_in_axes_params
+                            **kwargs, params=p, vmap_in_axes_params=vmap_in_axes_params
                         )
                     )
-                    if kwargs["f"] is not None
+                    if kwargs["fun"] is not None
                     else None
                 ),  # note the parentheses
                 # around the lambda function
@@ -312,19 +312,19 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             # as the SPINN expects the full batch
             vmap_in_axes_params = (None,)
 
-            def loss_fun(*, f, b, p, **kwargs):
+            def loss_fun(*, fun, batch, params, **_):
                 """
-                *args because for PINN and their vmap we needed to pass more
+                **kwargs because for PINN and their vmap we needed to pass more
                 arguments
                 """
-                if f is None:
+                if fun is None:
                     return None
-                return f(b, p)
+                return fun(batch, params)
 
             evaluate_by_terms = jax.tree.map(
                 lambda kwargs: (
-                    (lambda p: loss_fun(**kwargs, p=p))
-                    if kwargs["f"] is not None
+                    (lambda p: loss_fun(**kwargs, params=p))
+                    if kwargs["fun"] is not None
                     else None
                 ),
                 self._prepare_loss_terms(batch),
@@ -436,7 +436,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             jacrev_evaluate_by_terms = lambda p: jax.tree.map(
                 lambda vlf, kwargs: vlf(
                     **kwargs,
-                    p=p,
+                    params=p,
                     vmap_in_axes_params=vmap_in_axes_params,
                     jacrev=True,
                 ),
