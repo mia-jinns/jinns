@@ -280,6 +280,12 @@ class LossPDEStatio(
     obs_slice : tuple[EllipsisType | slice, ...] | EllipsisType | slice | None, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
+    _reduction_functions : ClassVar[PDEStatioComponents[Callable]]
+        For each loss term we specify the reduction operation (aggregation of
+        loss terms by sample to form a loss term for the whole batch).
+    _vmap_loss_fun : ClassVar[PDEStatioComponents[Callable]]
+        For each loss term we specify the vmap operator in charge of vmapping
+        the loss term function.
 
     Raises
     ------
@@ -514,6 +520,12 @@ class LossPDENonStatio(
     obs_slice : tuple[EllipsisType | slice, ...] | EllipsisType | slice | None, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
+    _reduction_functions : ClassVar[PDENonStatioComponents[Callable]]
+        For each loss term we specify the reduction operation (aggregation of
+        loss terms by sample to form a loss term for the whole batch).
+    _vmap_loss_fun : ClassVar[PDENonStatioComponents[Callable]]
+        For each loss term we specify the vmap operator in charge of vmapping
+        the loss term function.
     """
 
     u: AbstractPINN

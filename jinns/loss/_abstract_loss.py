@@ -244,14 +244,14 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             )
 
             # create a PyTree of vmapped functions (loss terms)
-            # we could technically vmap evaluate by terms with a PyTree in axes
-            # of type XDEBatch but this would for identical batch length...
 
             # We vmap each function returned by evaluate by terms via the
             # following tree map. `_vmap_loss_fun` is a function which does this
             # vmap, with some subtleties depending on the function term
-            # NOTE: we keep it as a function of batch and params (b and p)
-            # until then it to be able to call `jax.jacrev`
+            # NOTE: we return functions of params (`p`)
+            # to be able to call `jax.jacrev` later on
+            # (we could technically vmap evaluate by terms with a PyTree in axes
+            # of type XDEBatch but this would for identical batch length...)
             evaluate_by_terms = jax.tree.map(
                 lambda vlf, kwargs: (
                     (
@@ -273,15 +273,13 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
                 return evaluate_by_terms, params, vmap_in_axes_params
 
             # next we reduce the output of each loss term function
-            # NOTE: we keep it as a function of batch and params (b and p)
-            # until then it to be able to call `jax.jacrev`
+            # NOTE: we return functions of params (`p`)
+            # to be able to call `jax.jacrev`
             evaluate_by_terms_reduced = jax.tree.map(
-                lambda red_fun, v_eval: (
-                    (lambda p: red_fun(v_eval(p)))
-                    if v_eval  # note the parenthesis around the lambda function
-                    is not None
-                    else None
-                ),
+                lambda red_fun, v_eval: (lambda p: red_fun(v_eval(p)))
+                if v_eval  # parentheses around lambda mandatory!
+                is not None
+                else None,
                 self._reduction_functions,
                 evaluate_by_terms,
             )

@@ -101,6 +101,12 @@ class LossODE(
     params : InitVar[Params[Array]] | None, default=None
         The main Params object of the problem needed to instanciate the
         DerivativeKeysODE if the latter is not specified.
+    _reduction_functions : ClassVar[ODEComponents[Callable]]
+        For each loss term we specify the reduction operation (aggregation of
+        loss terms by sample to form a loss term for the whole batch).
+    _vmap_loss_fun : ClassVar[ODEComponents[Callable]]
+        For each loss term we specify the vmap operator in charge of vmapping
+        the loss term function.
     Raises
     ------
     ValueError
