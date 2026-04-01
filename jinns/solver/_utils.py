@@ -412,17 +412,19 @@ def _loss_evaluate_and_natural_gradient_step(
         _reweight_pytree(r, weights_per_sample_no_avg),
     )
 
-    train_loss_value = jnp.sum(
-        jnp.concatenate(
-            jax.tree.leaves(
-                jax.tree.map(
-                    lambda arr: jnp.sum(arr**2, axis=-1),
-                    reweighted_r,  # _reweight_pytree(r, weights_per_sample),
-                ),
-            ),
-            axis=0,
-        )
-    )
+    # train_loss_value = jnp.sum(
+    #     jnp.concatenate(
+    #         jax.tree.leaves(
+    #             jax.tree.map(
+    #                 lambda arr: jnp.sum(arr**2, axis=-1),
+    #                 reweighted_r,  # _reweight_pytree(r, weights_per_sample),
+    #             ),
+    #         ),
+    #         axis=0,
+    #     )
+    # )
+
+    train_loss_value = jnp.sum(jnp.array(jax.tree.leaves(loss_terms)))
 
     opt_natural_grads, _ = natural_grads.partition(params_mask)
     opt_euclidean_grads, _ = euclidean_grads.partition(
@@ -446,20 +448,13 @@ def _loss_evaluate_and_natural_gradient_step(
             batch,
             non_opt_params=non_opt_params,
         )
-        total_loss = jnp.sum(
-            jnp.concatenate(
-                jax.tree.leaves(
-                    jax.tree.map(
-                        lambda arr: jnp.sum(arr**2, axis=-1),
-                        _reweight_pytree(
-                            new_r, weights_per_sample
-                        ),  # `r` has changed !
-                    ),
-                ),
-                axis=0,
-            )
+        new_loss_terms = jax.tree.map(
+            lambda red_fun, r_: red_fun(r_),
+            loss._reduction_functions,
+            _reweight_pytree(new_r, weights_per_sample_no_avg),
         )
-        return total_loss
+        new_loss = jnp.sum(jnp.array(jax.tree.leaves(new_loss_terms)))
+        return new_loss
 
     if not isinstance(optimizer, optax.GradientTransformationExtraArgs):
         # TODO: maybe just modify type hint instead of raising error ?
