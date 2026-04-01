@@ -132,6 +132,7 @@ nav:
         - 'api/pinn/save_load.md'
       - Plot: 'api/plot.md'
       - Solve: 'api/solver.md'
+      - Optimizers: 'api/optimizers/natural_gradient.md'
       - Advanced:
         - Differential operators: 'api/advanced/differential_operators.md'
         - Derivative keys: 'api/advanced/derivative_keys.md'

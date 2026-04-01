@@ -34,7 +34,22 @@ def vanilla_ngd(
     ] = optax.scale_by_backtracking_linesearch(max_backtracking_steps=15, verbose=True),
     eq_params_tx: dict | None = None,
 ) -> optax.GradientTransformationExtraArgs:
-    """jinns implementation of vanilla Natural Gradient Descent (NGD)
+    r"""jinns implementation of vanilla Natural Gradient Descent (NGD).
+
+    See e.g. [Johannes Müller, Marius Zeinhofer - Achieving High Accuracy with PINNs via Energy Natural Gradient Descent](https://proceedings.mlr.press/v202/muller23b/muller23b.pdf)
+
+    This vanilla implementation uses a ridge regularization on the diagonal of $G$ before solving
+    the linear system.
+
+    $$
+        \eta = (\hat{G} + \lambda I_p)^{-1} \nabla_{\nu} \mathcal{L}(\nu).
+    $$
+
+    !!! note
+
+        For ease of PyTree manipulation internally, in jinns, the gram matrix $G$ and $\eta$
+        are computed internally in  `solver/_utils._loss_evaluate_and_natural_gradient_step`.
+        This optax optimizer simply takes care of the additive updates and linesearch (recommended).
 
     Parameters
     ----------
@@ -43,7 +58,9 @@ def vanilla_ngd(
     gram_reg : float, optional
         the ridge regularization used before inverting the Gram matrix, by default 1e-5
     linesearch : Optional[base.GradientTransformationExtraArgs], optional
-        the linesearch method that computes a learning rate, a.k.a. stepsize, to satisfy some criterion such as a sufficient decrease of the objective by additional calls to the objective
+        it is recommended to use a linesearch method that computes a learning rate,
+        a.k.a. stepsize, to satisfy some criterion such as a sufficient decrease of the objective
+        by additional calls to the objective
         by default optax.scale_by_backtracking_linesearch(max_backtracking_steps=15, verbose=True)
     eq_params_tx : dict | None, optional
         optional dictionnary of optax optimizers for each eq_params, by default None which means eq_params are not updated (forward problem)
