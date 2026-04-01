@@ -4,37 +4,61 @@
 import equinox as eqx
 import optax
 import jinns
+from typing import Optional
 
 
 class NGDState(eqx.Module):
-    tx_state: optax.OptState
+    """A custom state for Natural Gradient Descent.
+
+    Useful internally: it tells `jinns` when to trigger NGD. All custom NGD optimizer state
+    should inherit this.
+    """
+
+    tx_state: optax.OptState  # optimizer state
+
+
+class VanillaNGDState(NGDState):
+    """State for vanilla Natural Gradient Descent with ridge regularization."""
+
     sgd_learning_rate: float = 1.0
     gram_reg: float = 1e-5  # small ridge regularization on diag(G) when inverting
-    max_backtracking_steps: int = 15
-    verbose_linesearch: bool = True
     with_eq_params_update: bool = eqx.field(static=True, default=False)
 
 
 def vanilla_ngd(
     *,
-    sgd_learning_rate=1.0,
-    gram_reg=1e-5,
-    max_backtracking_steps=15,
-    verbose_linesearch=True,
-    eq_params_tx=None,
+    sgd_learning_rate: float = 1.0,
+    gram_reg: float = 1e-5,
+    linesearch: Optional[
+        optax.GradientTransformationExtraArgs
+    ] = optax.scale_by_backtracking_linesearch(max_backtracking_steps=15, verbose=True),
+    eq_params_tx: dict | None = None,
 ) -> optax.GradientTransformationExtraArgs:
-    """
-    An optax optimizer for Natural Gradient Descent in its vanilla version.
-    For now we force to internally use optax vanilla additive gradient update
-    since it makes no sense to use other optimizers
+    """jinns implementation of vanilla Natural Gradient Descent (NGD)
 
-    eq_params_tx is a dictionnary with keys corresponding to eq_params and
-    values being optax optimizer. For parameters that are not updatd, values
-    should be None
+    Parameters
+    ----------
+    sgd_learning_rate : float, optional
+        the starting learning rate multiply the NGD update, by default 1.0
+    gram_reg : float, optional
+        the ridge regularization used before inverting the Gram matrix, by default 1e-5
+    linesearch : Optional[base.GradientTransformationExtraArgs], optional
+        the linesearch method that computes a learning rate, a.k.a. stepsize, to satisfy some criterion such as a sufficient decrease of the objective by additional calls to the objective
+        by default optax.scale_by_backtracking_linesearch(max_backtracking_steps=15, verbose=True)
+    eq_params_tx : dict | None, optional
+        optional dictionnary of optax optimizers for each eq_params, by default None which means eq_params are not updated (forward problem)
+
+    Returns
+    -------
+    optax.GradientTransformationExtraArgs
+        the vanilla ngd optimizer
     """
+    if linesearch is None:
+        linesearch = optax.identity()
+
     ngd_optim_ = optax.chain(
         optax.sgd(learning_rate=1.0),
-        optax.scale_by_backtracking_linesearch(max_backtracking_steps=15, verbose=True),
+        linesearch,
     )
     if eq_params_tx is not None:
         # In the line below, parameters that are not updated are assigned the
@@ -69,19 +93,17 @@ def vanilla_ngd(
         ngd_optim = ngd_optim_
         with_eq_params_update = False
 
-    def init(params: optax.Params) -> NGDState:
-        return NGDState(
+    def init(params: optax.Params) -> VanillaNGDState:
+        return VanillaNGDState(
             tx_state=ngd_optim.init(params),
             sgd_learning_rate=sgd_learning_rate,
             gram_reg=gram_reg,
-            max_backtracking_steps=max_backtracking_steps,
-            verbose_linesearch=verbose_linesearch,
             with_eq_params_update=with_eq_params_update,
         )
 
     def update(
         updates, ngd_state, params=None, **extra_kwargs
-    ) -> tuple[optax.Updates, NGDState]:
+    ) -> tuple[optax.Updates, VanillaNGDState]:
         tx_state = ngd_state.tx_state
         updates, new_tx_state = ngd_optim.update(
             updates, tx_state, params, **extra_kwargs
