@@ -341,10 +341,8 @@ def solve(
 
         # New in jinns 1.8 : handles natural gradient
         opt_state = optimization.opt_state
-        extra_args = {}
         if isinstance(opt_state, NGDState):
             _step = _loss_evaluate_and_natural_gradient_step
-            extra_args["with_eq_params_update"] = opt_state.with_eq_params_update
         else:
             _step = _loss_evaluate_and_euclidean_gradient_step
 
@@ -361,7 +359,6 @@ def solve(
                 key=subkey,
                 params_mask=None,
                 opt_state_field_for_acceleration=opt_state_field_for_acceleration,
-                **extra_args,
             )
         )
 

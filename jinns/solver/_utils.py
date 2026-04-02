@@ -28,6 +28,11 @@ from jinns.utils._containers import (
     StoredObjectContainer,
 )
 from jinns.optimizers._natural_gradient import NGDState
+from jinns.optimizers._utils_ngd import (
+    _get_sqrt_weights_per_sample,
+    _reweight_pytree,
+)
+
 
 if TYPE_CHECKING:
     from jinns.utils._types import AnyBatch, SolveCarry, SolveAlternateCarry
@@ -236,7 +241,6 @@ def _loss_evaluate_and_natural_gradient_step(
     optimizer: optax.GradientTransformation,
     params_mask: Params[bool] | None = None,
     opt_state_field_for_acceleration: str | None = None,
-    with_eq_params_update: bool = True,
     **__,  # to ignore more arguments
 ):
     """Similar to ` _loss_evaluate_and_euclidean_gradient_step` but for natural gradient.
@@ -254,12 +258,6 @@ def _loss_evaluate_and_natural_gradient_step(
 
     Parameters
     ----------
-    with_eq_params_update: bool, default = True
-        A boolean specifying if the updates for `params.eq_params` should be applied or not.
-        If True, we are in inverse problem mode and euclidean gradient for eq_params are passed
-        to the optimizer. If False, we are in forward problem mode and they are set to zero.
-        This is useful in `solve_alternate`, as users may want to perform NGD on nn_params
-        while leaving the eq_params untouched during a few steps.
 
     Returns
     -------
@@ -312,11 +310,6 @@ def _loss_evaluate_and_natural_gradient_step(
     # We can also assemble the total loss and loss_terms from reweighted residuals `r`
     # NOTE: subtility here, we don't reweight by * 1/sqrt{n} because the averaging is done
     # inside loss._reduction_functions so we don't want to account twice for it.
-    from jinns.optimizers.utils_ngd import (
-        _get_sqrt_weights_per_sample,
-        _reweight_pytree,
-    )
-
     sqrt_weights_per_sample = _get_sqrt_weights_per_sample(lw=lw_, r=r, batch_norm=True)
     sqrt_weights_per_sample_no_avg = _get_sqrt_weights_per_sample(
         lw=lw_, r=r, batch_norm=False
@@ -340,7 +333,6 @@ def _loss_evaluate_and_natural_gradient_step(
         loss=loss,
         batch=batch,
         loss_value=train_loss_value,
-        non_opt_params=non_opt_params,  # TODO: see if it is avoidable here !
     )
 
     params, state = _get_unmasked_optimization_stuff(

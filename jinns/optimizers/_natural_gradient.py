@@ -9,6 +9,10 @@ import jax
 import jax.numpy as jnp
 
 from jinns.optimizers._utils_ngd import Component, _reweight_pytree
+from jinns.optimizers._utils_ngd import (
+    assemble_ngd_gram_matrix_and_euclidean_gradient,
+    params_array_to_pytree,
+)
 
 
 class NGDState(eqx.Module):
@@ -22,7 +26,21 @@ class NGDState(eqx.Module):
 
 
 class VanillaNGDState(NGDState):
-    """State for vanilla Natural Gradient Descent with ridge regularization."""
+    """State for vanilla Natural Gradient Descent with ridge regularization.
+
+    Parameters
+    ----------
+    XXX
+        xxx
+    XXX
+        xxx
+    with_eq_params_update: bool, default = True
+        A boolean specifying if the updates for `params.eq_params` should be applied or not.
+        If True, we are in inverse problem mode and euclidean gradient for eq_params are passed
+        to the optimizer. If False, we are in forward problem mode and they are set to zero.
+        This is useful in `solve_alternate`, as users may want to perform NGD on nn_params
+        while leaving the eq_params untouched during a few steps.
+    """
 
     sgd_learning_rate: float = 1.0
     gram_reg: float = 1e-5  # small ridge regularization on diag(G) when inverting
@@ -133,27 +151,16 @@ def vanilla_ngd(
         loss,
         batch,
         loss_value,
-        non_opt_params,  # TODO: I'd like to avoid passing this
-        **kwargs,  # should not be used imo
+        **_,  # should not be used imo
     ) -> tuple[optax.Updates, VanillaNGDState]:
-        # NOTE: here params shoudl be thought as an opt_params in jinns
-        # thus with possible None field for eq_params
-
-        del kwargs
-
         # -- Compute the necessary quantities from r, g
-        from jinns.optimizers._utils_ngd import (
-            assemble_ngd_gram_matrix_and_euclidean_gradient,
-            params_array_to_pytree,
-        )
-
         r, g, sqrt_weights_per_sample = r_g_sw
         gram_mat, euclidean_grad_array_nn, euclidean_grad_array_eq = (
             assemble_ngd_gram_matrix_and_euclidean_gradient(
                 r=r,
                 g=g,
                 sqrt_weights_per_sample=sqrt_weights_per_sample,
-                with_eq_params_update=with_eq_params_update,
+                with_eq_params_update=ngd_state.with_eq_params_update,
             )
         )
 
@@ -181,30 +188,13 @@ def vanilla_ngd(
             euclidean_grad_array_nn, params, euclidean_grad_array_eq
         )
 
-        # TODO: this is where things get complicated
-        # I would like to avoid passing `non_opt_params` or `params` to update() if possible,
-        # as it obfuscate code comprehension imo.
-        # But the signature of loss.values_and_grad_per_sample() makes it complicated to do so.
-        # With solve() we could just forget about it and set non_opt_params to None (not a good idea)
-        # but with solve_alternate() this becomes a crucial issue as eq_params will be missing.
-
-        # I don't fully understand the intrication between optax, the opt_params vs params paradigm and jinns
-        # But to put the following piece of code from solver/_utils.py inside the optax optimizer,
-        # we need access to params, not just opt_params. Can we find a way to do everything with opt_params only ?
-        # It would be very ugly to pass params (or even just params.eq_params) to the optimizer.update
-        # function
         def ngd_value_fn(params):
-            """
-            non_opt_params is passed to update as is needed to reform the correct
-            params (with non None values at non optimized params - this is done in
-            loss.evaluate) in order to be able to evaluate
-            """
+            """ """
             # Not using loss.evaluate here cause of the mean(sum()) vs sum(mean)
             # remark. This fn computes the loss we are truly minimizing with NGD.
-            new_r, _ = loss.values_and_grad_per_sample(
+            new_r = loss.evaluate_per_sample(
                 params,
                 batch,
-                non_opt_params=non_opt_params,
             )
             total_loss = jnp.sum(
                 jnp.concatenate(
@@ -221,31 +211,30 @@ def vanilla_ngd(
             )
             return total_loss
 
-        if with_eq_params_update:
+        if ngd_state.with_eq_params_update:
             # Following https://github.com/google-deepmind/optax/issues/1649
-            def fill_eq_params_value_fn(
-                ngd_value_fn,
-                non_opt_params,  # this is where it get tricky, we should pass the full params of jinns to avoid None...
-            ):
+            # to handle the optax partition doing some masking:
+            # -> We need to pass the full params (`params`) because opt_params might contain
+            # None at eq_params, which would fail the last instruction
+            # NOTE that this is a specific manipulation when using optax
+            # partition and this is NOT linked with jinns masking induced by
+            # jinns.solve_alternate
+            def fill_eq_params_value_fn(ngd_value_fn, params):
                 """Reconstructs the full parameter tree from the masked one.
                 Specific case: this is always eq_params that will be masked
-
-
-                We need to pass the full params (`params`) because opt_params might contain
-                None at eq_params, which would fail the last instruction
                 """
 
                 def wrapper(masked_params):  # this is what will be called by the
                     # backtracking line search callback
                     # ie., it will contain masked params that we need to fill in
                     full_params = eqx.tree_at(
-                        lambda pt: pt.eq_params, masked_params, non_opt_params.eq_params
+                        lambda pt: pt.eq_params, masked_params, params.eq_params
                     )
                     return ngd_value_fn(full_params)
 
                 return wrapper
 
-            value_fn = fill_eq_params_value_fn(ngd_value_fn, non_opt_params)
+            value_fn = fill_eq_params_value_fn(ngd_value_fn, params)
         else:
             # if we are not doing an inverse problem, there is no optax.partition
             # to handle
