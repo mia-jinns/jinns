@@ -125,7 +125,9 @@ def vanilla_ngd(
         )
 
     def update(
-        r_g_sw: tuple[Component, Component, Component],
+        r_g_sw: tuple[
+            Component, Component, Component
+        ],  # this feels a bit hacky compared to optax.Updates
         ngd_state: VanillaNGDState,
         params,
         loss,
