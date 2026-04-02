@@ -8,7 +8,7 @@ from typing import Optional
 import jax
 import jax.numpy as jnp
 
-from jinns.optimizers.utils_ngd import Component, _reweight_pytree
+from jinns.optimizers._utils_ngd import Component, _reweight_pytree
 
 
 class NGDState(eqx.Module):
@@ -142,7 +142,7 @@ def vanilla_ngd(
         del kwargs
 
         # -- Compute the necessary quantities from r, g
-        from jinns.optimizers.utils_ngd import (
+        from jinns.optimizers._utils_ngd import (
             assemble_ngd_gram_matrix_and_euclidean_gradient,
             params_array_to_pytree,
         )

@@ -1,13 +1,9 @@
-from jax._src.basearray import Array
-from jax._src.basearray import Array
 import jax
 import jax.numpy as jnp
 import equinox as eqx
 import optax
 
 from typing import (
-    TYPE_CHECKING,
-    Any,
     TypeVar,
     Literal,
 )
