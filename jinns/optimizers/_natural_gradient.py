@@ -8,7 +8,6 @@ from typing import Optional
 import jax
 import jax.numpy as jnp
 
-
 from jinns.optimizers.utils_ngd import Component, _reweight_pytree
 
 
@@ -170,7 +169,7 @@ def vanilla_ngd(
         # NOTE: if in inverse problem mode, the leaf at eq_params is filled with standard euclidean
         # gradients, and zeros if in forward problem mode.
 
-        ngd_updates = params_array_to_pytree(
+        ngd_pytree = params_array_to_pytree(
             natural_grad_array_nn, params, euclidean_grad_array_eq
         )
 
@@ -251,8 +250,8 @@ def vanilla_ngd(
             value_fn = ngd_value_fn
 
         tx_state = ngd_state.tx_state
-        ngd_updates, new_tx_state = ngd_optim.update(
-            ngd_updates,  # type: ignore
+        ngd_pytree, new_tx_state = ngd_optim.update(
+            ngd_pytree,  # type: ignore
             tx_state,
             params,
             # extra kwargs passed to backtracking line search `update()` method
@@ -262,7 +261,7 @@ def vanilla_ngd(
         )
 
         return (
-            ngd_updates,
+            ngd_pytree,
             eqx.tree_at(lambda pt: pt.tx_state, ngd_state, new_tx_state),
         )
 
