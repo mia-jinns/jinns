@@ -166,12 +166,12 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             # As opposed to obs_loss_fun, here the batch is the same for all
             # dyn loss
             dyn_loss_fun: Callable[[Array, Params[Array]], tuple[Array, ...]] | None = (
-                lambda b, p: jax.tree.map(
+                lambda batch, params: jax.tree.map(
                     lambda d: dynamic_loss_apply(
                         d,
                         self.u,
-                        b,
-                        _set_derivatives(p, self.derivative_keys.dyn_loss),
+                        batch,
+                        _set_derivatives(params, self.derivative_keys.dyn_loss),
                     ),
                     self.dynamic_loss,
                     is_leaf=lambda x: isinstance(x, DynamicLoss),  # do not traverse
@@ -197,12 +197,12 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         # See more explanation in vmap_loss_fun_observations
         obs_loss_fun: Callable[
             [tuple[Array, Array], Params[Array], Array, EllipsisType], Array
-        ] = lambda b, po, obs_eq_params, slice_: observations_loss_apply(
+        ] = lambda batch, params_obs, obs_eq_params, slice_: observations_loss_apply(
             self.u,
-            b,
+            batch,
             _set_derivatives(
                 update_eq_params(  # NOTE update_eq_params is here
-                    po, obs_eq_params
+                    params_obs, obs_eq_params
                 ),
                 self.derivative_keys.observations,
             ),
@@ -211,17 +211,20 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
 
         return obs_loss_fun
 
-    def _get_evaluate_by_terms_lambda_and_params(
+    def _preprocess_params(
         self,
         opt_params: Params[Array],
         batch: B,
         *,
         non_opt_params: Params[Array] | None = None,
-        unreduced: bool = False,
-    ):
+    ) -> tuple[Params[Array], tuple[Params[int | None] | None, ...]]:
         """
-        The evaluate_by_terms lambda function
-        or the evaluate_by_terms_reduced lambda function
+        Preprocessing of the Params object before loss evaluation:
+
+        - combine with non_opt_params
+        - feed the eq_params batch if it exists
+        - get the vmap_in_axes_params for vmapping over the batch of eq_params
+          if needed
         """
         if non_opt_params is not None:
             params = eqx.combine(opt_params, non_opt_params)
@@ -230,36 +233,57 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
 
         # Retrieve the optional eq_params_batch
         # and update eq_params with the latter
-        # and update vmap_in_axes
         if batch.param_batch_dict is not None:
             # update params with the batches of generated params
             params = update_eq_params(params, batch.param_batch_dict)
 
+        # and update vmap_in_axes_params
+        if isinstance(self.u, (PINN, HyperPINN)):
+            vmap_in_axes_params = _get_vmap_in_axes_params(
+                cast(eqx.Module, batch.param_batch_dict), params
+            )
+        elif isinstance(self.u, SPINN):
+            # NOTE there is no vmap here on each loss functin
+            # as the SPINN expects the full batch
+            vmap_in_axes_params = (None,)
+        else:
+            raise ValueError(
+                f"Bad type for self.u. Got {type(self.u)}, expected PINN or SPINN"
+            )
+        return params, vmap_in_axes_params
+
+    def _get_evaluate_by_terms_lambda(
+        self,
+        batch: B,
+        vmap_in_axes_params: tuple,
+        *,
+        unreduced: bool = False,
+    ) -> C:
+        """
+        The evaluate_by_terms lambda function
+        or the evaluate_by_terms_reduced lambda function
+        """
         if isinstance(self.u, (PINN, HyperPINN)):
             # NOTE each loss function is vmapped generically here
             # before reduction
 
-            vmap_in_axes_params = _get_vmap_in_axes_params(
-                cast(eqx.Module, batch.param_batch_dict), params
-            )
-
             # create a PyTree of vmapped functions (loss terms)
-            # we could technically vmap evaluate by terms with a PyTree in axes
-            # of type XDEBatch but this would for identical batch length...
 
             # We vmap each function returned by evaluate by terms via the
             # following tree map. `_vmap_loss_fun` is a function which does this
             # vmap, with some subtleties depending on the function term
-            # NOTE: we keep it as a function of batch and params (b and p)
-            # until then it to be able to call `jax.jacrev`
+            # NOTE: we return functions of params (`p`)
+            # to be able to call `jax.jacrev` later on
+            # (we could technically vmap evaluate by terms with a PyTree in axes
+            # of type XDEBatch but this would for identical batch length...)
             evaluate_by_terms = jax.tree.map(
                 lambda vlf, kwargs: (
                     (
                         lambda p: vlf(
-                            **kwargs, p=p, vmap_in_axes_params=vmap_in_axes_params
+                            **kwargs, params=p, vmap_in_axes_params=vmap_in_axes_params
                         )
                     )
-                    if kwargs["f"] is not None
+                    if kwargs["fun"] is not None
                     else None
                 ),  # note the parentheses
                 # around the lambda function
@@ -270,18 +294,16 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
                 ),  # only traverse first layer
             )
             if unreduced:
-                return evaluate_by_terms, params, vmap_in_axes_params
+                return evaluate_by_terms
 
             # next we reduce the output of each loss term function
-            # NOTE: we keep it as a function of batch and params (b and p)
-            # until then it to be able to call `jax.jacrev`
+            # NOTE: we return functions of params (`p`)
+            # to be able to call `jax.jacrev`
             evaluate_by_terms_reduced = jax.tree.map(
-                lambda red_fun, v_eval: (
-                    (lambda p: red_fun(v_eval(p)))
-                    if v_eval  # note the parenthesis around the lambda function
-                    is not None
-                    else None
-                ),
+                lambda red_fun, v_eval: (lambda p: red_fun(v_eval(p)))
+                if v_eval  # parentheses around lambda mandatory!
+                is not None
+                else None,
                 self._reduction_functions,
                 evaluate_by_terms,
             )
@@ -290,19 +312,19 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             # as the SPINN expects the full batch
             vmap_in_axes_params = (None,)
 
-            def loss_fun(*, f, b, p, **kwargs):
+            def loss_fun(*, fun, batch, params, **_):
                 """
-                *args because for PINN and their vmap we needed to pass more
+                **kwargs because for PINN and their vmap we needed to pass more
                 arguments
                 """
-                if f is None:
+                if fun is None:
                     return None
-                return f(b, p)
+                return fun(batch, params)
 
             evaluate_by_terms = jax.tree.map(
                 lambda kwargs: (
-                    (lambda p: loss_fun(**kwargs, p=p))
-                    if kwargs["f"] is not None
+                    (lambda p: loss_fun(**kwargs, params=p))
+                    if kwargs["fun"] is not None
                     else None
                 ),
                 self._prepare_loss_terms(batch),
@@ -310,7 +332,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             )
 
             if unreduced:
-                return evaluate_by_terms, params, vmap_in_axes_params
+                return evaluate_by_terms
             evaluate_by_terms_reduced = jax.tree.map(
                 lambda red_fun, loss_fun: (
                     (lambda p: red_fun(loss_fun(p))) if loss_fun is not None else None
@@ -323,7 +345,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             raise ValueError(
                 f"Bad type for self.u. Got {type(self.u)}, expected PINN or SPINN"
             )
-        return evaluate_by_terms_reduced, params, vmap_in_axes_params
+        return evaluate_by_terms_reduced
 
     def evaluate(
         self,
@@ -350,11 +372,11 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         non_opt_params
             Parameters, which are non optimized, at which the loss is evaluated
         """
-
-        evaluate_by_terms_reduced, params, _ = (
-            self._get_evaluate_by_terms_lambda_and_params(
-                opt_params, batch, non_opt_params=non_opt_params
-            )
+        params, vmap_in_axes_params = self._preprocess_params(
+            opt_params, batch, non_opt_params=non_opt_params
+        )
+        evaluate_by_terms_reduced = self._get_evaluate_by_terms_lambda(
+            batch, vmap_in_axes_params
         )
         loss_terms = jax.tree.map(lambda fun: fun(params), evaluate_by_terms_reduced)
 
@@ -372,11 +394,12 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         This evaluates each term of the loss as well as its gradient w.r.t. to all PyTrees in
         `params`.
         """
+        params, vmap_in_axes_params = self._preprocess_params(
+            opt_params, batch, non_opt_params=non_opt_params
+        )
 
-        evaluate_by_terms_reduced, params, _ = (
-            self._get_evaluate_by_terms_lambda_and_params(
-                opt_params, batch, non_opt_params=non_opt_params
-            )
+        evaluate_by_terms_reduced = self._get_evaluate_by_terms_lambda(
+            batch, vmap_in_axes_params
         )
         loss_terms = jax.tree.map(lambda fun: fun(params), evaluate_by_terms_reduced)
 
@@ -400,10 +423,12 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         This is useful for natural gradient methods which requires these atomic quantities
         to compute a preconditioner on the euclidean gradient.
         """
-        evaluate_by_terms, params, vmap_in_axes_params = (
-            self._get_evaluate_by_terms_lambda_and_params(
-                opt_params, batch, non_opt_params=non_opt_params, unreduced=True
-            )
+        params, vmap_in_axes_params = self._preprocess_params(
+            opt_params, batch, non_opt_params=non_opt_params
+        )
+
+        evaluate_by_terms = self._get_evaluate_by_terms_lambda(
+            batch, vmap_in_axes_params, unreduced=True
         )
         loss_terms = jax.tree.map(lambda fun: fun(params), evaluate_by_terms)
 
@@ -411,7 +436,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             jacrev_evaluate_by_terms = lambda p: jax.tree.map(
                 lambda vlf, kwargs: vlf(
                     **kwargs,
-                    p=p,
+                    params=p,
                     vmap_in_axes_params=vmap_in_axes_params,
                     jacrev=True,
                 ),

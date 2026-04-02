@@ -16,7 +16,7 @@ import jax.numpy as jnp
 import equinox as eqx
 
 from jinns.loss._loss_components import PDENonStatioComponents
-from jinns.solver._utils import _post_process_pytree_of_grad
+from jinns.optimizers.utils_ngd import _post_process_pytree_of_grad
 
 
 class LossPDENonStatio_(jinns.loss.LossPDENonStatio):
@@ -31,7 +31,10 @@ class LossPDENonStatio_(jinns.loss.LossPDENonStatio):
         static=True,
         default=PDENonStatioComponents(
             dyn_loss=lambda r: jax.tree.map(
-                lambda r_: jnp.sum(jnp.sum(r_**2, axis=-1)), r
+                # we could do jnp.sum(r_**2) directly below but we code it this way
+                # so that the analogy with mean_sum_reduction() is clearer
+                lambda r_: jnp.sum(jnp.sum(r_**2, axis=-1)),
+                r,
             ),
             initial_condition=lambda r: jnp.sum(jnp.sum(r**2, axis=-1)),
             boundary_loss=lambda f: jax.tree.reduce(

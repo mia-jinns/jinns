@@ -180,11 +180,11 @@ class _LossPDEAbstract(
         if self.norm_samples is not None:
             norm_loss_fun: (
                 Callable[[tuple[Array, Array], Params[Array]], Array] | None
-            ) = lambda b, p: normalization_loss_apply(
+            ) = lambda batch, params: normalization_loss_apply(
                 self.u,
-                b[0],
-                b[1],
-                _set_derivatives(p, self.derivative_keys.norm_loss),
+                batch[0],
+                batch[1],
+                _set_derivatives(params, self.derivative_keys.norm_loss),
             )
         else:
             norm_loss_fun = None
@@ -196,11 +196,11 @@ class _LossPDEAbstract(
         if self.boundary_condition is not None:
             boundary_loss_fun: (
                 Callable[[Array, Params[Array]], tuple[Array, ...]] | None
-            ) = lambda b, p: boundary_condition_apply(
+            ) = lambda batch, params: boundary_condition_apply(
                 self.boundary_condition,  # type: ignore # we are in lambda...
                 self.u,
-                b,
-                _set_derivatives(p, self.derivative_keys.boundary_loss),
+                batch,
+                _set_derivatives(params, self.derivative_keys.boundary_loss),
             )
         else:
             boundary_loss_fun = None
@@ -280,6 +280,12 @@ class LossPDEStatio(
     obs_slice : tuple[EllipsisType | slice, ...] | EllipsisType | slice | None, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
+    _reduction_functions : ClassVar[PDEStatioComponents[Callable]]
+        For each loss term we specify the reduction operation (aggregation of
+        loss terms by sample to form a loss term for the whole batch).
+    _vmap_loss_fun : ClassVar[PDEStatioComponents[Callable]]
+        For each loss term we specify the vmap operator in charge of vmapping
+        the loss term function.
 
     Raises
     ------
@@ -414,12 +420,16 @@ class LossPDEStatio(
             obs_batch_and_slice = None
 
         all_funs_and_params: PDEStatioComponents = PDEStatioComponents(
-            dyn_loss={"f": dyn_loss_fun, "b": domain_batch},
-            norm_loss={"f": norm_loss_fun, "b": norm_batch, "in_axes": ((0, None),)},
-            boundary_loss={"f": boundary_loss_fun, "b": border_batch},
+            dyn_loss={"fun": dyn_loss_fun, "batch": domain_batch},
+            norm_loss={
+                "fun": norm_loss_fun,
+                "batch": norm_batch,
+                "in_axes": ((0, None),),
+            },
+            boundary_loss={"fun": boundary_loss_fun, "batch": border_batch},
             observations={
-                "f": obs_loss_fun,
-                "b": obs_batch_and_slice,
+                "fun": obs_loss_fun,
+                "batch": obs_batch_and_slice,
             },
         )
         return all_funs_and_params
@@ -514,6 +524,12 @@ class LossPDENonStatio(
     obs_slice : tuple[EllipsisType | slice, ...] | EllipsisType | slice | None, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
+    _reduction_functions : ClassVar[PDENonStatioComponents[Callable]]
+        For each loss term we specify the reduction operation (aggregation of
+        loss terms by sample to form a loss term for the whole batch).
+    _vmap_loss_fun : ClassVar[PDENonStatioComponents[Callable]]
+        For each loss term we specify the vmap operator in charge of vmapping
+        the loss term function.
     """
 
     u: AbstractPINN
@@ -727,18 +743,18 @@ class LossPDENonStatio(
             initial_condition_fun = None
 
         all_funs_and_params: PDENonStatioComponents = PDENonStatioComponents(
-            dyn_loss={"f": dyn_loss_fun, "b": domain_batch},
-            norm_loss={"f": norm_loss_fun, "b": norm_batch},
+            dyn_loss={"fun": dyn_loss_fun, "batch": domain_batch},
+            norm_loss={"fun": norm_loss_fun, "batch": norm_batch},
             # here since the specifities of norm_loss we need to rewrite the
             # defaults in_axes=(0,) argument
-            boundary_loss={"f": boundary_loss_fun, "b": border_batch},
+            boundary_loss={"fun": boundary_loss_fun, "batch": border_batch},
             initial_condition={
-                "f": initial_condition_fun,
-                "b": omega_initial_batch,
+                "fun": initial_condition_fun,
+                "batch": omega_initial_batch,
             },
             observations={
-                "f": obs_loss_fun,
-                "b": obs_batch_and_slice,
+                "fun": obs_loss_fun,
+                "batch": obs_batch_and_slice,
             },
         )
         return all_funs_and_params

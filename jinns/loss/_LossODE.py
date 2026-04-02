@@ -101,6 +101,12 @@ class LossODE(
     params : InitVar[Params[Array]] | None, default=None
         The main Params object of the problem needed to instanciate the
         DerivativeKeysODE if the latter is not specified.
+    _reduction_functions : ClassVar[ODEComponents[Callable]]
+        For each loss term we specify the reduction operation (aggregation of
+        loss terms by sample to form a loss term for the whole batch).
+    _vmap_loss_fun : ClassVar[ODEComponents[Callable]]
+        For each loss term we specify the vmap operator in charge of vmapping
+        the loss term function.
     Raises
     ------
     ValueError
@@ -292,8 +298,8 @@ class LossODE(
             # now vmap over the number of conditions (first dim of t0 and u0)
             # and take the mean
             initial_condition_fun: Callable[[Params[Array]], Array] | None = (
-                lambda p: jnp.mean(
-                    vmap(initial_condition_fun__, (0, 0, None))(t0, u0, p),
+                lambda params: jnp.mean(
+                    vmap(initial_condition_fun__, (0, 0, None))(t0, u0, params),
                     axis=0,
                 )
             )
@@ -319,11 +325,11 @@ class LossODE(
             obs_batch_and_slice = None
 
         all_funs_and_params = ODEComponents(
-            dyn_loss={"f": dyn_loss_fun, "b": temporal_batch},
-            initial_condition={"f": initial_condition_fun, "b": None},
+            dyn_loss={"fun": dyn_loss_fun, "batch": temporal_batch},
+            initial_condition={"fun": initial_condition_fun, "batch": None},
             observations={
-                "f": obs_loss_fun,
-                "b": obs_batch_and_slice,
+                "fun": obs_loss_fun,
+                "batch": obs_batch_and_slice,
             },
         )
         return all_funs_and_params
