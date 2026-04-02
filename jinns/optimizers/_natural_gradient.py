@@ -225,7 +225,7 @@ def vanilla_ngd(
             # Following https://github.com/google-deepmind/optax/issues/1649
             def fill_eq_params_value_fn(
                 ngd_value_fn,
-                params,  # this is where it get tricky, should we use non_opt_param ?
+                non_opt_params,  # this is where it get tricky, we should pass the full params of jinns to avoid None...
             ):
                 """Reconstructs the full parameter tree from the masked one.
                 Specific case: this is always eq_params that will be masked
@@ -239,13 +239,13 @@ def vanilla_ngd(
                     # backtracking line search callback
                     # ie., it will contain masked params that we need to fill in
                     full_params = eqx.tree_at(
-                        lambda pt: pt.eq_params, masked_params, params.eq_params
+                        lambda pt: pt.eq_params, masked_params, non_opt_params.eq_params
                     )
-                    return ngd_value_fn(full_params, non_opt_params=non_opt_params)
+                    return ngd_value_fn(full_params)
 
                 return wrapper
 
-            value_fn = fill_eq_params_value_fn(ngd_value_fn, params)
+            value_fn = fill_eq_params_value_fn(ngd_value_fn, non_opt_params)
         else:
             # if we are not doing an inverse problem, there is no optax.partition
             # to handle
