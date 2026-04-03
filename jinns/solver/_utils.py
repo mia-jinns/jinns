@@ -256,18 +256,6 @@ def _loss_evaluate_and_natural_gradient_step(
             f"You passed an {type(optimizer)}."
         )
 
-    # (
-    #    _,#opt_params,
-    #    _,#opt_params_accel,
-    #    _,#non_opt_params,
-    #    opt_state,
-    #    non_opt_state,
-    # ) = _get_masked_optimization_stuff(
-    #    params, state, opt_state_field_for_acceleration, params_mask
-    # )
-    # opt_params=opt_params_accel=params
-    # non_opt_params=None
-
     ## NOTE to enable optimization procedures with acceleration
     if state_field_for_acceleration is not None:
         params_accel = getattr(state, state_field_for_acceleration)
@@ -309,9 +297,17 @@ def _loss_evaluate_and_natural_gradient_step(
         _reweight_pytree(pt=r, lw=sqrt_weights_per_sample_no_avg),
     )
 
-    # TODO: is it useful to recompute everything here ?
-    # Can't we simply use `loss_terms` above and sum it?
-    train_loss_value = jnp.sum(jnp.array(jax.tree.leaves(loss_terms)))
+    train_loss_value = jnp.sum(
+        jnp.concatenate(
+            jax.tree.leaves(
+                jax.tree.map(
+                    lambda arr: jnp.sum(arr**2, axis=-1),
+                    _reweight_pytree(pt=r, lw=sqrt_weights_per_sample),
+                ),
+            ),
+            axis=0,
+        )
+    )
 
     params, state = _gradient_step(
         (r, g, sqrt_weights_per_sample),
