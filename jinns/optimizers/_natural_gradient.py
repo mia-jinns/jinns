@@ -217,18 +217,22 @@ def vanilla_ngd(
             # -> We need to pass the full params (`params`) because opt_params might contain
             # None at eq_params, which would fail the last instruction
             # NOTE that this is a specific manipulation when using optax
-            # partition and this is NOT linked with jinns masking induced by
-            # jinns.solve_alternate
+            # partition for linesearch and this is NOT linked with jinns masking induced by
+            # jinns.solve_alternate()
             def fill_eq_params_value_fn(ngd_value_fn, params):
                 """Reconstructs the full parameter tree from the masked one.
                 Specific case: this is always eq_params that will be masked
                 """
 
-                def wrapper(masked_params):  # this is what will be called by the
+                def wrapper(
+                    masked_params_for_linesearch,
+                ):  # this is what will be called by the
                     # backtracking line search callback
                     # ie., it will contain masked params that we need to fill in
                     full_params = eqx.tree_at(
-                        lambda pt: pt.eq_params, masked_params, params.eq_params
+                        lambda pt: pt.eq_params,
+                        masked_params_for_linesearch,
+                        params.eq_params,
                     )
                     return ngd_value_fn(full_params)
 
