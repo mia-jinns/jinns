@@ -15,7 +15,7 @@ The preconditionner matrix $G = [G_ij]_{i,j=1}^p$ is the so-called *Gram matrix*
 
 \begin{align*}
     G_{kl} = \int \partial_{\nu_k} \rho_\nu(x) \partial_{\nu_l} \rho_\nu(x) \; \mathrm{d} x \\
-    \approx \frac{1}{n} \sum_{i=1}^n  \partial_{\nu_k} \rho_\nu(x_i) \partial_{\nu_l} \rho_\nu(x_i)
+    \hat{G}_{kl} \approx \frac{1}{n} \sum_{i=1}^n  \partial_{\nu_k} \rho_\nu(x_i) \partial_{\nu_l} \rho_\nu(x_i)
 \end{align*}
 
 This $L^2$ inner product is approximated empirically using the same collocation points as the one
@@ -28,6 +28,9 @@ $$
     \rho_\nu : x \mapsto (\mathcal{N}[u_\nu](x), \mathcal{B}[u_\nu](x), \ldots )
 $$
 
+!!! success "Pro tip"
+    We recommend always trring small network with NGD optimizer rather than big network with first order methods. We also recommend using Float64 for computation whenever possible.
+
 ## Vanilla Natural gradient 
 
 ::: jinns.optimizers.vanilla_ngd
@@ -35,9 +38,10 @@ $$
         heading_level: 3
 
 
-## Other regularization
+## Various flavour of NGD
 
 Other regularization for natural gradients have been investigated, to name a few
+
  * [ANaGRAM](https://arxiv.org/pdf/2412.10782)
  * [Sketchy Natural Gradient](https://proceedings.mlr.press/v267/best-mckay25a.html) 
  * [Nyström Natural Gradient](https://arxiv.org/pdf/2505.11638v3)
