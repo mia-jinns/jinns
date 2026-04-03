@@ -43,7 +43,7 @@ class VanillaNGDState(NGDState):
     """
 
     sgd_learning_rate: float = 1.0
-    gram_reg: float = 1e-5  # small ridge regularization on diag(G) when inverting
+    ridge_reg: float = 1e-5  # small ridge regularization on diag(G) when inverting
     with_eq_params_update: bool = eqx.field(static=True, default=False)
 
 
@@ -67,11 +67,6 @@ def vanilla_ngd(
         \eta = (\hat{G} + \lambda I_p)^{-1} \nabla_{\nu} \mathcal{L}(\nu).
     $$
 
-    !!! note
-
-        For ease of PyTree manipulation internally, in jinns, the gram matrix $G$ and $\eta$
-        are computed internally in  `solver/_utils._loss_evaluate_and_natural_gradient_step`.
-        This optax optimizer simply takes care of the additive updates and linesearch (recommended).
 
     Parameters
     ----------
@@ -138,7 +133,7 @@ def vanilla_ngd(
         return VanillaNGDState(
             tx_state=ngd_optim.init(params),
             sgd_learning_rate=sgd_learning_rate,
-            gram_reg=gram_reg,
+            ridge_reg=gram_reg,
             with_eq_params_update=with_eq_params_update,
         )
 
@@ -167,7 +162,7 @@ def vanilla_ngd(
         # --
         # Solve the linear system (G + reg * I) @ natural_grad = eucl_grad to get
         # the nn_params natural gradient.
-        reg: float = ngd_state.gram_reg
+        reg: float = ngd_state.ridge_reg
         n_param = gram_mat.shape[0]
         natural_grad_array_nn = jax.scipy.linalg.solve(
             gram_mat + reg * jnp.eye(n_param), euclidean_grad_array_nn, assume_a="sym"

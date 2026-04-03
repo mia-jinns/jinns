@@ -11,12 +11,14 @@ system
 $$
     \eta = G^{-1} \nabla_{\nu} \mathcal{L}(\nu).
 $$
-The preconditionner matrix $G = [G_ij]_{i,j=1}^p$ is the so-called *Gram matrix*
+The preconditionner matrix $G = [G_ij]_{i,j=1}^p$ is the so-called *Gram matrix* of a mapping $\nu \mapsto \rho_\nu$
 
-$$
-    G_{ij} = \int \partial_{\nu_i} \rho_\nu(x) \partial_{\nu_j} \rho_\nu(x) \; \mathrm{d} x.
-$$
-This $L^2$ inner product is approximated empirically using the collocation points as the one
+\begin{align*}
+    G_{kl} = \int \partial_{\nu_k} \rho_\nu(x) \partial_{\nu_l} \rho_\nu(x) \; \mathrm{d} x \\
+    \approx \frac{1}{n} \sum_{i=1}^n  \partial_{\nu_k} \rho_\nu(x_i) \partial_{\nu_l} \rho_\nu(x_i)
+\end{align*}
+
+This $L^2$ inner product is approximated empirically using the same collocation points as the one
 used for the loss function.
 
 In the PINNs context, the mapping $\rho_\nu(x)$ contains all the dynamic, BC, IC and

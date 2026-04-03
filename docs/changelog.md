@@ -1,5 +1,11 @@
 # Changelog
 
+* v1.9: this MR introduces natural Gradient Descent in jinns
+
+    -  new module `jinns.optimizers` with custom optax gradient transformation. For now we implement `vanilla_ngd` which implement natural gradient descent for PINN which dramatically improves training in all tested settings. We recommend using it when the network size is moderate (a few 1000 parameters) as it requires solving a linear system at each gradient step.
+    
+    Changes are from [!96](https://gitlab.com/mia_jinns/jinns/-/merge_requests/96)
+
 * v1.8.1:
 
     - `stored_weight_terms` and `stored_loss_terms` are now returned as a multidimensional array when working with several observation Data Generators or several Dynamic Losses. This can be a small breaking change in some user code. We also improve internally the way multiple Dynamic Losses or multiple observation Data Generators are handled. Changes are from [!95](https://gitlab.com/mia_jinns/jinns/-/merge_requests/95)
