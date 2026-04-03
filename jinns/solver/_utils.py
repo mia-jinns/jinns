@@ -93,7 +93,7 @@ def _loss_evaluate_and_euclidean_gradient_step(
     loss_container: LossContainer,
     key: PRNGKeyArray,
     params_mask: Params[bool] | None = None,
-    opt_state_field_for_acceleration: str | None = None,
+    state_field_for_acceleration: str | None = None,
     with_loss_weight_update: bool = True,
     **__,  # ignore supplementary kwargs that are for
     # _loss_evaluate_and_natural_gradient_step
@@ -145,8 +145,12 @@ def _loss_evaluate_and_euclidean_gradient_step(
         for more granularity by freezing some gradients with respect to
         different loss terms, but do not subset the optimized parameters globally.
         by default None
-    opt_state_field_for_acceleration : str | None, optional
-        _description_, by default None
+    state_field_for_acceleration : str | None, optional
+        The argument `state_field_for_acceleration` can correspond to a field
+        inside the `state` module. If it is not None, a `opt_params_accel` object
+        is created that is different of `opt_params`. See
+        `opt_state_field_for_acceleration` in `jinns.solve` docstring for more
+        details. By default None
     with_loss_weight_update : bool, optional
         should we update loss_weights for next iteration according to current loss_values
         by default True
@@ -157,15 +161,12 @@ def _loss_evaluate_and_euclidean_gradient_step(
         a tuple with curent loss value, params, last non nan params, optimizer state, loss object, loss per term
     """
 
-    (
-        opt_params,
-        opt_params_accel,
-        non_opt_params,
-        opt_state,
-        non_opt_state,
-    ) = _get_masked_optimization_stuff(
-        params, state, opt_state_field_for_acceleration, params_mask
-    )
+    ## NOTE to enable optimization procedures with acceleration
+    if state_field_for_acceleration is not None:
+        params_accel = getattr(state, state_field_for_acceleration)
+    else:
+        params_accel = None
+        # opt_params_accel = opt_params
 
     # The following part is the equivalent of a
     # > train_loss_value, grads = jax.values_and_grad(total_loss.evaluate)(params, ...)
@@ -176,11 +177,8 @@ def _loss_evaluate_and_euclidean_gradient_step(
 
     # 1. Compute individual losses and individual gradients
     loss_terms, grad_terms = loss.values_and_grads(
-        opt_params_accel
-        if opt_state_field_for_acceleration is not None
-        else opt_params,
+        params_accel if params_accel is not None else params,
         batch,
-        non_opt_params=non_opt_params,
     )
 
     if loss.update_weight_method is not None and with_loss_weight_update:
@@ -197,27 +195,12 @@ def _loss_evaluate_and_euclidean_gradient_step(
     # 3. total loss after possible weight update
     train_loss_value = loss.ponderate_and_sum_loss(loss_terms)
 
-    opt_grads, _ = grads.partition(
-        params_mask
-    )  # because the update cannot be made otherwise
-
-    # Here, we only use the gradient step of the Optax optimizer on the
-    # parameters specified by params_mask. , no dummy state with filled with zero entries
-    # all other entries of the pytrees are None thanks to params_mask)
-    opt_params, opt_state = _gradient_step(
-        opt_grads,
+    params, state = _gradient_step(
+        grads,
         optimizer,
-        opt_params,  # NOTE that we never give the accelerated
+        params,  # NOTE that we never give the accelerated
         # params here, this would be a wrong procedure
-        opt_state,
-    )
-
-    params, state = _get_unmasked_optimization_stuff(
-        opt_params,
-        non_opt_params,
         state,
-        opt_state,
-        non_opt_state,
         params_mask,
     )
 
@@ -240,7 +223,7 @@ def _loss_evaluate_and_natural_gradient_step(
     state: NGDState,
     optimizer: optax.GradientTransformation,
     params_mask: Params[bool] | None = None,
-    opt_state_field_for_acceleration: str | None = None,
+    state_field_for_acceleration: str | None = None,
     **__,  # to ignore more arguments
 ):
     """Similar to ` _loss_evaluate_and_euclidean_gradient_step` but for natural gradient.
@@ -273,25 +256,31 @@ def _loss_evaluate_and_natural_gradient_step(
             f"You passed an {type(optimizer)}."
         )
 
-    (
-        opt_params,
-        opt_params_accel,
-        non_opt_params,
-        opt_state,
-        non_opt_state,
-    ) = _get_masked_optimization_stuff(
-        params, state, opt_state_field_for_acceleration, params_mask
-    )
+    # (
+    #    _,#opt_params,
+    #    _,#opt_params_accel,
+    #    _,#non_opt_params,
+    #    opt_state,
+    #    non_opt_state,
+    # ) = _get_masked_optimization_stuff(
+    #    params, state, opt_state_field_for_acceleration, params_mask
+    # )
+    # opt_params=opt_params_accel=params
+    # non_opt_params=None
+
+    ## NOTE to enable optimization procedures with acceleration
+    if state_field_for_acceleration is not None:
+        params_accel = getattr(state, state_field_for_acceleration)
+    else:
+        params_accel = None
+        # opt_params_accel = opt_params
 
     # --
     # Get the unreduced residuals and their gradient (for each sample)
     # for each loss term
     r, g = loss.values_and_grad_per_sample(
-        opt_params_accel
-        if opt_state_field_for_acceleration is not None
-        else opt_params,
+        params_accel if params_accel is not None else params,
         batch,
-        non_opt_params=non_opt_params,
     )
 
     # --
@@ -324,24 +313,16 @@ def _loss_evaluate_and_natural_gradient_step(
     # Can't we simply use `loss_terms` above and sum it?
     train_loss_value = jnp.sum(jnp.array(jax.tree.leaves(loss_terms)))
 
-    opt_params, opt_state = _gradient_step(
+    params, state = _gradient_step(
         (r, g, sqrt_weights_per_sample),
         optimizer,
-        opt_params,
-        opt_state,
+        params,
+        state,  # type: ignore
+        params_mask,
         # extra kwargs passed to the NGD optimizer
         loss=loss,
         batch=batch,
         loss_value=train_loss_value,
-    )
-
-    params, state = _get_unmasked_optimization_stuff(
-        opt_params,
-        non_opt_params,
-        state,  # type: ignore (OptState vs NGDState)
-        opt_state,
-        non_opt_state,
-        params_mask,
     )
 
     # check if any of the parameters is NaN
@@ -355,10 +336,11 @@ def _loss_evaluate_and_natural_gradient_step(
 
 
 def _gradient_step(
-    grads: Params[Array] | tuple,
+    grads: Params[Array | None] | tuple,
     optimizer: optax.GradientTransformation,
     params: Params[Array],
     state: optax.OptState,
+    params_mask: Params[bool] | None = None,
     **kwargs,
 ) -> tuple[
     Params[Array],
@@ -366,20 +348,68 @@ def _gradient_step(
 ]:
     """
 
-    A plain old gradient step that is compatible with masked updates
-    stuff.
+    A plain old gradient step that takes into account parameter masking.
+
+    **When doing an alternate optimization** with jinns.solve_alternate(), the
+    params_mask will be True for the optimized parameters and False for the
+    others. This enables to use eqx.partition, to set None at non optimized
+    leaves (of the gradient pytree, of the
+    parameters pytree, ...) in order to save computations (and avoid the
+    default "fill with 0" behaviour of optax alternate. NOTE that the masking
+    for `opt_state`, is already done at an outer level (during `carry`
+    manipulations before and after a local while loop (on nn_params or
+    eq_params is started) for efficiency.
 
     All kwargs are passed to `optimizer.update()` in case user provided a
     optax.GradientTransformationExtraArgs
     """
 
+    # NOTE, if params_mask is not None, this means we are doing
+    # solve_alternate, this means state has already been masked and so grads
+    # must be masked too to avoid errors of the type:
+    # TypeError: unsupported operand type(s) for *: 'float' and 'NoneType'
+    # Same for params (see below)
+    if isinstance(state, NGDState):
+        assert isinstance(grads, tuple)  # for type checking
+        # in this case the grads object if different
+        opt_grads = jax.tree.map(
+            lambda l: l.partition(params_mask)[0],
+            grads[1],
+            is_leaf=lambda x: isinstance(x, Params),
+        )
+        opt_grads = (grads[0], opt_grads, grads[2])
+    else:
+        assert isinstance(grads, Params)  # for type checking
+        opt_grads, _ = grads.partition(params_mask)
+
+    # NOTE, here we need to pass the full unmasked params for more complex
+    # optimizer updates to be done (updates which rely on params or more).
+    # NOTE also that, while compute gradients beforehand, we have computed
+    # gradients for ALL parameters, even the non optimized ones: we hope that
+    # JAX interal machinery will discard those computations from the
+    # computational graph since the gradients for the non optimized parameters
+    # are finally not used.
+    # Making sure gradients are only computed for optimized (unmasked)
+    # parameters seem like a big jinns refactorization (future TODO)
     updates, state = optimizer.update(
-        grads,  # type: ignore
+        opt_grads,  # type: ignore
         state,
         params,  # type: ignore
         **kwargs,
     )  # Also see optimizer.init for explanation of type ignore
-    params = optax.apply_updates(params, updates)  # type: ignore
+
+    # NOTE, if params_mask is not None, this means we are doing
+    # solve_alternate, this means state has already been masked and so grads
+    # and thus updates contain None. Hence params
+    # must be masked too to avoid errors of the type:
+    # TypeError: unsupported operand type(s) for *: 'float' and 'NoneType'
+    opt_params, non_opt_params = params.partition(params_mask)
+    opt_params = optax.apply_updates(opt_params, updates)  # type: ignore
+
+    if params_mask is not None:
+        params = eqx.combine(opt_params, non_opt_params)
+    else:
+        params = opt_params
 
     return (
         params,
@@ -387,27 +417,13 @@ def _gradient_step(
     )
 
 
-def _get_masked_optimization_stuff(
-    params, state, state_field_for_acceleration, params_mask
-):
+def _get_masked_state(state, params_mask):
     """
-    From the parameters `params`, the optimizer state `state`, we use the
-    parameter mask `params_mask` to retrieve the partitioned version of those
-    two objects, `opt_params` for the parameters that are optimized and
-    `non_opt_params` for those that are not optimized. Same for `state`.
-
-    The argument `state_field_for_acceleration` can correspond to a field
-    inside the `state` module. If it is not None, a `opt_params_accel` object
-    is created that is different of `opt_params`. See
-    `opt_state_field_for_acceleration` in `jinns.solve` docstring for more
-    details.
-
-    The opposite of `eqx.partition` ie, `eqx.combine` is made in the loss
-    `evaluate_by_terms()` method for the computations and in
-    `_get_unmasked_optimization_stuff` to reconstruct the object after the
-    gradient step
+    From the optimizer state, we use the
+    parameter mask `params_mask` to retrieve the partitioned version of the
+    objects, `opt_state` for the parameters that are optimized and
+    `non_opt_state` for those that are not optimized.
     """
-    opt_params, non_opt_params = params.partition(params_mask)
     opt_state = jax.tree.map(
         lambda l: l.partition(params_mask)[0] if isinstance(l, Params) else l,
         state,
@@ -419,44 +435,24 @@ def _get_masked_optimization_stuff(
         is_leaf=lambda x: isinstance(x, Params),
     )
 
-    # NOTE to enable optimization procedures with acceleration
-    if state_field_for_acceleration is not None:
-        opt_params_accel = getattr(opt_state, state_field_for_acceleration)
-    else:
-        opt_params_accel = opt_params
+    return opt_state, non_opt_state
 
-    return (
-        opt_params,
-        opt_params_accel,
-        non_opt_params,
+
+def _get_unmasked_state(state, opt_state, non_opt_state):
+    """
+    Reverse operations of `_get_masked_state`
+    """
+    state = jax.tree.map(
+        lambda a, b, c: eqx.combine(b, c) if isinstance(a, Params) else b,
+        # NOTE else b in order to take all non Params stuff from
+        # opt_state that may have been updated too
+        state,
         opt_state,
         non_opt_state,
+        is_leaf=lambda x: isinstance(x, Params),
     )
 
-
-def _get_unmasked_optimization_stuff(
-    opt_params, non_opt_params, state, opt_state, non_opt_state, params_mask
-):
-    """
-    Reverse operations of `_get_masked_optimization_stuff`
-    """
-    # NOTE the combine which closes the partitioned chunck
-    if params_mask is not None:
-        params = eqx.combine(opt_params, non_opt_params)
-        state = jax.tree.map(
-            lambda a, b, c: eqx.combine(b, c) if isinstance(a, Params) else b,
-            # NOTE else b in order to take all non Params stuff from
-            # opt_state that may have been updated too
-            state,
-            opt_state,
-            non_opt_state,
-            is_leaf=lambda x: isinstance(x, Params),
-        )
-    else:
-        params = opt_params
-        state = opt_state
-
-    return params, state
+    return state
 
 
 @jit(static_argnames=["prefix"])  # new in jax 0.8.1

@@ -213,24 +213,14 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
 
     def _preprocess_params(
         self,
-        opt_params: Params[Array],
+        params: Params[Array],
         batch: B,
-        *,
-        non_opt_params: Params[Array] | None = None,
     ) -> Params[Array]:
         """
         Preprocessing of the Params object before loss evaluation:
 
-        - combine with non_opt_params
         - feed the eq_params batch if it exists
-        - get the vmap_in_axes_params for vmapping over the batch of eq_params
-          if needed
         """
-        if non_opt_params is not None:
-            params = eqx.combine(opt_params, non_opt_params)
-        else:
-            params = opt_params
-
         # Retrieve the optional eq_params_batch
         # and update eq_params with the latter
         if batch.param_batch_dict is not None:
@@ -385,10 +375,8 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
 
     def values_and_grads(
         self,
-        opt_params: Params[Array],
+        params: Params[Array],
         batch: B,
-        *,
-        non_opt_params: Params[Array] | None = None,
     ) -> tuple[C, C]:
         """
         This evaluates each term of the loss as well as its gradient w.r.t. to all PyTrees in
@@ -396,7 +384,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
 
         Parameters
         ---------
-        opt_params
+        params
             Parameters, which are optimized, at which the loss is evaluated
         batch
             Composed of a batch of points in the
@@ -404,12 +392,8 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             border and an optional additional batch of parameters (eg. for
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
-        non_opt_params
-            Parameters, which are non optimized, at which the loss is evaluated
         """
-        params = self._preprocess_params(
-            opt_params, batch, non_opt_params=non_opt_params
-        )
+        params = self._preprocess_params(params, batch)
         vmap_in_axes_params = self._get_vmap_in_axes_params(batch, params)
 
         evaluate_by_terms_reduced = self._get_evaluate_by_terms_lambda(
@@ -452,10 +436,8 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
 
     def values_and_grad_per_sample(
         self,
-        opt_params: Params[Array],
+        params: Params[Array],
         batch: B,
-        *,
-        non_opt_params: Params[Array] | None = None,
     ) -> tuple[C, C]:
         """
         This evaluates the loss and its gradient for each loss term AND **each sample**.
@@ -465,7 +447,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
 
         Parameters
         ---------
-        opt_params
+        params
             Parameters, which are optimized, at which the loss is evaluated
         batch
             Composed of a batch of points in the
@@ -473,12 +455,8 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             border and an optional additional batch of parameters (eg. for
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
-        non_opt_params
-            Parameters, which are non optimized, at which the loss is evaluated
         """
-        params = self._preprocess_params(
-            opt_params, batch, non_opt_params=non_opt_params
-        )
+        params = self._preprocess_params(params, batch)
         vmap_in_axes_params = self._get_vmap_in_axes_params(batch, params)
 
         loss_terms = self.evaluate_per_sample(params, batch)
