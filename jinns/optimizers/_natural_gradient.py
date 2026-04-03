@@ -85,7 +85,12 @@ def vanilla_ngd(
     Returns
     -------
     optax.GradientTransformationExtraArgs
-        the vanilla ngd optimizer
+        the vanilla ngd optimizer with a special signature for the `update(r_g_sw, ngd_state, params, loss, batch,
+        loss_value)` function. Here
+
+         * the update `r_g_sw` is a 3-tuple with the 1) residuals $r(x_i)$ *per-sample*, 2) the gradient $\partial_\nu \rho_{\nu}(x_i)$ *per-sample*, and 3) the sample weights $w_i$
+         * the `loss` is a `jinns.loss.LossXDE` object
+         * `batch` is the current batch of point
     """
     if linesearch is None:
         linesearch_ = optax.identity()
@@ -138,15 +143,13 @@ def vanilla_ngd(
         )
 
     def update(
-        r_g_sw: tuple[
-            Component, Component, Component
-        ],  # this feels a bit hacky compared to optax.Updates
+        r_g_sw: tuple[Component, Component, Component],
         ngd_state: VanillaNGDState,
         params,
         loss,
         batch,
         loss_value,
-        **_,  # should not be used imo
+        **_,
     ) -> tuple[optax.Updates, VanillaNGDState]:
         # -- Compute the necessary quantities from r, g
         r, g, sqrt_weights_per_sample = r_g_sw

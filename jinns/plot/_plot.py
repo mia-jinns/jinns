@@ -2,12 +2,14 @@
 Utility functions for plotting in 1D and 2D, with and without time.
 """
 
+from jax._src.basearray import Array
 from typing import Callable
 import jax.numpy as jnp
 from jax import vmap
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import ImageGrid
-from jaxtyping import Array, Float
+from jaxtyping import Float
+import matplotlib
 
 
 def plot2d(
@@ -20,7 +22,8 @@ def plot2d(
     cmap: str = "inferno",
     spinn: bool = False,
     vmin_vmax: tuple[float | None, float | None] | None = None,
-):
+    fig: None | matplotlib.figure.Figure = None,
+) -> matplotlib.figure.Figure:
     r"""Generic function for plotting functions over rectangular 2-D domains
     $\Omega$. It handles both the
 
@@ -46,14 +49,15 @@ def plot2d(
     title :
         plot title, by default ""
     figsize :
-        By default (7, 7)
+        By default (7, 7). Ignored if `fig` is not None.
     cmap :
         the matplotlib color map used in the ImageGrid.
     vmin_vmax :
         The colorbar minimum and maximum value. Defaults None.
     spinn :
         True if the function is a `SPINN` object.
-
+    fig:
+        Optionally pass the matplotlib Figure object.
     Raises
     ------
     ValueError
@@ -71,27 +75,33 @@ def plot2d(
 
     mesh = jnp.meshgrid(xy_data[0], xy_data[1])  # cartesian product
 
+    if fig is None:
+        fig = plt.figure(
+            figsize=figsize,
+            # layout="constrained",
+        )
+
     if times is None:
         # Statio case : expect a function of one argument fun(x)
 
         if not spinn:
             v_fun = vmap(fun, 0, 0)
-            _ = _plot_2D_statio(
+            fig = _plot_2D_statio(
                 v_fun,
                 mesh,
                 colorbar=True,
                 cmap=cmap,
-                figsize=figsize,
+                fig=fig,
                 vmin_vmax=vmin_vmax,
             )
         elif spinn:
             values_grid = jnp.squeeze(fun(jnp.stack([xy_data[0], xy_data[1]], axis=1)))
-            _ = _plot_2D_statio(
+            fig = _plot_2D_statio(
                 values_grid,
                 mesh,
                 colorbar=True,
                 cmap=cmap,
-                figsize=figsize,
+                fig=fig,
                 vmin_vmax=vmin_vmax,
             )
 
@@ -102,7 +112,6 @@ def plot2d(
             except AttributeError:
                 raise ValueError("times must be a list or an array")
 
-        fig = plt.figure(figsize=figsize)
         grid = ImageGrid(
             fig,
             111,
@@ -134,6 +143,7 @@ def plot2d(
                     plot=False,  # only use to compute t_slice
                     colorbar=False,
                     vmin_vmax=vmin_vmax,
+                    fig=None,
                 )
             else:
                 t_x = jnp.concatenate(
@@ -152,6 +162,7 @@ def plot2d(
                     plot=False,  # only use to compute t_slice
                     colorbar=True,
                     vmin_vmax=vmin_vmax,
+                    fig=None,
                 )
 
             im = ax.pcolormesh(
@@ -166,6 +177,8 @@ def plot2d(
             cbar = ax.cax.colorbar(im, format=lambda x, _: f"{x:.1e}")
             cbar.ax.tick_params(labelsize=5, rotation=45)
 
+    return fig
+
 
 def _plot_2D_statio(
     v_fun: Callable | Float[Array, " (nx*ny)^2 1"],
@@ -173,9 +186,9 @@ def _plot_2D_statio(
     plot: bool = True,
     colorbar: bool = True,
     cmap: str = "inferno",
-    figsize: tuple[int, int] = (7, 7),
+    fig: None | matplotlib.figure.Figure = None,
     vmin_vmax: tuple[float | None, float | None] | None = None,
-) -> Array | None:
+) -> matplotlib.figure.Figure | Array:
     """Function that plot the function u(x) with 2-D input x using pcolormesh()
 
 
@@ -213,8 +226,7 @@ def _plot_2D_statio(
     else:
         values_grid = v_fun.reshape(x_grid.shape)
 
-    if plot:
-        fig = plt.figure(figsize=figsize)
+    if plot and fig is not None:
         im = plt.pcolormesh(
             x_grid,
             y_grid,
@@ -226,6 +238,8 @@ def _plot_2D_statio(
 
         if colorbar:
             fig.colorbar(im, format=lambda x, _: f"{x:.2e}")
+
+        return fig
     else:
         return values_grid
 
