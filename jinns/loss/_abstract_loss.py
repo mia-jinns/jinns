@@ -215,7 +215,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         self,
         params: Params[Array],
         batch: B,
-    ) -> Params[Array]:
+    ) -> tuple[Params[Array], tuple[Params[int | None] | None, ...]]:
         """
         Preprocessing of the Params object before loss evaluation:
 
@@ -226,14 +226,6 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         if batch.param_batch_dict is not None:
             # update params with the batches of generated params
             params = update_eq_params(params, batch.param_batch_dict)
-
-        return params
-
-    def _get_vmap_in_axes_params(
-        self,
-        batch: B,
-        params: Params[Array],
-    ) -> tuple[Params[int | None] | None, ...]:
         if isinstance(self.u, (PINN, HyperPINN)):
             vmap_in_axes_params = _get_vmap_in_axes_params(
                 cast(eqx.Module, batch.param_batch_dict), params
@@ -246,7 +238,8 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             raise ValueError(
                 f"Bad type for self.u. Got {type(self.u)}, expected PINN or SPINN"
             )
-        return vmap_in_axes_params
+
+        return params, vmap_in_axes_params
 
     def _get_evaluate_by_terms_lambda(
         self,
@@ -364,8 +357,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
         """
-        params = self._preprocess_params(params, batch)
-        vmap_in_axes_params = self._get_vmap_in_axes_params(batch, params)
+        params, vmap_in_axes_params = self._preprocess_params(params, batch)
         evaluate_by_terms_reduced = self._get_evaluate_by_terms_lambda(
             batch, vmap_in_axes_params
         )
@@ -394,8 +386,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
         """
-        params = self._preprocess_params(params, batch)
-        vmap_in_axes_params = self._get_vmap_in_axes_params(batch, params)
+        params, vmap_in_axes_params = self._preprocess_params(params, batch)
 
         evaluate_by_terms_reduced = self._get_evaluate_by_terms_lambda(
             batch, vmap_in_axes_params
@@ -428,8 +419,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
         """
-        params = self._preprocess_params(params, batch)
-        vmap_in_axes_params = self._get_vmap_in_axes_params(batch, params)
+        params, vmap_in_axes_params = self._preprocess_params(params, batch)
         evaluate_by_terms = self._get_evaluate_by_terms_lambda(
             batch, vmap_in_axes_params, unreduced=True
         )
@@ -458,8 +448,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
         """
-        params = self._preprocess_params(params, batch)
-        vmap_in_axes_params = self._get_vmap_in_axes_params(batch, params)
+        params, vmap_in_axes_params = self._preprocess_params(params, batch)
 
         loss_terms = self.evaluate_per_sample(params, batch)
 
