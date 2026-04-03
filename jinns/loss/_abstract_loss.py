@@ -364,6 +364,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
         """
+        params = self._preprocess_params(params, batch)
         vmap_in_axes_params = self._get_vmap_in_axes_params(batch, params)
         evaluate_by_terms_reduced = self._get_evaluate_by_terms_lambda(
             batch, vmap_in_axes_params
@@ -427,6 +428,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
         """
+        params = self._preprocess_params(params, batch)
         vmap_in_axes_params = self._get_vmap_in_axes_params(batch, params)
         evaluate_by_terms = self._get_evaluate_by_terms_lambda(
             batch, vmap_in_axes_params, unreduced=True
