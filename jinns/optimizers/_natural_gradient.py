@@ -5,6 +5,14 @@ import equinox as eqx
 import optax
 import jinns
 from typing import Optional
+import jax
+import jax.numpy as jnp
+
+from jinns.optimizers._utils_ngd import Component, _reweight_pytree
+from jinns.optimizers._utils_ngd import (
+    assemble_ngd_gram_matrix_and_euclidean_gradient,
+    params_array_to_pytree,
+)
 
 
 class NGDState(eqx.Module):
@@ -18,7 +26,21 @@ class NGDState(eqx.Module):
 
 
 class VanillaNGDState(NGDState):
-    """State for vanilla Natural Gradient Descent with ridge regularization."""
+    """State for vanilla Natural Gradient Descent with ridge regularization.
+
+    Parameters
+    ----------
+    XXX
+        xxx
+    XXX
+        xxx
+    with_eq_params_update: bool, default = True
+        A boolean specifying if the updates for `params.eq_params` should be applied or not.
+        If True, we are in inverse problem mode and euclidean gradient for eq_params are passed
+        to the optimizer. If False, we are in forward problem mode and they are set to zero.
+        This is useful in `solve_alternate`, as users may want to perform NGD on nn_params
+        while leaving the eq_params untouched during a few steps.
+    """
 
     sgd_learning_rate: float = 1.0
     gram_reg: float = 1e-5  # small ridge regularization on diag(G) when inverting
@@ -71,11 +93,13 @@ def vanilla_ngd(
         the vanilla ngd optimizer
     """
     if linesearch is None:
-        linesearch = optax.identity()
+        linesearch_ = optax.identity()
+    else:
+        linesearch_ = linesearch
 
     ngd_optim_ = optax.chain(
         optax.sgd(learning_rate=1.0),
-        linesearch,
+        linesearch_,
     )
     if eq_params_tx is not None:
         # In the line below, parameters that are not updated are assigned the
@@ -119,13 +143,122 @@ def vanilla_ngd(
         )
 
     def update(
-        updates, ngd_state, params=None, **extra_kwargs
+        r_g_sw: tuple[
+            Component, Component, Component
+        ],  # this feels a bit hacky compared to optax.Updates
+        ngd_state: VanillaNGDState,
+        params,
+        loss,
+        batch,
+        loss_value,
+        **_,  # should not be used imo
     ) -> tuple[optax.Updates, VanillaNGDState]:
-        tx_state = ngd_state.tx_state
-        updates, new_tx_state = ngd_optim.update(
-            updates, tx_state, params, **extra_kwargs
+        # -- Compute the necessary quantities from r, g
+        r, g, sqrt_weights_per_sample = r_g_sw
+        gram_mat, euclidean_grad_array_nn, euclidean_grad_array_eq = (
+            assemble_ngd_gram_matrix_and_euclidean_gradient(
+                r=r,
+                g=g,
+                sqrt_weights_per_sample=sqrt_weights_per_sample,
+                with_eq_params_update=ngd_state.with_eq_params_update,
+            )
         )
-        return (updates, eqx.tree_at(lambda pt: pt.tx_state, ngd_state, new_tx_state))
+
+        # --
+        # Solve the linear system (G + reg * I) @ natural_grad = eucl_grad to get
+        # the nn_params natural gradient.
+        reg: float = ngd_state.gram_reg
+        n_param = gram_mat.shape[0]
+        natural_grad_array_nn = jax.scipy.linalg.solve(
+            gram_mat + reg * jnp.eye(n_param), euclidean_grad_array_nn, assume_a="sym"
+        )
+
+        # --
+        # Final step : restructure the natural gradient as a Params PyTree
+        # NOTE: if in inverse problem mode, the leaf at eq_params is filled with standard euclidean
+        # gradients, and zeros if in forward problem mode.
+
+        ngd_pytree = params_array_to_pytree(
+            natural_grad_array_nn, params, euclidean_grad_array_eq
+        )
+
+        # ---
+        # In case of linesearch, we need euclidean grad + value_fn
+        euclidean_grads = params_array_to_pytree(
+            euclidean_grad_array_nn, params, euclidean_grad_array_eq
+        )
+
+        def ngd_value_fn(params):
+            """ """
+            # Not using loss.evaluate here cause of the mean(sum()) vs sum(mean)
+            # remark. This fn computes the loss we are truly minimizing with NGD.
+            new_r = loss.evaluate_per_sample(
+                params,
+                batch,
+            )
+            total_loss = jnp.sum(
+                jnp.concatenate(
+                    jax.tree.leaves(
+                        jax.tree.map(
+                            lambda arr: jnp.sum(arr**2, axis=-1),
+                            _reweight_pytree(
+                                new_r, sqrt_weights_per_sample
+                            ),  # `r` changes !
+                        ),
+                    ),
+                    axis=0,
+                )
+            )
+            return total_loss
+
+        if ngd_state.with_eq_params_update:
+            # Following https://github.com/google-deepmind/optax/issues/1649
+            # to handle the optax partition doing some masking:
+            # -> We need to pass the full params (`params`) because opt_params might contain
+            # None at eq_params, which would fail the last instruction
+            # NOTE that this is a specific manipulation when using optax
+            # partition for linesearch and this is NOT linked with jinns masking induced by
+            # jinns.solve_alternate()
+            def fill_eq_params_value_fn(ngd_value_fn, params):
+                """Reconstructs the full parameter tree from the masked one.
+                Specific case: this is always eq_params that will be masked
+                """
+
+                def wrapper(
+                    masked_params_for_linesearch,
+                ):  # this is what will be called by the
+                    # backtracking line search callback
+                    # ie., it will contain masked params that we need to fill in
+                    full_params = eqx.tree_at(
+                        lambda pt: pt.eq_params,
+                        masked_params_for_linesearch,
+                        params.eq_params,
+                    )
+                    return ngd_value_fn(full_params)
+
+                return wrapper
+
+            value_fn = fill_eq_params_value_fn(ngd_value_fn, params)
+        else:
+            # if we are not doing an inverse problem, there is no optax.partition
+            # to handle
+            value_fn = ngd_value_fn
+
+        tx_state = ngd_state.tx_state
+        ngd_pytree, new_tx_state = ngd_optim.update(
+            ngd_pytree,  # type: ignore
+            tx_state,
+            params,
+            # extra kwargs passed to backtracking line search `update()` method
+            value=loss_value,
+            grad=euclidean_grads,
+            value_fn=value_fn,
+        )
+
+        return (
+            ngd_pytree,
+            eqx.tree_at(lambda pt: pt.tx_state, ngd_state, new_tx_state),
+        )
 
     return optax.GradientTransformationExtraArgs(
         init, update

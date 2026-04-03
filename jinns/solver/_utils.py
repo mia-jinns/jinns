@@ -6,8 +6,7 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-from typing import TYPE_CHECKING, Callable, Literal
-from functools import partial
+from typing import TYPE_CHECKING, Callable
 import jax
 from jax import jit
 import jax.numpy as jnp
@@ -16,7 +15,6 @@ from jaxtyping import PyTree, Float, Array, PRNGKeyArray
 import optax
 
 
-from jinns.nn._hyperpinn import _get_param_nb
 from jinns.loss._loss_components import ODEComponents
 from jinns.data._utils import append_param_batch, append_obs_batch
 from jinns.utils._utils import _check_nan_in_pytree
@@ -30,6 +28,11 @@ from jinns.utils._containers import (
     StoredObjectContainer,
 )
 from jinns.optimizers._natural_gradient import NGDState
+from jinns.optimizers._utils_ngd import (
+    _get_sqrt_weights_per_sample,
+    _reweight_pytree,
+)
+
 
 if TYPE_CHECKING:
     from jinns.utils._types import AnyBatch, SolveCarry, SolveAlternateCarry
@@ -90,7 +93,7 @@ def _loss_evaluate_and_euclidean_gradient_step(
     loss_container: LossContainer,
     key: PRNGKeyArray,
     params_mask: Params[bool] | None = None,
-    opt_state_field_for_acceleration: str | None = None,
+    state_field_for_acceleration: str | None = None,
     with_loss_weight_update: bool = True,
     **__,  # ignore supplementary kwargs that are for
     # _loss_evaluate_and_natural_gradient_step
@@ -142,8 +145,12 @@ def _loss_evaluate_and_euclidean_gradient_step(
         for more granularity by freezing some gradients with respect to
         different loss terms, but do not subset the optimized parameters globally.
         by default None
-    opt_state_field_for_acceleration : str | None, optional
-        _description_, by default None
+    state_field_for_acceleration : str | None, optional
+        The argument `state_field_for_acceleration` can correspond to a field
+        inside the `state` module. If it is not None, a `opt_params_accel` object
+        is created that is different of `opt_params`. See
+        `opt_state_field_for_acceleration` in `jinns.solve` docstring for more
+        details. By default None
     with_loss_weight_update : bool, optional
         should we update loss_weights for next iteration according to current loss_values
         by default True
@@ -154,15 +161,12 @@ def _loss_evaluate_and_euclidean_gradient_step(
         a tuple with curent loss value, params, last non nan params, optimizer state, loss object, loss per term
     """
 
-    (
-        opt_params,
-        opt_params_accel,
-        non_opt_params,
-        opt_state,
-        non_opt_state,
-    ) = _get_masked_optimization_stuff(
-        params, state, opt_state_field_for_acceleration, params_mask
-    )
+    ## NOTE to enable optimization procedures with acceleration
+    if state_field_for_acceleration is not None:
+        params_accel = getattr(state, state_field_for_acceleration)
+    else:
+        params_accel = None
+        # opt_params_accel = opt_params
 
     # The following part is the equivalent of a
     # > train_loss_value, grads = jax.values_and_grad(total_loss.evaluate)(params, ...)
@@ -173,11 +177,8 @@ def _loss_evaluate_and_euclidean_gradient_step(
 
     # 1. Compute individual losses and individual gradients
     loss_terms, grad_terms = loss.values_and_grads(
-        opt_params_accel
-        if opt_state_field_for_acceleration is not None
-        else opt_params,
+        params_accel if params_accel is not None else params,
         batch,
-        non_opt_params=non_opt_params,
     )
 
     if loss.update_weight_method is not None and with_loss_weight_update:
@@ -194,27 +195,12 @@ def _loss_evaluate_and_euclidean_gradient_step(
     # 3. total loss after possible weight update
     train_loss_value = loss.ponderate_and_sum_loss(loss_terms)
 
-    opt_grads, _ = grads.partition(
-        params_mask
-    )  # because the update cannot be made otherwise
-
-    # Here, we only use the gradient step of the Optax optimizer on the
-    # parameters specified by params_mask. , no dummy state with filled with zero entries
-    # all other entries of the pytrees are None thanks to params_mask)
-    opt_params, opt_state = _gradient_step(
-        opt_grads,
+    params, state = _gradient_step(
+        grads,
         optimizer,
-        opt_params,  # NOTE that we never give the accelerated
+        params,  # NOTE that we never give the accelerated
         # params here, this would be a wrong procedure
-        opt_state,
-    )
-
-    params, state = _get_unmasked_optimization_stuff(
-        opt_params,
-        non_opt_params,
         state,
-        opt_state,
-        non_opt_state,
         params_mask,
     )
 
@@ -237,8 +223,7 @@ def _loss_evaluate_and_natural_gradient_step(
     state: NGDState,
     optimizer: optax.GradientTransformation,
     params_mask: Params[bool] | None = None,
-    opt_state_field_for_acceleration: str | None = None,
-    with_eq_params_update: bool = True,
+    state_field_for_acceleration: str | None = None,
     **__,  # to ignore more arguments
 ):
     """Similar to ` _loss_evaluate_and_euclidean_gradient_step` but for natural gradient.
@@ -256,41 +241,39 @@ def _loss_evaluate_and_natural_gradient_step(
 
     Parameters
     ----------
-    with_eq_params_update: bool, default = True
-        A boolean specifying if the updates for `params.eq_params` should be applied or not.
-        If True, we are in inverse problem mode and euclidean gradient for eq_params are passed
-        to the optimizer. If False, we are in forward problem mode and they are set to zero.
-        This is useful in `solve_alternate`, as users may want to perform NGD on nn_params
-        while leaving the eq_params untouched during a few steps.
 
     Returns
     -------
     tuple
         a tuple with curent loss value, params, last non nan params, optimizer state, loss object, loss per term
     """
-    (
-        opt_params,
-        opt_params_accel,
-        non_opt_params,
-        opt_state,
-        non_opt_state,
-    ) = _get_masked_optimization_stuff(
-        params, state, opt_state_field_for_acceleration, params_mask
-    )
+
+    if not isinstance(optimizer, optax.GradientTransformationExtraArgs):
+        # TODO: maybe just modify type hint instead of raising error ?
+        raise TypeError(
+            f"Natural gradient `update` need an"
+            f"`optax.GradientTransformationExtraArgs`."
+            f"You passed an {type(optimizer)}."
+        )
+
+    ## NOTE to enable optimization procedures with acceleration
+    if state_field_for_acceleration is not None:
+        params_accel = getattr(state, state_field_for_acceleration)
+    else:
+        params_accel = None
+        # opt_params_accel = opt_params
 
     # --
     # Get the unreduced residuals and their gradient (for each sample)
     # for each loss term
     r, g = loss.values_and_grad_per_sample(
-        opt_params_accel
-        if opt_state_field_for_acceleration is not None
-        else opt_params,
+        params_accel if params_accel is not None else params,
         batch,
-        non_opt_params=non_opt_params,
     )
 
     # --
-    # Preprocess loss_weights if needed: we might have tuples at some fields
+    # Preprocess loss_weights if needed: we want to have tuples at field boundary_loss in d>1
+    # because of multiple facets.
     if not isinstance(r, ODEComponents) and r.boundary_loss is not None:
         lw_ = eqx.tree_at(
             lambda pt: pt.boundary_loss,
@@ -301,214 +284,41 @@ def _loss_evaluate_and_natural_gradient_step(
         lw_ = loss.loss_weights
 
     # --
-    # Compute weights (sqrt{\lambda_{term} / n_{term}}) in front of each sample of each `term`
-    # Store these as a PyTree with the same tree structure as r and g.
-
-    weights_per_sample = jax.tree.unflatten(
-        jax.tree.structure(r),
-        jnp.sqrt(jnp.array(jax.tree.leaves(lw_)))
-        / jnp.sqrt(
-            jnp.array(
-                jax.tree.leaves(jax.tree.map(lambda l: l.shape[0] * l.shape[1], r))
-            )
-        ),
-    )
-
-    # The following weight (without / sqrt{n} normalization) is useful for the value_fn
-    weights_per_sample_no_avg = jax.tree.unflatten(
-        jax.tree.structure(r), jnp.sqrt(jnp.array(jax.tree.leaves(lw_)))
-    )
-
-    # --
-    # Reweight each sample
-    reweighted_r = _reweight_pytree(r, weights_per_sample)
-    reweighted_g = _reweight_pytree(g, weights_per_sample)
-
-    # ---
-    # Flatten the pytree of params gradient as a tuple of (n, n_equations, p)
-    # arrays
-    Ms = _post_process_pytree_of_grad(reweighted_g, "nn_params")
-
-    Rs = reweighted_r
-
-    # --
-    # Form the complete euclidean gradient
-
-    # NOTE: this is subtile but beware that euclidean gradient (might) differs from
-    # jax.grad(loss.evaluate) here.
-    # Indeed jinns takes the sum(mean(loss_type)) while here we compute mean(sum(all_loss_types).
-    # These might differs when different number of samples per terms are used.
-    # Equality can be matched by changing the jinns reduction function internally.
-    # See tests/optimizer_tests/test_euclidean_gradient_equality.py
-
-    euclidean_grad_pytree = jax.tree.map(
-        lambda M, R: jnp.einsum("ijk,ij->k", M, R), Ms, Rs
-    )
-    # which is equivalent to
-    # >>> euclidean_grad_array = jnp.sum(
-    #    M.transpose((0, 2, 1)) @ R[..., None],
-    #    axis=0,
-    # ).squeeze()  # shape (n_params,)
-    # # NOTE jnp.sum because averaging is done via the (1 / sqrt(n)) reweighting above
-    euclidean_grad_array = jax.tree.reduce(jnp.add, euclidean_grad_pytree)
-
-    # --
-    # Then assemble the Gram Matrix
-    #   1. Do the mean over the `n` collocation points -> get a `(n_equation, p, p)` array.
-    #      NOTE: jnp.einsum instead of a mean here because averaging is in reweighting above.
-    #   2. Then, do the sum over `n_equation` (axis=0)
-    gram_mat_pytree = jax.tree.map(
-        lambda M: jnp.einsum("ijk,ijl->kl", M, M),
-        # <=> lambda M: (M.transpose((1, 2, 0)) @ M.transpose((1, 0, 2))).sum(axis=0),
-        Ms,
-    )
-
-    gram_mat = jax.tree.reduce(jnp.add, gram_mat_pytree)
-
-    # --
-    # Solve the linear system G @ natural_grad = eucl_grad to get the natural gradient.abs
-    reg = (
-        state.gram_reg
-    )  # NOTE: in the future it might be useful to tune this reg e.g. ANAGRAM
-    n_param = gram_mat.shape[0]
-    natural_grad_array = jax.scipy.linalg.solve(
-        gram_mat + reg * jnp.eye(n_param), euclidean_grad_array, assume_a="sym"
-    )
-
-    if with_eq_params_update:
-        # --
-        # If we want to update eq_params (inverse problem), this is done using
-        # the euclidean gradients wrt eq_params. We can form it from M and R the same way as
-        # for nn_params.
-        Ms_eq_params = _post_process_pytree_of_grad(reweighted_g, "eq_params")
-        euclidean_grad_pytree_eq_params = jax.tree.map(
-            lambda M, R: jnp.einsum("ijk,ij->k", M, R), Ms_eq_params, Rs
-        )
-        euclidean_grad_array_eq_params = jax.tree.reduce(
-            jnp.add, euclidean_grad_pytree_eq_params
-        )
-    else:
-        euclidean_grad_array_eq_params = None
-
-    # --
-    # Final step : restructure the natural gradient as a PyTree
-    # NOTE: if in inverse problem mode, the leaf at eq_params is filled with standard euclidean
-    # gradients, or zeros if in forward problem mode.
-
-    natural_grads = _params_array_to_pytree(
-        natural_grad_array, opt_params, params, euclidean_grad_array_eq_params
-    )
-    euclidean_grads = _params_array_to_pytree(
-        euclidean_grad_array, opt_params, params, euclidean_grad_array_eq_params
-    )
-
-    # --
-    # We can also assemble the total loss from reweighted residuals `r`
+    # We can also assemble the total loss and loss_terms from reweighted residuals `r`
     # NOTE: subtility here, we don't reweight by * 1/sqrt{n} because the averaging is done
     # inside loss._reduction_functions so we don't want to account twice for it.
+    sqrt_weights_per_sample = _get_sqrt_weights_per_sample(lw=lw_, r=r, batch_norm=True)
+    sqrt_weights_per_sample_no_avg = _get_sqrt_weights_per_sample(
+        lw=lw_, r=r, batch_norm=False
+    )
     loss_terms = jax.tree.map(
         lambda red_fun, r_: red_fun(r_),
         loss._reduction_functions,
-        _reweight_pytree(r, weights_per_sample_no_avg),
+        _reweight_pytree(pt=r, lw=sqrt_weights_per_sample_no_avg),
     )
 
-    # train_loss_value = jnp.sum(
-    #     jnp.concatenate(
-    #         jax.tree.leaves(
-    #             jax.tree.map(
-    #                 lambda arr: jnp.sum(arr**2, axis=-1),
-    #                 reweighted_r,  # _reweight_pytree(r, weights_per_sample),
-    #             ),
-    #         ),
-    #         axis=0,
-    #     )
-    # )
-
-    train_loss_value = jnp.sum(jnp.array(jax.tree.leaves(loss_terms)))
-
-    opt_natural_grads, _ = natural_grads.partition(params_mask)
-    opt_euclidean_grads, _ = euclidean_grads.partition(
-        params_mask
-    )  # useful for backtracking
-
-    # Here, we only use the gradient step of the Optax optimizer on the
-    # parameters specified by params_mask. , no dummy state with filled with zero entries
-    # all other entries of the pytrees are None thanks to params_mask)
-
-    def ngd_value_fn(opt_params, *, non_opt_params):
-        """
-        non_opt_params is another extra_args needed to reform the correct
-        params (with non None values at non optimized params - this is done in
-        loss.evaluate) in order to be able to evaluate
-        """
-        # Not using loss.evaluate here cause of the mean(sum()) vs sum(mean)
-        # remark. This fn computes the loss we are truly minimizing with NGD.
-        new_r, _ = loss.values_and_grad_per_sample(
-            opt_params,
-            batch,
-            non_opt_params=non_opt_params,
+    train_loss_value = jnp.sum(
+        jnp.concatenate(
+            jax.tree.leaves(
+                jax.tree.map(
+                    lambda arr: jnp.sum(arr**2, axis=-1),
+                    _reweight_pytree(pt=r, lw=sqrt_weights_per_sample),
+                ),
+            ),
+            axis=0,
         )
-        new_loss_terms = jax.tree.map(
-            lambda red_fun, r_: red_fun(r_),
-            loss._reduction_functions,
-            _reweight_pytree(new_r, weights_per_sample_no_avg),
-        )
-        new_loss = jnp.sum(jnp.array(jax.tree.leaves(new_loss_terms)))
-        return new_loss
+    )
 
-    if not isinstance(optimizer, optax.GradientTransformationExtraArgs):
-        # TODO: maybe just modify type hint instead of raising error ?
-        raise TypeError(
-            f"Natural gradient `update` need an"
-            f"`optax.GradientTransformationExtraArgs`."
-            f"You passed an {type(optimizer)}."
-        )
-
-    if with_eq_params_update:
-        # Following https://github.com/google-deepmind/optax/issues/1649
-        def fill_eq_params_value_fn(ngd_value_fn, params):
-            """Reconstructs the full parameter tree from the masked one.
-            Specific case: this is always eq_params that will be masked
-
-
-            We need to pass the full params (`params`) because opt_params might contain
-            None at eq_params, which would fail the last instruction
-            """
-
-            def wrapper(masked_params):  # this is what will be called by the
-                # backtracking line search callback
-                # ie., it will contain masked params that we need to fill in
-                full_params = eqx.tree_at(
-                    lambda pt: pt.eq_params, masked_params, params.eq_params
-                )
-                return ngd_value_fn(full_params, non_opt_params=non_opt_params)
-
-            return wrapper
-
-        value_fn = fill_eq_params_value_fn(ngd_value_fn, params)
-    else:
-        # if we are not doing an inverse problem, there is no optax.partition
-        # to handle
-        value_fn = partial(ngd_value_fn, non_opt_params=non_opt_params)
-
-    opt_params, opt_state = _gradient_step(
-        opt_natural_grads,
+    params, state = _gradient_step(
+        (r, g, sqrt_weights_per_sample),
         optimizer,
-        opt_params,
-        opt_state,
-        # extra kwargs passed to backtracking line search `update()` method
-        value=train_loss_value,
-        grad=opt_euclidean_grads,
-        value_fn=value_fn,
-    )
-
-    params, state = _get_unmasked_optimization_stuff(
-        opt_params,
-        non_opt_params,
-        state,
-        opt_state,
-        non_opt_state,
+        params,
+        state,  # type: ignore
         params_mask,
+        # extra kwargs passed to the NGD optimizer
+        loss=loss,
+        batch=batch,
+        loss_value=train_loss_value,
     )
 
     # check if any of the parameters is NaN
@@ -521,143 +331,12 @@ def _loss_evaluate_and_natural_gradient_step(
     return train_loss_value, params, last_non_nan_params, state, loss, loss_terms
 
 
-def _post_process_pytree_of_grad(
-    y: Params, param_type: Literal["nn_params", "eq_params"] = "nn_params"
-) -> Params[Float[Array, "n n_equations n_parameters"], ...]:
-    """
-    Restructure a PyTree of gradient per sample (with arbitrary shape) into the appropriate
-    shapes for computing total euclidean gradients and gram matrix preconditionner.
-
-    Parameters
-    -------
-    y: Params
-        A PyTree with similar structure as Params and containing gradient **per samples**
-        in arbitrary shape dictated by the PINN structure.
-    param_type: Literal["nn_params", "eq_params"], default="nn_params"
-        A selection to designate which type of parameter we should be working on between
-        eq_params and nn_params.
-
-    Returns
-    -------
-    Params
-        A PyTree with similar structure as Params and containing gradient **per samples**.
-    """
-
-    # TODO: make the doc clearer, for now it is written for when param_type="nn_params"
-
-    # First, get the PyTree of all trainable parameters for each loss terms (e.g. `dyn_loss`, `init`, `BC` etc.)
-    # with list of layers as its leaves.
-    l = jax.tree.map(
-        lambda pt: jax.tree.leaves(
-            getattr(pt, param_type), is_leaf=eqx.is_inexact_array
-        ),
-        y,
-        is_leaf=lambda x: isinstance(x, Params),
-    )
-
-    # Then, flatten each layer of trainable parameters into shape
-    # -> (nb, n_equation, *)
-    # where
-    #  - `n_equation` is the number of  equations for vector valued system of equations.
-    #  - `nb` is the number of point in the (mini-)batch for each loss term.
-    #  - `*` means the number of free parameters of the layer.
-    l = jax.tree.map(
-        lambda leaf: [a.reshape((a.shape[0], a.shape[1], -1)) for a in leaf],
-        l,
-        is_leaf=lambda x: isinstance(x, list),
-    )
-
-    # Then, concatenate all layers into a shape (nb, n_equation, p) where p is the total
-    # number of free parameters for ALL layers.
-    return jax.tree.map(
-        lambda leaf: jnp.concatenate(leaf, axis=2),
-        l,
-        is_leaf=lambda x: isinstance(x, list),
-    )
-
-
-def _params_array_to_pytree(
-    nn_params_array: Float[Array, " n_parameters"],
-    opt_params: Params,
-    params: Params,
-    eq_params_array=None,
-) -> Params:
-    """Helper function for NGD.
-
-    This function converts the raw matrix representation of the network
-    trainable parameters into a `Params` object with the correct PyTree structure to
-    be handled by optax for the updates.
-
-    By default, the field `eq_params` is filled with zeros, as NGD is not
-    meant for eq_params. If in inverse problem mode, the field `eq_params` must be provided
-    by the `eq_params_array` arguments.
-
-    We need to pass the full params (`params`) because opt_params might contain
-    None at eq_params, which would fail the last instruction
-    """
-    _, params_cumsum = _get_param_nb(opt_params.nn_params)
-    nn_flat = eqx.tree_at(
-        jax.tree.leaves,
-        opt_params.nn_params,
-        jnp.split(nn_params_array, params_cumsum[:-1]),
-    )
-
-    nn_params_pt = jax.tree.map(
-        lambda a, b: a.reshape(b.shape),
-        nn_flat,
-        opt_params.nn_params,
-        is_leaf=eqx.is_inexact_array,
-    )
-    if eq_params_array is not None:
-        _, params_cumsum = _get_param_nb(opt_params.eq_params)
-        eq_flat = eqx.tree_at(
-            jax.tree.leaves,
-            opt_params.eq_params,
-            jnp.split(eq_params_array, params_cumsum[:-1]),
-        )
-
-        eq_params_pt = jax.tree.map(
-            lambda a, b: a.reshape(b.shape),
-            eq_flat,
-            opt_params.eq_params,
-            is_leaf=eqx.is_inexact_array,
-        )
-    else:
-        # Wrap everything in a Params() object
-        # by default eq_params is filled with Zeros so that additive updates
-        # leave them unchanged.
-        eq_params_pt = optax.tree.zeros_like(params.eq_params)
-    return Params(
-        nn_params=nn_params_pt,
-        eq_params=eq_params_pt,
-    )
-
-
-def _reweight_pytree(pt: PyTree, lw: PyTree):
-    """
-    Multiply all the arrays at leaves of pt (`leaf`) by the saclar at leaves of
-    lw (`w`).
-    If `leaf` is again a pytree, multiply each leaf of `leaf` by `w`.
-    """
-    return jax.tree.map(
-        lambda w, leaf: (
-            w * leaf
-            if eqx.is_inexact_array(leaf)
-            else jax.tree.map(  # leaf is a Params when reweighting g
-                lambda arr: w * arr, leaf, is_leaf=eqx.is_inexact_array
-            )
-        ),
-        lw,
-        pt,
-        is_leaf=lambda x: eqx.is_inexact_array(x) or isinstance(x, Params),
-    )
-
-
 def _gradient_step(
-    grads: Params[Array],
+    grads: Params[Array | None] | tuple,
     optimizer: optax.GradientTransformation,
     params: Params[Array],
     state: optax.OptState,
+    params_mask: Params[bool] | None = None,
     **kwargs,
 ) -> tuple[
     Params[Array],
@@ -665,20 +344,68 @@ def _gradient_step(
 ]:
     """
 
-    A plain old gradient step that is compatible with masked updates
-    stuff.
+    A plain old gradient step that takes into account parameter masking.
+
+    **When doing an alternate optimization** with jinns.solve_alternate(), the
+    params_mask will be True for the optimized parameters and False for the
+    others. This enables to use eqx.partition, to set None at non optimized
+    leaves (of the gradient pytree, of the
+    parameters pytree, ...) in order to save computations (and avoid the
+    default "fill with 0" behaviour of optax alternate. NOTE that the masking
+    for `opt_state`, is already done at an outer level (during `carry`
+    manipulations before and after a local while loop (on nn_params or
+    eq_params is started) for efficiency.
 
     All kwargs are passed to `optimizer.update()` in case user provided a
     optax.GradientTransformationExtraArgs
     """
 
+    # NOTE, if params_mask is not None, this means we are doing
+    # solve_alternate, this means state has already been masked and so grads
+    # must be masked too to avoid errors of the type:
+    # TypeError: unsupported operand type(s) for *: 'float' and 'NoneType'
+    # Same for params (see below)
+    if isinstance(state, NGDState):
+        assert isinstance(grads, tuple)  # for type checking
+        # in this case the grads object if different
+        opt_grads = jax.tree.map(
+            lambda l: l.partition(params_mask)[0],
+            grads[1],
+            is_leaf=lambda x: isinstance(x, Params),
+        )
+        opt_grads = (grads[0], opt_grads, grads[2])
+    else:
+        assert isinstance(grads, Params)  # for type checking
+        opt_grads, _ = grads.partition(params_mask)
+
+    # NOTE, here we need to pass the full unmasked params for more complex
+    # optimizer updates to be done (updates which rely on params or more).
+    # NOTE also that, while compute gradients beforehand, we have computed
+    # gradients for ALL parameters, even the non optimized ones: we hope that
+    # JAX interal machinery will discard those computations from the
+    # computational graph since the gradients for the non optimized parameters
+    # are finally not used.
+    # Making sure gradients are only computed for optimized (unmasked)
+    # parameters seem like a big jinns refactorization (future TODO)
     updates, state = optimizer.update(
-        grads,  # type: ignore
+        opt_grads,  # type: ignore
         state,
         params,  # type: ignore
         **kwargs,
     )  # Also see optimizer.init for explanation of type ignore
-    params = optax.apply_updates(params, updates)  # type: ignore
+
+    # NOTE, if params_mask is not None, this means we are doing
+    # solve_alternate, this means state has already been masked and so grads
+    # and thus updates contain None. Hence params
+    # must be masked too to avoid errors of the type:
+    # TypeError: unsupported operand type(s) for *: 'float' and 'NoneType'
+    opt_params, non_opt_params = params.partition(params_mask)
+    opt_params = optax.apply_updates(opt_params, updates)  # type: ignore
+
+    if params_mask is not None:
+        params = eqx.combine(opt_params, non_opt_params)
+    else:
+        params = opt_params
 
     return (
         params,
@@ -686,27 +413,13 @@ def _gradient_step(
     )
 
 
-def _get_masked_optimization_stuff(
-    params, state, state_field_for_acceleration, params_mask
-):
+def _get_masked_state(state, params_mask):
     """
-    From the parameters `params`, the optimizer state `state`, we use the
-    parameter mask `params_mask` to retrieve the partitioned version of those
-    two objects, `opt_params` for the parameters that are optimized and
-    `non_opt_params` for those that are not optimized. Same for `state`.
-
-    The argument `state_field_for_acceleration` can correspond to a field
-    inside the `state` module. If it is not None, a `opt_params_accel` object
-    is created that is different of `opt_params`. See
-    `opt_state_field_for_acceleration` in `jinns.solve` docstring for more
-    details.
-
-    The opposite of `eqx.partition` ie, `eqx.combine` is made in the loss
-    `evaluate_by_terms()` method for the computations and in
-    `_get_unmasked_optimization_stuff` to reconstruct the object after the
-    gradient step
+    From the optimizer state, we use the
+    parameter mask `params_mask` to retrieve the partitioned version of the
+    objects, `opt_state` for the parameters that are optimized and
+    `non_opt_state` for those that are not optimized.
     """
-    opt_params, non_opt_params = params.partition(params_mask)
     opt_state = jax.tree.map(
         lambda l: l.partition(params_mask)[0] if isinstance(l, Params) else l,
         state,
@@ -718,44 +431,24 @@ def _get_masked_optimization_stuff(
         is_leaf=lambda x: isinstance(x, Params),
     )
 
-    # NOTE to enable optimization procedures with acceleration
-    if state_field_for_acceleration is not None:
-        opt_params_accel = getattr(opt_state, state_field_for_acceleration)
-    else:
-        opt_params_accel = opt_params
+    return opt_state, non_opt_state
 
-    return (
-        opt_params,
-        opt_params_accel,
-        non_opt_params,
+
+def _get_unmasked_state(state, opt_state, non_opt_state):
+    """
+    Reverse operations of `_get_masked_state`
+    """
+    state = jax.tree.map(
+        lambda a, b, c: eqx.combine(b, c) if isinstance(a, Params) else b,
+        # NOTE else b in order to take all non Params stuff from
+        # opt_state that may have been updated too
+        state,
         opt_state,
         non_opt_state,
+        is_leaf=lambda x: isinstance(x, Params),
     )
 
-
-def _get_unmasked_optimization_stuff(
-    opt_params, non_opt_params, state, opt_state, non_opt_state, params_mask
-):
-    """
-    Reverse operations of `_get_masked_optimization_stuff`
-    """
-    # NOTE the combine which closes the partitioned chunck
-    if params_mask is not None:
-        params = eqx.combine(opt_params, non_opt_params)
-        state = jax.tree.map(
-            lambda a, b, c: eqx.combine(b, c) if isinstance(a, Params) else b,
-            # NOTE else b in order to take all non Params stuff from
-            # opt_state that may have been updated too
-            state,
-            opt_state,
-            non_opt_state,
-            is_leaf=lambda x: isinstance(x, Params),
-        )
-    else:
-        params = opt_params
-        state = opt_state
-
-    return params, state
+    return state
 
 
 @jit(static_argnames=["prefix"])  # new in jax 0.8.1

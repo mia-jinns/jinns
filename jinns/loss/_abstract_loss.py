@@ -213,31 +213,19 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
 
     def _preprocess_params(
         self,
-        opt_params: Params[Array],
+        params: Params[Array],
         batch: B,
-        *,
-        non_opt_params: Params[Array] | None = None,
     ) -> tuple[Params[Array], tuple[Params[int | None] | None, ...]]:
         """
         Preprocessing of the Params object before loss evaluation:
 
-        - combine with non_opt_params
         - feed the eq_params batch if it exists
-        - get the vmap_in_axes_params for vmapping over the batch of eq_params
-          if needed
         """
-        if non_opt_params is not None:
-            params = eqx.combine(opt_params, non_opt_params)
-        else:
-            params = opt_params
-
         # Retrieve the optional eq_params_batch
         # and update eq_params with the latter
         if batch.param_batch_dict is not None:
             # update params with the batches of generated params
             params = update_eq_params(params, batch.param_batch_dict)
-
-        # and update vmap_in_axes_params
         if isinstance(self.u, (PINN, HyperPINN)):
             vmap_in_axes_params = _get_vmap_in_axes_params(
                 cast(eqx.Module, batch.param_batch_dict), params
@@ -250,6 +238,7 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
             raise ValueError(
                 f"Bad type for self.u. Got {type(self.u)}, expected PINN or SPINN"
             )
+
         return params, vmap_in_axes_params
 
     def _get_evaluate_by_terms_lambda(
@@ -349,10 +338,8 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
 
     def evaluate(
         self,
-        opt_params: Params[Array],
+        params: Params[Array],
         batch: B,
-        *,
-        non_opt_params: Params[Array] | None = None,
     ) -> tuple[Float[Array, " "], C]:
         """
         Evaluate the loss function at a batch of points for given parameters.
@@ -361,20 +348,16 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
 
         Parameters
         ---------
-        opt_params
-            Parameters, which are optimized, at which the loss is evaluated
+        params
+            Parameters at which the loss is evaluated
         batch
             Composed of a batch of points in the
             domain, a batch of points in the domain
             border and an optional additional batch of parameters (eg. for
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
-        non_opt_params
-            Parameters, which are non optimized, at which the loss is evaluated
         """
-        params, vmap_in_axes_params = self._preprocess_params(
-            opt_params, batch, non_opt_params=non_opt_params
-        )
+        params, vmap_in_axes_params = self._preprocess_params(params, batch)
         evaluate_by_terms_reduced = self._get_evaluate_by_terms_lambda(
             batch, vmap_in_axes_params
         )
@@ -385,18 +368,25 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
 
     def values_and_grads(
         self,
-        opt_params: Params[Array],
+        params: Params[Array],
         batch: B,
-        *,
-        non_opt_params: Params[Array] | None = None,
     ) -> tuple[C, C]:
         """
         This evaluates each term of the loss as well as its gradient w.r.t. to all PyTrees in
         `params`.
+
+        Parameters
+        ---------
+        params
+            Parameters, which are optimized, at which the loss is evaluated
+        batch
+            Composed of a batch of points in the
+            domain, a batch of points in the domain
+            border and an optional additional batch of parameters (eg. for
+            metamodeling) and an optional additional batch of observed
+            inputs/outputs/parameters
         """
-        params, vmap_in_axes_params = self._preprocess_params(
-            opt_params, batch, non_opt_params=non_opt_params
-        )
+        params, vmap_in_axes_params = self._preprocess_params(params, batch)
 
         evaluate_by_terms_reduced = self._get_evaluate_by_terms_lambda(
             batch, vmap_in_axes_params
@@ -410,27 +400,57 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
         )
         return loss_terms, grad_terms
 
+    def evaluate_per_sample(
+        self,
+        params: Params[Array],
+        batch: B,
+    ) -> C:
+        """
+        This evaluates the loss for each loss term AND **each sample**.
+
+        Parameters
+        ---------
+        params
+            Parameters at which the loss is evaluated
+        batch
+            Composed of a batch of points in the
+            domain, a batch of points in the domain
+            border and an optional additional batch of parameters (eg. for
+            metamodeling) and an optional additional batch of observed
+            inputs/outputs/parameters
+        """
+        params, vmap_in_axes_params = self._preprocess_params(params, batch)
+        evaluate_by_terms = self._get_evaluate_by_terms_lambda(
+            batch, vmap_in_axes_params, unreduced=True
+        )
+        loss_terms = jax.tree.map(lambda fun: fun(params), evaluate_by_terms)
+        return loss_terms
+
     def values_and_grad_per_sample(
         self,
-        opt_params: Params[Array],
+        params: Params[Array],
         batch: B,
-        *,
-        non_opt_params: Params[Array] | None = None,
     ) -> tuple[C, C]:
         """
         This evaluates the loss and its gradient for each loss term AND **each sample**.
         Gradients are computed w.r.t to `params`.
         This is useful for natural gradient methods which requires these atomic quantities
         to compute a preconditioner on the euclidean gradient.
-        """
-        params, vmap_in_axes_params = self._preprocess_params(
-            opt_params, batch, non_opt_params=non_opt_params
-        )
 
-        evaluate_by_terms = self._get_evaluate_by_terms_lambda(
-            batch, vmap_in_axes_params, unreduced=True
-        )
-        loss_terms = jax.tree.map(lambda fun: fun(params), evaluate_by_terms)
+        Parameters
+        ---------
+        params
+            Parameters, which are optimized, at which the loss is evaluated
+        batch
+            Composed of a batch of points in the
+            domain, a batch of points in the domain
+            border and an optional additional batch of parameters (eg. for
+            metamodeling) and an optional additional batch of observed
+            inputs/outputs/parameters
+        """
+        params, vmap_in_axes_params = self._preprocess_params(params, batch)
+
+        loss_terms = self.evaluate_per_sample(params, batch)
 
         if isinstance(self.u, (PINN, HyperPINN)):
             jacrev_evaluate_by_terms = lambda p: jax.tree.map(

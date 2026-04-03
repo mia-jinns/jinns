@@ -16,7 +16,7 @@ import jax.numpy as jnp
 import equinox as eqx
 
 from jinns.loss._loss_components import PDENonStatioComponents
-from jinns.solver._utils import _post_process_pytree_of_grad
+from jinns.optimizers._utils_ngd import _post_process_pytree_of_grad
 
 
 class LossPDENonStatio_(jinns.loss.LossPDENonStatio):
