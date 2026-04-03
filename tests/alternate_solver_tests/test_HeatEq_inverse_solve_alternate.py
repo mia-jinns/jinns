@@ -157,6 +157,11 @@ def train_solve_alternate(test_init):
         eq_params={"D": 1},
     )
 
+    # NOTE that we cannot set a NGD here because the optax alternate optimizer
+    # could not be done (from the fact that in jinns we currently either go
+    # into the euclidean gradient or natural gradient procedure, and that we
+    # cannot chage from it during an optimization)
+
     alternate_txs = jinns.parameters.Params(
         nn_params=optax.adam(learning_rate=1e-3),
         eq_params={
