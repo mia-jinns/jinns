@@ -30,10 +30,12 @@ class VanillaNGDState(NGDState):
 
     Parameters
     ----------
-    XXX
-        xxx
-    XXX
-        xxx
+    sgd_learning_rate: float, default = 1.0
+        The learning rate for the standard gradient descent algorithm run
+        before the linesearch step
+    ridge_reg: float, default = 1.0
+        The ridge regularization coefficient used to improved the conditioning
+        of the Gram matrix that is inverted in the NGD procedure
     with_eq_params_update: bool, default = True
         A boolean specifying if the updates for `params.eq_params` should be applied or not.
         If True, we are in inverse problem mode and euclidean gradient for eq_params are passed
@@ -259,5 +261,6 @@ def vanilla_ngd(
         )
 
     return optax.GradientTransformationExtraArgs(
-        init, update
-    )  # TODO: is there an easy way to make the typing conform here ?
+        init,
+        update,  # type: ignore
+    )

@@ -91,7 +91,7 @@ def _loss_evaluate_and_euclidean_gradient_step(
     state: optax.OptState,
     optimizer: optax.GradientTransformation,
     loss_container: LossContainer,
-    key: PRNGKeyArray,
+    key: PRNGKeyArray | None,
     params_mask: Params[bool] | None = None,
     state_field_for_acceleration: str | None = None,
     with_loss_weight_update: bool = True,
@@ -403,9 +403,10 @@ def _gradient_step(
     opt_params = optax.apply_updates(opt_params, updates)  # type: ignore
 
     if params_mask is not None:
-        params = eqx.combine(opt_params, non_opt_params)
+        params = eqx.combine(opt_params, non_opt_params)  # type: ignore
+        # (bad cohabitaiton with PyTree)
     else:
-        params = opt_params
+        params = opt_params  # type: ignore (bad cohabitaiton with PyTree)
 
     return (
         params,
@@ -472,10 +473,10 @@ def _store_loss_and_params(
     params: Params[Array],
     stored_params: Params[Array | None],
     loss_container: LossContainer,
-    train_loss_val: float,
+    train_loss_val: Float[Array, " "],
     loss_terms: PyTree[Array],
     weight_terms: PyTree[Array],
-    tracked_params: Params,
+    tracked_params: Params | None,
 ) -> tuple[StoredObjectContainer, LossContainer]:
     stored_params = jax.tree_util.tree_map(
         lambda stored_value, param, tracked_param: (

@@ -27,7 +27,9 @@ def append_param_batch(batch: AnyBatch, param_batch_dict: eqx.Module) -> AnyBatc
     )
 
 
-def append_obs_batch(batch: AnyBatch, obs_batch_dict: ObsBatchDict) -> AnyBatch:
+def append_obs_batch(
+    batch: AnyBatch, obs_batch_dict: tuple[ObsBatchDict, ...]
+) -> AnyBatch:
     """
     Utility function that fills the field `batch.obs_batch_dict` of a batch object
     """

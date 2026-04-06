@@ -22,8 +22,8 @@ def plot2d(
     cmap: str = "inferno",
     spinn: bool = False,
     vmin_vmax: tuple[float | None, float | None] | None = None,
-    fig: None | matplotlib.figure.Figure = None,
-) -> matplotlib.figure.Figure:
+    fig: None | matplotlib.figure.Figure = None,  # type: ignore
+) -> matplotlib.figure.Figure:  # type: ignore
     r"""Generic function for plotting functions over rectangular 2-D domains
     $\Omega$. It handles both the
 
@@ -186,9 +186,9 @@ def _plot_2D_statio(
     plot: bool = True,
     colorbar: bool = True,
     cmap: str = "inferno",
-    fig: None | matplotlib.figure.Figure = None,
+    fig: None | matplotlib.figure.Figure = None,  # type: ignore
     vmin_vmax: tuple[float | None, float | None] | None = None,
-) -> matplotlib.figure.Figure | Array:
+) -> matplotlib.figure.Figure | Array:  # type: ignore
     """Function that plot the function u(x) with 2-D input x using pcolormesh()
 
 

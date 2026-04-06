@@ -189,7 +189,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
 
     """
 
-    key: PRNGKeyArray
+    key: tuple[PRNGKeyArray, ...]
     obs_batch_size: tuple[int | None, ...] = eqx.field(static=True)
     observed_pinn_in: tuple[Float[Array, " n_obs nb_pinn_in"], ...]
     observed_values: tuple[Float[Array, " n_obs nb_pinn_out"], ...]
@@ -214,7 +214,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
     ) -> None:
         """ """
         super().__init__()
-        self.key = key
+        self.key = key  # type: ignore This will be handled after
 
         if not isinstance(observed_values, tuple):
             observed_values = (observed_values,)
@@ -302,17 +302,16 @@ class DataGeneratorObservations(AbstractDataGenerator):
 
         self.observed_pinn_in = observed_pinn_in
         self.observed_values = observed_values
-        if observed_eq_params == (None,):
-            self.observed_eq_params = observed_eq_params  # pyright: ignore
-            # (this is resolved later on one instanciating DGObservedParams)
-        else:
-            self.observed_eq_params = jax.tree.map(
-                lambda d: {
-                    k: v[:, None] if len(v.shape) == 1 else v for k, v in d.items()
-                },
-                observed_eq_params,
-                is_leaf=lambda x: isinstance(x, dict),
-            )
+        observed_eq_params = jax.tree.map(
+            lambda d: {k: v[:, None] if len(v.shape) == 1 else v for k, v in d.items()},
+            observed_eq_params,
+            is_leaf=lambda x: isinstance(x, dict),
+        )
+        assert isinstance(observed_eq_params, tuple)
+        # Note in the above, we continue using observed_eq_params and we assert
+        # is it a tuple both for the type checking
+        # We assign to self.observed_eq_params after the call to DGParams (this
+        # calls requires a dict[str, Any] (i.e. observed_eq_params)
 
         self.observed_pinn_in = jax.tree.map(
             lambda x: x[:, None] if len(x.shape) == 1 else x, self.observed_pinn_in
@@ -335,19 +334,19 @@ class DataGeneratorObservations(AbstractDataGenerator):
         # 1 or more
         tree_map_args = tuple(
             ({"eq_params_dict": e}, {"pinn_in_array": p})
-            for e, p in zip_longest(self.observed_eq_params, self.observed_pinn_in)
+            for e, p in zip_longest(observed_eq_params, self.observed_pinn_in)
         )
         fixed_args = ()
-        if len(self.observed_eq_params) != len(self.observed_pinn_in):
+        if len(observed_eq_params) != len(self.observed_pinn_in):
             if len(self.observed_pinn_in) == 1:
                 check_first_axis2 = partial(
                     check_first_axis2, pinn_in_array=self.observed_pinn_in[0]
                 )
                 fixed_args = fixed_args + ("pinn_in_array",)
 
-            if len(self.observed_eq_params) == 1:
+            if len(observed_eq_params) == 1:
                 check_first_axis2 = partial(
-                    check_first_axis2, eq_params_dict=self.observed_eq_params[0]
+                    check_first_axis2, eq_params_dict=observed_eq_params[0]
                 )
                 fixed_args = fixed_args + ("eq_params_dict",)
         jax.tree.map(
@@ -383,7 +382,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
         tree_map_args = tuple(
             ({"eq_params_dict": e}, {"pinn_in_array": p}, {"values": v})
             for e, p, v in zip_longest(
-                self.observed_eq_params, self.observed_pinn_in, self.observed_values
+                observed_eq_params, self.observed_pinn_in, self.observed_values
             )
         )
         # now, if some shape are different, it can only be because there are 1
@@ -392,16 +391,14 @@ class DataGeneratorObservations(AbstractDataGenerator):
         # and keep track of the arguments that are fixed to be able to remove
         # them in the wrapper
         fixed_args = ()
-        if len(self.observed_eq_params) != len(self.observed_pinn_in) or len(
-            self.observed_eq_params
+        if len(observed_eq_params) != len(self.observed_pinn_in) or len(
+            observed_eq_params
         ) != len(self.observed_values):
             if len(self.observed_pinn_in) == 1:
                 check_ndim = partial(check_ndim, pinn_in_array=self.observed_pinn_in[0])
                 fixed_args = fixed_args + ("pinn_in_array",)
-            if len(self.observed_eq_params) == 1:
-                check_ndim = partial(
-                    check_ndim, eq_params_dict=self.observed_eq_params[0]
-                )
+            if len(observed_eq_params) == 1:
+                check_ndim = partial(check_ndim, eq_params_dict=observed_eq_params[0])
                 fixed_args = fixed_args + ("eq_params_dict",)
             if len(self.observed_values) == 1:
                 check_ndim = partial(check_ndim, values=self.observed_values[0])
@@ -450,9 +447,10 @@ class DataGeneratorObservations(AbstractDataGenerator):
         # Convert the dict of observed parameters to the internal
         # `DGObservedParams`
         # class used by Jinns.
+        assert observed_eq_params is not None  # handled at the beginning
         self.observed_eq_params = tuple(
             DGObservedParams(o_, "DGObservedParams")
-            for o_ in self.observed_eq_params
+            for o_ in observed_eq_params
             if o_ is not None
         )
 

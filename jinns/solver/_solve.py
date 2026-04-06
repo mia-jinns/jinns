@@ -8,7 +8,7 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 import optax
 import jax
 import jax.numpy as jnp
@@ -274,7 +274,6 @@ def solve(
         params=init_params,
         last_non_nan_params=init_params,
         opt_state=opt_state,
-        # params_mask=params_mask,
     )
     optimization_extra = OptimizationExtraContainer(
         curr_seq=curr_seq,
@@ -343,8 +342,10 @@ def solve(
         opt_state = optimization.opt_state
         if isinstance(opt_state, NGDState):
             _step = _loss_evaluate_and_natural_gradient_step
+            opt_state = cast(NGDState, opt_state)
         else:
             _step = _loss_evaluate_and_euclidean_gradient_step
+            opt_state = cast(optax.OptState, opt_state)
 
         (train_loss_value, params, last_non_nan_params, opt_state, loss, loss_terms) = (
             _step(

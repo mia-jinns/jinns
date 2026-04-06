@@ -81,8 +81,8 @@ class AbstractLoss(eqx.Module, Generic[L, B, C, DK]):
     derivative_keys: eqx.AbstractVar[DK]
     loss_weights: eqx.AbstractVar[L]
     u: eqx.AbstractVar[AbstractPINN]
-    _reduction_functions: eqx.AbstractClassVar[C] = eqx.field(init=False)
-    _vmap_loss_fun: eqx.AbstractClassVar[C] = eqx.field(init=False)
+    _reduction_functions: eqx.AbstractClassVar[C] = eqx.field(init=False)  # type: ignore
+    _vmap_loss_fun: eqx.AbstractClassVar[C] = eqx.field(init=False)  # type: ignore
     obs_slice: tuple[EllipsisType | slice, ...] = eqx.field(static=True, kw_only=True)
     loss_weight_scales: L = eqx.field(init=False)
     update_weight_method: AvailableUpdateWeightMethods | None = eqx.field(
