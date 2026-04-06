@@ -28,8 +28,6 @@ $$
     \rho_\nu : x \mapsto (\mathcal{N}[u_\nu](x), \mathcal{B}[u_\nu](x), \ldots )
 $$
 
-!!! success "Pro tip"
-    We recommend always trring small network with NGD optimizer rather than big network with first order methods. We also recommend using Float64 for computation whenever possible.
 
 ## Vanilla Natural gradient 
 
