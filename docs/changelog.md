@@ -1,6 +1,6 @@
 # Changelog
 
-* v1.9: this MR introduces natural Gradient Descent in jinns
+* v1.9.0: this MR introduces natural Gradient Descent in jinns :rocket:
 
     -  new module `jinns.optimizers` with custom optax gradient transformation. For now we implement `vanilla_ngd` which implement natural gradient descent for PINN which dramatically improves training in all tested settings. We recommend using it when the network size is moderate (a few 1000 parameters) as it requires solving a linear system at each gradient step.
 

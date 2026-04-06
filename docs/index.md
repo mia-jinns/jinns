@@ -5,7 +5,7 @@
  * forward problem: learning a PDE solution.
  * inverse problem: learning the parameters of a PDE. Checkout `jinns.solve_alternate()` for fine-grained and efficient inverse problems.
  * meta-modeling: learning a family of PDE indexed by its parameters.
- * **New in jinns v1.9.0:** natural gradient optimizers which greatly enhances the training of PINNs. We recommend testing it as the default optimizer, simply replace `tx = vanilla_ngd()`. Checkout [Heat equation](Notebooks/PDE/heat_equation_ngd) or [Navier Stokes pipeflow](Notebooks/PDE/1D_non_stationary_Burgers/) to get a feeling of the improvement on toy examples.
+ * **New in jinns v1.9.0:** natural gradient optimizers which greatly enhances the training of PINNs. We recommend testing it as the default optimizer, simply replace `tx = vanilla_ngd()`. Checkout [Heat equation](Notebooks/PDE/heat_equation_ngd) or [Navier Stokes pipeflow](Notebooks/PDE/1D_non_stationary_Burgers/) to get a feeling of the improvement on toy examples :rocket:.
 
 # Installation
 
