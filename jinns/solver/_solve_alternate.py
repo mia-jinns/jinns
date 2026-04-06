@@ -7,7 +7,6 @@ from __future__ import annotations
 import time
 import operator
 from dataclasses import fields
-from functools import partial
 from typing import TYPE_CHECKING
 import jax
 import jax.numpy as jnp
@@ -23,7 +22,7 @@ from jinns.solver._utils import (
     _init_stored_params,
     _get_break_fun,
     _loss_evaluate_and_euclidean_gradient_step,
-    _loss_evaluate_and_natural_gradient_step,
+    _loss_evaluate_and_gradient_step,
     _build_get_batch,
     _store_loss_and_params,
     _print_fn,
@@ -67,7 +66,7 @@ def solve_alternate(
     AnyLossComponents[Float[Array, " n_iter_total"]],
     AbstractDataGenerator,
     AbstractLoss,
-    optax.OptState,
+    optax.OptState | NGDState,
     Params[Array | None],
     AnyLossComponents[Float[Array, " n_iter_total"]],
     DataGeneratorObservations | None,
@@ -549,15 +548,6 @@ def solve_alternate(
             else:
                 subkey = None
 
-            # New in jinns 1.8 : handles natural gradient
-            if isinstance(optimization.opt_state, NGDState):
-                _step = partial(
-                    _loss_evaluate_and_natural_gradient_step,
-                    with_eq_params_update=False,  # in solve_alternate, we never update eq_params during an NGD step
-                )
-            else:
-                _step = _loss_evaluate_and_euclidean_gradient_step
-
             (
                 train_loss_value,
                 params,
@@ -565,7 +555,7 @@ def solve_alternate(
                 nn_opt_state,
                 loss,
                 loss_terms,
-            ) = _step(
+            ) = _loss_evaluate_and_gradient_step(
                 i=i,
                 batch=batch,
                 loss=loss,
@@ -577,6 +567,7 @@ def solve_alternate(
                 key=subkey,
                 params_mask=nn_params_mask,
                 opt_state_field_for_acceleration=nn_opt_state_field_for_acceleration,
+                with_eq_params_update=False,
             )
 
             # save loss value and selected parameters

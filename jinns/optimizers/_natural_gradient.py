@@ -261,6 +261,6 @@ def vanilla_ngd(
         )
 
     return optax.GradientTransformationExtraArgs(
-        init,
+        init,  # type: ignore
         update,  # type: ignore
     )

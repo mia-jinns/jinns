@@ -8,7 +8,7 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 import time
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 import optax
 import jax
 import jax.numpy as jnp
@@ -19,8 +19,7 @@ from jinns.solver._utils import (
     _init_stored_weights_terms,
     _init_stored_params,
     _get_break_fun,
-    _loss_evaluate_and_euclidean_gradient_step,
-    _loss_evaluate_and_natural_gradient_step,
+    _loss_evaluate_and_gradient_step,
     _build_get_batch,
     _store_loss_and_params,
     _print_fn,
@@ -338,23 +337,14 @@ def solve(
         else:
             subkey = None
 
-        # New in jinns 1.8 : handles natural gradient
-        opt_state = optimization.opt_state
-        if isinstance(opt_state, NGDState):
-            _step = _loss_evaluate_and_natural_gradient_step
-            opt_state = cast(NGDState, opt_state)
-        else:
-            _step = _loss_evaluate_and_euclidean_gradient_step
-            opt_state = cast(optax.OptState, opt_state)
-
         (train_loss_value, params, last_non_nan_params, opt_state, loss, loss_terms) = (
-            _step(
+            _loss_evaluate_and_gradient_step(
                 i=i,
                 batch=batch,
                 loss=loss,
                 params=optimization.params,
                 last_non_nan_params=optimization.last_non_nan_params,
-                state=opt_state,
+                state=optimization.opt_state,
                 optimizer=optimizer,
                 loss_container=loss_container,
                 key=subkey,
