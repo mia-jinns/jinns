@@ -86,7 +86,7 @@ def _loss_evaluate_and_gradient_step(**kwargs):
     Intermediate function where the bifurcation is made
     This seems to be better practice and solve several pyright issues
     """
-    if isinstance(kwargs["step"].opt_state, NGDState):
+    if isinstance(kwargs["state"].opt_state, NGDState):
         return _loss_evaluate_and_natural_gradient_step(**kwargs)
     else:
         return _loss_evaluate_and_euclidean_gradient_step(**kwargs)
