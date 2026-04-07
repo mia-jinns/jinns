@@ -13,22 +13,18 @@ def train_Burgers_init():
     jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
     eqx_list = (
-        (eqx.nn.Linear, 2, 32),
+        (eqx.nn.Linear, 2, 5),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 32, 32),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 32, 32),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 32, 1),
+        (eqx.nn.Linear, 5, 1),
     )
     key, subkey = random.split(key)
     u, init_nn_params = jinns.nn.PINN_MLP.create(
         key=subkey, eqx_list=eqx_list, eq_type="PDENonStatio"
     )
 
-    n = 2500
-    ni = 200
-    nb = 200
+    n = 25
+    ni = 20
+    nb = 20
     dim = 1
     xmin = -1
     xmax = 1
@@ -99,9 +95,9 @@ def train_Burgers_10it(train_Burgers_init):
 def test_initial_loss_Burgers(train_Burgers_init):
     init_params, loss, train_data = train_Burgers_init
     train_data, batch = train_data.get_batch()
-    assert jnp.allclose(loss.evaluate(init_params, batch)[0], 50.05966732, atol=1e-1)
+    assert jnp.allclose(loss.evaluate(init_params, batch)[0], 100.51756447, atol=1e-5)
 
 
 def test_10it_Burgers(train_Burgers_10it):
     total_loss_val = train_Burgers_10it
-    assert jnp.allclose(total_loss_val, 34.38316636, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 95.5841378, atol=1e-5)

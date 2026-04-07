@@ -3,8 +3,12 @@
 **jinns** is a Python package for physics-informed neural networks (PINNs) in the [JAX](https://jax.readthedocs.io/en/latest/) ecosystem. It provides an intuitive and flexible interface for
 
  * forward problem: learning a PDE solution.
- * inverse problem: learning the parameters of a PDE. **New in jinns v1.7.0:** `jinns.solve_alternate()` for fine-grained and efficient inverse problems.
+ * inverse problem: learning the parameters of a PDE. Checkout `jinns.solve_alternate()` for fine-grained and efficient inverse problems.
  * meta-modeling: learning a family of PDE indexed by its parameters.
+ * **New in jinns v1.9.0:** natural gradient optimizers which greatly enhances the training of PINNs. We recommend testing it as the default optimizer, simply replace `tx = vanilla_ngd()`. Checkout the [documentation page](api/optimizers/natural_gradient/), or the notebooks [Heat equation](Notebooks/PDE/heat_equation_ngd) or [Navier Stokes pipeflow](Notebooks/PDE/1D_non_stationary_Burgers/) to get a feeling of the improvement on toy examples :rocket:.
+
+!!! success "Pro tip"
+    We recommend always trying small network with NGD optimizer rather than big network with first order methods. We also recommend using Float64 for computation whenever possible.
 
 # Installation
 

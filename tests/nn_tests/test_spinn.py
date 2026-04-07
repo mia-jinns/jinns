@@ -12,17 +12,19 @@ from jinns.nn import SPINN_MLP
 import jinns.utils
 
 
+jax.config.update("jax_enable_x64", True)
+
 d = 5
 r = 100  # embedding dim
 m = 1  # output dim
 eqx_list = (
-    (eqx.nn.Linear, 1, 128),
+    (eqx.nn.Linear, 1, 5),
     (jax.nn.tanh,),
-    (eqx.nn.Linear, 128, 128),
+    (eqx.nn.Linear, 5, 5),
     (jax.nn.tanh,),
-    (eqx.nn.Linear, 128, 128),
+    (eqx.nn.Linear, 5, 5),
     (jax.nn.tanh,),
-    (eqx.nn.Linear, 128, r * m),
+    (eqx.nn.Linear, 5, r * m),
 )
 
 
@@ -87,9 +89,9 @@ def test_raising_error_init_SPINN():
     # output_dim != r*m
     with pytest.raises(ValueError):
         wrong_eqx_list = (
-            (eqx.nn.Linear, 1, 128),
+            (eqx.nn.Linear, 1, 5),
             (jax.nn.tanh,),
-            (eqx.nn.Linear, 128, r * m + 1),  # output_dim != r*m
+            (eqx.nn.Linear, 5, r * m + 1),  # output_dim != r*m
         )
         _ = SPINN_MLP.create(random.PRNGKey(1), d, r, wrong_eqx_list, "PDENonStatio", m)
 

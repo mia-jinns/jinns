@@ -19,13 +19,9 @@ key = random.PRNGKey(2)
 @pytest.fixture
 def create_pinn_ode():
     eqx_list = (
-        (eqx.nn.Linear, 1, 20),
+        (eqx.nn.Linear, 1, 5),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 1),
+        (eqx.nn.Linear, 5, 1),
     )
     _, subkey = random.split(key)
     return jinns.nn.PINN_MLP.create(eq_type="ODE", key=subkey, eqx_list=eqx_list)
@@ -33,7 +29,7 @@ def create_pinn_ode():
 
 @pytest.fixture
 def create_datagenerator():
-    n = 320
+    n = 32
     batch_size = 32
     method = "uniform"
     tmin = 0.3

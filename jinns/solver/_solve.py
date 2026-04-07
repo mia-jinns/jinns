@@ -32,6 +32,7 @@ from jinns.utils._containers import (
     LossContainer,
     StoredObjectContainer,
 )
+from jinns.optimizers._natural_gradient import NGDState
 
 if TYPE_CHECKING:
     from jinns.utils._types import AnyLossComponents, SolveCarry
@@ -50,7 +51,7 @@ def solve(
     loss: AbstractLoss,
     optimizer: optax.GradientTransformation,
     print_loss_every: int = 1000,
-    opt_state: optax.OptState | None = None,
+    opt_state: optax.OptState | NGDState | None = None,
     tracked_params: Params[Any | None] | None = None,
     param_data: DataGeneratorParameter | None = None,
     obs_data: DataGeneratorObservations | None = None,
@@ -66,7 +67,7 @@ def solve(
     AnyLossComponents[Float[Array, " n_iter"]],
     AbstractDataGenerator,
     AbstractLoss,
-    optax.OptState,
+    optax.OptState | NGDState,
     Params[Array | None],
     AnyLossComponents[Float[Array, " n_iter"]],
     DataGeneratorObservations | None,
@@ -272,7 +273,6 @@ def solve(
         params=init_params,
         last_non_nan_params=init_params,
         opt_state=opt_state,
-        # params_mask=params_mask,
     )
     optimization_extra = OptimizationExtraContainer(
         curr_seq=curr_seq,
@@ -336,19 +336,20 @@ def solve(
             key, subkey = jax.random.split(key)
         else:
             subkey = None
+
         (train_loss_value, params, last_non_nan_params, opt_state, loss, loss_terms) = (
             _loss_evaluate_and_gradient_step(
-                i,
-                batch,
-                loss,
-                optimization.params,
-                optimization.last_non_nan_params,
-                optimization.opt_state,
-                optimizer,
-                loss_container,
-                subkey,
-                None,
-                opt_state_field_for_acceleration,
+                i=i,
+                batch=batch,
+                loss=loss,
+                params=optimization.params,
+                last_non_nan_params=optimization.last_non_nan_params,
+                state=optimization.opt_state,
+                optimizer=optimizer,
+                loss_container=loss_container,
+                key=subkey,
+                params_mask=None,
+                opt_state_field_for_acceleration=opt_state_field_for_acceleration,
             )
         )
 

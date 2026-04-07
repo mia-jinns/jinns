@@ -2,7 +2,7 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-from typing import TYPE_CHECKING, Callable, TypeAlias, Any, TypedDict
+from typing import TYPE_CHECKING, Callable, TypeAlias, Any, TypedDict, cast
 from functools import partial
 from jaxtyping import Float, Array, Bool
 import jax
@@ -189,12 +189,17 @@ def _rar_step_init(
         )
         dyn_on_s = jax.tree.map(lambda d: d(new_samples), v_dyn_loss)
 
-        mse_on_s = jax.tree.reduce(
-            jnp.add,
-            jax.tree.map(
-                lambda v: (jnp.linalg.norm(v, axis=-1) ** 2).flatten(), dyn_on_s
+        # the signature we get from tree.reduce is Array | int
+        # we are sure this is Array so we use the cast to get rid of int
+        mse_on_s = cast(
+            Array,
+            jax.tree.reduce(
+                jnp.add,
+                jax.tree.map(
+                    lambda v: (jnp.linalg.norm(v, axis=-1) ** 2).flatten(), dyn_on_s
+                ),
+                0,
             ),
-            0,
         )
 
         ## Select the m points with higher dynamic loss

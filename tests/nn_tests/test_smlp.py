@@ -9,18 +9,14 @@ import jinns
 
 @pytest.fixture
 def create_SMLP():
-    jax.config.update("jax_enable_x64", False)
+    jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
     d = 3
-    r = 256
+    r = 2
     eqx_list = (
-        (eqx.nn.Linear, 1, 128),
+        (eqx.nn.Linear, 1, 5),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 128),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 128),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, r),
+        (eqx.nn.Linear, 5, r),
     )
     key, subkey = random.split(key)
     u, params = jinns.nn.SPINN_MLP.create(subkey, d, r, eqx_list, "PDENonStatio")
@@ -30,17 +26,13 @@ def create_SMLP():
 
 @pytest.fixture
 def create_3_MLPs():
-    jax.config.update("jax_enable_x64", False)
+    jax.config.update("jax_enable_x64", True)
 
     key = random.PRNGKey(2)
     eqx_list = (
-        (eqx.nn.Linear, 1, 128),
+        (eqx.nn.Linear, 1, 5),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 128),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 128),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 256),
+        (eqx.nn.Linear, 5, 2),
     )
     eqx_networks = []
     d = 3
@@ -68,5 +60,5 @@ def test_equality(create_SMLP, create_3_MLPs):
     assert jnp.allclose(
         jnp.array(results1),
         jnp.swapaxes(jnp.array(results2), 0, 1),
-        atol=1e-3,
+        atol=1e-5,
     )

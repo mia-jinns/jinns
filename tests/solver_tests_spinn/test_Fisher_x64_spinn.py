@@ -11,30 +11,24 @@ import jinns
 
 @pytest.fixture
 def train_Fisher_init():
-    jax.config.update("jax_enable_x64", False)
+    jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
+    d = 2
+    r = 25
     eqx_list = (
-        (eqx.nn.Linear, 2, 50),
+        (eqx.nn.Linear, 1, 8),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 50, 50),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 50, 50),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 50, 50),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 50, 50),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 50, 1),
-        (jnp.exp,),
+        (eqx.nn.Linear, 8, r),
     )
     key, subkey = random.split(key)
-    u, init_nn_params = jinns.nn.PINN_MLP.create(
-        key=subkey, eqx_list=eqx_list, eq_type="PDENonStatio"
+    key, subkey = random.split(key)
+    u, init_nn_params = jinns.nn.SPINN_MLP.create(
+        subkey, d, r, eqx_list, "PDENonStatio"
     )
 
-    n = 2500
-    nb = 500
-    ni = 500
+    n = 25
+    nb = 40
+    ni = 40
     dim = 1
     xmin = -1
     xmax = 1
@@ -62,7 +56,7 @@ def train_Fisher_init():
     mu_init = 0 * jnp.ones((1))
 
     def u0(x):
-        return norm.pdf(x, loc=mu_init, scale=sigma_init)[0]  # output a scalar
+        return norm.pdf(x, loc=mu_init, scale=sigma_init)[..., None]
 
     D = 1.0
     r = 4.0
@@ -78,7 +72,7 @@ def train_Fisher_init():
     fisher_dynamic_loss = jinns.loss.FisherKPP(Tmax=Tmax)
 
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
-        dyn_loss=1, initial_condition=1 * Tmax, boundary_loss=3 / 4 * Tmax
+        dyn_loss=1, initial_condition=1, boundary_loss=1
     )
 
     loss = jinns.loss.LossPDENonStatio(
@@ -102,20 +96,21 @@ def train_Fisher_10it(train_Fisher_init):
 
     params = init_params
 
-    tx = optax.adamw(learning_rate=1e-4)
+    tx = optax.adam(learning_rate=1e-4)
     n_iter = 10
     params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _, _, _, _ = jinns.solve(
         init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
     )
-    return total_loss_list[9]
+    return total_loss_list[-1]
 
 
 def test_initial_loss_Fisher(train_Fisher_init):
     init_params, loss, train_data = train_Fisher_init
-    train_data, batch = train_data.get_batch()
-    assert jnp.allclose(loss.evaluate(init_params, batch)[0], 25.842087, atol=1e-1)
+    assert jnp.allclose(
+        loss.evaluate(init_params, train_data.get_batch()[1])[0], 16.00568561, atol=1e-5
+    )
 
 
 def test_10it_Fisher(train_Fisher_10it):
     total_loss_val = train_Fisher_10it
-    assert jnp.allclose(total_loss_val, 21.80751, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 14.24510319, atol=1e-5)

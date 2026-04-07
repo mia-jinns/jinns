@@ -89,6 +89,7 @@ nav:
       - Using validation module: 'Notebooks/Tutorials/introducing_validation_loss.ipynb'
       - Simple inverse problem: 'Notebooks/Tutorials/1D_non_stationary_Burgers_JointEstimation_Vanilla.ipynb'
       - Alternate inverse problem: 'Notebooks/Tutorials/tuto_GLV_inverse_problem.ipynb'
+      - Natural gradient descent: 'Notebooks/Tutorials/tuto_GLV_inverse_problem.ipynb'
     - Examples:
       - Forward problems:
         - ODE:
@@ -97,12 +98,14 @@ nav:
           - SBINNs: 'Notebooks/ODE/systems_biology_informed_neural_network.ipynb'
         - PDE:
           - Navier-Stokes in pipe flow:
-            - Hard-constraints: 'Notebooks/PDE/2D_Navier_Stokes_PipeFlow.ipynb'
+            - Hard-constraints (Adam): 'Notebooks/PDE/2D_Navier_Stokes_PipeFlow.ipynb'
+            - Hard-constraints (NGD): 'Notebooks/PDE/2D_Navier_Stokes_PipeFlow_ngd.ipynb'
             - Soft-constraints: 'Notebooks/PDE/2D_Navier_Stokes_PipeFlow_SoftConstraints.ipynb'
           - 1D Burgers equation: 'Notebooks/PDE/1D_non_stationary_Burgers.ipynb'
           - 1D Fisher-KPP: 'Notebooks/PDE/1D_non_stationary_Fisher_KPP_Bounded_Domain.ipynb'
           - 2D Fisher-KPP  with covariates: 'Notebooks/PDE/Reaction_Diffusion_2D_heterogenous_model.ipynb'
           - 2D learning Ornstein Uhlenbeck pdf (RAR sampling): 'Notebooks/PDE/2D_non_stationary_OU.ipynb'
+          - Heat equation (NGD): 'Notebooks/PDE/heat_equation_ngd.ipynb' 
       - Inverse problems:
         - ODE:
           - Generalized Lotka-Volterra (advanced): 'Notebooks/ODE/GLV_JointEstimation_Alternate.ipynb'
@@ -132,6 +135,7 @@ nav:
         - 'api/pinn/save_load.md'
       - Plot: 'api/plot.md'
       - Solve: 'api/solver.md'
+      - Optimizers: 'api/optimizers/natural_gradient.md'
       - Advanced:
         - Differential operators: 'api/advanced/differential_operators.md'
         - Derivative keys: 'api/advanced/derivative_keys.md'

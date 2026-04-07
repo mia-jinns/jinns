@@ -26,25 +26,21 @@ def solve_without_sharding():
 
     obs_data = jinns.data.DataGeneratorObservations(
         key=subkey,
-        observed_pinn_in=(jnp.arange(100), jnp.arange(70)),
-        observed_values=(jnp.ones((100,)), jnp.ones((70, 2))),
+        observed_pinn_in=(jnp.arange(10).astype(float), jnp.arange(7).astype(float)),
+        observed_values=(jnp.ones((10,)).astype(float), jnp.ones((7, 2)).astype(float)),
     )
 
     eqx_list = (
-        (eqx.nn.Linear, 1, 20),
+        (eqx.nn.Linear, 1, 2),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 3),
+        (eqx.nn.Linear, 2, 3),
     )
     key, subkey = jax.random.split(key)
     u, init_nn_params = jinns.nn.PINN_MLP.create(
         key=subkey, eqx_list=eqx_list, eq_type="ODE"
     )
 
-    n = 1000
+    n = 10
     tmin = 0
     tmax = 1
 
@@ -99,19 +95,15 @@ def solve_with_sharding():
 
     obs_data = jinns.data.DataGeneratorObservations(
         key=subkey,
-        observed_pinn_in=(jnp.arange(100), jnp.arange(70)),
-        observed_values=(jnp.ones((100,)), jnp.ones((70, 2))),
+        observed_pinn_in=(jnp.arange(10).astype(float), jnp.arange(7).astype(float)),
+        observed_values=(jnp.ones((10,)), jnp.ones((7, 2))),
         sharding_device=cpu2_sharding,
     )
 
     eqx_list = (
-        (eqx.nn.Linear, 1, 20),
+        (eqx.nn.Linear, 1, 2),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 3),
+        (eqx.nn.Linear, 2, 3),
     )
     key, subkey = jax.random.split(key)
     u, init_nn_params = jinns.nn.PINN_MLP.create(

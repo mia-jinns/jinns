@@ -234,7 +234,7 @@ def test_batch_equality():
                 obs_batch_fun, fixed_args
             ),
             args,
-            is_leaf=lambda x: (isinstance(x, tuple) and isinstance(x[0], dict)),
+            is_leaf=lambda x: isinstance(x, tuple) and isinstance(x[0], dict),
         )
         return fun, tree_map_args
 

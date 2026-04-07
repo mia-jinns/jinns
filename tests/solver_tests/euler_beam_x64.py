@@ -27,13 +27,9 @@ def create_ebeam_loss():
     # Create the neural network architecture for the PINN with `equinox`.
     dim = 1
     eqx_list = (
-        (eqx.nn.Linear, dim, 20),
+        (eqx.nn.Linear, dim, 8),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 1),
+        (eqx.nn.Linear, 8, 1),
     )
     key, subkey = random.split(key)
     u, init_nn_params = jinns.nn.PINN_MLP.create(

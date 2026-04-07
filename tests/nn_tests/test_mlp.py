@@ -9,16 +9,12 @@ import jinns
 
 @pytest.fixture
 def create_MLP_1():
-    jax.config.update("jax_enable_x64", False)
+    jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
     eqx_list = (
-        (eqx.nn.Linear, 2, 128),
+        (eqx.nn.Linear, 2, 5),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 128),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 128),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 1),
+        (eqx.nn.Linear, 5, 1),
     )
     key, subkey = random.split(key)
     u, params = jinns.nn.PINN_MLP.create(
@@ -31,10 +27,10 @@ def create_MLP_1():
 
 @pytest.fixture
 def create_MLP_2():
-    jax.config.update("jax_enable_x64", False)
+    jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
     key, subkey = random.split(key)
-    eqx_network = eqx.nn.MLP(2, 1, 128, 3, jax.nn.tanh, key=subkey)
+    eqx_network = eqx.nn.MLP(2, 1, 5, 1, jax.nn.tanh, key=subkey)
     u, params = jinns.nn.PINN_MLP.create(
         eqx_network=eqx_network, eq_type="PDENonStatio"
     )
@@ -48,7 +44,7 @@ def create_MLP_3():
     """
     Illustrates the minimal requirements to inherit from PINN
     """
-    jax.config.update("jax_enable_x64", False)
+    jax.config.update("jax_enable_x64", True)
 
     class MyPINN(jinns.nn.PINN):
         def __call__(self, inputs, params):
@@ -58,13 +54,9 @@ def create_MLP_3():
     key = random.PRNGKey(2)
     key, subkey = random.split(key)
     eqx_list = (
-        (eqx.nn.Linear, 2, 128),
+        (eqx.nn.Linear, 2, 5),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 128),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 128),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 128, 1),
+        (eqx.nn.Linear, 5, 1),
     )
     eqx_network = jinns.nn.MLP(key=subkey, eqx_list=eqx_list)
 

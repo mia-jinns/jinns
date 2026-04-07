@@ -10,25 +10,17 @@ import jinns
 
 @pytest.fixture
 def train_NSPipeFlow_init():
-    jax.config.update("jax_enable_x64", False)
+    jax.config.update("jax_enable_x64", True)
 
     key = random.PRNGKey(2)
     key, subkey = random.split(key)
     d_ = 2
-    r = 128
+    r = 12
     m = 2 + 1
     eqx_list = (
-        (eqx.nn.Linear, 1, 50),
+        (eqx.nn.Linear, 1, 5),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 50, 50),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 50, 50),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 50, 50),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 50, 50),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 50, r * m),
+        (eqx.nn.Linear, 5, r * m),
     )
     key, subkey = random.split(key)
     u_p, u_p_init_nn_params = jinns.nn.SPINN_MLP.create(
@@ -40,10 +32,8 @@ def train_NSPipeFlow_init():
     p_out = 0
     p_in = 0.1
 
-    n = 500
-    nb = 500
-    omega_batch_size = 32
-    omega_border_batch_size = 32
+    n = 50
+    nb = 40
     dim = 2
     xmin = 0
     xmax = xmin + L
@@ -56,8 +46,6 @@ def train_NSPipeFlow_init():
         key=subkey,
         n=n,
         nb=nb,
-        omega_batch_size=omega_batch_size,
-        omega_border_batch_size=omega_border_batch_size,
         dim=dim,
         min_pts=(xmin, ymin),
         max_pts=(xmax, ymax),
@@ -141,10 +129,10 @@ def test_initial_loss_NSPipeFlow(train_NSPipeFlow_init):
     init_params, loss, train_data = train_NSPipeFlow_init
 
     assert jnp.allclose(
-        loss.evaluate(init_params, train_data.get_batch()[1])[0], 0.10145999, atol=1e-1
+        loss.evaluate(init_params, train_data.get_batch()[1])[0], 1.71416397, atol=1e-5
     )
 
 
 def test_10it_NSPipeFlow(train_NSPipeFlow_10it):
     total_loss_val = train_NSPipeFlow_10it
-    assert jnp.allclose(total_loss_val, 0.01241, atol=1e-1)
+    assert jnp.allclose(total_loss_val, 0.69487595, atol=1e-5)

@@ -11,41 +11,21 @@ from jinns.parameters._params import _get_vmap_in_axes_params
 
 @pytest.fixture
 def save_reload(tmpdir):
-    jax.config.update("jax_enable_x64", False)
+    jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
 
     eqx_list = (
-        (eqx.nn.Linear, 3, 16),
+        (eqx.nn.Linear, 3, 6),
         (jax.nn.swish,),
-        (eqx.nn.Linear, 16, 16),
-        (jax.nn.swish,),
-        (eqx.nn.Linear, 16, 16),
-        (jax.nn.swish,),
-        (eqx.nn.Linear, 16, 16),
-        (jax.nn.swish,),
-        (eqx.nn.Linear, 16, 16),
-        (jax.nn.swish,),
-        (eqx.nn.Linear, 16, 16),
-        (jax.nn.swish,),
-        (eqx.nn.Linear, 16, 1),
+        (eqx.nn.Linear, 6, 1),
     )
 
     eqx_list_hyper = (
-        (eqx.nn.Linear, 2, 32),  # input is of size 2 for scalar D and scalar r
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 32, 32),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 32, 32),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 32, 32),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 32, 32),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 32, 32),
+        (eqx.nn.Linear, 2, 3),  # input is of size 2 for scalar D and scalar r
         (jax.nn.tanh,),
         (
             eqx.nn.Linear,
-            32,
+            3,
             1000,
         ),  # 1000 is a random guess, it will automatically be filled with the correct value
     )
@@ -104,7 +84,6 @@ def test_equality_save_reload(save_reload):
     assert jnp.allclose(
         v_u(test_points, params),
         v_u_reloaded(test_points, params_reloaded),
-        atol=1e-3,
     )
 
 

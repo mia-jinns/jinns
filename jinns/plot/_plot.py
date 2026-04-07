@@ -2,12 +2,14 @@
 Utility functions for plotting in 1D and 2D, with and without time.
 """
 
+from jax._src.basearray import Array
 from typing import Callable
 import jax.numpy as jnp
 from jax import vmap
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import ImageGrid
-from jaxtyping import Array, Float
+from jaxtyping import Float
+import matplotlib
 
 
 def plot2d(
@@ -20,7 +22,8 @@ def plot2d(
     cmap: str = "inferno",
     spinn: bool = False,
     vmin_vmax: tuple[float | None, float | None] | None = None,
-):
+    fig: None | matplotlib.figure.Figure = None,  # type: ignore
+) -> matplotlib.figure.Figure:  # type: ignore
     r"""Generic function for plotting functions over rectangular 2-D domains
     $\Omega$. It handles both the
 
@@ -35,7 +38,7 @@ def plot2d(
     ----------
     fun :
         the function $u$ to plot on the meshgrid, and eventually the time
-        slices. It's suppose to have signature `u(x)` in the stationnary case,, and `u(t, x)` in the non-stationnary case. Use `partial` or `lambda to freeze / reorder any other arguments.
+        slices. It's suppose to have signature `u(x)` in the stationnary case,, and `u(t_x)` in the non-stationnary case.
     xy_data :
         A list of 2 `jnp.Array` providing grid values for meshgrid creation
     times :
@@ -46,14 +49,15 @@ def plot2d(
     title :
         plot title, by default ""
     figsize :
-        By default (7, 7)
+        By default (7, 7). Ignored if `fig` is not None.
     cmap :
         the matplotlib color map used in the ImageGrid.
     vmin_vmax :
         The colorbar minimum and maximum value. Defaults None.
     spinn :
         True if the function is a `SPINN` object.
-
+    fig:
+        Optionally pass the matplotlib Figure object.
     Raises
     ------
     ValueError
@@ -71,43 +75,35 @@ def plot2d(
 
     mesh = jnp.meshgrid(xy_data[0], xy_data[1])  # cartesian product
 
+    if fig is None:
+        fig = plt.figure(
+            figsize=figsize,
+            # layout="constrained",
+        )
+
     if times is None:
         # Statio case : expect a function of one argument fun(x)
 
         if not spinn:
             v_fun = vmap(fun, 0, 0)
-            ret = _plot_2D_statio(
+            fig = _plot_2D_statio(
                 v_fun,
                 mesh,
                 colorbar=True,
                 cmap=cmap,
-                figsize=figsize,
+                fig=fig,
                 vmin_vmax=vmin_vmax,
             )
         elif spinn:
             values_grid = jnp.squeeze(fun(jnp.stack([xy_data[0], xy_data[1]], axis=1)))
-            ret = _plot_2D_statio(
+            fig = _plot_2D_statio(
                 values_grid,
                 mesh,
                 colorbar=True,
                 cmap=cmap,
-                figsize=figsize,
+                fig=fig,
                 vmin_vmax=vmin_vmax,
             )
-        else:
-            fig, ax = plt.subplots(1, 1, figsize=figsize)
-
-            im = ax.pcolormesh(
-                mesh[0],
-                mesh[1],
-                ret,
-                cmap=cmap,
-                vmin=vmin_vmax[0],
-                vmax=vmin_vmax[1],
-            )
-
-            ax.set_title(title)
-            fig.cax.colorbar(im, format="%0.2f")
 
     else:
         if not isinstance(times, list):
@@ -116,7 +112,6 @@ def plot2d(
             except AttributeError:
                 raise ValueError("times must be a list or an array")
 
-        fig = plt.figure(figsize=figsize)
         grid = ImageGrid(
             fig,
             111,
@@ -148,8 +143,9 @@ def plot2d(
                     plot=False,  # only use to compute t_slice
                     colorbar=False,
                     vmin_vmax=vmin_vmax,
+                    fig=None,
                 )
-            elif spinn:
+            else:
                 t_x = jnp.concatenate(
                     [
                         t * jnp.ones((xy_data[0].shape[0], 1)),
@@ -166,6 +162,7 @@ def plot2d(
                     plot=False,  # only use to compute t_slice
                     colorbar=True,
                     vmin_vmax=vmin_vmax,
+                    fig=None,
                 )
 
             im = ax.pcolormesh(
@@ -177,7 +174,10 @@ def plot2d(
                 vmax=vmin_vmax[1],
             )
             ax.set_title(f"t = {times[idx] * Tmax:.2f}")
-            ax.cax.colorbar(im, format="%0.2f")
+            cbar = ax.cax.colorbar(im, format=lambda x, _: f"{x:.1e}")
+            cbar.ax.tick_params(labelsize=5, rotation=45)
+
+    return fig
 
 
 def _plot_2D_statio(
@@ -186,9 +186,9 @@ def _plot_2D_statio(
     plot: bool = True,
     colorbar: bool = True,
     cmap: str = "inferno",
-    figsize: tuple[int, int] = (7, 7),
+    fig: None | matplotlib.figure.Figure = None,  # type: ignore
     vmin_vmax: tuple[float | None, float | None] | None = None,
-) -> Array | None:
+) -> matplotlib.figure.Figure | Array:  # type: ignore
     """Function that plot the function u(x) with 2-D input x using pcolormesh()
 
 
@@ -226,8 +226,7 @@ def _plot_2D_statio(
     else:
         values_grid = v_fun.reshape(x_grid.shape)
 
-    if plot:
-        fig = plt.figure(figsize=figsize)
+    if plot and fig is not None:
         im = plt.pcolormesh(
             x_grid,
             y_grid,
@@ -238,7 +237,9 @@ def _plot_2D_statio(
         )
 
         if colorbar:
-            fig.colorbar(im, format="%0.2f")
+            fig.colorbar(im, format=lambda x, _: f"{x:.2e}")
+
+        return fig
     else:
         return values_grid
 
@@ -295,7 +296,7 @@ def plot1d_slice(
             v_u_tfixed = vmap(fun)
             # add an axis to xdata for the concatenate function in the neural net
             values = v_u_tfixed(t_xdata)
-        elif spinn:
+        else:
             values = jnp.squeeze(fun(t_xdata)[0])
         ax.plot(xdata, values, label=f"$t_i={t * Tmax:.2f}$")
     ax.set_xlabel("x")
@@ -360,7 +361,7 @@ def plot1d_image(
         values_grid = v_fun(jnp.vstack([t_grid.flatten(), x_grid.flatten()]).T).reshape(
             t_grid.shape
         )
-    elif spinn:
+    else:
         values_grid = jnp.squeeze(
             fun(jnp.concatenate([times[..., None], xdata[..., None]], axis=-1))
         ).T

@@ -10,24 +10,20 @@ import jinns
 
 @pytest.fixture
 def train_Burgers_init():
-    jax.config.update("jax_enable_x64", False)
+    jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
     eqx_list = (
-        (eqx.nn.Linear, 2, 20),
+        (eqx.nn.Linear, 2, 2),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 20),
-        (jax.nn.tanh,),
-        (eqx.nn.Linear, 20, 1),
+        (eqx.nn.Linear, 2, 1),
     )
     key, subkey = random.split(key)
     u, init_nn_params = jinns.nn.PINN_MLP.create(
         key=subkey, eqx_list=eqx_list, eq_type="PDENonStatio"
     )
 
-    n = 1000
-    ni = 1000
+    n = 32
+    ni = 20
     omega_batch_size = 32
     initial_batch_size = 20
     dim = 1

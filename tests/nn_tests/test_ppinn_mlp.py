@@ -9,32 +9,22 @@ import jinns
 
 @pytest.fixture
 def create_PPINN_MLP():
-    jax.config.update("jax_enable_x64", False)
+    jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
     eqx_list_list = [
         (
-            (eqx.nn.Linear, 2, 128),
+            (eqx.nn.Linear, 2, 5),
             (jax.nn.tanh,),
-            (eqx.nn.Linear, 128, 128),
-            (jax.nn.tanh,),
-            (eqx.nn.Linear, 128, 128),
-            (jax.nn.tanh,),
-            (eqx.nn.Linear, 128, 2),
+            (eqx.nn.Linear, 5, 2),
         ),
         (
-            (eqx.nn.Linear, 2, 128),
+            (eqx.nn.Linear, 2, 5),
             (jax.nn.tanh,),
-            (eqx.nn.Linear, 128, 128),
-            (jax.nn.tanh,),
-            (eqx.nn.Linear, 128, 2),
+            (eqx.nn.Linear, 5, 2),
         ),
         (
             (eqx.nn.Linear, 2, 12),
             (jax.nn.relu,),
-            (eqx.nn.Linear, 12, 12),
-            (jax.nn.sigmoid,),
-            (eqx.nn.Linear, 12, 12),
-            (jax.nn.squareplus,),
             (eqx.nn.Linear, 12, 12),
         ),
     ]
@@ -50,33 +40,23 @@ def create_PPINN_MLP():
 @pytest.fixture
 def create_3_MLPs():
     """ """
-    jax.config.update("jax_enable_x64", False)
+    jax.config.update("jax_enable_x64", True)
 
     key = random.PRNGKey(2)
     eqx_list_list = [
         (
-            (eqx.nn.Linear, 2, 128),
+            (eqx.nn.Linear, 2, 5),
             (jax.nn.tanh,),
-            (eqx.nn.Linear, 128, 128),
-            (jax.nn.tanh,),
-            (eqx.nn.Linear, 128, 128),
-            (jax.nn.tanh,),
-            (eqx.nn.Linear, 128, 2),
+            (eqx.nn.Linear, 5, 2),
         ),
         (
-            (eqx.nn.Linear, 2, 128),
+            (eqx.nn.Linear, 2, 5),
             (jax.nn.tanh,),
-            (eqx.nn.Linear, 128, 128),
-            (jax.nn.tanh,),
-            (eqx.nn.Linear, 128, 2),
+            (eqx.nn.Linear, 5, 2),
         ),
         (
             (eqx.nn.Linear, 2, 12),
             (jax.nn.relu,),
-            (eqx.nn.Linear, 12, 12),
-            (jax.nn.sigmoid,),
-            (eqx.nn.Linear, 12, 12),
-            (jax.nn.squareplus,),
             (eqx.nn.Linear, 12, 12),
         ),
     ]
@@ -104,5 +84,5 @@ def test_equality(create_PPINN_MLP, create_3_MLPs):
     assert jnp.allclose(
         results1,
         results2,
-        atol=1e-3,
+        atol=1e-5,
     )

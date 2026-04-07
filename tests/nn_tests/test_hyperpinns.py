@@ -20,19 +20,19 @@ hyperparams = [f"param {i}" for i in range(n_param)]
 
 EQX_LIST = (
     (jax.nn.swish,),
-    (eqx.nn.Linear, 16, 16),
+    (eqx.nn.Linear, 3, 3),
     (jax.nn.swish,),
-    (eqx.nn.Linear, 16, 16),
+    (eqx.nn.Linear, 3, 3),
 )
 
 eqx_list_hyper = (
-    (eqx.nn.Linear, n_param, 32),  # input is of size 42
+    (eqx.nn.Linear, n_param, 3),  # input is of size 42
     (jax.nn.tanh,),
-    (eqx.nn.Linear, 32, 16),
+    (eqx.nn.Linear, 3, 3),
     (jax.nn.tanh,),
     (
         eqx.nn.Linear,
-        16,
+        3,
         1000,
     ),  # 1000 is a random guess, it will automatically be filled with the correct value
 )
@@ -40,7 +40,7 @@ eqx_list_hyper = (
 
 @pytest.fixture
 def create_pinn_ode():
-    eqx_list = ((eqx.nn.Linear, 1, 16),) + EQX_LIST
+    eqx_list = ((eqx.nn.Linear, 1, 3),) + EQX_LIST
     u_ode = HyperPINN.create(
         key=subkey,
         eqx_list=eqx_list,
@@ -54,7 +54,7 @@ def create_pinn_ode():
 
 @pytest.fixture
 def create_pinn_statio():
-    eqx_list = ((eqx.nn.Linear, d, 16),) + EQX_LIST
+    eqx_list = ((eqx.nn.Linear, d, 3),) + EQX_LIST
     u_statio = HyperPINN.create(
         key=subkey,
         eqx_list=eqx_list,
@@ -68,7 +68,7 @@ def create_pinn_statio():
 
 @pytest.fixture
 def create_pinn_nonstatio():
-    eqx_list = ((eqx.nn.Linear, d + 1, 16),) + EQX_LIST
+    eqx_list = ((eqx.nn.Linear, d + 1, 3),) + EQX_LIST
     u_nonstatio = HyperPINN.create(
         key=subkey,
         eqx_list=eqx_list,

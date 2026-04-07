@@ -3,6 +3,7 @@ Formalize the loss weights data structure
 """
 
 from __future__ import annotations
+from typing import overload
 
 from jaxtyping import Array
 import jax.numpy as jnp
@@ -15,7 +16,19 @@ from jinns.loss._loss_components import (
 )
 
 
-def lw_converter(x: Array | None) -> Array | None:
+# NOTE that overload is the correct way to annotate function following
+# `lw_converter` design
+# https://stackoverflow.com/a/52449229
+# https://typing.python.org/en/latest/spec/overload.html#overload-definitions
+@overload
+def lw_converter(x: None) -> None: ...
+@overload
+def lw_converter(x: Array) -> Array: ...
+
+
+def lw_converter(
+    x: tuple[float | int, ...] | Array | None,
+) -> tuple[Array, ...] | Array | None:
     if x is None:
         return x
     elif isinstance(x, tuple):

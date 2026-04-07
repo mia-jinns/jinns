@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from jinns.data._DataGeneratorParameter import DataGeneratorParameter
     from jinns.data._DataGeneratorObservations import DataGeneratorObservations
     from jinns.utils._types import AnyLoss
+    from jinns.optimizers._natural_gradient import NGDState
 
 
 class DataGeneratorContainer(eqx.Module):
@@ -36,7 +37,7 @@ class ValidationContainer(eqx.Module):
 class OptimizationContainer(eqx.Module):
     params: Params
     last_non_nan_params: Params
-    opt_state: OptState
+    opt_state: OptState | NGDState
     # params_mask: Params = eqx.field(static=True)  # to make params_mask
     # hashable JAX type. See _gradient_step docstring
 

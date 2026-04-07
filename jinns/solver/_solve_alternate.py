@@ -16,9 +16,12 @@ import equinox as eqx
 
 from jinns.parameters._params import Params
 from jinns.solver._utils import (
+    _get_masked_state,
+    _get_unmasked_state,
     _init_stored_weights_terms,
     _init_stored_params,
     _get_break_fun,
+    _loss_evaluate_and_euclidean_gradient_step,
     _loss_evaluate_and_gradient_step,
     _build_get_batch,
     _store_loss_and_params,
@@ -31,6 +34,7 @@ from jinns.utils._containers import (
     LossContainer,
     StoredObjectContainer,
 )
+from jinns.optimizers._natural_gradient import NGDState
 
 if TYPE_CHECKING:
     from typing import Any
@@ -62,7 +66,7 @@ def solve_alternate(
     AnyLossComponents[Float[Array, " n_iter_total"]],
     AbstractDataGenerator,
     AbstractLoss,
-    optax.OptState,
+    optax.OptState | NGDState,
     Params[Array | None],
     AnyLossComponents[Float[Array, " n_iter_total"]],
     DataGeneratorObservations | None,
@@ -359,8 +363,6 @@ def solve_alternate(
                     key,
                 ) = carry
 
-                (nn_opt_state, eq_opt_states) = optimization.opt_state
-
                 batch, data, param_data, obs_data = get_batch(
                     train_data.data, train_data.param_data, train_data.obs_data
                 )
@@ -377,18 +379,20 @@ def solve_alternate(
                     eq_opt_state,
                     loss,
                     loss_terms,
-                ) = _loss_evaluate_and_gradient_step(
-                    i,
-                    batch,
-                    loss,
-                    optimization.params,
-                    optimization.last_non_nan_params,
-                    getattr(eq_opt_states, eq_param),
-                    eq_optim,
-                    loss_container,
-                    subkey,
-                    getattr(eq_params_masks, eq_param),
-                    getattr(eq_params_opt_state_field_for_accel, eq_param),
+                ) = _loss_evaluate_and_euclidean_gradient_step(
+                    i=i,
+                    batch=batch,
+                    loss=loss,
+                    params=optimization.params,
+                    last_non_nan_params=optimization.last_non_nan_params,
+                    state=optimization.opt_state,
+                    optimizer=eq_optim,
+                    loss_container=loss_container,
+                    key=subkey,
+                    params_mask=getattr(eq_params_masks, eq_param),
+                    opt_state_field_for_acceleration=getattr(
+                        eq_params_opt_state_field_for_accel, eq_param
+                    ),
                     with_loss_weight_update=True,
                 )
 
@@ -410,14 +414,7 @@ def solve_alternate(
                     OptimizationContainer(
                         params,
                         last_non_nan_params,
-                        (
-                            nn_opt_state,
-                            eqx.tree_at(
-                                lambda pt: (getattr(pt, eq_param),),
-                                eq_opt_states,
-                                (eq_opt_state,),
-                            ),
-                        ),
+                        eq_opt_state,
                     ),
                     carry[3],
                     DataGeneratorContainer(
@@ -452,10 +449,18 @@ def solve_alternate(
                 init_params,
             )
 
+            # Mask state as early as now to avoid carrying the big
+            # nn_opt_state in the eq_params updates
+            (nn_opt_state, eq_opt_states) = carry[2].opt_state
+            eq_param_state = getattr(eq_opt_states, eq_param)
+            opt_eq_param_state, non_opt_eq_param_state = _get_masked_state(
+                eq_param_state, getattr(eq_params_masks, eq_param)
+            )
+
             carry_ = (
                 0,
                 loss_,
-                carry[2],
+                eqx.tree_at(lambda pt: pt.opt_state, carry[2], opt_eq_param_state),
                 carry[3],
                 carry[4],
                 loss_container_,
@@ -469,11 +474,28 @@ def solve_alternate(
             loss_container, stored_objects = _get_loss_and_objects_container(
                 loss_container, carry_[5], stored_objects, carry_[6], start_idx
             )
+            # Reform the opt_state for the main carry
+            # from the locally update opt state for the local eq_param
+            new_eq_param_state = _get_unmasked_state(
+                eq_param_state, carry_[2].opt_state, non_opt_eq_param_state
+            )
+            new_optimization = eqx.tree_at(
+                lambda pt: pt.opt_state,
+                carry_[2],
+                (
+                    nn_opt_state,
+                    eqx.tree_at(
+                        lambda pt: (getattr(pt, eq_param),),
+                        eq_opt_states,
+                        (new_eq_param_state,),
+                    ),
+                ),
+            )
 
             carry = (
                 i,
                 carry_[1],
-                carry_[2],
+                new_optimization,
                 carry_[3],
                 carry_[4],
                 loss_container,
@@ -515,7 +537,6 @@ def solve_alternate(
             ) = carry
 
             #
-            (nn_opt_state, eq_opt_states) = optimization.opt_state
 
             batch, data, param_data, obs_data = get_batch(
                 train_data.data, train_data.param_data, train_data.obs_data
@@ -526,6 +547,7 @@ def solve_alternate(
                 key, subkey = jax.random.split(key)
             else:
                 subkey = None
+
             (
                 train_loss_value,
                 params,
@@ -534,18 +556,18 @@ def solve_alternate(
                 loss,
                 loss_terms,
             ) = _loss_evaluate_and_gradient_step(
-                i,
-                batch,
-                loss,
-                optimization.params,
-                optimization.last_non_nan_params,
-                nn_opt_state,
-                nn_optimizer,
-                loss_container,
-                subkey,
-                nn_params_mask,
-                nn_opt_state_field_for_acceleration,
-                with_loss_weight_update=True,
+                i=i,
+                batch=batch,
+                loss=loss,
+                params=optimization.params,
+                last_non_nan_params=optimization.last_non_nan_params,
+                state=optimization.opt_state,
+                optimizer=nn_optimizer,
+                loss_container=loss_container,
+                key=subkey,
+                params_mask=nn_params_mask,
+                opt_state_field_for_acceleration=nn_opt_state_field_for_acceleration,
+                with_eq_params_update=False,
             )
 
             # save loss value and selected parameters
@@ -563,9 +585,7 @@ def solve_alternate(
             carry = (
                 i + 1,
                 loss,
-                OptimizationContainer(
-                    params, last_non_nan_params, (nn_opt_state, eq_opt_states)
-                ),
+                OptimizationContainer(params, last_non_nan_params, nn_opt_state),
                 carry[3],
                 DataGeneratorContainer(
                     data=data, param_data=param_data, obs_data=obs_data
@@ -591,10 +611,17 @@ def solve_alternate(
             tracked_params,
             init_params,
         )
+
+        # Mask state as early as now to avoid carrying the possibly big
+        # eq_opt_states in the nn_params updates
+        (nn_opt_state, eq_opt_states) = carry[2].opt_state
+        opt_nn_opt_state, non_opt_nn_opt_state = _get_masked_state(
+            nn_opt_state, nn_params_mask
+        )
         carry_ = (
             0,
             loss_,
-            carry[2],
+            eqx.tree_at(lambda pt: pt.opt_state, carry[2], opt_nn_opt_state),
             carry[3],
             carry[4],
             loss_container_,
@@ -609,11 +636,21 @@ def solve_alternate(
         loss_container, stored_objects = _get_loss_and_objects_container(
             loss_container, carry_[5], stored_objects, carry_[6], start_idx
         )
+        # Reform the opt_state for the main carry
+        # from the locally update opt state for the local eq_param
+        new_nn_opt_state = _get_unmasked_state(
+            nn_opt_state, carry_[2].opt_state, non_opt_nn_opt_state
+        )
+        new_optimization = eqx.tree_at(
+            lambda pt: pt.opt_state,
+            carry_[2],
+            (new_nn_opt_state, eq_opt_states),
+        )
 
         carry = (
             i,
             carry_[1],
-            carry_[2],
+            new_optimization,
             carry_[3],
             carry_[4],
             loss_container,
@@ -690,15 +727,31 @@ def solve_alternate(
     if verbose:
         print("\nTraining took\n", end - start, "\n")
 
+    # to get rid of tuples in dyn_loss and obs_loss
+    # which work with tuple because we enabled vectorial loss
+    # we do the following concat :
+    loss_container = carry[5]
+    stored_loss_terms_concatenated = jax.tree.map(
+        lambda leaf: jnp.stack(leaf, axis=1) if isinstance(leaf, tuple) else leaf,
+        loss_container.stored_loss_terms,
+        is_leaf=lambda x: isinstance(x, tuple),
+    )
+    stored_weights_terms_concatenated = jax.tree.map(
+        lambda leaf: jnp.stack(leaf, axis=1) if isinstance(leaf, tuple) else leaf,
+        loss_container.stored_weights_terms,
+        is_leaf=lambda x: isinstance(x, tuple),
+    )
+
+    # re-arange return signature to be consistant with jinns.solve_alternate
     return (
         carry[2].params,
-        carry[5].train_loss_values,
-        carry[5].stored_loss_terms,
+        loss_container.train_loss_values,
+        stored_loss_terms_concatenated,
         carry[4].data,
         carry[1],  # loss
         carry[2].opt_state,
         carry[6].stored_params,
-        carry[5].stored_weights_terms,
+        stored_weights_terms_concatenated,
         carry[4].obs_data,
         carry[4].param_data,
     )

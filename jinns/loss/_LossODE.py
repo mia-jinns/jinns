@@ -7,8 +7,7 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 from dataclasses import InitVar
-from typing import TYPE_CHECKING, Callable, Any, cast
-from types import EllipsisType
+from typing import TYPE_CHECKING, Callable, Any, ClassVar
 import warnings
 import jax
 import jax.numpy as jnp
@@ -16,13 +15,12 @@ from jax import vmap
 import equinox as eqx
 from jaxtyping import Float, Array
 from jinns.loss._loss_utils import (
-    dynamic_loss_apply,
-    observations_loss_apply,
     initial_condition_check,
-)
-from jinns.parameters._params import (
-    _get_vmap_in_axes_params,
-    update_eq_params,
+    mean_sum_reduction,
+    mean_sum_reduction_pytree,
+    vmap_loss_fun_classical,
+    vmap_loss_fun_only_params,
+    vmap_loss_fun_observations,
 )
 from jinns.parameters._derivative_keys import _set_derivatives, DerivativeKeysODE
 from jinns.loss._loss_weights import LossWeightsODE
@@ -103,6 +101,12 @@ class LossODE(
     params : InitVar[Params[Array]] | None, default=None
         The main Params object of the problem needed to instanciate the
         DerivativeKeysODE if the latter is not specified.
+    _reduction_functions : ClassVar[ODEComponents[Callable]]
+        For each loss term we specify the reduction operation (aggregation of
+        loss terms by sample to form a loss term for the whole batch).
+    _vmap_loss_fun : ClassVar[ODEComponents[Callable]]
+        For each loss term we specify the vmap operator in charge of vmapping
+        the loss term function.
     Raises
     ------
     ValueError
@@ -113,12 +117,26 @@ class LossODE(
     # (ie. jax.Array cannot be static) and that we do not expect to change
     u: AbstractPINN
     dynamic_loss: tuple[ODE | None, ...]
-    vmap_in_axes: tuple[int] = eqx.field(static=True)
     derivative_keys: DerivativeKeysODE
     loss_weights: LossWeightsODE
     initial_condition: InitialCondition | None
-    obs_slice: tuple[EllipsisType | slice, ...] = eqx.field(static=True)
     params: InitVar[Params[Array] | None]
+    _reduction_functions: ClassVar[ODEComponents[Callable]] = eqx.field(
+        static=True,
+        default=ODEComponents(
+            dyn_loss=mean_sum_reduction_pytree,
+            initial_condition=mean_sum_reduction,
+            observations=mean_sum_reduction_pytree,
+        ),
+    )
+    _vmap_loss_fun: ClassVar[ODEComponents[Callable]] = eqx.field(
+        static=True,
+        default=ODEComponents(
+            dyn_loss=vmap_loss_fun_classical,
+            initial_condition=vmap_loss_fun_only_params,
+            observations=vmap_loss_fun_observations,
+        ),
+    )
 
     def __init__(
         self,
@@ -128,10 +146,6 @@ class LossODE(
         loss_weights: LossWeightsODE | None = None,
         derivative_keys: DerivativeKeysODE | None = None,
         initial_condition: InitialConditionUser | None = None,
-        obs_slice: tuple[EllipsisType | slice, ...]
-        | EllipsisType
-        | slice
-        | None = None,
         params: Params[Array] | None = None,
         **kwargs: Any,  # this is for arguments for super()
     ):
@@ -147,19 +161,25 @@ class LossODE(
                     "Problem at derivative_keys initialization "
                     f"received {derivative_keys=} and {params=}"
                 )
-            derivative_keys = DerivativeKeysODE(params=params)
-
-        super().__init__(
-            loss_weights=self.loss_weights,
-            derivative_keys=derivative_keys,
-            vmap_in_axes=(0,),
-            **kwargs,
-        )
+            self.derivative_keys = DerivativeKeysODE(params=params)
+        else:
+            self.derivative_keys = derivative_keys
         self.u = u
         if not isinstance(dynamic_loss, tuple):
             self.dynamic_loss = (dynamic_loss,)
         else:
             self.dynamic_loss = dynamic_loss
+
+        # NOTE unclear why the AbstractVar of super need to be passed
+        # explicitely
+        super().__init__(
+            dynamic_loss=self.dynamic_loss,
+            loss_weights=self.loss_weights,
+            derivative_keys=self.derivative_keys,
+            u=self.u,
+            **kwargs,
+        )
+
         if self.update_weight_method is not None and jnp.any(
             jnp.array(jax.tree.leaves(self.loss_weights)) == 0
         ):
@@ -238,80 +258,26 @@ class LossODE(
 
             self.initial_condition = (t0, u0)
 
-        if obs_slice is None:
-            self.obs_slice = (jnp.s_[...],)
-        elif not isinstance(obs_slice, tuple):
-            self.obs_slice = (obs_slice,)
-        else:
-            self.obs_slice = obs_slice
-
-        if self.loss_weights is None:
-            self.loss_weights = LossWeightsODE()
-
-    def evaluate_by_terms(
+    def _prepare_loss_terms(
         self,
-        opt_params: Params[Array],
         batch: ODEBatch,
-        *,
-        non_opt_params: Params[Array] | None = None,
-    ) -> tuple[
-        ODEComponents[Float[Array, " "] | None], ODEComponents[Float[Array, " "] | None]
-    ]:
+    ) -> ODEComponents:
         """
-        Evaluate the loss function at a batch of points for given parameters.
-
-        We retrieve two PyTrees with loss values and gradients for each term
+        Parse the batch module to get the kwargs for each vmap loss fun
+        associated to each loss term
 
         Parameters
         ---------
-        opt_params
-            Parameters, which are optimized, at which the loss is evaluated
         batch
-            Composed of a batch of points in the
-            domain, a batch of points in the domain
-            border and an optional additional batch of parameters (eg. for
+            Composed of a batch of points in the time interval
+            an optional additional batch of parameters (eg. for
             metamodeling) and an optional additional batch of observed
             inputs/outputs/parameters
-        non_opt_params
-            Parameters, which are not optimized, at which the loss is evaluated
         """
-        if non_opt_params is not None:
-            params = eqx.combine(opt_params, non_opt_params)
-        else:
-            params = opt_params
 
+        # dynamic part
         temporal_batch = batch.temporal_batch
-
-        # Retrieve the optional eq_params_batch
-        # and update eq_params with the latter
-        # and update vmap_in_axes
-        if batch.param_batch_dict is not None:
-            # update params with the batches of generated params
-            params = update_eq_params(params, batch.param_batch_dict)
-
-        vmap_in_axes_params = _get_vmap_in_axes_params(
-            cast(eqx.Module, batch.param_batch_dict), params
-        )
-
-        if self.dynamic_loss != (None,):
-            # Note, for the record, multiple dynamic losses
-            # have been introduced in MR 92
-            dyn_loss_fun: Callable[[Params[Array]], tuple[Array, ...]] | None = (
-                lambda p: jax.tree.map(
-                    lambda d: dynamic_loss_apply(
-                        d.evaluate,
-                        self.u,
-                        temporal_batch,
-                        _set_derivatives(p, self.derivative_keys.dyn_loss),
-                        self.vmap_in_axes + vmap_in_axes_params,
-                    ),
-                    self.dynamic_loss,
-                    is_leaf=lambda x: isinstance(x, ODE),  # do not traverse
-                    # further than first level
-                )
-            )
-        else:
-            dyn_loss_fun = None
+        dyn_loss_fun = self._get_dyn_loss_fun()
 
         if self.initial_condition is not None:
             # Note, for the record, multiple initial conditions for LossODEs
@@ -320,91 +286,50 @@ class LossODE(
 
             # first construct the plain init loss no vmaping
             initial_condition_fun__: Callable[[Array, Array, Params[Array]], Array] = (
-                lambda t, u, p: jnp.sum(
-                    (
-                        self.u(
-                            t,
-                            _set_derivatives(
-                                p,
-                                self.derivative_keys.initial_condition,
-                            ),
-                        )
-                        - u
-                    )
-                    ** 2,
-                    axis=0,
+                lambda t, u, p: self.u(
+                    t,
+                    _set_derivatives(
+                        p,
+                        self.derivative_keys.initial_condition,
+                    ),
                 )
+                - u
             )
             # now vmap over the number of conditions (first dim of t0 and u0)
             # and take the mean
-            initial_condition_fun_: Callable[[Params[Array]], Array] = (
-                lambda p: jnp.mean(
-                    vmap(initial_condition_fun__, (0, 0, None))(t0, u0, p)
+            initial_condition_fun: Callable[[Params[Array]], Array] | None = (
+                lambda params: jnp.mean(
+                    vmap(initial_condition_fun__, (0, 0, None))(t0, u0, params),
+                    axis=0,
                 )
             )
-            # now vmap over the the possible batch of parameters and take the
-            # average. Note that we then finally have a cartesian product
-            # between the batch of parameters (if any) and the number of
-            # conditions (if any)
-            if not jax.tree_util.tree_leaves(vmap_in_axes_params):
-                # if there is no parameter batch to vmap over we cannot call
-                # vmap because calling vmap must be done with at least one non
-                # None in_axes or out_axes
-                initial_condition_fun = initial_condition_fun_
-            else:
-                initial_condition_fun: Callable[[Params[Array]], Array] | None = (
-                    lambda p: jnp.mean(
-                        vmap(initial_condition_fun_, vmap_in_axes_params)(p)
-                    )
-                )
+            ## NOTE now we vmap over the possible batch of parameters
+            # from outside this function
         else:
             initial_condition_fun = None
 
         if batch.obs_batch_dict is not None:
-            # Note, for the record, multiple DGObs
-            # (leading to batch.obs_batch_dict being tuple | None)
-            # have been introduced in MR 92
             if len(batch.obs_batch_dict) != len(self.obs_slice):
                 raise ValueError(
                     "There must be the same number of "
                     "observation datasets as the number of "
                     "obs_slice"
                 )
-            params_obs = params
-            obs_loss_fun: Callable[[Params[Array]], tuple[Array, ...]] | None = (
-                lambda po: jax.tree.map(
-                    lambda d, slice_: observations_loss_apply(
-                        self.u,
-                        d["pinn_in"],
-                        _set_derivatives(
-                            update_eq_params(  # NOTE update_eq_params is here
-                                po, d["eq_params"]
-                            ),
-                            self.derivative_keys.observations,
-                        ),
-                        self.vmap_in_axes + vmap_in_axes_params,
-                        d["val"],
-                        slice_,
-                    ),
-                    batch.obs_batch_dict,
-                    self.obs_slice,
-                    is_leaf=lambda x: isinstance(x, dict),
-                )
+            obs_loss_fun = self._get_obs_loss_fun()
+            obs_batch_and_slice = tuple(
+                (b["pinn_in"], b["val"], b["eq_params"], sl_)
+                for b, sl_ in zip(batch.obs_batch_dict, self.obs_slice)
             )
         else:
-            params_obs = None
             obs_loss_fun = None
+            obs_batch_and_slice = None
 
-        # get the unweighted mses for each loss term as well as the gradients
-        all_funs: ODEComponents[
-            Callable[[Params[Array]], tuple[Array, ...] | Array] | None
-        ] = ODEComponents(dyn_loss_fun, initial_condition_fun, obs_loss_fun)
-        all_params: ODEComponents[Params[Array] | None] = ODEComponents(
-            params if dyn_loss_fun is not None else None,
-            params if initial_condition_fun is not None else None,
-            params_obs if obs_loss_fun is not None else None,
+        all_funs_and_params = ODEComponents(
+            dyn_loss={"fun": dyn_loss_fun, "batch": temporal_batch},
+            initial_condition={"fun": initial_condition_fun, "batch": None},
+            observations={
+                "fun": obs_loss_fun,
+                "batch": obs_batch_and_slice,
+            },
         )
-
-        mses = jax.tree.map(lambda f, p: f(p), all_funs, all_params)
-        grads = jax.tree.map(lambda f, p: jax.jacrev(f)(p), all_funs, all_params)
-        return mses, grads
+        return all_funs_and_params
