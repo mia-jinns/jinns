@@ -308,19 +308,21 @@ class LossPDEStatio(
         static=True,
         default=PDEStatioComponents(
             dyn_loss=mean_sum_reduction_pytree,
-            boundary_loss=lambda residual_all_facets: jax.tree.reduce(
-                jnp.add,
-                jax.tree.map(
-                    mean_sum_reduction,
-                    residual_all_facets,
-                ),
-                0.0,
-            )  # NOTE this boundary component changes ! Outer sum is for the facets
-            if residual_all_facets is not None
-            else None,
-            norm_loss=lambda res: jnp.abs(jnp.mean(res) - 1.0) ** 2
-            if res is not None
-            else None,
+            boundary_loss=lambda residual_all_facets: (
+                jax.tree.reduce(
+                    jnp.add,
+                    jax.tree.map(
+                        mean_sum_reduction,
+                        residual_all_facets,
+                    ),
+                    0.0,
+                )  # NOTE this boundary component changes ! Outer sum is for the facets
+                if residual_all_facets is not None
+                else None
+            ),
+            norm_loss=lambda res: (
+                jnp.abs(jnp.mean(res) - 1.0) ** 2 if res is not None else None
+            ),
             observations=mean_sum_reduction_pytree,
         ),
     )
@@ -544,37 +546,39 @@ class LossPDENonStatio(
     max_norm_samples_omega: int = eqx.field(static=True)
     max_norm_time_slices: int = eqx.field(static=True)
 
-    params: InitVar[Params[Array] | None]
-
     _reduction_functions: ClassVar[PDENonStatioComponents[Callable]] = eqx.field(
         static=True,
         default=PDENonStatioComponents(
             dyn_loss=mean_sum_reduction_pytree,
             initial_condition=mean_sum_reduction,
-            boundary_loss=lambda residual_all_facets: jax.tree.reduce(
-                jnp.add,
-                jax.tree.map(
-                    mean_sum_reduction,
-                    residual_all_facets,
-                ),
-                0.0,
-            )  # NOTE this boundary component is different ! Outer sum is for the facets
-            if residual_all_facets is not None
-            else None,
+            boundary_loss=lambda residual_all_facets: (
+                jax.tree.reduce(
+                    jnp.add,
+                    jax.tree.map(
+                        mean_sum_reduction,
+                        residual_all_facets,
+                    ),
+                    0.0,
+                )  # NOTE this boundary component is different ! Outer sum is for the facets
+                if residual_all_facets is not None
+                else None
+            ),
             # TODO here compute mean only on subarrays of axis 1 (ie for a
             # timestamp)
-            norm_loss=lambda res: jnp.mean(
-                jnp.abs(
-                    jnp.mean(
-                        res,
-                        axis=list(d + 1 for d in range(res.ndim - 1)),
+            norm_loss=lambda res: (
+                jnp.mean(
+                    jnp.abs(
+                        jnp.mean(
+                            res,
+                            axis=list(d + 1 for d in range(res.ndim - 1)),
+                        )
+                        - 1
                     )
-                    - 1
-                )
-                ** 2
-            )  # the outer mean() below is for the times stamps
-            if res is not None
-            else None,
+                    ** 2
+                )  # the outer mean() below is for the times stamps
+                if res is not None
+                else None
+            ),
             observations=mean_sum_reduction_pytree,
         ),
     )
