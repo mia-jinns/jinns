@@ -100,7 +100,7 @@ def vanilla_ngd(
         linesearch_ = linesearch
 
     ngd_optim_ = optax.chain(
-        optax.sgd(learning_rate=1.0),
+        optax.sgd(learning_rate=sgd_learning_rate),
         linesearch_,
     )
     if eq_params_tx is not None:
