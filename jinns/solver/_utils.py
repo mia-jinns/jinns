@@ -7,6 +7,7 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 from typing import TYPE_CHECKING, Callable
+import inspect
 import jax
 from jax import jit
 import jax.numpy as jnp
@@ -206,6 +207,52 @@ def _loss_evaluate_and_euclidean_gradient_step(
     # 3. total loss after possible weight update
     train_loss_value = loss.ponderate_and_sum_loss(loss_terms)
 
+    extra_args_optax_keys = {} # the extra_args dict that is used in optax
+    extra_args_keys = []
+    extra_args_to_jinns_locals = {
+        "value": "train_loss_value",
+        "value_fn": ("loss", "evaluate"),
+        "grad": "params",
+        "batch": "batch"
+    }
+
+    if 'extra_args' in inspect.signature(optimizer.update).parameters.keys():
+        # possible cases either a single optax transform with extra args
+        # or a chain of optax transforms with or without extra args
+        extra_args_keys = []
+        if 'update_fns' in inspect.getclosurevars(optimizer.update).nonlocals.keys():
+            # this is a chain optax transform
+            # get the arguments of each update_fn
+            for update_fn_inside_chain in inspect.getclosurevars(optimizer.update).nonlocals['update_fns']:
+                # first three args are always 'updates', 'state', 'params'
+                # and they don't interest us
+                extra_args_keys += list(
+                    inspect.signature(update_fn_inside_chain).parameters.keys()
+                )[3:]
+        # custom rule for jinns: if value_fn is require (ie loss.evaluate) then
+        # batch is necesarily an extra_arg since we always call
+        # loss.evaluate(params, batch)
+    else:
+        # this can be optax transform with extra args without extra_args named!
+        extra_args_for_update_fn = 
+
+
+    extra_args_for_update_fn = {}
+    for key_ in extra_args_keys:
+        jinns_local_name = extra_args_to_jinns_locals[key_]
+        if isinstance(jinns_local_name, str):
+            jinns_local_var = locals()[jinns_local_name]
+        elif isinstance(jinns_local_name, tuple):
+            # we must access attributes
+            jinns_local_var = locals()[jinns_local_name[0]]
+            for attr in jinns_local_name[1:]:
+                jinns_local_var = getattr(jinns_local_var, "attr")
+        else:
+            raise ValueError("Wrong correspondency for {key} to jinns local"
+            " var")
+        extra_args_for_update_fn[key] = jinns_local_var
+
+
     params, state = _gradient_step(
         grads,
         optimizer,
@@ -213,6 +260,7 @@ def _loss_evaluate_and_euclidean_gradient_step(
         # params here, this would be a wrong procedure
         state,
         params_mask,
+        **extra_args_for_update_fn
     )
 
     # check if any of the parameters is NaN
