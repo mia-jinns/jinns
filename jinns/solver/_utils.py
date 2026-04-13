@@ -7,6 +7,7 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 from typing import TYPE_CHECKING, Callable
+import inspect
 import jax
 from jax import jit
 import jax.numpy as jnp
@@ -100,14 +101,14 @@ def _loss_evaluate_and_euclidean_gradient_step(
     params: Params[Array],
     last_non_nan_params: Params[Array],
     state: optax.OptState,
-    optimizer: optax.GradientTransformation,
+    optimizer: optax.GradientTransformation | optax.GradientTransformationExtraArgs,
     loss_container: LossContainer,
     key: PRNGKeyArray | None,
     params_mask: Params[bool] | None = None,
     state_field_for_acceleration: str | None = None,
     with_loss_weight_update: bool = True,
+    extra_optax_args_and_kwargs: dict[str, str] | None = None,
     **__,  # ignore supplementary kwargs that are for
-    # _loss_evaluate_and_natural_gradient_step
 ):
     """Computes loss values and (euclidean) gradient, then performs the update
     according to the given optimizer.
@@ -141,7 +142,7 @@ def _loss_evaluate_and_euclidean_gradient_step(
         the last non NaN parameters.
     state : optax.OptState
         the optimizer state
-    optimizer : optax.GradientTransformation
+    optimizer : optax.GradientTransformation | optax.GradientTransformationExtraArgs
         the optimizer
     loss_container : LossContainer
         the loss values throughout optimization.
@@ -165,6 +166,11 @@ def _loss_evaluate_and_euclidean_gradient_step(
     with_loss_weight_update : bool, optional
         should we update loss_weights for next iteration according to current loss_values
         by default True
+    extra_optax_args_and_kwargs : dict[str, str]
+        Use this for optax optimizers that require extra arguments. This is a
+        dictionary whose keys contain all the args and kwargs name that optax
+        require and whose values are the corresponding values (or expression)
+        given in a python string. Default is None
 
     Returns
     -------
@@ -206,33 +212,16 @@ def _loss_evaluate_and_euclidean_gradient_step(
     # 3. total loss after possible weight update
     train_loss_value = loss.ponderate_and_sum_loss(loss_terms)
 
-    # extra_args_optax_keys = {} # the extra_args dict that is used in optax
-    # extra_args_keys = []
-    # extra_args_to_jinns_locals = {
-    #    "value": "train_loss_value",
-    #    "value_fn": ("loss", "evaluate"),
-    #    "grad": "params",
-    #    "batch": "batch"
-    # }
-    # if 'extra_args' in inspect.signature(optimizer.update).parameters.keys():
-    #    # possible cases either a single optax transform with extra args
-    #    # or a chain of optax transforms with or without extra args
-    #    extra_args_keys = []
-    #    if 'update_fns' in inspect.getclosurevars(optimizer.update).nonlocals.keys():
-    #        # this is a chain optax transform
-    #        # get the arguments of each update_fn
-    #        for update_fn_inside_chain in inspect.getclosurevars(optimizer.update).nonlocals['update_fns']:
-    #            # first three args are always 'updates', 'state', 'params'
-    #            # and they don't interest us
-    #            extra_args_keys += list(
-    #                inspect.signature(update_fn_inside_chain).parameters.keys()
-    #            )[3:]
-    #    # custom rule for jinns: if value_fn is require (ie loss.evaluate) then
-    #    # batch is necesarily an extra_arg since we always call
-    #    # loss.evaluate(params, batch)
-    # else:
-    #    # this can be optax transform with extra args without extra_args named!
-    #    extra_args_for_update_fn =
+    if isinstance(optimizer, optax.GradientTransformationExtraArgs):
+        # Below is a small check to ensure that all the extra_args that optax
+        # optimizers await are fed by the user. This does not count the extra_args
+        # for the extra_args (ie. the extra_args for an eventual value_fn!)
+        _check_extra_optax_args_and_kwargs(
+            optimizer,
+            set(extra_optax_args_and_kwargs.keys())
+            if extra_optax_args_and_kwargs is not None
+            else None,
+        )
 
     # Below are the stuff passed by the user when they see they have an optax
     # transform with extra args. The example below enables using optax.lbfgs
@@ -241,45 +230,17 @@ def _loss_evaluate_and_euclidean_gradient_step(
     # the user should then look for the corresponding variable in jinns
     # loss_evaluate_and_standard_gradient and pass the variable name as a
     # string
-    extra_optax_args_and_kwargs_in_jinns_locals = {
+    extra_optax_args_and_kwargs = {
         "value": "train_loss_value",
         "grad": "params",
         "value_fn": "lambda params, batch: loss.evaluate(params, batch)[0]",
         "batch": "batch",
     }
-    # extra_kwargs_optax_in_jinns_locals = {"batch": "batch"}
-
-    # TODO use the above code to ensure user's dictionary match what's expected
-    # by optax
 
     extra_args_and_kwargs_for_update_fn = {}
-    for kw, variable_name in extra_optax_args_and_kwargs_in_jinns_locals.items():
+    for kw, variable_name in extra_optax_args_and_kwargs.items():
         jinns_local_var = eval(variable_name, locals())
-        # var_name_components = variable_name.split(".")
-        # try:
-        #    jinns_local_var = locals()[var_name_components[0]]
-        #    # we must access attributes if len(var_name_component) > 1
-        #    for var_name_component in var_name_components[1:]:
-        #        jinns_local_var = getattr(jinns_local_var, var_name_component)
-        # except KeyError as e:
-        #    raise ValueError(
-        #        f"No local variable corresponding to" f"{variable_name}"
-        #    ) from e
         extra_args_and_kwargs_for_update_fn[kw] = jinns_local_var
-
-    # extra_kwargs_for_update_fn = {}
-    # for kw, variable_name in extra_kwargs_optax_in_jinns_locals.items():
-    #    var_name_components = variable_name.split(".")
-    #    try:
-    #        jinns_local_var = locals()[var_name_components[0]]
-    #        # we must access attributes if len(var_name_component) > 1
-    #        for var_name_component in var_name_components[1:]:
-    #            jinns_local_var = getattr(jinns_local_var, var_name_component)
-    #    except KeyError as e:
-    #        raise ValueError(
-    #            f"No local variable corresponding to" f"{variable_name}"
-    #        ) from e
-    #    extra_kwargs_for_update_fn[kw] = jinns_local_var
 
     params, state = _gradient_step(
         grads,
@@ -539,6 +500,50 @@ def _get_unmasked_state(state, opt_state, non_opt_state):
     )
 
     return state
+
+
+def _check_extra_optax_args_and_kwargs(
+    optimizer: optax.GradientTransformationExtraArgs,
+    extra_optax_args_and_kwargs: set[str] | None,
+):
+    """
+    We allow for extra_optax_args_and_kwargs being None (empty set then)
+    because the optax transform could be a
+    optax.GradientTransformationExtraArgs with actually no extra args! And this
+    _check_extra_optax_args_and_kwargs would then pass because empty set is
+    subset of empty set
+    """
+    if extra_optax_args_and_kwargs is None:
+        extra_optax_args_and_kwargs = set()
+    if "extra_args" in inspect.signature(optimizer.update).parameters.keys():
+        # possible cases either a single optax transform with extra args
+        # or a chain of optax transforms with or without extra args
+        extra_args_for_update_fn_keys: set[str] = set()
+        if "update_fns" in inspect.getclosurevars(optimizer.update).nonlocals.keys():
+            # this is a chain optax transform
+            # get the arguments of each update_fn
+            for update_fn_inside_chain in inspect.getclosurevars(
+                optimizer.update
+            ).nonlocals["update_fns"]:
+                extra_args_for_update_fn_keys = extra_args_for_update_fn_keys.union(
+                    set(inspect.signature(update_fn_inside_chain).parameters.keys())
+                )
+    else:
+        # this can be optax transform with extra args without extra_args named!
+        extra_args_for_update_fn_keys = set(
+            inspect.signature(optimizer.update).parameters.keys()
+        )
+    # do not count the args that are always included
+    # see that we discard extra_args
+    extra_args_for_update_fn_keys = extra_args_for_update_fn_keys.difference(
+        set({"updates", "state", "params", "extra_args"})
+    )
+
+    assert extra_args_for_update_fn_keys.issubset(extra_optax_args_and_kwargs), (
+        f"`extra_optax_args_and_kwargs` with keys {extra_optax_args_and_kwargs}"
+        " is not cover for all the optax extra args keys which are"
+        f"{extra_args_for_update_fn_keys}"
+    )
 
 
 @jit(static_argnames=["prefix"])  # new in jax 0.8.1

@@ -49,7 +49,7 @@ def solve(
     init_params: Params[Array],
     data: AbstractDataGenerator,
     loss: AbstractLoss,
-    optimizer: optax.GradientTransformation,
+    optimizer: optax.GradientTransformation | optax.GradientTransformationExtraArgs,
     print_loss_every: int = 1000,
     opt_state: optax.OptState | NGDState | None = None,
     tracked_params: Params[Any | None] | None = None,
@@ -60,6 +60,7 @@ def solve(
     opt_state_field_for_acceleration: str | None = None,
     verbose: bool = True,
     ahead_of_time: bool = True,
+    extra_optax_args_and_kwargs: dict[str, str] | None = None,
     key: PRNGKeyArray | None = None,
 ) -> tuple[
     Params[Array],
@@ -151,6 +152,11 @@ def solve(
         transformed (see https://jax.readthedocs.io/en/latest/aot.html#aot-compiled-functions-cannot-be-transformed).
         When `False`, jinns does not provide any timing information (which would
         be nonsense in a JIT transformed `solve()` function).
+    extra_optax_args_and_kwargs
+        Use this for optax optimizers that require extra arguments. This is a
+        dictionary whose keys contain all the args and kwargs name that optax
+        require and whose values are the corresponding values (or expression)
+        given in a python string. Default is None
     key
         Default `None`. A JAX random key that can be used for diverse purpose in
         the main iteration loop.
@@ -350,6 +356,7 @@ def solve(
                 key=subkey,
                 params_mask=None,
                 opt_state_field_for_acceleration=opt_state_field_for_acceleration,
+                extra_optax_args_and_kwargs=extra_optax_args_and_kwargs,
             )
         )
 
