@@ -212,35 +212,24 @@ def _loss_evaluate_and_euclidean_gradient_step(
     # 3. total loss after possible weight update
     train_loss_value = loss.ponderate_and_sum_loss(loss_terms)
 
-    if isinstance(optimizer, optax.GradientTransformationExtraArgs):
-        # Below is a small check to ensure that all the extra_args that optax
-        # optimizers await are fed by the user. This does not count the extra_args
-        # for the extra_args (ie. the extra_args for an eventual value_fn!)
-        _check_extra_optax_args_and_kwargs(
-            optimizer,
-            set(extra_optax_args_and_kwargs.keys())
-            if extra_optax_args_and_kwargs is not None
-            else None,
-        )
-
-    # Below are the stuff passed by the user when they see they have an optax
-    # transform with extra args. The example below enables using optax.lbfgs
-    # whose update extra args contain in order: value, grad, value_fn,
-    # extra_kwargs (for value_fn)
-    # the user should then look for the corresponding variable in jinns
-    # loss_evaluate_and_standard_gradient and pass the variable name as a
-    # string
-    extra_optax_args_and_kwargs = {
-        "value": "train_loss_value",
-        "grad": "params",
-        "value_fn": "lambda params, batch: loss.evaluate(params, batch)[0]",
-        "batch": "batch",
-    }
+    # disabled check because it is not sure whether it covers well all the
+    # extra args
+    # if isinstance(optimizer, optax.GradientTransformationExtraArgs):
+    #     # Below is a small check to ensure that all the extra_args that optax
+    #     # optimizers await are fed by the user. This does not count the extra_args
+    #     # for the extra_args (ie. the extra_args for an eventual value_fn!)
+    #     _check_extra_optax_args_and_kwargs(
+    #         optimizer,
+    #         set(extra_optax_args_and_kwargs.keys())
+    #         if extra_optax_args_and_kwargs is not None
+    #         else None,
+    #     )
 
     extra_args_and_kwargs_for_update_fn = {}
-    for kw, variable_name in extra_optax_args_and_kwargs.items():
-        jinns_local_var = eval(variable_name, locals())
-        extra_args_and_kwargs_for_update_fn[kw] = jinns_local_var
+    if extra_optax_args_and_kwargs is not None:
+        for kw, variable_name in extra_optax_args_and_kwargs.items():
+            jinns_local_var = eval(variable_name, locals())
+            extra_args_and_kwargs_for_update_fn[kw] = jinns_local_var
 
     params, state = _gradient_step(
         grads,

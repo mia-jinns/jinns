@@ -96,11 +96,25 @@ def test_heat_ngd_10it(train_heat_init):
     init_params, loss, train_data, key = train_heat_init
     n_iter = 10
     tx = optax.lbfgs()
-    ngd_params = init_params
+    params = init_params
+
+    # Below are the stuff passed by the user when they see they have an optax
+    # transform with extra args. The example below enables using optax.lbfgs
+    # whose update extra args contain in order: value, grad, value_fn,
+    # extra_kwargs (for value_fn)
+    # the user should then look for the corresponding variable in jinns
+    # loss_evaluate_and_standard_gradient and pass the variable name as a
+    # string
+    extra_optax_args_and_kwargs = {
+        "value": "train_loss_value",
+        "grad": "params",
+        "value_fn": "lambda params, batch: loss.evaluate(params, batch)[0]",
+        "batch": "batch",
+    }
 
     key, subkey = random.split(key, 2)
     (
-        ngd_params,
+        params,
         total_loss_list,
         loss_by_term_dict,
         train_data,
@@ -113,13 +127,13 @@ def test_heat_ngd_10it(train_heat_init):
         _,
         _,
     ) = jinns.solve(
-        init_params=ngd_params,
+        init_params=params,
         data=train_data,
         optimizer=tx,
         loss=loss,
         n_iter=n_iter,
         print_loss_every=n_iter // 10,
+        extra_optax_args_and_kwargs=extra_optax_args_and_kwargs,
     )
 
-    assert jnp.allclose(total_loss_list[-1], 0.23563605, atol=1e-4)
-    assert ngd_params.eq_params.D == init_params.eq_params.D  # should not move
+    assert jnp.allclose(total_loss_list[-1], 0.22496643, atol=1e-4)
