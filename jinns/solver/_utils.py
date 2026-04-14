@@ -229,6 +229,8 @@ def _loss_evaluate_and_euclidean_gradient_step(
     if extra_optax_args_and_kwargs is not None:
         for kw, variable_name in extra_optax_args_and_kwargs.items():
             jinns_local_var = eval(variable_name, locals())
+            # except SyntaxError:
+            #    jinns_local_var = exec(variable_name, locals())
             extra_args_and_kwargs_for_update_fn[kw] = jinns_local_var
 
     params, state = _gradient_step(
@@ -425,6 +427,7 @@ def _gradient_step(
     # are finally not used.
     # Making sure gradients are only computed for optimized (unmasked)
     # parameters seem like a big jinns refactorization (future TODO)
+    print("aa", args, kwargs)
     updates, state = optimizer.update(
         opt_grads,  # type: ignore
         state,

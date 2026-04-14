@@ -59,6 +59,7 @@ def solve_alternate(
     obs_data: DataGeneratorObservations | None = None,
     param_data: DataGeneratorParameter | None = None,
     opt_state_fields_for_acceleration: Params[str] | None = None,
+    extra_optax_args_and_kwargs_for_solver: Params[dict[str, str]] | None = None,
     key: PRNGKeyArray | None = None,
 ) -> tuple[
     Params[Array],
@@ -216,6 +217,11 @@ def solve_alternate(
     # wrt to unwanted params
     nn_opt_state = nn_optimizer.init(init_params)
 
+    if extra_optax_args_and_kwargs_for_solver is None:
+        extra_optax_args_and_kwargs_for_solver = jax.tree.map(
+            lambda _: None, n_iter_by_solver
+        )
+
     if opt_state_fields_for_acceleration is None:
         nn_opt_state_field_for_acceleration = None
         eq_params_opt_state_field_for_accel = jax.tree.map(
@@ -372,6 +378,9 @@ def solve_alternate(
                 else:
                     subkey = None
                 # Gradient step
+                print(
+                    getattr(extra_optax_args_and_kwargs_for_solver.eq_params, eq_param)
+                )
                 (
                     train_loss_value,
                     params,
@@ -395,7 +404,7 @@ def solve_alternate(
                     ),
                     with_loss_weight_update=True,
                     extra_optax_args_and_kwargs=getattr(
-                        extra_optax_args_and_kwargs_by_solver, eq_param
+                        extra_optax_args_and_kwargs_for_solver.eq_params, eq_param
                     ),
                 )
 
@@ -571,6 +580,7 @@ def solve_alternate(
                 params_mask=nn_params_mask,
                 opt_state_field_for_acceleration=nn_opt_state_field_for_acceleration,
                 with_eq_params_update=False,
+                extra_optax_args_and_kwargs=extra_optax_args_and_kwargs_for_solver.nn_params,
             )
 
             # save loss value and selected parameters
