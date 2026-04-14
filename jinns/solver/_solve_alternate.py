@@ -394,6 +394,9 @@ def solve_alternate(
                         eq_params_opt_state_field_for_accel, eq_param
                     ),
                     with_loss_weight_update=True,
+                    extra_optax_args_and_kwargs=getattr(
+                        extra_optax_args_and_kwargs_by_solver, eq_param
+                    ),
                 )
 
                 # save loss value and selected parameters
