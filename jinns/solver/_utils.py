@@ -429,7 +429,9 @@ def _gradient_step(
     # are finally not used.
     # Making sure gradients are only computed for optimized (unmasked)
     # parameters seem like a big jinns refactorization (future TODO)
-    if params_mask is not None:  # <=> jinns.solve_alternate is used!
+    if params_mask is not None and not isinstance(
+        state, NGDState
+    ):  # <=> jinns.solve_alternate is used and not NGD!
         # NOTE that for the jinns.solve_alternate we only pass the optimized
         # params. Because if we are doing solve_alternate, this means state has already been masked and so grads
         # and thus updates contain None. Hence params
@@ -439,6 +441,9 @@ def _gradient_step(
         # optax.GradientTransformationExtraArgs with extra_args requiring a
         # the full parameters, the latter need to be reasemble via a callback
         # function
+        # The not NGD is important, because in the particular case of NGD, the
+        # callback fn is defined later in the jinns NGD update fn
+        # hence, we must pass the full params further
         opt_params, non_opt_params = params.partition(params_mask)
     else:
         # NOTE, that for the jinns.solve() here we need to pass the full unmasked params for more complex
@@ -461,7 +466,9 @@ def _gradient_step(
 
     opt_params = optax.apply_updates(opt_params, updates)  # type: ignore
 
-    if params_mask is not None:
+    if params_mask is not None and not isinstance(state, NGDState):
+        # recombine the full Params if it has been splitted for the reasons
+        # given above
         params = eqx.combine(opt_params, non_opt_params)  # type: ignore
         # (bad cohabitaiton with PyTree)
     else:
