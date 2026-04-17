@@ -378,9 +378,6 @@ def solve_alternate(
                 else:
                     subkey = None
                 # Gradient step
-                print(
-                    getattr(extra_optax_args_and_kwargs_for_solver.eq_params, eq_param)
-                )
                 (
                     train_loss_value,
                     params,

@@ -226,11 +226,15 @@ def _loss_evaluate_and_euclidean_gradient_step(
     #     )
 
     extra_args_and_kwargs_for_update_fn = {}
+    if params_mask is not None:
+        # TODO this should be in the callback passed by the user just as the
+        # solution proposed in the issue
+        # https://github.com/google-deepmind/optax/issues/1649
+        _, non_opt_params = eqx.partition(params, params_mask)
+        combine_ = eqx.combine
     if extra_optax_args_and_kwargs is not None:
         for kw, variable_name in extra_optax_args_and_kwargs.items():
             jinns_local_var = eval(variable_name, locals())
-            # except SyntaxError:
-            #    jinns_local_var = exec(variable_name, locals())
             extra_args_and_kwargs_for_update_fn[kw] = jinns_local_var
 
     params, state = _gradient_step(
@@ -418,30 +422,43 @@ def _gradient_step(
         assert isinstance(grads, Params)  # for type checking
         opt_grads, _ = grads.partition(params_mask)
 
-    # NOTE, here we need to pass the full unmasked params for more complex
-    # optimizer updates to be done (updates which rely on params or more).
-    # NOTE also that, while compute gradients beforehand, we have computed
+    # NOTE that for jinns.solve() while compute gradients beforehand, we have computed
     # gradients for ALL parameters, even the non optimized ones: we hope that
     # JAX interal machinery will discard those computations from the
     # computational graph since the gradients for the non optimized parameters
     # are finally not used.
     # Making sure gradients are only computed for optimized (unmasked)
     # parameters seem like a big jinns refactorization (future TODO)
-    print("aa", args, kwargs)
+    if params_mask is not None:  # <=> jinns.solve_alternate is used!
+        # NOTE that for the jinns.solve_alternate we only pass the optimized
+        # params. Because if we are doing solve_alternate, this means state has already been masked and so grads
+        # and thus updates contain None. Hence params
+        # must be masked too to avoid errors of the type:
+        # TypeError: unsupported operand type(s) for *: 'float' and 'NoneType'
+        # Therefore if one of the optimizer is a
+        # optax.GradientTransformationExtraArgs with extra_args requiring a
+        # the full parameters, the latter need to be reasemble via a callback
+        # function
+        opt_params, non_opt_params = params.partition(params_mask)
+    else:
+        # NOTE, that for the jinns.solve() here we need to pass the full unmasked params for more complex
+        # optimizer updates to be done, e.g.:
+        # - updates which rely on params or more (linesearch which reevaluates
+        # the loss.evaluate)
+        # - complex optimizer such as optax.partition, where the
+        # masking is done in the update, therefore we still have full params at
+        # this point (unlike for jinns.solve_alternate at the previous
+        # conditional)
+        # - combination of both (case of NGD in inverse problem)
+        opt_params = params
     updates, state = optimizer.update(
         opt_grads,  # type: ignore
         state,
-        params,  # type: ignore
+        opt_params,  # type: ignore
         *args,
         **kwargs,
     )  # Also see optimizer.init for explanation of type ignore
 
-    # NOTE, if params_mask is not None, this means we are doing
-    # solve_alternate, this means state has already been masked and so grads
-    # and thus updates contain None. Hence params
-    # must be masked too to avoid errors of the type:
-    # TypeError: unsupported operand type(s) for *: 'float' and 'NoneType'
-    opt_params, non_opt_params = params.partition(params_mask)
     opt_params = optax.apply_updates(opt_params, updates)  # type: ignore
 
     if params_mask is not None:
