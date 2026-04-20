@@ -232,6 +232,7 @@ def _loss_evaluate_and_euclidean_gradient_step(
         # https://github.com/google-deepmind/optax/issues/1649
         _, non_opt_params = eqx.partition(params, params_mask)
         combine_ = eqx.combine
+        partition_ = eqx.partition
     if extra_optax_args_and_kwargs is not None:
         for kw, variable_name in extra_optax_args_and_kwargs.items():
             jinns_local_var = eval(variable_name, locals())

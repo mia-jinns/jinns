@@ -1,8 +1,8 @@
-"""ssbfgs and ssbroyden implementation."""
+"""ssbfgs and ssbroyden implementation.
+Taken and adapted from scimba v1.3.3
+https://gitlab.com/scimba/scimba
+"""
 
-# from collections.abc import Callable
-# import functools
-# from typing import Any, Optional, Union
 from typing import Callable, NamedTuple
 
 # import warnings
@@ -12,16 +12,11 @@ import equinox as eqx
 import optax.tree
 from optax._src import base, numerics
 
-# from optax._src import factorized
 from optax._src import linesearch as _linesearch
 
 from jinns.parameters import Params
 from jinns.nn._hyperpinn import _get_param_nb
 
-# from optax._src import wrappers
-# from optax.transforms import _clipping
-
-# MaskOrFn = Optional[Union[Any, Callable[[base.Params], Any]]]
 LINESEARCH_TYPE = base.GradientTransformationExtraArgs | base.GradientTransformation
 
 
@@ -43,54 +38,72 @@ class ScaleBySSBFGSState(NamedTuple):
     linesearch_state: NamedTuple
 
 
-def _self_scaled_bfgs_or_broyden(
-    linesearch: LINESEARCH_TYPE | None = _linesearch.scale_by_zoom_linesearch(
-        max_linesearch_steps=25,
-        # stepsize_precision=1e-9,
-        # approx_dec_rtol=1e-9,
-        initial_guess_strategy="one",
-    ),
+def self_scaled_bfgs_or_broyden(
+    linesearch: LINESEARCH_TYPE | None = None,
     broyden: bool = False,
 ) -> base.GradientTransformationExtraArgs:
     r"""Scales updates by SS-BFGS."""
 
-    def init_fn(params: base.Params) -> ScaleBySSBFGSState:
-        # print("params.shape: ", params.shape)
+    if linesearch is None:
+        # the _linesearch instanciation choices below are made by empirical
+        # observation, feel free to experiment other combinations
+        if broyden:
+            linesearch = _linesearch.scale_by_zoom_linesearch(
+                max_linesearch_steps=25,
+                initial_guess_strategy="one",
+            )
+        else:
+            linesearch = _linesearch.scale_by_backtracking_linesearch(
+                max_backtracking_steps=15,
+            )
+
+    def init_fn(params_pt: Params) -> ScaleBySSBFGSState:
+        params = jnp.concatenate(
+            jax.tree.map(lambda l: l.flatten(), jax.tree.leaves(params_pt)), axis=0
+        )
+        # NOTE that we pass the Params as PyTree to linesearch beacuase it is
+        # the unmodified optax linesearch which works for arbitrary PyTree
+        # whereas the update_fn of ssBFGS or ssBroyden is written for
+        # jnp.array only
         return ScaleBySSBFGSState(
             count=jnp.asarray(0, dtype=jnp.int32),
             params=optax.tree.zeros_like(params),
             updates=optax.tree.zeros_like(params),
             hk=jnp.eye(params.shape[0]),
-            linesearch_state=linesearch.init(params),
+            linesearch_state=linesearch.init(params_pt),
         )
 
     def update_fn(
-        grad_k: base.Updates,
+        grad_k_pt: Params,
         state: ScaleBySSBFGSState,
-        theta_k: base.Params,
+        theta_k_pt: Params,
         value: jax.typing.ArrayLike,
-        grad: base.Updates,
+        grad_pt: Params,
         value_fn: Callable[..., tuple[jax.typing.ArrayLike, base.Updates]],
         grad_fn: Callable[..., tuple[jax.typing.ArrayLike, base.Updates]],
         **extra_args_for_fn,
     ) -> tuple[base.Updates, ScaleBySSBFGSState]:
-        # TODO PT to array and array to PT should be done here, so that we can
-        # easily wrap the value_fn and grad_fn functions with a array to PT.
-        # also we would not need the jinns wrapper anymore
-
-        # numel = theta_k.shape[0]
-        # jax.debug.print("numel: {}", numel)
-
-        # jax.debug.print("state.hk: {}", state.hk)
+        theta_k = jnp.concatenate(
+            jax.tree.map(lambda l: l.flatten(), jax.tree.leaves(theta_k_pt)), axis=0
+        )
+        grad_k = jnp.concatenate(
+            jax.tree.map(lambda l: l.flatten(), jax.tree.leaves(grad_k_pt)), axis=0
+        )
+        grad = jnp.concatenate(
+            jax.tree.map(lambda l: l.flatten(), jax.tree.leaves(grad_pt)), axis=0
+        )
         direction = -state.hk @ grad_k
-        s_k, linesearch_state = linesearch.update(
-            direction,
+        s_k_pt, linesearch_state = linesearch.update(
+            params_array_to_pytree(direction, grad_k_pt),
             state.linesearch_state,
-            theta_k,
+            params_array_to_pytree(theta_k, theta_k_pt),
             value=value,
-            grad=grad,
+            grad=params_array_to_pytree(grad, grad_pt),
             value_fn=value_fn,
             **extra_args_for_fn,
+        )
+        s_k = jnp.concatenate(
+            jax.tree.map(lambda l: l.flatten(), jax.tree.leaves(s_k_pt)), axis=0
         )
 
         # compute some values for next turn:
@@ -99,7 +112,13 @@ def _self_scaled_bfgs_or_broyden(
         theta_kp1 = optax.apply_updates(theta_k, s_k)
 
         # get the gradients at theta_kp1
-        grad_kp1 = grad_fn(theta_kp1, **extra_args_for_fn)
+        grad_kp1_pt = grad_fn(
+            params_array_to_pytree(theta_kp1, theta_k_pt), **extra_args_for_fn
+        )
+
+        grad_kp1 = jnp.concatenate(
+            jax.tree.map(lambda l: l.flatten(), jax.tree.leaves(grad_kp1_pt)), axis=0
+        )
 
         # s_k = theta_kp1 - theta_k
         y_k = grad_kp1 - grad_k
@@ -131,8 +150,6 @@ def _self_scaled_bfgs_or_broyden(
                 tau_k * jnp.minimum(sigma_k_pow, 1.0 / th_k),
                 jnp.minimum(tau_k * sigma_k_pow, sigma_k),
             )
-            # jax.debug.print("th_k: {}", th_k)
-            # jax.debug.print("tau_k: {}", tau_k)
             phi_k = (1 - th_k) / (1.0 + a_k * th_k)
 
         temp1 = (Hkyk[:, None] @ Hkyk[None, :]) / yk_dot_Hkyk
@@ -147,41 +164,27 @@ def _self_scaled_bfgs_or_broyden(
             hk=H_kp1,
             linesearch_state=linesearch_state,
         )
-        return s_k, new_state
+        return params_array_to_pytree(s_k, grad_k_pt), new_state
 
     return base.GradientTransformationExtraArgs(init_fn, update_fn)
-
-
-# def ssbfgs(
-#     linesearch: LINESEARCH_TYPE | None = _linesearch.scale_by_zoom_linesearch(
-#         max_linesearch_steps=25,
-#         # approx_dec_rtol=1e-9,
-#         # stepsize_precision=1e-9,
-#         initial_guess_strategy="one",
-#     ),
-# ) -> base.GradientTransformationExtraArgs:
-#     """SS-BFGS optimizer."""
-#
-#     return scale_by_ssbfgs(linesearch)
 
 
 def params_array_to_pytree(
     params_array,
     params,
 ):
-    """Helper function for NGD: from matrix to PyTree representation of parameters.
+    """Helper function: from matrix to PyTree representation of parameters.
     This function converts the raw matrix representation of the network
     trainable parameters into a `Params` object with the correct PyTree structure to
     be handled by optax for the updates.
 
-    By default, the field `eq_params` is filled with zeros, as NGD is not
-    meant for eq_params. If in inverse problem mode, the field `eq_params` must be provided
-    by the `eq_params_array` arguments.
+    Same as for NGD but it is applied on the whole Params with the
+    treatment for nn_params and eq_params
     """
     _, params_cumsum = _get_param_nb(params)
     flat = eqx.tree_at(
         jax.tree.leaves,
-        params.nn_params,
+        params,
         jnp.split(params_array, params_cumsum[:-1]),
     )
 
@@ -191,71 +194,3 @@ def params_array_to_pytree(
         params,
         is_leaf=eqx.is_inexact_array,
     )
-
-
-class SSBFGSState(eqx.Module):
-    """
-    State for jinns wrapper over ssbfgs from scimba implementation
-    """
-
-    tx_state: optax.OptState
-    # count: jax.typing.ArrayLike
-    # params: Params
-    # updates: Params
-    # hk: jax.typing.ArrayLike
-    # linesearch_state: NamedTuple
-
-
-def self_scaled_bfgs_or_broyden(
-    *,
-    linesearch: LINESEARCH_TYPE | None = _linesearch.scale_by_zoom_linesearch(
-        max_linesearch_steps=15,
-        initial_guess_strategy="one",
-    ),
-    broyden: bool = False,
-):
-    optimizer = _self_scaled_bfgs_or_broyden(linesearch, broyden)
-
-    def init(params: Params) -> SSBFGSState:
-        params_as_array = jnp.concatenate(
-            jax.tree.map(lambda l: l.flatten(), jax.tree.leaves(params)), axis=0
-        )
-        return SSBFGSState(tx_state=optimizer.init(params_as_array))
-
-    def update(
-        grad_k: Params,
-        state: SSBFGSState,
-        theta_k: Params,
-        value: jax.typing.ArrayLike,
-        grad: Params,
-        value_fn: Callable[..., tuple[jax.typing.ArrayLike, base.Updates]],
-        grad_fn: Callable[..., tuple[jax.typing.ArrayLike, base.Updates]],
-        **extra_args_for_fn,
-    ):
-        theta_k_as_array = jnp.concatenate(
-            jax.tree.map(lambda l: l.flatten(), jax.tree.leaves(theta_k)), axis=0
-        )
-        grad_k_as_array = jnp.concatenate(
-            jax.tree.map(lambda l: l.flatten(), jax.tree.leaves(grad_k)), axis=0
-        )
-        grad_as_array = jnp.concatenate(
-            jax.tree.map(lambda l: l.flatten(), jax.tree.leaves(grad)), axis=0
-        )
-
-        new_params_as_array, new_tx_state = optimizer.update(
-            grad_k_as_array,
-            state.tx_state,
-            theta_k_as_array,
-            value=value,
-            grad=grad_as_array,
-            value_fn=value_fn,
-            grad_fn=grad_fn,
-            **extra_args_for_fn,
-        )
-
-        return (
-            params_array_to_pytree(new_params_as_array, theta_k),
-            eqx.tree_at(lambda pt: pt.tx_state, state, new_tx_state),
-        )
-
-    return base.GradientTransformationExtraArgs(init, update)  # type: ignore

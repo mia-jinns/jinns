@@ -212,38 +212,6 @@ def solve_alternate(
     nn_optimizer = optimizers.nn_params
     eq_optimizers = optimizers.eq_params
 
-    # NOTE below we have opt_states that are shaped as Params
-    # but this seems OK since the real gain is to not differentiate
-    # wrt to unwanted params
-    nn_opt_state = nn_optimizer.init(init_params)
-
-    if extra_optax_args_and_kwargs_for_solver is None:
-        extra_optax_args_and_kwargs_for_solver = jax.tree.map(
-            lambda _: None, n_iter_by_solver
-        )
-
-    if opt_state_fields_for_acceleration is None:
-        nn_opt_state_field_for_acceleration = None
-        eq_params_opt_state_field_for_accel = jax.tree.map(
-            lambda l: None,
-            eq_optimizers,
-            is_leaf=lambda x: isinstance(x, optax.GradientTransformation),
-        )
-    else:
-        nn_opt_state_field_for_acceleration = (
-            opt_state_fields_for_acceleration.nn_params
-        )
-        eq_params_opt_state_field_for_accel = (
-            opt_state_fields_for_acceleration.eq_params
-        )
-
-    eq_opt_states = jax.tree.map(
-        lambda opt_: opt_.init(init_params),
-        eq_optimizers,
-        is_leaf=lambda x: isinstance(x, optax.GradientTransformation),
-        # do not traverse further
-    )
-
     # params mask to be able to optimize only on nn_params
     # NOTE we can imagine that later on, params mask is given as user input and
     # we could then have more refined scheme than just nn_params and eq_params.
@@ -265,6 +233,60 @@ def solve_alternate(
 
     eq_params_masks, eq_gd_steps_derivative_keys = (
         _get_eq_param_masks_and_derivative_keys(eq_optimizers, init_params, loss)
+    )
+
+    # OPTIMIZERS INIT. NOTE that this requires using the
+    # mask parameters for complete compatibility with some optimizers (eg
+    # ssBFGS or ssBroyden and their hk state)
+
+    # NOTE below we have opt_states that are shaped as Params
+    # but this seems OK since the real gain is to not differentiate
+    # wrt to unwanted params
+    # try:
+    #    nn_opt_state = nn_optimizer.init(
+    #        eqx.partition(init_params, nn_params_mask)[0],
+    #        nn_params_mask
+    #    )
+    # except TypeError as _:
+    nn_opt_state = nn_optimizer.init(
+        eqx.partition(init_params, nn_params_mask)[0],
+    )
+
+    if extra_optax_args_and_kwargs_for_solver is None:
+        extra_optax_args_and_kwargs_for_solver = jax.tree.map(
+            lambda _: None, n_iter_by_solver
+        )
+
+    if opt_state_fields_for_acceleration is None:
+        nn_opt_state_field_for_acceleration = None
+        eq_params_opt_state_field_for_accel = jax.tree.map(
+            lambda l: None,
+            eq_optimizers,
+            is_leaf=lambda x: isinstance(x, optax.GradientTransformation),
+        )
+    else:
+        nn_opt_state_field_for_acceleration = (
+            opt_state_fields_for_acceleration.nn_params
+        )
+        eq_params_opt_state_field_for_accel = (
+            opt_state_fields_for_acceleration.eq_params
+        )
+
+    # try:
+    #    eq_opt_states = jax.tree.map(
+    #        lambda opt_, mask: opt_.init(eqx.partition(init_params, mask)[0], mask),
+    #        eq_optimizers,
+    #        eq_params_masks,
+    #        is_leaf=lambda x: isinstance(x, optax.GradientTransformation),
+    #        # do not traverse further
+    #    )
+    # except TypeError as _:
+    eq_opt_states = jax.tree.map(
+        lambda opt_, mask: opt_.init(eqx.partition(init_params, mask)[0]),
+        eq_optimizers,
+        eq_params_masks,
+        is_leaf=lambda x: isinstance(x, optax.GradientTransformation),
+        # do not traverse further
     )
 
     #######################################
