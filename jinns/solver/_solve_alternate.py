@@ -59,7 +59,7 @@ def solve_alternate(
     obs_data: DataGeneratorObservations | None = None,
     param_data: DataGeneratorParameter | None = None,
     opt_state_fields_for_acceleration: Params[str] | None = None,
-    extra_optax_args_and_kwargs_for_solver: Params[dict[str, str]] | None = None,
+    extra_optax_args_and_kwargs_for_solvers: Params[dict[str, str]] | None = None,
     key: PRNGKeyArray | None = None,
 ) -> tuple[
     Params[Array],
@@ -137,6 +137,9 @@ def solve_alternate(
         A `jinns.parameters.Params` object, where leave
         is an `opt_state_field_for_acceleration` as
         described in `jinns.solve`.
+    extra_optax_args_and_kwargs_for_solvers
+        A Params object where each leaf is a `extra_optax_args_and_kwargs` as
+        defined in `jinns.solve`.
     key
         Default `None`. A JAX random key that can be used for diverse purpose in
         the main iteration loop.
@@ -246,8 +249,8 @@ def solve_alternate(
         eqx.partition(init_params, nn_params_mask)[0],
     )
 
-    if extra_optax_args_and_kwargs_for_solver is None:
-        extra_optax_args_and_kwargs_for_solver = jax.tree.map(
+    if extra_optax_args_and_kwargs_for_solvers is None:
+        extra_optax_args_and_kwargs_for_solvers = jax.tree.map(
             lambda _: None, n_iter_by_solver
         )
 
@@ -408,7 +411,7 @@ def solve_alternate(
                     ),
                     with_loss_weight_update=True,
                     extra_optax_args_and_kwargs=getattr(
-                        extra_optax_args_and_kwargs_for_solver.eq_params, eq_param
+                        extra_optax_args_and_kwargs_for_solvers.eq_params, eq_param
                     ),
                 )
 
@@ -584,7 +587,7 @@ def solve_alternate(
                 params_mask=nn_params_mask,
                 opt_state_field_for_acceleration=nn_opt_state_field_for_acceleration,
                 with_eq_params_update=False,
-                extra_optax_args_and_kwargs=extra_optax_args_and_kwargs_for_solver.nn_params,
+                extra_optax_args_and_kwargs=extra_optax_args_and_kwargs_for_solvers.nn_params,
             )
 
             # save loss value and selected parameters
