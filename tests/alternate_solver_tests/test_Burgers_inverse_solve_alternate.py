@@ -186,13 +186,26 @@ def train_solve_alternate_ssbroyden_adam(test_init):
         },
     )
 
+    value_fn = """def value_fn(opt_params, batch, loss, non_opt_params, params_mask_):\n
+        full_params = eqx.combine(opt_params, non_opt_params)\n
+        return loss.evaluate(full_params, batch)[0]
+    """
+    grad_fn = """def grad_fn(opt_params, batch, loss, non_opt_params, params_mask_):\n
+        full_params = eqx.combine(opt_params, non_opt_params)\n
+        grads = loss.values_and_grads(full_params, batch)[1]\n
+        grads = loss.ponderate_and_sum_gradient(grads)\n
+        return eqx.partition(grads, params_mask_)[0]
+    """
     extra_optax_args_for_solvers = jinns.parameters.Params(
         nn_params={
             "value": "train_loss_value",
             "grad_pt": "params.partition(params_mask)[0]",
-            "value_fn": "lambda opt_params, batch: loss.evaluate(combine_(opt_params, non_opt_params), batch)[0]",
-            "grad_fn": "lambda opt_params, batch: partition_(loss.ponderate_and_sum_gradient(loss.values_and_grads(combine_(opt_params, non_opt_params), batch)[1]), params_mask)[0]",
+            "value_fn": value_fn,
+            "grad_fn": grad_fn,
             "batch": "batch",
+            "loss": "loss",
+            "non_opt_params": "non_opt_params",
+            "params_mask_": "params_mask",
         },
         eq_params={"nu": {}},
     )
