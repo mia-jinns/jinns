@@ -242,12 +242,6 @@ def solve_alternate(
     # NOTE below we have opt_states that are shaped as Params
     # but this seems OK since the real gain is to not differentiate
     # wrt to unwanted params
-    # try:
-    #    nn_opt_state = nn_optimizer.init(
-    #        eqx.partition(init_params, nn_params_mask)[0],
-    #        nn_params_mask
-    #    )
-    # except TypeError as _:
     nn_opt_state = nn_optimizer.init(
         eqx.partition(init_params, nn_params_mask)[0],
     )
@@ -272,15 +266,6 @@ def solve_alternate(
             opt_state_fields_for_acceleration.eq_params
         )
 
-    # try:
-    #    eq_opt_states = jax.tree.map(
-    #        lambda opt_, mask: opt_.init(eqx.partition(init_params, mask)[0], mask),
-    #        eq_optimizers,
-    #        eq_params_masks,
-    #        is_leaf=lambda x: isinstance(x, optax.GradientTransformation),
-    #        # do not traverse further
-    #    )
-    # except TypeError as _:
     eq_opt_states = jax.tree.map(
         lambda opt_, mask: opt_.init(eqx.partition(init_params, mask)[0]),
         eq_optimizers,
