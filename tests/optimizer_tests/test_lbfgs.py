@@ -136,4 +136,4 @@ def test_heat_ngd_10it(train_heat_init):
         extra_optax_args_and_kwargs=extra_optax_args_and_kwargs,
     )
 
-    assert jnp.allclose(total_loss_list[-1], 0.22496643, atol=1e-4)
+    assert jnp.allclose(total_loss_list[-1], 0.22496643, atol=1e-6)
