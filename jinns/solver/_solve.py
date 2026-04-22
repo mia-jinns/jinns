@@ -8,7 +8,7 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 import optax
 import jax
 import jax.numpy as jnp
@@ -60,7 +60,7 @@ def solve(
     opt_state_field_for_acceleration: str | None = None,
     verbose: bool = True,
     ahead_of_time: bool = True,
-    extra_optax_args_and_kwargs: dict[str, str] | None = None,
+    extra_optax_args_and_kwargs: dict[str, Callable] | None = None,
     key: PRNGKeyArray | None = None,
 ) -> tuple[
     Params[Array],

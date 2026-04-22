@@ -7,7 +7,7 @@ from __future__ import annotations
 import time
 import operator
 from dataclasses import fields
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 import jax
 import jax.numpy as jnp
 import optax
@@ -59,7 +59,7 @@ def solve_alternate(
     obs_data: DataGeneratorObservations | None = None,
     param_data: DataGeneratorParameter | None = None,
     opt_state_fields_for_acceleration: Params[str] | None = None,
-    extra_optax_args_and_kwargs_for_solvers: Params[dict[str, str]] | None = None,
+    extra_optax_args_and_kwargs_for_solvers: Params[dict[str, Callable]] | None = None,
     key: PRNGKeyArray | None = None,
 ) -> tuple[
     Params[Array],

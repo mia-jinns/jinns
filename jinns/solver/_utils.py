@@ -6,6 +6,7 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
+from types import FunctionType
 from typing import TYPE_CHECKING, Callable
 import inspect
 import jax
@@ -107,7 +108,7 @@ def _loss_evaluate_and_euclidean_gradient_step(
     params_mask: Params[bool] | None = None,
     state_field_for_acceleration: str | None = None,
     with_loss_weight_update: bool = True,
-    extra_optax_args_and_kwargs: dict[str, str] | None = None,
+    extra_optax_args_and_kwargs: dict[str, Callable] | None = None,
     **__,  # ignore supplementary kwargs that are for
 ):
     """Computes loss values and (euclidean) gradient, then performs the update
@@ -166,7 +167,7 @@ def _loss_evaluate_and_euclidean_gradient_step(
     with_loss_weight_update : bool, optional
         should we update loss_weights for next iteration according to current loss_values
         by default True
-    extra_optax_args_and_kwargs : dict[str, str]
+    extra_optax_args_and_kwargs : dict[str, Callable]
         Use this for optax optimizers that require extra arguments. This is a
         dictionary whose keys contain all the args and kwargs name that optax
         require and whose values are the corresponding values (or expression)
@@ -226,21 +227,40 @@ def _loss_evaluate_and_euclidean_gradient_step(
     #     )
 
     extra_args_and_kwargs_for_update_fn = {}
-    if params_mask is not None:
-        # TODO this should be in the callback passed by the user just as the
-        # solution proposed in the issue
-        # https://github.com/google-deepmind/optax/issues/1649
-        # we need non_opt_params to be available in locals()
-        _, non_opt_params = eqx.partition(params, params_mask)
+    # if params_mask is not None:
+    # TODO this should be in the callback passed by the user just as the
+    # solution proposed in the issue
+    # https://github.com/google-deepmind/optax/issues/1649
+    # we need non_opt_params to be available in locals()
+    # _, non_opt_params = eqx.partition(params, params_mask)
     if extra_optax_args_and_kwargs is not None:
         for kw, expr in extra_optax_args_and_kwargs.items():
+            # exec writes into the globals(). As for the places it looks for
+            # the variables read the links:
             # https://stackoverflow.com/questions/60929677/how-pass-a-value-to-a-variable-in-python-function-with-using-exec
-            if expr[:3] == "def":
-                exec(expr, globals())
-                extra_args_and_kwargs_for_update_fn[kw] = globals()[kw]
-            else:
-                jinns_local_var = eval(expr, locals())
+
+            # Basically what is done here is a rebinding of the variables at
+            # runtime
+            if callable(expr) and not expr.__name__ == "<lambda>":
+                callback_fun = FunctionType(expr.__code__, expr.__globals__)
+                extra_args_and_kwargs_for_update_fn[kw] = callback_fun
+            elif callable(expr) and expr.__name__ == "<lambda>":
+                jinns_local_fn = FunctionType(expr.__code__, expr.__globals__)
+                # below is a wrapper to make the lambda functions of the user
+                # compatible with ùùkwargs
+                jinns_local_fn_wrapped = lambda **kwargs: jinns_local_fn(  # pylint:disable=not-callable
+                    **{
+                        arg: kwargs[arg]
+                        for arg in inspect.getfullargspec(jinns_local_fn).args
+                    }
+                )
+                # pylint warns because FunctionType != Callable, but we ignore
+                jinns_local_var = jinns_local_fn_wrapped(**locals())
                 extra_args_and_kwargs_for_update_fn[kw] = jinns_local_var
+            else:
+                raise ValueError(
+                    "Values of `extra_optax_args_and_kwargs` must be callable."
+                )
 
     params, state = _gradient_step(
         grads,

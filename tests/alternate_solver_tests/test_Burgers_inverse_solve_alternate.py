@@ -186,26 +186,33 @@ def train_solve_alternate_ssbroyden_adam(test_init):
         },
     )
 
-    value_fn = """def value_fn(opt_params, batch, loss, non_opt_params, params_mask_):\n
-        full_params = eqx.combine(opt_params, non_opt_params)\n
+    # for callback fn definition, body code can incorporate global vairaible,
+    # other variables must be arguments. Note that the equinox module is global
+    # and will be accessible in subsequent calls
+    # Note that the callback functions must accept asme arguments (you can use
+    # **kwargs to simplify here)
+    def value_fn(opt_params, batch, loss, non_opt_params, params_mask_):
+        full_params = eqx.combine(opt_params, non_opt_params)
         return loss.evaluate(full_params, batch)[0]
-    """
-    grad_fn = """def grad_fn(opt_params, batch, loss, non_opt_params, params_mask_):\n
-        full_params = eqx.combine(opt_params, non_opt_params)\n
-        grads = loss.values_and_grads(full_params, batch)[1]\n
-        grads = loss.ponderate_and_sum_gradient(grads)\n
+
+    def grad_fn(opt_params, batch, loss, non_opt_params, params_mask_):
+        full_params = eqx.combine(opt_params, non_opt_params)
+        grads = loss.values_and_grads(full_params, batch)[1]
+        grads = loss.ponderate_and_sum_gradient(grads)
         return eqx.partition(grads, params_mask_)[0]
-    """
+
     extra_optax_args_for_solvers = jinns.parameters.Params(
         nn_params={
-            "value": "train_loss_value",
-            "grad_pt": "params.partition(params_mask)[0]",
+            "value": lambda train_loss_value: train_loss_value,
+            "grad_pt": lambda params, params_mask: params.partition(params_mask)[0],
             "value_fn": value_fn,
             "grad_fn": grad_fn,
-            "batch": "batch",
-            "loss": "loss",
-            "non_opt_params": "non_opt_params",
-            "params_mask_": "params_mask",
+            "batch": lambda batch: batch,
+            "loss": lambda loss: loss,
+            "non_opt_params": lambda params, params_mask: eqx.partition(
+                params, params_mask
+            )[1],
+            "params_mask_": lambda params_mask: params_mask,
         },
         eq_params={"nu": {}},
     )
