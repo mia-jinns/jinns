@@ -7,7 +7,7 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 from types import FunctionType
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, NamedTuple
 import inspect
 import jax
 from jax import jit
@@ -34,6 +34,10 @@ from jinns.optimizers._utils_ngd import (
     _get_sqrt_weights_per_sample,
     _reweight_pytree,
 )
+
+
+class GetJinnsVariableName(NamedTuple):
+    name: str
 
 
 if TYPE_CHECKING:
@@ -241,13 +245,16 @@ def _loss_evaluate_and_euclidean_gradient_step(
 
             # Basically what is done here is a rebinding of the variables at
             # runtime
-            if callable(expr) and not expr.__name__ == "<lambda>":
+            print(expr)
+            if callable(expr) and expr.__name__[:8] == "callback":
                 callback_fun = FunctionType(expr.__code__, expr.__globals__)
                 extra_args_and_kwargs_for_update_fn[kw] = callback_fun
-            elif callable(expr) and expr.__name__ == "<lambda>":
+            elif (callable(expr) and expr.__name__ == "<lambda>") or (
+                callable(expr) and expr.__name__[:3] == "get"
+            ):
                 jinns_local_fn = FunctionType(expr.__code__, expr.__globals__)
                 # below is a wrapper to make the lambda functions of the user
-                # compatible with ùùkwargs
+                # compatible with **kwargs
                 jinns_local_fn_wrapped = lambda **kwargs: jinns_local_fn(  # pylint:disable=not-callable
                     **{
                         arg: kwargs[arg]
@@ -257,6 +264,8 @@ def _loss_evaluate_and_euclidean_gradient_step(
                 # pylint warns because FunctionType != Callable, but we ignore
                 jinns_local_var = jinns_local_fn_wrapped(**locals())
                 extra_args_and_kwargs_for_update_fn[kw] = jinns_local_var
+            elif isinstance(expr, GetJinnsVariableName):
+                extra_args_and_kwargs_for_update_fn[kw] = eval(expr.name, locals())
             else:
                 raise ValueError(
                     "Values of `extra_optax_args_and_kwargs` must be callable."
