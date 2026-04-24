@@ -1,3 +1,7 @@
+# ssBFGS and ssBroyden
+
+The algorithms are described in [this article](https://arxiv.org/pdf/2405.04230)
+
 # Natural gradient
 
 Natural gradient methods computes a preconditionner on the euclidean gradient, in

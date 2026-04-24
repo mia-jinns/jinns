@@ -1,5 +1,11 @@
 # Changelog
 
+* v.1.9.2:
+
+    - Allow for more complex `optax` optimizers. Add a first implementation ssBroyden and ssBFGS based on Scimba implementation [project repo](https://gitlab.com/scimba/scimba). The algorithms are described in [this article](https://arxiv.org/pdf/2405.04230). Have a look at the tutorial notebooks for usage.
+
+    Changes are from [!98](https://gitlab.com/mia_jinns/jinns/-/merge_requests/98)
+
 * v1.9.1:
 
     - Fix typo which caused that the argument `sgd_learning_rate` was not used
