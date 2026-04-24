@@ -7,7 +7,7 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 from types import FunctionType
-from typing import TYPE_CHECKING, Callable, NamedTuple
+from typing import TYPE_CHECKING, Callable, NamedTuple, Any
 import inspect
 import jax
 from jax import jit
@@ -112,7 +112,8 @@ def _loss_evaluate_and_euclidean_gradient_step(
     params_mask: Params[bool] | None = None,
     state_field_for_acceleration: str | None = None,
     with_loss_weight_update: bool = True,
-    extra_optax_args_and_kwargs: dict[str, Callable] | None = None,
+    extra_optax_args_and_kwargs: dict[str, Callable | GetJinnsVariableName]
+    | None = None,
     **__,  # ignore supplementary kwargs that are for
 ):
     """Computes loss values and (euclidean) gradient, then performs the update
@@ -171,11 +172,9 @@ def _loss_evaluate_and_euclidean_gradient_step(
     with_loss_weight_update : bool, optional
         should we update loss_weights for next iteration according to current loss_values
         by default True
-    extra_optax_args_and_kwargs : dict[str, Callable]
-        Use this for optax optimizers that require extra arguments. This is a
-        dictionary whose keys contain all the args and kwargs name that optax
-        require and whose values are the corresponding values (or expression)
-        given in a python string. Default is None
+    extra_optax_args_and_kwargs : dict[str, Callable | GetJinnsVariableName]
+        Use this for optax optimizers that require extra arguments. See jinns.solve() documentation
+        for the full details
 
     Returns
     -------
@@ -217,59 +216,9 @@ def _loss_evaluate_and_euclidean_gradient_step(
     # 3. total loss after possible weight update
     train_loss_value = loss.ponderate_and_sum_loss(loss_terms)
 
-    # disabled check because it is not sure whether it covers well all the
-    # extra args
-    # if isinstance(optimizer, optax.GradientTransformationExtraArgs):
-    #     # Below is a small check to ensure that all the extra_args that optax
-    #     # optimizers await are fed by the user. This does not count the extra_args
-    #     # for the extra_args (ie. the extra_args for an eventual value_fn!)
-    #     _check_extra_optax_args_and_kwargs(
-    #         optimizer,
-    #         set(extra_optax_args_and_kwargs.keys())
-    #         if extra_optax_args_and_kwargs is not None
-    #         else None,
-    #     )
-
-    extra_args_and_kwargs_for_update_fn = {}
-    # if params_mask is not None:
-    # TODO this should be in the callback passed by the user just as the
-    # solution proposed in the issue
-    # https://github.com/google-deepmind/optax/issues/1649
-    # we need non_opt_params to be available in locals()
-    # _, non_opt_params = eqx.partition(params, params_mask)
-    if extra_optax_args_and_kwargs is not None:
-        for kw, expr in extra_optax_args_and_kwargs.items():
-            # exec writes into the globals(). As for the places it looks for
-            # the variables read the links:
-            # https://stackoverflow.com/questions/60929677/how-pass-a-value-to-a-variable-in-python-function-with-using-exec
-
-            # Basically what is done here is a rebinding of the variables at
-            # runtime
-            print(expr)
-            if callable(expr) and expr.__name__[:8] == "callback":
-                callback_fun = FunctionType(expr.__code__, expr.__globals__)
-                extra_args_and_kwargs_for_update_fn[kw] = callback_fun
-            elif (callable(expr) and expr.__name__ == "<lambda>") or (
-                callable(expr) and expr.__name__[:3] == "get"
-            ):
-                jinns_local_fn = FunctionType(expr.__code__, expr.__globals__)
-                # below is a wrapper to make the lambda functions of the user
-                # compatible with **kwargs
-                jinns_local_fn_wrapped = lambda **kwargs: jinns_local_fn(  # pylint:disable=not-callable
-                    **{
-                        arg: kwargs[arg]
-                        for arg in inspect.getfullargspec(jinns_local_fn).args
-                    }
-                )
-                # pylint warns because FunctionType != Callable, but we ignore
-                jinns_local_var = jinns_local_fn_wrapped(**locals())
-                extra_args_and_kwargs_for_update_fn[kw] = jinns_local_var
-            elif isinstance(expr, GetJinnsVariableName):
-                extra_args_and_kwargs_for_update_fn[kw] = eval(expr.name, locals())
-            else:
-                raise ValueError(
-                    "Values of `extra_optax_args_and_kwargs` must be callable."
-                )
+    extra_for_update_fn = _parse_extra_optax_args_and_kwargs(
+        extra_optax_args_and_kwargs, locals()
+    )
 
     params, state = _gradient_step(
         grads,
@@ -278,7 +227,7 @@ def _loss_evaluate_and_euclidean_gradient_step(
         # params here, this would be a wrong procedure
         state,
         params_mask,
-        **extra_args_and_kwargs_for_update_fn,
+        **extra_for_update_fn,
     )
 
     # check if any of the parameters is NaN
@@ -406,6 +355,89 @@ def _loss_evaluate_and_natural_gradient_step(
         None,
     )
     return train_loss_value, params, last_non_nan_params, state, loss, loss_terms
+
+
+def _parse_extra_optax_args_and_kwargs(
+    extra_optax_args_and_kwargs: dict[str, Callable | GetJinnsVariableName],
+    fun_locals: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Parse the extra arguments for the optimizers. Default is None.
+    This is for more advanced gradient transformation which requires extra arguments.
+    This is passed to `jinns.solve` via `extra_optax_args_and_kwargs`.
+    There are 3 main types of objects you would want to pass to more advanced optimizers:
+
+    1. **Callback functions**. They must be defined with `def` and their name must
+        start with `callback_` (this is a jinns requirement).
+        Most of the time, the optax callback functions take input
+        arguments that are passed automatically but that should also
+        be defined in the `extra_optax_args_and_kwargs` dictionary.
+    2. **Variables**. You can pass to the optimizer any global or local variable
+        available at runtime in the function `_loss_evaluate_and_euclidean_gradient_step`
+        [see](https://gitlab.com/mia_jinns/jinns/-/blob/main/jinns/solver/_utils.py).
+        To do so, the dictionary value must be a `jinns.solver.GetJinnsVariableName`
+        with a string argument being the jinns name of the variable you want. The dictionary
+        key correspond to the argument names in optax function signatures.
+    3. **Computed variables**.  You can pass to the optimizer any transformation of
+        global or local variable available at runtime in the function
+        `_loss_evaluate_and_euclidean_gradient_step`. Such transformation must be
+        defined with `def` and their name must start with `get_` (this is a jinns requirement).
+        Most of the time, the optax callback functions take input arguments that are passed
+        automatically but that should also be defined in the `extra_optax_args_and_kwargs`
+        dictionary.
+
+    See the tutorial notebooks for examples of usage.
+
+    Technically, this is the treatment for each type of variable:
+
+    1. **Callback functions**. We create the function at runtime, populating its global
+        variable(s) by the current global variables.
+    2. **Variables**. We evaluate (`eval` built-in) the string attribute of GetJinnsVariableName
+        The string attribute must correspond to a variable name available in current locals()
+    3. **Computed Variables**. We create the function at runtime, populating its global
+        variable(s) by the current global variables. We then evaluate it by inspecting its signature,
+        getting the arguments and looking for the arguments in the local variable (where they must be found).
+
+    Note that there cannot be local variables to the callback functions or
+    compute variable functions, all the local variables needed must be passed as parameters.
+
+    The following links were useful:
+    - https://discuss.python.org/t/functions-variable-binding-and-exec/78894
+    - https://stackoverflow.com/questions/60929677/how-pass-a-value-to-a-variable-in-python-function-with-using-exec
+    - https://stackoverflow.com/questions/12919278/how-to-define-free-variable-in-python
+    - https://stackoverflow.com/questions/2749655/why-are-closures-broken-within-exec
+    - https://stackoverflow.com/questions/75941073/give-an-example-explanation-of-the-closure-parameter-of-the-exec-function
+
+    """
+    extra_args_and_kwargs_for_update_fn = {}
+    if extra_optax_args_and_kwargs is not None:
+        for kw, expr in extra_optax_args_and_kwargs.items():
+            if callable(expr) and expr.__name__[:8] == "callback":
+                callback_fun = FunctionType(expr.__code__, expr.__globals__)
+                extra_args_and_kwargs_for_update_fn[kw] = callback_fun
+            elif callable(expr) and expr.__name__[:3] == "get":
+                jinns_local_fn = FunctionType(expr.__code__, expr.__globals__)
+                # below is a wrapper to make the lambda functions of the user
+                # compatible with **kwargs
+                jinns_local_fn_wrapped = lambda **kwargs: jinns_local_fn(  # pylint:disable=not-callable
+                    **{
+                        arg: kwargs[arg]
+                        for arg in inspect.getfullargspec(jinns_local_fn).args
+                    }
+                )
+                # pylint warns because FunctionType != Callable, but we ignore
+                jinns_local_var = jinns_local_fn_wrapped(**fun_locals)
+                extra_args_and_kwargs_for_update_fn[kw] = jinns_local_var
+            elif isinstance(expr, GetJinnsVariableName):
+                extra_args_and_kwargs_for_update_fn[kw] = eval(expr.name, fun_locals)
+            else:
+                raise ValueError(
+                    "Values of `extra_optax_args_and_kwargs` must be functions whose name"
+                    ' starts with "callback", "get" or an'
+                    " instance of GetJinnsVariableName. See the documentation for the "
+                    "different use cases. For clarity, lambda functions are not allowed."
+                )
+    return extra_args_and_kwargs_for_update_fn
 
 
 def _gradient_step(

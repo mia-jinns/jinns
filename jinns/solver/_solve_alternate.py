@@ -43,6 +43,7 @@ if TYPE_CHECKING:
     from jinns.data._AbstractDataGenerator import AbstractDataGenerator
     from jinns.data._DataGeneratorObservations import DataGeneratorObservations
     from jinns.data._DataGeneratorParameter import DataGeneratorParameter
+    from jinns.solver._utils import GetJinnsVariableName
 
 
 def solve_alternate(
@@ -59,7 +60,10 @@ def solve_alternate(
     obs_data: DataGeneratorObservations | None = None,
     param_data: DataGeneratorParameter | None = None,
     opt_state_fields_for_acceleration: Params[str] | None = None,
-    extra_optax_args_and_kwargs_for_solvers: Params[dict[str, Callable]] | None = None,
+    extra_optax_args_and_kwargs_for_solvers: Params[
+        dict[str, Callable | GetJinnsVariableName]
+    ]
+    | None = None,
     key: PRNGKeyArray | None = None,
 ) -> tuple[
     Params[Array],
@@ -140,6 +144,9 @@ def solve_alternate(
     extra_optax_args_and_kwargs_for_solvers
         A Params object where each leaf is a `extra_optax_args_and_kwargs` as
         defined in `jinns.solve`.
+
+        See the tutorial notebooks for examples of usage.
+
     key
         Default `None`. A JAX random key that can be used for diverse purpose in
         the main iteration loop.

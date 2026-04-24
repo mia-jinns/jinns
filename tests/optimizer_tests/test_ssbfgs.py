@@ -7,7 +7,6 @@ import jax
 from jax import random
 import jax.numpy as jnp
 import equinox as eqx
-import optax
 
 from jinns.loss import PDENonStatio
 
@@ -92,19 +91,23 @@ def train_heat_init():
     return init_params, loss, train_data, key
 
 
-def test_heat_ngd_10it(train_heat_init):
+def test_heat_ssbfgs_10it(train_heat_init):
     init_params, loss, train_data, key = train_heat_init
     n_iter = 10
-    tx = optax.lbfgs()
+    tx = jinns.optimizers.self_scaled_bfgs_or_broyden()
     params = init_params
 
     def callback_value_fn(params, batch, loss):
         return loss.evaluate(params, batch)[0]
 
+    def callback_grad_fn(params, batch, loss):
+        return loss.ponderate_and_sum_gradient(loss.values_and_grads(params, batch)[1])
+
     extra_optax_args_and_kwargs = {
         "value": jinns.solver.GetJinnsVariableName("train_loss_value"),
-        "grad": jinns.solver.GetJinnsVariableName("params"),
+        "grad_pt": jinns.solver.GetJinnsVariableName("params"),
         "value_fn": callback_value_fn,
+        "grad_fn": callback_grad_fn,
         "batch": jinns.solver.GetJinnsVariableName("batch"),
         "loss": jinns.solver.GetJinnsVariableName("loss"),
     }
@@ -133,4 +136,4 @@ def test_heat_ngd_10it(train_heat_init):
         extra_optax_args_and_kwargs=extra_optax_args_and_kwargs,
     )
 
-    assert jnp.allclose(total_loss_list[-1], 0.22496643, atol=1e-6)
+    assert jnp.allclose(total_loss_list[-1], 0.22506650003694814, atol=1e-6)

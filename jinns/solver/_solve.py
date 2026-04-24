@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from jinns.data._DataGeneratorParameter import DataGeneratorParameter
     from jinns.data._DataGeneratorObservations import DataGeneratorObservations
     from jinns.data._AbstractDataGenerator import AbstractDataGenerator
+    from jinns.solver._utils import GetJinnsVariableName
 
 
 def solve(
@@ -60,7 +61,8 @@ def solve(
     opt_state_field_for_acceleration: str | None = None,
     verbose: bool = True,
     ahead_of_time: bool = True,
-    extra_optax_args_and_kwargs: dict[str, Callable] | None = None,
+    extra_optax_args_and_kwargs: dict[str, Callable | GetJinnsVariableName]
+    | None = None,
     key: PRNGKeyArray | None = None,
 ) -> tuple[
     Params[Array],
@@ -153,10 +155,31 @@ def solve(
         When `False`, jinns does not provide any timing information (which would
         be nonsense in a JIT transformed `solve()` function).
     extra_optax_args_and_kwargs
-        Use this for optax optimizers that require extra arguments. This is a
-        dictionary whose keys contain all the args and kwargs name that optax
-        require and whose values are the corresponding values (or expression)
-        given in a python string. Default is None
+        Use this for optax optimizers that require extra arguments. Default is None.
+        This is for more advanced gradient transformation which requires extra arguments.
+        This is passed to `jinns.solve` via `extra_optax_args_and_kwargs`.
+        There are 3 main types of objects you would want to pass to more advanced optimizers:
+
+        1. **Callback functions**. They must be defined with `def` and their name must
+            start with `callback_` (this is a jinns requirement).
+            Most of the time, the optax callback functions take input
+            arguments that are passed automatically but that should also
+            be defined in the `extra_optax_args_and_kwargs` dictionary.
+        2. **Variables**. You can pass to the optimizer any global or local variable
+            available at runtime in the function `_loss_evaluate_and_euclidean_gradient_step`
+            [see](https://gitlab.com/mia_jinns/jinns/-/blob/main/jinns/solver/_utils.py).
+            To do so, the dictionary value must be a `jinns.solver.GetJinnsVariableName`
+            with a string argument being the jinns name of the variable you want. The dictionary
+            key correspond to the argument names in optax function signatures.
+        3. **Computed variables**.  You can pass to the optimizer any transformation of
+            global or local variable available at runtime in the function
+            `_loss_evaluate_and_euclidean_gradient_step`. Such transformation must be
+            defined with `def` and their name must start with `get_` (this is a jinns requirement).
+            Most of the time, the optax callback functions take input arguments that are passed
+            automatically but that should also be defined in the `extra_optax_args_and_kwargs`
+            dictionary.
+
+        See the tutorial notebooks for examples of usage.
     key
         Default `None`. A JAX random key that can be used for diverse purpose in
         the main iteration loop.
