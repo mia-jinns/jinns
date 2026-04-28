@@ -4,6 +4,7 @@ https://gitlab.com/scimba/scimba
 """
 
 from typing import Callable, NamedTuple
+from jaxtyping import Float, Int, Array
 
 # import warnings
 import jax
@@ -31,10 +32,10 @@ class ScaleBySSBFGSState(NamedTuple):
     linesearch_state: current linesearch state.
     """
 
-    count: jax.typing.ArrayLike
+    count: Int[Array, " 1"]
     params: optax.Params
     updates: optax.Params
-    hk: jax.typing.ArrayLike
+    hk: Float[Array, " n_params"]
     linesearch_state: NamedTuple
 
 
@@ -70,7 +71,7 @@ def self_scaled_bfgs_or_broyden(
             params=optax.tree.zeros_like(params),
             updates=optax.tree.zeros_like(params),
             hk=jnp.eye(params.shape[0]),
-            linesearch_state=linesearch.init(params_pt),
+            linesearch_state=linesearch.init(params_pt),  # type: ignore
         )
 
     def update_fn(
@@ -97,9 +98,9 @@ def self_scaled_bfgs_or_broyden(
             params_array_to_pytree(direction, grad_k_pt),
             state.linesearch_state,
             params_array_to_pytree(theta_k, theta_k_pt),
-            value=value,
-            grad=params_array_to_pytree(grad, grad_pt),
-            value_fn=value_fn,
+            value=value,  # type: ignore
+            grad=params_array_to_pytree(grad, grad_pt),  # type: ignore
+            value_fn=value_fn,  # type: ignore
             **extra_args_for_fn,
         )
         s_k = jnp.concatenate(
@@ -107,7 +108,7 @@ def self_scaled_bfgs_or_broyden(
         )
 
         # compute some values for next turn:
-        alpha_k = linesearch_state.learning_rate
+        alpha_k = linesearch_state.learning_rate  # type: ignore
 
         theta_kp1 = optax.apply_updates(theta_k, s_k)
 
@@ -158,15 +159,15 @@ def self_scaled_bfgs_or_broyden(
         H_kp1 = (1.0 / tau_k) * (state.hk - temp1 + temp2) + temp3
 
         new_state = ScaleBySSBFGSState(
-            count=numerics.safe_increment(state.count),
+            count=numerics.safe_increment(state.count),  # type: ignore
             params=theta_kp1,
             updates=s_k,
             hk=H_kp1,
-            linesearch_state=linesearch_state,
+            linesearch_state=linesearch_state,  # type: ignore
         )
         return params_array_to_pytree(s_k, grad_k_pt), new_state
 
-    return base.GradientTransformationExtraArgs(init_fn, update_fn)
+    return base.GradientTransformationExtraArgs(init_fn, update_fn)  # type: ignore
 
 
 def params_array_to_pytree(
