@@ -186,10 +186,10 @@ def train_solve_alternate_ssbroyden_adam(test_init):
         },
     )
 
-    # for callback fn definition, body code can incorporate global vairaible,
+    # for callback fn definition, body code can incorporate global vairiable,
     # other variables must be arguments. Note that the equinox module is global
     # and will be accessible in subsequent calls
-    # Note that the callback functions must accept asme arguments (you can use
+    # Note that the callback functions must accept same arguments (you can use
     # **kwargs to simplify here)
     def callback_value_fn(opt_params, batch, loss, non_opt_params, params_mask_):
         full_params = eqx.combine(opt_params, non_opt_params)
