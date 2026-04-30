@@ -358,7 +358,7 @@ def _loss_evaluate_and_natural_gradient_step(
 
 
 def _parse_extra_optax_args_and_kwargs(
-    extra_optax_args_and_kwargs: dict[str, Callable | GetJinnsVariableName],
+    extra_optax_args_and_kwargs: dict[str, Callable | GetJinnsVariableName] | None,
     fun_locals: dict[str, Any],
 ) -> dict[str, Any]:
     """

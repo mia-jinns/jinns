@@ -260,6 +260,7 @@ def solve_alternate(
         extra_optax_args_and_kwargs_for_solvers = jax.tree.map(
             lambda _: None, n_iter_by_solver
         )
+    assert extra_optax_args_and_kwargs_for_solvers is not None
 
     if opt_state_fields_for_acceleration is None:
         nn_opt_state_field_for_acceleration = None
