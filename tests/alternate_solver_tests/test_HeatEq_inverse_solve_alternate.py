@@ -1,3 +1,11 @@
+"""
+This test ensures that jinns solve_alternate function is mathematically
+equivalent to an complex alternating optimizer constructed in optax.
+However in backend, while optax still handles the potentially big state object even for non
+optimized parameters, jinns solve_alternate does not. When alternating over a given set of parameters
+the other set is simply None.
+"""
+
 import pytest
 
 from typing import NamedTuple, Any
