@@ -86,6 +86,6 @@ def test_last_non_nan_params_alternate(init_Params_objects):
         verbose=True,
     )
     # We see that theta is the first updated causing Nan and causing the break
-    assert jnp.allclose(out[0].nn_params.layers[0].weight, jnp.array([[0.15766478]]))
-    assert jnp.allclose(out[0].eq_params.kappa, jnp.array([[2.0]]))
-    assert jnp.allclose(out[0].eq_params.theta, jnp.array([[6.062991e36]]))
+    assert jnp.allclose(out[0].nn_params.layers[0].weight, jnp.array([[-0.03746729]]))
+    assert jnp.allclose(out[0].eq_params.kappa, jnp.array([[1.14649349e256]]))
+    assert jnp.allclose(out[0].eq_params.theta, jnp.array([[6.18500811e36]]))

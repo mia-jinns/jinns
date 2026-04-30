@@ -121,4 +121,4 @@ def test_init_params_equals_params(train_10it):
 
 def test_break_reason(train_10it):
     _, _, captured_out = train_10it
-    assert "NaN values" in captured_out
+    assert "NaN or Inf values" in captured_out
