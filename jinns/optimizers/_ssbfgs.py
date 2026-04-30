@@ -43,7 +43,29 @@ def self_scaled_bfgs_or_broyden(
     linesearch: LINESEARCH_TYPE | None = None,
     broyden: bool = False,
 ) -> base.GradientTransformationExtraArgs:
-    r"""Scales updates by SS-BFGS."""
+    r"""
+    Scales updates by ssBFGS or ssBroyden.
+
+    The implementation is taken from the [scimba package](https://gitlab.com/scimba/scimba)
+    The algorithms are described in [this article](https://arxiv.org/pdf/2405.04230)
+
+    Parameters
+    ----------
+    linesearch
+        It is recommended to use a linesearch method that computes a learning rate,
+        a.k.a. stepsize, to satisfy some criterion such as a sufficient decrease of the objective
+        by additional calls to the objective
+        by default optax.scale_by_zoom_linesearch(max_linesearch_steps=25, initial_guess_strategy="one")
+        is used for ssBroyden
+        by default optax.scale_by_backtracking_linesearch(max_backtracking_steps=15)
+        is used for ssBFGS
+    broyden
+        If False then ssBFGS updates will be used, else ssBroyden.
+    Returns
+    -------
+    optax.GradientTransformationExtraArgs
+        The ssBFGS or ssBroyden optimizer
+    """
 
     if linesearch is None:
         # the _linesearch instanciation choices below are made by empirical
