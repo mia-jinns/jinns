@@ -257,10 +257,13 @@ def solve_alternate(
     )
 
     if extra_optax_args_and_kwargs_for_solvers is None:
-        extra_optax_args_and_kwargs_for_solvers = jax.tree.map(
+        _extra_optax_args_and_kwargs_for_solvers = jax.tree.map(
             lambda _: None, n_iter_by_solver
         )
-    assert extra_optax_args_and_kwargs_for_solvers is not None
+    else:
+        _extra_optax_args_and_kwargs_for_solvers = (
+            extra_optax_args_and_kwargs_for_solvers
+        )
 
     if opt_state_fields_for_acceleration is None:
         nn_opt_state_field_for_acceleration = None
@@ -419,7 +422,7 @@ def solve_alternate(
                     ),
                     with_loss_weight_update=True,
                     extra_optax_args_and_kwargs=getattr(
-                        extra_optax_args_and_kwargs_for_solvers.eq_params, eq_param
+                        _extra_optax_args_and_kwargs_for_solvers.eq_params, eq_param
                     ),
                 )
 
@@ -595,7 +598,7 @@ def solve_alternate(
                 params_mask=nn_params_mask,
                 opt_state_field_for_acceleration=nn_opt_state_field_for_acceleration,
                 with_eq_params_update=False,
-                extra_optax_args_and_kwargs=extra_optax_args_and_kwargs_for_solvers.nn_params,
+                extra_optax_args_and_kwargs=_extra_optax_args_and_kwargs_for_solvers.nn_params,
             )
 
             # save loss value and selected parameters
