@@ -103,7 +103,7 @@ def test_heat_ngd_10it(train_heat_init):
 
     extra_optax_args_and_kwargs = {
         "value": jinns.solver.GetJinnsVariableName("train_loss_value"),
-        "grad": jinns.solver.GetJinnsVariableName("params"),
+        "grad": jinns.solver.GetJinnsVariableName("grads"),
         "value_fn": callback_value_fn,
         "batch": jinns.solver.GetJinnsVariableName("batch"),
         "loss": jinns.solver.GetJinnsVariableName("loss"),
@@ -133,4 +133,4 @@ def test_heat_ngd_10it(train_heat_init):
         extra_optax_args_and_kwargs=extra_optax_args_and_kwargs,
     )
 
-    assert jnp.allclose(total_loss_list[-1], 0.22496643, atol=1e-6)
+    assert jnp.allclose(total_loss_list[-1], 0.22491671, atol=1e-6)

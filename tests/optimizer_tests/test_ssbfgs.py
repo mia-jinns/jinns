@@ -105,7 +105,7 @@ def test_heat_ssbfgs_10it(train_heat_init):
 
     extra_optax_args_and_kwargs = {
         "value": jinns.solver.GetJinnsVariableName("train_loss_value"),
-        "grad_pt": jinns.solver.GetJinnsVariableName("params"),
+        "grad_pt": jinns.solver.GetJinnsVariableName("grads"),
         "value_fn": callback_value_fn,
         "grad_fn": callback_grad_fn,
         "batch": jinns.solver.GetJinnsVariableName("batch"),

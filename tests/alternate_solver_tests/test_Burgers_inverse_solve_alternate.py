@@ -201,8 +201,8 @@ def train_solve_alternate_ssbroyden_adam(test_init):
         grads = loss.ponderate_and_sum_gradient(grads)
         return eqx.partition(grads, params_mask_)[0]
 
-    def get_grad_pt(params, params_mask):
-        return params.partition(params_mask)[0]
+    def get_grad_pt(grads, params_mask):
+        return grads.partition(params_mask)[0]
 
     def get_non_opt_params(params, params_mask):
         return eqx.partition(params, params_mask)[1]
@@ -251,4 +251,4 @@ def train_solve_alternate_ssbroyden_adam(test_init):
 def test_ssbroyden_and_adam(train_solve_alternate_ssbroyden_adam):
     total_loss_values = train_solve_alternate_ssbroyden_adam
 
-    assert jnp.allclose(total_loss_values[-1], 0.7067825, atol=1e-5)
+    assert jnp.allclose(total_loss_values[-1], 0.70643278, atol=1e-5)
