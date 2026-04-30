@@ -761,7 +761,7 @@ def _get_break_fun(
             bool_nan_in_params = jax.lax.cond(
                 _check_nan_in_pytree(optimization.params),
                 lambda _: stop_while_loop(
-                    "NaN values in parameters (returning last non NaN values)"
+                    "NaN or Inf values in parameters (returning last non NaN or Inf values)"
                 ),
                 continue_while_loop,
                 None,

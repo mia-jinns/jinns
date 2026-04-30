@@ -775,7 +775,7 @@ def solve_alternate(
 
     # re-arange return signature to be consistant with jinns.solve_alternate
     return (
-        carry[2].params,
+        carry[2].last_non_nan_params,
         loss_container.train_loss_values,
         stored_loss_terms_concatenated,
         carry[4].data,
