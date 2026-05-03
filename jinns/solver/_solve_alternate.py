@@ -7,7 +7,7 @@ from __future__ import annotations
 import time
 import operator
 from dataclasses import fields
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 import jax
 import jax.numpy as jnp
 import optax
@@ -43,6 +43,7 @@ if TYPE_CHECKING:
     from jinns.data._AbstractDataGenerator import AbstractDataGenerator
     from jinns.data._DataGeneratorObservations import DataGeneratorObservations
     from jinns.data._DataGeneratorParameter import DataGeneratorParameter
+    from jinns.solver._utils import GetJinnsVariableName
 
 
 def solve_alternate(
@@ -59,6 +60,10 @@ def solve_alternate(
     obs_data: DataGeneratorObservations | None = None,
     param_data: DataGeneratorParameter | None = None,
     opt_state_fields_for_acceleration: Params[str] | None = None,
+    extra_optax_args_and_kwargs_for_solvers: Params[
+        dict[str, Callable | GetJinnsVariableName]
+    ]
+    | None = None,
     key: PRNGKeyArray | None = None,
 ) -> tuple[
     Params[Array],
@@ -136,6 +141,12 @@ def solve_alternate(
         A `jinns.parameters.Params` object, where leave
         is an `opt_state_field_for_acceleration` as
         described in `jinns.solve`.
+    extra_optax_args_and_kwargs_for_solvers
+        A Params object where each leaf is a `extra_optax_args_and_kwargs` as
+        defined in `jinns.solve`.
+
+        See the tutorial notebooks for examples of usage.
+
     key
         Default `None`. A JAX random key that can be used for diverse purpose in
         the main iteration loop.
@@ -211,33 +222,6 @@ def solve_alternate(
     nn_optimizer = optimizers.nn_params
     eq_optimizers = optimizers.eq_params
 
-    # NOTE below we have opt_states that are shaped as Params
-    # but this seems OK since the real gain is to not differentiate
-    # wrt to unwanted params
-    nn_opt_state = nn_optimizer.init(init_params)
-
-    if opt_state_fields_for_acceleration is None:
-        nn_opt_state_field_for_acceleration = None
-        eq_params_opt_state_field_for_accel = jax.tree.map(
-            lambda l: None,
-            eq_optimizers,
-            is_leaf=lambda x: isinstance(x, optax.GradientTransformation),
-        )
-    else:
-        nn_opt_state_field_for_acceleration = (
-            opt_state_fields_for_acceleration.nn_params
-        )
-        eq_params_opt_state_field_for_accel = (
-            opt_state_fields_for_acceleration.eq_params
-        )
-
-    eq_opt_states = jax.tree.map(
-        lambda opt_: opt_.init(init_params),
-        eq_optimizers,
-        is_leaf=lambda x: isinstance(x, optax.GradientTransformation),
-        # do not traverse further
-    )
-
     # params mask to be able to optimize only on nn_params
     # NOTE we can imagine that later on, params mask is given as user input and
     # we could then have more refined scheme than just nn_params and eq_params.
@@ -259,6 +243,49 @@ def solve_alternate(
 
     eq_params_masks, eq_gd_steps_derivative_keys = (
         _get_eq_param_masks_and_derivative_keys(eq_optimizers, init_params, loss)
+    )
+
+    # OPTIMIZERS INIT. NOTE that this requires using the
+    # mask parameters for complete compatibility with some optimizers (eg
+    # ssBFGS or ssBroyden and their hk state)
+
+    # NOTE below we have opt_states that are shaped as Params
+    # but this seems OK since the real gain is to not differentiate
+    # wrt to unwanted params
+    nn_opt_state = nn_optimizer.init(
+        eqx.partition(init_params, nn_params_mask)[0],
+    )
+
+    if extra_optax_args_and_kwargs_for_solvers is None:
+        _extra_optax_args_and_kwargs_for_solvers = jax.tree.map(
+            lambda _: None, n_iter_by_solver
+        )
+    else:
+        _extra_optax_args_and_kwargs_for_solvers = (
+            extra_optax_args_and_kwargs_for_solvers
+        )
+
+    if opt_state_fields_for_acceleration is None:
+        nn_opt_state_field_for_acceleration = None
+        eq_params_opt_state_field_for_accel = jax.tree.map(
+            lambda l: None,
+            eq_optimizers,
+            is_leaf=lambda x: isinstance(x, optax.GradientTransformation),
+        )
+    else:
+        nn_opt_state_field_for_acceleration = (
+            opt_state_fields_for_acceleration.nn_params
+        )
+        eq_params_opt_state_field_for_accel = (
+            opt_state_fields_for_acceleration.eq_params
+        )
+
+    eq_opt_states = jax.tree.map(
+        lambda opt_, mask: opt_.init(eqx.partition(init_params, mask)[0]),
+        eq_optimizers,
+        eq_params_masks,
+        is_leaf=lambda x: isinstance(x, optax.GradientTransformation),
+        # do not traverse further
     )
 
     #######################################
@@ -394,6 +421,9 @@ def solve_alternate(
                         eq_params_opt_state_field_for_accel, eq_param
                     ),
                     with_loss_weight_update=True,
+                    extra_optax_args_and_kwargs=getattr(
+                        _extra_optax_args_and_kwargs_for_solvers.eq_params, eq_param
+                    ),
                 )
 
                 # save loss value and selected parameters
@@ -568,6 +598,7 @@ def solve_alternate(
                 params_mask=nn_params_mask,
                 opt_state_field_for_acceleration=nn_opt_state_field_for_acceleration,
                 with_eq_params_update=False,
+                extra_optax_args_and_kwargs=_extra_optax_args_and_kwargs_for_solvers.nn_params,
             )
 
             # save loss value and selected parameters
@@ -744,7 +775,7 @@ def solve_alternate(
 
     # re-arange return signature to be consistant with jinns.solve_alternate
     return (
-        carry[2].params,
+        carry[2].last_non_nan_params,
         loss_container.train_loss_values,
         stored_loss_terms_concatenated,
         carry[4].data,

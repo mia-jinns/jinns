@@ -6,7 +6,9 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-from typing import TYPE_CHECKING, Callable
+from types import FunctionType
+from typing import TYPE_CHECKING, Callable, NamedTuple, Any
+import inspect
 import jax
 from jax import jit
 import jax.numpy as jnp
@@ -32,6 +34,10 @@ from jinns.optimizers._utils_ngd import (
     _get_sqrt_weights_per_sample,
     _reweight_pytree,
 )
+
+
+class GetJinnsVariableName(NamedTuple):
+    name: str
 
 
 if TYPE_CHECKING:
@@ -100,14 +106,15 @@ def _loss_evaluate_and_euclidean_gradient_step(
     params: Params[Array],
     last_non_nan_params: Params[Array],
     state: optax.OptState,
-    optimizer: optax.GradientTransformation,
+    optimizer: optax.GradientTransformation | optax.GradientTransformationExtraArgs,
     loss_container: LossContainer,
     key: PRNGKeyArray | None,
     params_mask: Params[bool] | None = None,
     state_field_for_acceleration: str | None = None,
     with_loss_weight_update: bool = True,
+    extra_optax_args_and_kwargs: dict[str, Callable | GetJinnsVariableName]
+    | None = None,
     **__,  # ignore supplementary kwargs that are for
-    # _loss_evaluate_and_natural_gradient_step
 ):
     """Computes loss values and (euclidean) gradient, then performs the update
     according to the given optimizer.
@@ -141,7 +148,7 @@ def _loss_evaluate_and_euclidean_gradient_step(
         the last non NaN parameters.
     state : optax.OptState
         the optimizer state
-    optimizer : optax.GradientTransformation
+    optimizer : optax.GradientTransformation | optax.GradientTransformationExtraArgs
         the optimizer
     loss_container : LossContainer
         the loss values throughout optimization.
@@ -165,6 +172,9 @@ def _loss_evaluate_and_euclidean_gradient_step(
     with_loss_weight_update : bool, optional
         should we update loss_weights for next iteration according to current loss_values
         by default True
+    extra_optax_args_and_kwargs : dict[str, Callable | GetJinnsVariableName]
+        Use this for optax optimizers that require extra arguments. See jinns.solve() documentation
+        for the full details
 
     Returns
     -------
@@ -206,6 +216,10 @@ def _loss_evaluate_and_euclidean_gradient_step(
     # 3. total loss after possible weight update
     train_loss_value = loss.ponderate_and_sum_loss(loss_terms)
 
+    extra_for_update_fn = _parse_extra_optax_args_and_kwargs(
+        extra_optax_args_and_kwargs, locals()
+    )
+
     params, state = _gradient_step(
         grads,
         optimizer,
@@ -213,6 +227,7 @@ def _loss_evaluate_and_euclidean_gradient_step(
         # params here, this would be a wrong procedure
         state,
         params_mask,
+        **extra_for_update_fn,
     )
 
     # check if any of the parameters is NaN
@@ -342,12 +357,96 @@ def _loss_evaluate_and_natural_gradient_step(
     return train_loss_value, params, last_non_nan_params, state, loss, loss_terms
 
 
+def _parse_extra_optax_args_and_kwargs(
+    extra_optax_args_and_kwargs: dict[str, Callable | GetJinnsVariableName] | None,
+    fun_locals: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Parse the extra arguments for the optimizers. Default is None.
+    This is for more advanced gradient transformation which requires extra arguments.
+    This is passed to `jinns.solve` via `extra_optax_args_and_kwargs`.
+    There are 3 main types of objects you would want to pass to more advanced optimizers:
+
+    1. **Callback functions**. They must be defined with `def` and their name must
+        start with `callback_` (this is a jinns requirement).
+        Most of the time, the optax callback functions take input
+        arguments that are passed automatically but that should also
+        be defined in the `extra_optax_args_and_kwargs` dictionary.
+    2. **Variables**. You can pass to the optimizer any global or local variable
+        available at runtime in the function `_loss_evaluate_and_euclidean_gradient_step`
+        [see](https://gitlab.com/mia_jinns/jinns/-/blob/main/jinns/solver/_utils.py).
+        To do so, the dictionary value must be a `jinns.solver.GetJinnsVariableName`
+        with a string argument being the jinns name of the variable you want. The dictionary
+        key correspond to the argument names in optax function signatures.
+    3. **Computed variables**.  You can pass to the optimizer any transformation of
+        global or local variable available at runtime in the function
+        `_loss_evaluate_and_euclidean_gradient_step`. Such transformation must be
+        defined with `def` and their name must start with `get_` (this is a jinns requirement).
+        Most of the time, the optax callback functions take input arguments that are passed
+        automatically but that should also be defined in the `extra_optax_args_and_kwargs`
+        dictionary.
+
+    See the tutorial notebooks for examples of usage.
+
+    Technically, this is the treatment for each type of variable:
+
+    1. **Callback functions**. We create the function at runtime, populating its global
+        variable(s) by the current global variables.
+    2. **Variables**. We evaluate (`eval` built-in) the string attribute of GetJinnsVariableName
+        The string attribute must correspond to a variable name available in current locals()
+    3. **Computed Variables**. We create the function at runtime, populating its global
+        variable(s) by the current global variables. We then evaluate it by inspecting its signature,
+        getting the arguments and looking for the arguments in the local variable (where they must be found).
+
+    Note that there cannot be local variables to the callback functions or
+    compute variable functions, all the local variables needed must be passed as parameters.
+
+    The following links were useful:
+    - https://discuss.python.org/t/functions-variable-binding-and-exec/78894
+    - https://stackoverflow.com/questions/60929677/how-pass-a-value-to-a-variable-in-python-function-with-using-exec
+    - https://stackoverflow.com/questions/12919278/how-to-define-free-variable-in-python
+    - https://stackoverflow.com/questions/2749655/why-are-closures-broken-within-exec
+    - https://stackoverflow.com/questions/75941073/give-an-example-explanation-of-the-closure-parameter-of-the-exec-function
+
+    """
+    extra_args_and_kwargs_for_update_fn = {}
+    if extra_optax_args_and_kwargs is not None:
+        for kw, expr in extra_optax_args_and_kwargs.items():
+            if callable(expr) and expr.__name__[:8] == "callback":
+                callback_fun = FunctionType(expr.__code__, expr.__globals__)
+                extra_args_and_kwargs_for_update_fn[kw] = callback_fun
+            elif callable(expr) and expr.__name__[:3] == "get":
+                jinns_local_fn = FunctionType(expr.__code__, expr.__globals__)
+                # below is a wrapper to make the lambda functions of the user
+                # compatible with **kwargs
+                jinns_local_fn_wrapped = lambda **kwargs: jinns_local_fn(  # pylint:disable=not-callable
+                    **{
+                        arg: kwargs[arg]
+                        for arg in inspect.getfullargspec(jinns_local_fn).args
+                    }
+                )
+                # pylint warns because FunctionType != Callable, but we ignore
+                jinns_local_var = jinns_local_fn_wrapped(**fun_locals)
+                extra_args_and_kwargs_for_update_fn[kw] = jinns_local_var
+            elif isinstance(expr, GetJinnsVariableName):
+                extra_args_and_kwargs_for_update_fn[kw] = eval(expr.name, fun_locals)
+            else:
+                raise ValueError(
+                    "Values of `extra_optax_args_and_kwargs` must be functions whose name"
+                    ' starts with "callback", "get" or an'
+                    " instance of GetJinnsVariableName. See the documentation for the "
+                    "different use cases. For clarity, lambda functions are not allowed."
+                )
+    return extra_args_and_kwargs_for_update_fn
+
+
 def _gradient_step(
     grads: Params[Array | None] | tuple,
     optimizer: optax.GradientTransformation,
     params: Params[Array],
     state: optax.OptState,
     params_mask: Params[bool] | None = None,
+    *args,
     **kwargs,
 ) -> tuple[
     Params[Array],
@@ -389,31 +488,53 @@ def _gradient_step(
         assert isinstance(grads, Params)  # for type checking
         opt_grads, _ = grads.partition(params_mask)
 
-    # NOTE, here we need to pass the full unmasked params for more complex
-    # optimizer updates to be done (updates which rely on params or more).
-    # NOTE also that, while compute gradients beforehand, we have computed
+    # NOTE that for jinns.solve() while compute gradients beforehand, we have computed
     # gradients for ALL parameters, even the non optimized ones: we hope that
     # JAX interal machinery will discard those computations from the
     # computational graph since the gradients for the non optimized parameters
     # are finally not used.
     # Making sure gradients are only computed for optimized (unmasked)
     # parameters seem like a big jinns refactorization (future TODO)
+    if params_mask is not None and not isinstance(
+        state, NGDState
+    ):  # <=> jinns.solve_alternate is used and not NGD!
+        # NOTE that for the jinns.solve_alternate we only pass the optimized
+        # params. Because if we are doing solve_alternate, this means state has already been masked and so grads
+        # and thus updates contain None. Hence params
+        # must be masked too to avoid errors of the type:
+        # TypeError: unsupported operand type(s) for *: 'float' and 'NoneType'
+        # Therefore if one of the optimizer is a
+        # optax.GradientTransformationExtraArgs with extra_args requiring a
+        # the full parameters, the latter need to be reasemble via a callback
+        # function
+        # The not NGD is important, because in the particular case of NGD, the
+        # callback fn is defined later in the jinns NGD update fn
+        # hence, we must pass the full params further
+        opt_params, non_opt_params = params.partition(params_mask)
+    else:
+        # NOTE, that for the jinns.solve() here we need to pass the full unmasked params for more complex
+        # optimizer updates to be done, e.g.:
+        # - updates which rely on params or more (linesearch which reevaluates
+        # the loss.evaluate)
+        # - complex optimizer such as optax.partition, where the
+        # masking is done in the update, therefore we still have full params at
+        # this point (unlike for jinns.solve_alternate at the previous
+        # conditional)
+        # - combination of both (case of NGD in inverse problem)
+        opt_params = params
     updates, state = optimizer.update(
         opt_grads,  # type: ignore
         state,
-        params,  # type: ignore
+        opt_params,  # type: ignore
+        *args,
         **kwargs,
     )  # Also see optimizer.init for explanation of type ignore
 
-    # NOTE, if params_mask is not None, this means we are doing
-    # solve_alternate, this means state has already been masked and so grads
-    # and thus updates contain None. Hence params
-    # must be masked too to avoid errors of the type:
-    # TypeError: unsupported operand type(s) for *: 'float' and 'NoneType'
-    opt_params, non_opt_params = params.partition(params_mask)
     opt_params = optax.apply_updates(opt_params, updates)  # type: ignore
 
-    if params_mask is not None:
+    if params_mask is not None and not isinstance(state, NGDState):
+        # recombine the full Params if it has been splitted for the reasons
+        # given above
         params = eqx.combine(opt_params, non_opt_params)  # type: ignore
         # (bad cohabitaiton with PyTree)
     else:
@@ -461,6 +582,50 @@ def _get_unmasked_state(state, opt_state, non_opt_state):
     )
 
     return state
+
+
+def _check_extra_optax_args_and_kwargs(
+    optimizer: optax.GradientTransformationExtraArgs,
+    extra_optax_args_and_kwargs: set[str] | None,
+):
+    """
+    We allow for extra_optax_args_and_kwargs being None (empty set then)
+    because the optax transform could be a
+    optax.GradientTransformationExtraArgs with actually no extra args! And this
+    _check_extra_optax_args_and_kwargs would then pass because empty set is
+    subset of empty set
+    """
+    if extra_optax_args_and_kwargs is None:
+        extra_optax_args_and_kwargs = set()
+    if "extra_args" in inspect.signature(optimizer.update).parameters.keys():
+        # possible cases either a single optax transform with extra args
+        # or a chain of optax transforms with or without extra args
+        extra_args_for_update_fn_keys: set[str] = set()
+        if "update_fns" in inspect.getclosurevars(optimizer.update).nonlocals.keys():
+            # this is a chain optax transform
+            # get the arguments of each update_fn
+            for update_fn_inside_chain in inspect.getclosurevars(
+                optimizer.update
+            ).nonlocals["update_fns"]:
+                extra_args_for_update_fn_keys = extra_args_for_update_fn_keys.union(
+                    set(inspect.signature(update_fn_inside_chain).parameters.keys())
+                )
+    else:
+        # this can be optax transform with extra args without extra_args named!
+        extra_args_for_update_fn_keys = set(
+            inspect.signature(optimizer.update).parameters.keys()
+        )
+    # do not count the args that are always included
+    # see that we discard extra_args
+    extra_args_for_update_fn_keys = extra_args_for_update_fn_keys.difference(
+        set({"updates", "state", "params", "extra_args"})
+    )
+
+    assert extra_args_for_update_fn_keys.issubset(extra_optax_args_and_kwargs), (
+        f"`extra_optax_args_and_kwargs` with keys {extra_optax_args_and_kwargs}"
+        " is not cover for all the optax extra args keys which are"
+        f"{extra_args_for_update_fn_keys}"
+    )
 
 
 @jit(static_argnames=["prefix"])  # new in jax 0.8.1
@@ -596,7 +761,7 @@ def _get_break_fun(
             bool_nan_in_params = jax.lax.cond(
                 _check_nan_in_pytree(optimization.params),
                 lambda _: stop_while_loop(
-                    "NaN values in parameters (returning last non NaN values)"
+                    "NaN or Inf values in parameters (returning last non NaN or Inf values)"
                 ),
                 continue_while_loop,
                 None,

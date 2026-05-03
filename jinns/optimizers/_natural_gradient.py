@@ -4,7 +4,6 @@
 import equinox as eqx
 import optax
 import jinns
-from typing import Optional
 import jax
 import jax.numpy as jnp
 
@@ -53,9 +52,9 @@ def vanilla_ngd(
     *,
     sgd_learning_rate: float = 1.0,
     gram_reg: float = 1e-5,
-    linesearch: Optional[
-        optax.GradientTransformationExtraArgs
-    ] = optax.scale_by_backtracking_linesearch(max_backtracking_steps=15, verbose=True),
+    linesearch: optax.GradientTransformationExtraArgs = optax.scale_by_backtracking_linesearch(
+        max_backtracking_steps=15, verbose=True
+    ),
     eq_params_tx: dict | None = None,
 ) -> optax.GradientTransformationExtraArgs:
     r"""jinns implementation of vanilla Natural Gradient Descent (NGD).
@@ -72,16 +71,16 @@ def vanilla_ngd(
 
     Parameters
     ----------
-    sgd_learning_rate : float, optional
+    sgd_learning_rate
         the starting learning rate multiply the NGD update, by default 1.0
-    gram_reg : float, optional
+    gram_reg
         the ridge regularization used before inverting the Gram matrix, by default 1e-5
-    linesearch : Optional[base.GradientTransformationExtraArgs], optional
+    linesearch
         it is recommended to use a linesearch method that computes a learning rate,
         a.k.a. stepsize, to satisfy some criterion such as a sufficient decrease of the objective
         by additional calls to the objective
         by default optax.scale_by_backtracking_linesearch(max_backtracking_steps=15, verbose=True)
-    eq_params_tx : dict | None, optional
+    eq_params_tx
         optional dictionnary of optax optimizers for each eq_params, by default None which means eq_params are not updated (forward problem)
 
     Returns

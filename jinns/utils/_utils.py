@@ -10,7 +10,7 @@ from jaxtyping import PyTree, Array, Bool
 
 def _check_nan_in_pytree(pytree: PyTree) -> Bool[Array, " "]:
     """
-    Check if there is a NaN value anywhere is the pytree
+    Check if there is at least a NaN or Inf value anywhere is the pytree
 
     Parameters
     ----------
@@ -20,12 +20,15 @@ def _check_nan_in_pytree(pytree: PyTree) -> Bool[Array, " "]:
     Returns
     -------
     res
-        A boolean. True if any of the pytree content is NaN
+        A boolean. True if any of the pytree content is NaN or Inf
     """
     return jnp.any(
         jnp.array(
             jax.tree_util.tree_leaves(
-                jax.tree_util.tree_map(lambda x: jnp.any(jnp.isnan(x)), pytree)
+                jax.tree_util.tree_map(
+                    lambda x: jnp.any(jnp.logical_or(jnp.isnan(x), jnp.isinf(x))),
+                    pytree,
+                )
             )
         )
     )
