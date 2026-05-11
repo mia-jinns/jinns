@@ -61,6 +61,7 @@ def vmap_vmap_fun_normalization(
     batch: Array,
     params: Params[Array],
     vmap_in_axes_params: tuple[Params[int | None] | None],
+    in_axes: tuple[tuple[int, int | None], ...] = ((0, 0),),
     jacrev: bool = False,
     **_,
 ):
@@ -88,15 +89,10 @@ def vmap_vmap_fun_normalization(
     cart_prod_t_x = batch[0]
     norm_weights_for_x = batch[1]
 
-    if norm_weights_for_x.ndim > 1:
-        in_axes_norm_weights = (1,)
-    else:
-        in_axes_norm_weights = (None,)
-
     v_u = jax.vmap(  # outer vmap over t
         jax.vmap(  # inner vmap over x and norm_weights if it is an array
             fun,
-            in_axes=(((0,) + in_axes_norm_weights),) + vmap_in_axes_params,
+            in_axes=in_axes + vmap_in_axes_params,
         ),
         in_axes=(((0,) + (None,)),) + vmap_in_axes_params,
     )
@@ -229,8 +225,9 @@ def normalization_loss_apply(
     if isinstance(u, (PINN, HyperPINN)):
         res = u(x, params)
         assert res.shape[-1] == 1, "norm loss expects unidimensional *PINN"
+        assert norm_weight.squeeze().ndim == 0, "normalization weight must be a scalar"
         # Monte-Carlo integration using importance sampling
-        res = res.squeeze() * norm_weight
+        res = res.squeeze() * norm_weight.squeeze()
     elif isinstance(u, SPINN):
         # NOTE norm_weight must be scalar here
         res = u(x, params)

@@ -51,7 +51,7 @@ def solve(
     data: AbstractDataGenerator,
     loss: AbstractLoss,
     optimizer: optax.GradientTransformation | optax.GradientTransformationExtraArgs,
-    print_loss_every: int = 1000,
+    print_loss_every: int | None = None,
     opt_state: optax.OptState | NGDState | None = None,
     tracked_params: Params[Any | None] | None = None,
     param_data: DataGeneratorParameter | None = None,
@@ -223,6 +223,9 @@ def solve(
     initialization_time = time.time()
     if n_iter < 1:
         raise ValueError("Cannot run jinns.solve for n_iter<1")
+
+    if print_loss_every is None:
+        print_loss_every = n_iter // 10
 
     if param_data is not None:
         if param_data.param_batch_size is not None:

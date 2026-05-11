@@ -8,7 +8,7 @@ Physics Informed Neural Networks with JAX. **jinns** is a Python package for phy
  * forward problem: learning a PDE solution.
  * inverse problem: learning the parameters of a PDE. See `jinns.solve_alternate()` for fine-grained and efficient inverse problems.
  * meta-modeling: learning a family of PDE indexed by its parameters.
- * **New in jinns v1.9.0:** natural gradient optimizers which greatly enhances the training of PINNs
+ * **New in jinns v1.9.2:** Second order optimizers which greatly enhances the training of PINNs. We recommend testing them as default optimizers.
 
 **jinns** specific points:
 
