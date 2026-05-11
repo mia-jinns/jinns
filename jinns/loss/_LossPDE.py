@@ -144,30 +144,32 @@ class _LossPDEAbstract(
                 raise ValueError(
                     "`norm_weights` must be provided when `norm_samples` is used!"
                 )
-            if isinstance(norm_weights, (int, float)):
-                self.norm_weights = jnp.array(norm_weights)
-            elif isinstance(norm_weights, Array) and (
-                norm_weights.shape == (1,) or norm_weights.ndim == 0
-            ):
-                # if user provided norm_weights=jnp.array([0.1]) or
-                # jnp.array(0.1)...
-                self.norm_weights = norm_weights
-            else:
-                assert isinstance(norm_weights, Array)
+            if isinstance(self.u, PINN):
+                if isinstance(norm_weights, (int, float)):
+                    norm_weights = jnp.array(norm_weights) * jnp.ones(
+                        (norm_samples.shape[0],)
+                    )
+                elif isinstance(norm_weights, Array) and (
+                    norm_weights.shape == (1,) or norm_weights.ndim == 0
+                ):
+                    # if user provided norm_weights=jnp.array([0.1]) or
+                    # jnp.array(0.1)...
+                    norm_weights = norm_weights * jnp.ones((norm_samples.shape[0],))
                 if not (norm_weights.shape[0] == norm_samples.shape[0]):
                     raise ValueError(
-                        "norm_weights and "
-                        "norm_samples must have the same leading dimension"
+                        "norm_weights and norm_samples must have the same leading dimension"
                     )
                 self.norm_weights = norm_weights
-                if isinstance(self.u, SPINN):
-                    if not isinstance(norm_weights, (int, float)):
-                        raise ValueError("norm_weights must be scalar when using SPINN")
-                    elif isinstance(norm_weights, Array):
-                        if norm_weights.shape != (1,):
-                            raise ValueError(
-                                "norm_weights must be scalar when using SPINN"
-                            )
+            elif isinstance(self.u, SPINN):
+                if not (
+                    isinstance(norm_weights, (int, float))
+                    or (
+                        isinstance(norm_weights, Array)
+                        and norm_weights.squeeze().shape == ()
+                    )
+                ):
+                    raise ValueError("norm_weights must be scalar when using SPINN")
+                self.norm_weights = jnp.array(norm_weights)
         else:
             self.norm_samples = norm_samples
             self.norm_weights = None
@@ -426,7 +428,9 @@ class LossPDEStatio(
             norm_loss={
                 "fun": norm_loss_fun,
                 "batch": norm_batch,
-                "in_axes": ((0, None),),
+                "in_axes": ((0, None),) if isinstance(self.u, SPINN) else ((0, 0),),
+                # if SPINN norm_weight has been forced to be a scalar
+                # if PINN norm_weight has been forced to be an array with same leading dim as norm_samples
             },
             boundary_loss={"fun": boundary_loss_fun, "batch": border_batch},
             observations={
@@ -748,9 +752,13 @@ class LossPDENonStatio(
 
         all_funs_and_params: PDENonStatioComponents = PDENonStatioComponents(
             dyn_loss={"fun": dyn_loss_fun, "batch": domain_batch},
-            norm_loss={"fun": norm_loss_fun, "batch": norm_batch},
-            # here since the specifities of norm_loss we need to rewrite the
-            # defaults in_axes=(0,) argument
+            norm_loss={
+                "fun": norm_loss_fun,
+                "batch": norm_batch,
+                "in_axes": ((0, None),) if isinstance(self.u, SPINN) else ((0, 0),),
+                # if SPINN norm_weight has been forced to be a scalar
+                # if PINN norm_weight has been forced to be an array with same leading dim as norm_samples
+            },
             boundary_loss={"fun": boundary_loss_fun, "batch": border_batch},
             initial_condition={
                 "fun": initial_condition_fun,
