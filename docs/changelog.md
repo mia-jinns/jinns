@@ -1,5 +1,13 @@
 # Changelog
 
+* v.1.9.3:
+
+    - Fix bug when passing an array of importance weights for each MC sample when computing normalization loss for PINNs.
+    - Set a better default value for `print_loss_every` argument of `jinns.solve()`.
+    - `pylint` is now installed with the `[dev]` extra since it is one of the pre-commit hooks.
+
+    Changes are from [!99](https://gitlab.com/mia_jinns/jinns/-/merge_requests/99)
+
 * v.1.9.2:
 
     - Allow for more complex `optax` optimizers. Add a first implementation ssBroyden and ssBFGS based on Scimba implementation [project repo](https://gitlab.com/scimba/scimba). The algorithms are described in [this article](https://arxiv.org/pdf/2405.04230). Have a look at the tutorial notebooks for usage.
