@@ -59,9 +59,14 @@ class PPINN_MLP(PINN):
         subtree is kept; 2) False, in which case the leaf or subtree is
         replaced with replace; 3) a callable Leaf -> bool, in which case this is evaluated on the leaf or mapped over the subtree, and the leaf kept or replaced as appropriate.
     eqx_network_list
-            A list of eqx.nn.MLP objects with same input
-            dimensions. They represent the parallel subnetworks of the PPIN MLP.
-            Their respective outputs are concatenated.
+        A list of eqx.nn.MLP objects with same input
+        dimensions. They represent the parallel subnetworks of the PPIN MLP.
+        Their respective outputs are concatenated.
+    hyperparams
+        A list of keys from Params.eq_params that will be considered as
+        hyperparameters for metamodeling (a `DataGeneratorParameter` instance must
+        have been given to `jinns.solve()` from which batchs of parameters will be
+        drawn - and transferred to Params.eq_params). Default is None.
     """
 
     eqx_network_list: InitVar[list[eqx.Module]] = eqx.field(kw_only=True)
@@ -99,6 +104,17 @@ class PPINN_MLP(PINN):
             # collocation points (eg for plotting, whithout using
             # DataGenerators)
             inputs = inputs[None]
+
+        if self.hyperparams is not None:
+            eq_params_batch = jnp.concatenate(
+                [getattr(params.eq_params, k).flatten() for k in self.hyperparams],  # pylint: disable=E1133
+                axis=0,
+            )
+            inputs = jnp.concatenate(
+                [inputs, eq_params_batch],
+                axis=0,
+            )
+
         transformed_inputs = self.input_transform(inputs, params)
 
         outs = []
@@ -148,6 +164,7 @@ class PPINN_MLP(PINN):
             | None
         ) = None,
         slice_solution: slice | None = None,
+        hyperparams: list[str] | None = None,
     ) -> tuple[Self, tuple[PINN, ...]]:
         r"""
         Utility function to create a Parrallel PINN neural network for Jinns.
@@ -193,6 +210,11 @@ class PPINN_MLP(PINN):
             useful when the PPINN MLP is also used to output equation parameters for
             example Note that it must be a slice and not an integer (a
             preprocessing of the user provided argument takes care of it).
+        hyperparams
+            A list of keys from Params.eq_params that will be considered as
+            hyperparameters for metamodeling (a `DataGeneratorParameter` instance must
+            have been given to `jinns.solve()` from which batchs of parameters will be
+            drawn - and transferred to Params.eq_params). Default is None.
 
 
         Returns
@@ -222,5 +244,6 @@ class PPINN_MLP(PINN):
             eq_type=eq_type,
             input_transform=input_transform,  # type: ignore
             output_transform=output_transform,  # type: ignore
+            hyperparams=hyperparams,
         )
         return ppinn, ppinn.init_params

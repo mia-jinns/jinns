@@ -78,7 +78,12 @@ class PINN(AbstractPINN):
         Each of its leaves should either be 1) True, in which case the leaf or
         subtree is kept; 2) False, in which case the leaf or subtree is
         replaced with replace; 3) a callable Leaf -> bool, in which case this is evaluated on the leaf or mapped over the subtree, and the leaf kept or replaced as appropriate.
-
+    hyperparams : list[str], default=None
+            A list of keys from Params.eq_params that will be considered as
+            hyperparameters for metamodeling (a `DataGeneratorParameter` instance must
+            have been given to `jinns.solve()` from which batchs of parameters will be
+            drawn - and transferred to Params.eq_params). Mandatory for HyperPINN,
+            otherwise default is None.
 
     Raises
     ------
@@ -98,6 +103,7 @@ class PINN(AbstractPINN):
         [Float[Array, " input_dim"], Float[Array, " output_dim"], Params[Array]],
         Float[Array, " output_dim"],
     ] = eqx.field(static=True, kw_only=True, default=None)
+    hyperparams: list[str] | None = eqx.field(static=True, kw_only=True, default=None)
 
     eqx_network: InitVar[eqx.Module] = eqx.field(kw_only=True)
     filter_spec: PyTree[Union[bool, Callable[[Any], bool]]] = eqx.field(
@@ -194,6 +200,16 @@ class PINN(AbstractPINN):
             # collocation points (eg for plotting, whithout using
             # DataGenerators)
             inputs = inputs[None]
+
+        if self.hyperparams is not None:
+            eq_params_batch = jnp.concatenate(
+                [getattr(params.eq_params, k).flatten() for k in self.hyperparams],  # pylint: disable=E1133
+                axis=0,
+            )
+            inputs = jnp.concatenate(
+                [inputs, eq_params_batch],
+                axis=0,
+            )
 
         model = eqx.combine(params.nn_params, self.static)
 
