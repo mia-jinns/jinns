@@ -65,17 +65,16 @@ class PPINN_MLP(PINN):
     """
 
     eqx_network_list: InitVar[list[eqx.Module]] = eqx.field(kw_only=True)
-    init_params: tuple[PINN, ...] = eqx.field(
-        init=False
-    )  # overriding parent attribute type
+    init_params: tuple[PINN, ...]  # overriding parent attribute type
     static: tuple[PINN, ...] = eqx.field(
-        init=False, static=True
+        static=True
     )  # overriding parent attribute type
 
-    def __post_init__(self, eqx_network, eqx_network_list):
-        super().__post_init__(
+    def __init__(self, eqx_network_list, **PINN_kwargs):
+        super().__init__(
             eqx_network=eqx_network_list[0],  # this is not used since it is
             # overwritten just below
+            **PINN_kwargs,
         )
         params, static = eqx.partition(eqx_network_list[0], self.filter_spec)
         self.init_params, self.static = (params,), (static,)
@@ -218,7 +217,6 @@ class PPINN_MLP(PINN):
                 eqx_network_list.append(MLP(key=subkey, eqx_list=eqx_list))
 
         ppinn = cls(
-            eqx_network=None,  # type: ignore
             eqx_network_list=cast(list[eqx.Module], eqx_network_list),
             slice_solution=slice_solution,  # type: ignore
             eq_type=eq_type,

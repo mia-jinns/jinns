@@ -104,27 +104,46 @@ class PINN(AbstractPINN):
         static=True, kw_only=True, default=eqx.is_inexact_array
     )
 
-    init_params: PINN = eqx.field(init=False)
-    static: PINN = eqx.field(init=False, static=True)
+    init_params: PINN
+    static: PINN = eqx.field(static=True)
 
-    def __post_init__(self, eqx_network):
-        if self.eq_type not in ["ODE", "PDEStatio", "PDENonStatio"]:
+    def __init__(
+        self,
+        eq_type,
+        eqx_network,
+        slice_solution=None,
+        input_transform=None,
+        output_transform=None,
+        filter_spec=None,
+    ):
+        super().__init__()  # type: ignore because super just have an AbstractVar...
+
+        if eq_type not in ["ODE", "PDEStatio", "PDENonStatio"]:
             raise RuntimeError("Wrong parameter value for eq_type")
         # saving the static part of the model and initial parameters
+        self.eq_type = eq_type
 
-        if self.filter_spec is None:
+        if filter_spec is None:
             self.filter_spec = eqx.is_inexact_array
+        else:
+            self.filter_spec = filter_spec
 
         self.init_params, self.static = eqx.partition(eqx_network, self.filter_spec)
 
-        if self.input_transform is None:
+        if input_transform is None:
             self.input_transform = lambda _in, _params: _in
+        else:
+            self.input_transform = input_transform
 
-        if self.output_transform is None:
+        if output_transform is None:
             self.output_transform = lambda _in_pinn, _out_pinn, _params: _out_pinn
+        else:
+            self.output_transform = output_transform
 
-        if self.slice_solution is None:
+        if slice_solution is None:
             self.slice_solution = jnp.s_[:]
+        else:
+            self.slice_solution = slice_solution
 
         if isinstance(self.slice_solution, int):
             # rewrite it as a slice to ensure that axis does not disappear when

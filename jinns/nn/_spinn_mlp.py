@@ -48,9 +48,12 @@ class SMLP(eqx.Module):
     )
     d: int = eqx.field(static=True, kw_only=True)
 
-    separated_mlp: list[MLP] = eqx.field(init=False)
+    separated_mlp: list[MLP]
 
-    def __post_init__(self, key, eqx_list):
+    def __init__(self, key, eqx_list, d):
+        super().__init__()
+        self.d = d
+
         keys = jax.random.split(key, self.d)
         self.separated_mlp = [
             MLP(key=keys[d_], eqx_list=eqx_list) for d_ in range(self.d)

@@ -59,15 +59,11 @@ class MLP(eqx.Module):
 
     # NOTE that the following should NOT be declared as static otherwise the
     # eqx.partition that we use in the PINN module will misbehave
-    layers: list[CallableMLPModule | Callable[[Array], Array]] = eqx.field(init=False)
+    layers: list[CallableMLPModule | Callable[[Array], Array]]
 
-    def __post_init__(self, key, eqx_list):
+    def __init__(self, key, eqx_list):
+        super().__init__()
         self.layers = []
-        # nb_keys_required = sum(1 if len(l) > 1 else 0 for l in eqx_list)
-        # keys = jax.random.split(key, nb_keys_required)
-        # we need a global split
-        # before the loop to maintain strict equivalency with eqx.nn.MLP
-        # for debugging purpose
         k = 0
         for l in eqx_list:
             if len(l) == 1:
