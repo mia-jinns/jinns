@@ -121,6 +121,7 @@ class PINN(AbstractPINN):
         input_transform=None,
         output_transform=None,
         filter_spec=None,
+        hyperparams=None,
     ):
         super().__init__()  # type: ignore because super just have an AbstractVar...
 
@@ -150,6 +151,8 @@ class PINN(AbstractPINN):
             self.slice_solution = jnp.s_[:]
         else:
             self.slice_solution = slice_solution
+
+        self.hyperparams = hyperparams
 
         if isinstance(self.slice_solution, int):
             # rewrite it as a slice to ensure that axis does not disappear when
