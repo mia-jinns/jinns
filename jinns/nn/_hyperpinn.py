@@ -52,7 +52,10 @@ class HyperPINN(PINN):
     ----------
     hyperparams: list[str] = eqx.field(static=True)
         A list of keys from Params.eq_params that will be considered as
-        hyperparameters for metamodeling.
+        hyperparameters for metamodeling (a `DataGeneratorParameter` instance must
+        have been given to `jinns.solve()` from which batchs of parameters will be
+        drawn - and transferred to Params.eq_params). This parameter is mandatory for
+        HyperPINN
     hypernet_input_size: int
         An integer. The input size of the MLP used for the hypernetwork. Must
         be equal to the flattened concatenations for the array of parameters
@@ -96,7 +99,6 @@ class HyperPINN(PINN):
         replaced with replace; 3) a callable Leaf -> bool, in which case this is evaluated on the leaf or mapped over the subtree, and the leaf kept or replaced as appropriate.
     """
 
-    hyperparams: list[str] = eqx.field(static=True, kw_only=True)
     hypernet_input_size: int = eqx.field(kw_only=True)
 
     eqx_hyper_network: InitVar[eqx.Module] = eqx.field(kw_only=True)
@@ -198,6 +200,7 @@ class HyperPINN(PINN):
 
         hyper = eqx.combine(params.nn_params, self.static_hyper)
 
+        assert self.hyperparams is not None
         eq_params_batch = jnp.concatenate(
             [getattr(params.eq_params, k).flatten() for k in self.hyperparams],  # pylint: disable=E1133
             axis=0,
@@ -273,7 +276,10 @@ class HyperPINN(PINN):
             after the `input_transform` function
         hyperparams
             A list of keys from Params.eq_params that will be considered as
-            hyperparameters for metamodeling.
+            hyperparameters for metamodeling (a `DataGeneratorParameter` instance must
+            have been given to `jinns.solve()` from which batchs of parameters will be
+            drawn - and transferred to Params.eq_params). This parameter is mandatory for
+            HyperPINN
         hypernet_input_size
             An integer. The input size of the MLP used for the hypernetwork. Must
             be equal to the flattened concatenations for the array of parameters
