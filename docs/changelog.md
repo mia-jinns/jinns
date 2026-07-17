@@ -1,6 +1,12 @@
 # Changelog
 
-* v.1.9.3:
+* v1.9.4:
+
+    - Fix Neumann boundary condition not working in 1D [!102](https://gitlab.com/mia_jinns/jinns/-/merge_requests/102)
+    - Add the support for metamodeling with vanilla PINN architectures (passing batchs of parameters in entry of the PINN) [!101](https://gitlab.com/mia_jinns/jinns/-/merge_requests/101)
+    - Fix reload weights and biases bug [!100](https://gitlab.com/mia_jinns/jinns/-/merge_requests/100)
+
+* v1.9.3:
 
     - Fix bug when passing an array of importance weights for each MC sample when computing normalization loss for PINNs.
     - Set a better default value for `print_loss_every` argument of `jinns.solve()`.
@@ -8,7 +14,7 @@
 
     Changes are from [!99](https://gitlab.com/mia_jinns/jinns/-/merge_requests/99)
 
-* v.1.9.2:
+* v1.9.2:
 
     - Allow for more complex `optax` optimizers. Add a first implementation ssBroyden and ssBFGS based on Scimba implementation [project repo](https://gitlab.com/scimba/scimba). The algorithms are described in [this article](https://arxiv.org/pdf/2405.04230). Have a look at the tutorial notebooks for usage.
 
