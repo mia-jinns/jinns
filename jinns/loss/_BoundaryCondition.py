@@ -87,8 +87,9 @@ class Neumann(BoundaryConditionAbstract):
         """
         # We resort to the shape of the border_batch to determine the dimension as
         # described in the border_batch function
-        if jnp.squeeze(inputs).ndim == 0:  # case 1D borders (just a scalar)
-            n = jnp.array([1, -1])  # the unit vectors normal to the two borders
+        if inputs.shape[-1] == 2:  # case 1D borders
+            # (only two borders on axis=-1 which are either 1D in statio case or 2D in nonstatio cas (on axis=-2))
+            n = jnp.array([[1, -1]])  # the unit vectors normal to the two borders
             n_facets = 2
 
         else:  # case 2D borders (because 3D borders are not supported yet)
@@ -212,7 +213,8 @@ class Neumann(BoundaryConditionAbstract):
         """
         # We resort to the shape of the border_batch to determine the dimension as
         # described in the border_batch function
-        if jnp.squeeze(inputs).ndim == 0:  # case 1D borders (just a scalar)
+        if inputs.shape[-1] == 2:  # case 1D borders
+            # (only two borders on axis=-1 which are either 1D in statio case or 2D in nonstatio cas (on axis=-2)
             n_facets = 2
 
         else:  # case 2D borders (because 3D borders are not supported yet)
