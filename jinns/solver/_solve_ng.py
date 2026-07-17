@@ -49,7 +49,6 @@ def solve_ng(
     n_iter_ic: int,
     optimizer_ic: optax.GradientTransformation | optax.GradientTransformationExtraArgs,
     print_loss_every: int | None = None,
-    store_prev_params: bool = False,
     opt_state_ic: optax.OptState | NGDState | None = None,
     param_data: DataGeneratorParameter | None = None,
     verbose: bool = True,
@@ -179,18 +178,15 @@ def solve_ng(
     # 2) Get the parameter dynamic #
     ################################
     print("\n\n 2 - Resolving the parameter dynamic")
+    times_saved = jnp.array(times_saved)
+    n_times_saved = len(times_saved)
 
     def _one_time_step(carry, t):
-        (loss, params, train_data, params_saved) = carry
+        (loss, params, train_data, nn_params_saved) = carry
 
         batch, data, param_data, _ = get_batch(
             train_data.data, train_data.param_data, None
         )
-
-        if store_prev_params:
-            params = eqx.tree_at(
-                lambda pt: pt.eq_params.prev_params, params, params.nn_params
-            )
 
         params = _rk4_step(batch=batch, loss=loss, params=params, dt=dt)
 
@@ -198,10 +194,18 @@ def solve_ng(
         if verbose:
             _print_fn(t, None, print_loss_every, prefix="[train Neural Galerkin] ")
 
-        params_saved = jax.lax.cond(
-            jnp.isin(t, jnp.array(times_saved)),
-            lambda _: eqx.tree_at(lambda pt: pt[0], params_saved, params),
-            lambda _: params_saved,
+        idx_traced_int64 = jnp.argwhere(t == times_saved, size=n_times_saved)[0][0]
+
+        nn_params_saved = jax.lax.cond(
+            jnp.isin(t, times_saved),
+            lambda _: nn_params_saved.at[idx_traced_int64].set(
+                jnp.concatenate(
+                    jax.tree.map(
+                        lambda pt: pt.flatten(), jax.tree.leaves(params.nn_params)
+                    )
+                )
+            ),
+            lambda _: nn_params_saved,
             None,
         )
 
@@ -209,12 +213,17 @@ def solve_ng(
             loss,
             params,
             DataGeneratorContainer(data, param_data, None),
-            params_saved,
+            nn_params_saved,
         ), None
 
-    params_saved = tuple(params_t0 for _ in range(len(times_saved)))
+    params_t0_fl = jnp.concatenate(
+        jax.tree.map(lambda pt: pt.flatten(), jax.tree.leaves(params_t0.nn_params))
+    )
+    # Only JAX arrays can be index with traced value (the result from jnp.argwhere)
+    # hence we store it in a flattened way
+    nn_params_saved = jnp.stack([params_t0_fl for _ in range(n_times_saved)], axis=0)
 
-    carry = (loss, params_t0, train_data, params_saved)
+    carry = (loss, params_t0, train_data, nn_params_saved)
 
     def train_fun(carry):
         return jax.lax.scan(_one_time_step, carry, times)
@@ -235,7 +244,16 @@ def solve_ng(
     else:
         carry, _ = train_fun(carry)
 
-    (loss, params_final, train_data, params_saved) = carry
+    (loss, params_final, train_data, nn_params_saved) = carry
+
+    params_saved = tuple(
+        eqx.tree_at(
+            lambda pt: pt.nn_params,
+            params_final,
+            _params_array_to_pytree(nn_params_saved[i], params_final.nn_params),
+        )
+        for i in range(nn_params_saved.shape[0])
+    )
 
     return params_final, params_saved
 
@@ -298,7 +316,7 @@ def _rk4_step(batch, loss, params, dt):
 
 def _get_dnu_dt(batch, loss, params):
     residuals, du_dnu = loss.values_and_grad_per_sample(params, batch)
-    residuals = residuals.dyn_loss
+    residuals = residuals.dyn_loss[0]
     du_dnu = du_dnu.dyn_loss
     du_dnu = du_dnu[0].nn_params  # only keep gradients wrt to nn_params
     M, M_tmp = _process_du_dnu(du_dnu, batch.domain_batch.shape[0])
@@ -336,7 +354,7 @@ def _process_residuals(residuals, M_tmp):
     """
 
     # Process L
-    L = residuals[0] * M_tmp
+    L = residuals * M_tmp
     # avg on coloc points (approximation of the integral)
     L = jnp.mean(L, axis=0)
     return L
