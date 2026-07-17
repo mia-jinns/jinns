@@ -1,6 +1,5 @@
 """
-This modules implements the main `solve()` function of jinns which
-handles the optimization process
+This modules implements the resolution of a PDE with Neural Galerkin approach
 """
 
 from __future__ import (
@@ -13,9 +12,12 @@ import optax
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-from jaxtyping import Array, PRNGKeyArray
+from jaxtyping import Array
 from jinns.data._CubicMeshPDEStatio import CubicMeshPDEStatio
-from jinns.loss._LossPDE import LossPDEStatio, LossPDENonStatio
+from jinns.loss._LossPDE import LossPDEStatio
+from jinns.loss._DynamicLossAbstract import PDEStatio
+from jinns.loss._loss_weights import LossWeightsPDEStatio
+from jinns.parameters._derivative_keys import DerivativeKeysPDEStatio
 from jinns.solver._solve import solve
 from jinns.solver._utils import (
     _check_batch_size,
@@ -47,14 +49,13 @@ def solve_ng(
     n_iter_ic: int,
     optimizer_ic: optax.GradientTransformation | optax.GradientTransformationExtraArgs,
     print_loss_every: int | None = None,
-    t0: float = 0.0,
+    store_prev_params: bool = False,
     opt_state_ic: optax.OptState | NGDState | None = None,
     param_data: DataGeneratorParameter | None = None,
     verbose: bool = True,
     ahead_of_time: bool = True,
     extra_optax_args_and_kwargs_ic: dict[str, Callable | GetJinnsVariableName]
     | None = None,
-    key: PRNGKeyArray | None = None,
 ):
     """
     Solve the PDE with the Neural Galerkin approach. In this approach the variation of the parameters
@@ -87,8 +88,6 @@ def solve_ng(
 
     dt = times[1] - times[0]
     n_iter = len(times)
-    n_nn_params = len(jax.tree.leaves(init_params.nn_params))
-
     initialization_time = time.time()
 
     if print_loss_every is None:
@@ -133,15 +132,20 @@ def solve_ng(
         extra_optax_args_and_kwargs_ic,
         ahead_of_time,
         initial_condition_fun,
-        t0,
     ):
-        loss_ic = LossPDENonStatio(
+        # The trick is to intererpret the IC as a dynamic loss
+        class InitialConditionAsDynamicLoss(PDEStatio):
+            def equation(self, x, u, params):
+                return u(x, params) - initial_condition_fun(x)
+
+        ic_as_dyn_loss = InitialConditionAsDynamicLoss()
+        loss_ic = LossPDEStatio(
             u=loss.u,
-            dynamic_loss=None,
-            loss_weights=None,
-            derivative_keys=None,
-            initial_condition_fun=initial_condition_fun,
-            t0=t0,
+            dynamic_loss=ic_as_dyn_loss,
+            loss_weights=LossWeightsPDEStatio(dyn_loss=1.0),
+            derivative_keys=DerivativeKeysPDEStatio.from_str(
+                dyn_loss="nn_params", params=init_params
+            ),
         )
         res = solve(
             n_iter=n_iter_ic,
@@ -157,7 +161,7 @@ def solve_ng(
         )
         return res[0]
 
-    print("Fitting the initial condition")
+    print("\n\n 1 - Fitting the initial condition")
     params_t0 = _fit_ic(
         n_iter_ic,
         optimizer_ic,
@@ -169,13 +173,12 @@ def solve_ng(
         extra_optax_args_and_kwargs_ic,
         ahead_of_time,
         initial_condition_fun,
-        t0,
     )
 
     ################################
     # 2) Get the parameter dynamic #
     ################################
-    print("Resolving the parameter dynamic")
+    print("\n\n 2 - Resolving the parameter dynamic")
 
     def _one_time_step(carry, t):
         (loss, params, train_data, params_saved) = carry
@@ -184,16 +187,19 @@ def solve_ng(
             train_data.data, train_data.param_data, None
         )
 
-        params = _rk4_step(
-            batch=batch, loss=loss, params=params, dt=dt, n_nn_params=n_nn_params
-        )
+        if store_prev_params:
+            params = eqx.tree_at(
+                lambda pt: pt.eq_params.prev_params, params, params.nn_params
+            )
+
+        params = _rk4_step(batch=batch, loss=loss, params=params, dt=dt)
 
         # Print train loss value during optimization
         if verbose:
             _print_fn(t, None, print_loss_every, prefix="[train Neural Galerkin] ")
 
         params_saved = jax.lax.cond(
-            jnp.isin(t, times_saved),
+            jnp.isin(t, jnp.array(times_saved)),
             lambda _: eqx.tree_at(lambda pt: pt[0], params_saved, params),
             lambda _: params_saved,
             None,
@@ -206,7 +212,7 @@ def solve_ng(
             params_saved,
         ), None
 
-    params_saved = (params_t0 for _ in range(len(times_saved)))
+    params_saved = tuple(params_t0 for _ in range(len(times_saved)))
 
     carry = (loss, params_t0, train_data, params_saved)
 
@@ -221,7 +227,7 @@ def solve_ng(
             print("\nCompilation took\n", end - start, "\n")
 
         start = time.time()
-        carry = compiled_train_fun(carry)
+        carry, _ = compiled_train_fun(carry)
         jax.block_until_ready(carry)
         end = time.time()
         if verbose:
@@ -229,22 +235,18 @@ def solve_ng(
     else:
         carry, _ = train_fun(carry)
 
-    (
-        loss,
-        params,
-        train_data,
-    ) = carry
+    (loss, params_final, train_data, params_saved) = carry
 
-    return params
+    return params_final, params_saved
 
 
-def _rk4_step(batch, loss, params, dt, n_nn_params):
+def _rk4_step(batch, loss, params, dt):
     """
     Compte the next value of the parameters following Runge Kutta scheme of
     4th order.
 
     """
-    dnu_dt_k1 = _get_dnu_dt(batch, loss, params, n_nn_params)
+    dnu_dt_k1 = _get_dnu_dt(batch, loss, params)
     dnu_dt_k2 = _get_dnu_dt(
         batch,
         loss,
@@ -255,11 +257,10 @@ def _rk4_step(batch, loss, params, dt, n_nn_params):
                 lambda b, c: b + c * dt / 2, params.nn_params, dnu_dt_k1.nn_params
             ),
         ),
-        n_nn_params,
     )
     dnu_dt_k3 = _get_dnu_dt(
-        loss,
         batch,
+        loss,
         eqx.tree_at(
             lambda pt: pt.nn_params,
             params,
@@ -267,11 +268,10 @@ def _rk4_step(batch, loss, params, dt, n_nn_params):
                 lambda b, c: b + c * dt / 2, params.nn_params, dnu_dt_k2.nn_params
             ),
         ),
-        n_nn_params,
     )
     dnu_dt_k4 = _get_dnu_dt(
-        loss,
         batch,
+        loss,
         eqx.tree_at(
             lambda pt: pt.nn_params,
             params,
@@ -279,7 +279,6 @@ def _rk4_step(batch, loss, params, dt, n_nn_params):
                 lambda b, c: b + c * dt, params.nn_params, dnu_dt_k3.nn_params
             ),
         ),
-        n_nn_params,
     )
 
     return eqx.tree_at(
@@ -297,21 +296,20 @@ def _rk4_step(batch, loss, params, dt, n_nn_params):
     )
 
 
-def _get_dnu_dt(batch, loss, params, n_nn_params):
+def _get_dnu_dt(batch, loss, params):
     residuals, du_dnu = loss.values_and_grad_per_sample(params, batch)
     residuals = residuals.dyn_loss
     du_dnu = du_dnu.dyn_loss
-    du_dnu = du_dnu.nn_params  # only keep gradients wrt to nn_params
-    M, M_tmp = _process_du_dnu(du_dnu, n_nn_params)
+    du_dnu = du_dnu[0].nn_params  # only keep gradients wrt to nn_params
+    M, M_tmp = _process_du_dnu(du_dnu, batch.domain_batch.shape[0])
 
     L = _process_residuals(residuals, M_tmp)
-
-    dnu_dt = jnp.linalg.solve(M + 1e-5 * jnp.eye(n_nn_params), L)
+    dnu_dt = jnp.linalg.solve(M + 1e-5 * jnp.eye(M.shape[0]), L)
     nn_params = _params_array_to_pytree(dnu_dt, params.nn_params)
     return eqx.tree_at(lambda pt: pt.nn_params, params, nn_params)
 
 
-def _process_du_dnu(du_dnu, n_params):
+def _process_du_dnu(du_dnu, batch_size):
     r"""
     To construct M (as defined in Franck et al. 2025)
 
@@ -320,7 +318,7 @@ def _process_du_dnu(du_dnu, n_params):
     $$
     """
     # params on the same last axis
-    M_tmp = jax.tree.map(lambda l: l.reshape((n_params, -1)), du_dnu)
+    M_tmp = jax.tree.map(lambda l: l.reshape((batch_size, -1)), du_dnu)
     # array of params from pytre (with batch dim)
     M_tmp = jnp.concatenate(jax.tree.leaves(M_tmp), axis=1)
 
@@ -338,8 +336,7 @@ def _process_residuals(residuals, M_tmp):
     """
 
     # Process L
-    L = residuals[:, None] * M_tmp
-
+    L = residuals[0] * M_tmp
     # avg on coloc points (approximation of the integral)
     L = jnp.mean(L, axis=0)
     return L
