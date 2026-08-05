@@ -332,7 +332,7 @@ def _get_dnu_dt(batch, loss, params):
     M, M_tmp = _process_du_dnu(du_dnu, batch.domain_batch.shape[0])
 
     L = _process_residuals(residuals, M_tmp)
-    dnu_dt = jnp.linalg.solve(M, -L)
+    dnu_dt = jax.scipy.linalg.solve(M, -L, assume_a="sym")  # could we assume pos?
     nn_params = _params_array_to_pytree(dnu_dt, params.nn_params)
     return eqx.tree_at(lambda pt: pt.nn_params, params, nn_params)
 
@@ -358,7 +358,6 @@ def _process_du_dnu(du_dnu, batch_size):
 
     # regularize the matrix
     M = M + 1e-5 * jnp.eye(M.shape[0])
-
     return M, M_tmp
 
 
