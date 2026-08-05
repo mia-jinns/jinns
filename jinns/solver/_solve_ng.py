@@ -182,6 +182,7 @@ def solve_ng(
     n_times_saved = len(times_saved)
 
     def _one_time_step(carry, t):
+        # jax.debug.print("t={x}", x=(t, jnp.isin(t, times_saved)))
         (loss, params, train_data, nn_params_saved) = carry
 
         batch, data, param_data, _ = get_batch(
@@ -265,6 +266,16 @@ def _rk4_step(batch, loss, params, dt):
 
     """
     dnu_dt_k1 = _get_dnu_dt(batch, loss, params)
+    # print("SIMPLIFIED SCHEME FOR DEBUG")
+    # return eqx.tree_at(
+    #     lambda pt: pt.nn_params,
+    #     params,
+    #     jax.tree.map(
+    #         lambda a, b: a + b * dt,
+    #         params.nn_params,
+    #         dnu_dt_k1.nn_params
+    #     ),
+    # )
     dnu_dt_k2 = _get_dnu_dt(
         batch,
         loss,
@@ -317,12 +328,11 @@ def _rk4_step(batch, loss, params, dt):
 def _get_dnu_dt(batch, loss, params):
     residuals, du_dnu = loss.values_and_grad_per_sample(params, batch)
     residuals = residuals.dyn_loss[0]
-    du_dnu = du_dnu.dyn_loss
-    du_dnu = du_dnu[0].nn_params  # only keep gradients wrt to nn_params
+    du_dnu = du_dnu.dyn_loss[0].nn_params  # only keep gradients wrt to nn_params
     M, M_tmp = _process_du_dnu(du_dnu, batch.domain_batch.shape[0])
 
     L = _process_residuals(residuals, M_tmp)
-    dnu_dt = jnp.linalg.solve(M + 1e-5 * jnp.eye(M.shape[0]), L)
+    dnu_dt = jnp.linalg.solve(M, -L)
     nn_params = _params_array_to_pytree(dnu_dt, params.nn_params)
     return eqx.tree_at(lambda pt: pt.nn_params, params, nn_params)
 
@@ -337,7 +347,7 @@ def _process_du_dnu(du_dnu, batch_size):
     """
     # params on the same last axis
     M_tmp = jax.tree.map(lambda l: l.reshape((batch_size, -1)), du_dnu)
-    # array of params from pytre (with batch dim)
+    # array of params from pytree (with batch dim)
     M_tmp = jnp.concatenate(jax.tree.leaves(M_tmp), axis=1)
 
     # outer product of the param vector with itself for each coloc
@@ -345,12 +355,16 @@ def _process_du_dnu(du_dnu, batch_size):
 
     # avg on coloc points (approximation of the integral)
     M = jnp.mean(M, axis=0)
+
+    # regularize the matrix
+    M = M + 1e-5 * jnp.eye(M.shape[0])
+
     return M, M_tmp
 
 
 def _process_residuals(residuals, M_tmp):
     """
-    To construct L
+    To construct L (as defined in Franck et al. 2025)
     """
 
     # Process L
