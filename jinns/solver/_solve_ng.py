@@ -72,6 +72,8 @@ def solve_ng(
     The methodology starts with fitting the initial condition and then an ODE is resolved to get the parameters
     for each of the times that are queried.
 
+    NOTE the initial condition is the function that that network must fit at times[0]
+
     Note that the boundary conditions must be hardcoded in this approach.
 
     Observations cannot be incorporated in this approach
@@ -117,9 +119,9 @@ def solve_ng(
     if verbose:
         print("Initialization time:", time.time() - initialization_time)
 
-    ################################
-    # 1) Fit the initial condition #
-    ################################
+    ################################################
+    # 1) Fit the initial condition for t0=times[0] #
+    ################################################
     def _fit_ic(
         n_iter_ic,
         optimizer_ic,
@@ -132,7 +134,7 @@ def solve_ng(
         ahead_of_time,
         initial_condition_fun,
     ):
-        # The trick is to intererpret the IC as a dynamic loss
+        # The trick is to interpret the IC as a dynamic loss
         class InitialConditionAsDynamicLoss(PDEStatio):
             def equation(self, x, u, params):
                 return u(x, params) - initial_condition_fun(x)
@@ -160,7 +162,7 @@ def solve_ng(
         )
         return res[0]
 
-    print("\n\n 1 - Fitting the initial condition")
+    print("\n\n 1 - Fitting the initial condition for t0=", times[0])
     params_t0 = _fit_ic(
         n_iter_ic,
         optimizer_ic,
@@ -183,7 +185,18 @@ def solve_ng(
 
     def _one_time_step(carry, t):
         # jax.debug.print("t={x}", x=(t, jnp.isin(t, times_saved)))
-        (loss, params, train_data, nn_params_saved) = carry
+        (i, loss, params, train_data, nn_params_saved) = carry
+
+        _ = jax.lax.cond(
+            i % print_loss_every == 0,
+            lambda _: jax.debug.print(
+                "[Train Neural Galerkin] Time step t={t}/{tmax}",
+                t=jnp.round(t, 2),
+                tmax=times[-1],
+            ),
+            lambda _: None,
+            (None,),
+        )
 
         batch, data, param_data, _ = get_batch(
             train_data.data, train_data.param_data, None
@@ -211,6 +224,7 @@ def solve_ng(
         )
 
         return (
+            i + 1,
             loss,
             params,
             DataGeneratorContainer(data, param_data, None),
@@ -222,12 +236,14 @@ def solve_ng(
     )
     # Only JAX arrays can be index with traced value (the result from jnp.argwhere)
     # hence we store it in a flattened way
+
     nn_params_saved = jnp.stack([params_t0_fl for _ in range(n_times_saved)], axis=0)
 
-    carry = (loss, params_t0, train_data, nn_params_saved)
+    carry = (0, loss, params_t0, train_data, nn_params_saved)
 
     def train_fun(carry):
-        return jax.lax.scan(_one_time_step, carry, times)
+        # NOTE that we start the scan at times[1:] since params was already compute for times[0]
+        return jax.lax.scan(_one_time_step, carry, times[1:])
 
     if ahead_of_time:
         start = time.time()
@@ -245,7 +261,7 @@ def solve_ng(
     else:
         carry, _ = train_fun(carry)
 
-    (loss, params_final, train_data, nn_params_saved) = carry
+    (_, loss, params_final, train_data, nn_params_saved) = carry
 
     params_saved = tuple(
         eqx.tree_at(
