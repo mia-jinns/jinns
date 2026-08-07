@@ -22,7 +22,6 @@ from jinns.solver._solve import solve
 from jinns.solver._utils import (
     _check_batch_size,
     _build_get_batch,
-    _print_fn,
 )
 from jinns.nn._hyperpinn import _get_param_nb
 from jinns.parameters._params import Params
@@ -48,9 +47,12 @@ def solve_ng(
     initial_condition_fun,
     n_iter_ic: int,
     optimizer_ic: optax.GradientTransformation | optax.GradientTransformationExtraArgs,
+    data_ic: AbstractDataGenerator | None = None,
     print_loss_every: int | None = None,
     opt_state_ic: optax.OptState | NGDState | None = None,
     param_data: DataGeneratorParameter | None = None,
+    param_data_ic: DataGeneratorParameter | None = None,
+    init_params_ic: Params[Array] | None = None,
     verbose: bool = True,
     ahead_of_time: bool = True,
     extra_optax_args_and_kwargs_ic: dict[str, Callable | GetJinnsVariableName]
@@ -94,6 +96,15 @@ def solve_ng(
     if print_loss_every is None:
         print_loss_every = n_iter // 10
 
+    if data_ic is None:
+        data_ic = data
+
+    if param_data_ic is None:
+        param_data_ic = param_data
+
+    if init_params_ic is None:
+        init_params_ic = init_params
+
     if param_data is not None:
         if param_data.param_batch_size is not None:
             # We need to check that batch sizes will all be compliant for
@@ -126,10 +137,10 @@ def solve_ng(
         n_iter_ic,
         optimizer_ic,
         opt_state_ic,
-        data,
-        param_data,
+        data_ic,
+        param_data_ic,
         loss,
-        init_params,
+        init_params_ic,
         extra_optax_args_and_kwargs_ic,
         ahead_of_time,
         initial_condition_fun,
@@ -150,15 +161,16 @@ def solve_ng(
         )
         res = solve(
             n_iter=n_iter_ic,
-            init_params=init_params,
-            data=data,
+            init_params=init_params_ic,
+            data=data_ic,
             loss=loss_ic,
             optimizer=optimizer_ic,
             print_loss_every=n_iter_ic // 10,
             opt_state=opt_state_ic,
-            param_data=param_data,
+            param_data=param_data_ic,
             extra_optax_args_and_kwargs=extra_optax_args_and_kwargs_ic,
             ahead_of_time=ahead_of_time,
+            verbose=verbose,
         )
         return res[0]
 
@@ -167,10 +179,10 @@ def solve_ng(
         n_iter_ic,
         optimizer_ic,
         opt_state_ic,
-        data,
-        param_data,
+        data_ic,
+        param_data_ic,
         loss,
-        init_params,
+        init_params_ic,
         extra_optax_args_and_kwargs_ic,
         ahead_of_time,
         initial_condition_fun,
@@ -187,26 +199,23 @@ def solve_ng(
         # jax.debug.print("t={x}", x=(t, jnp.isin(t, times_saved)))
         (i, loss, params, train_data, nn_params_saved) = carry
 
-        _ = jax.lax.cond(
-            i % print_loss_every == 0,
-            lambda _: jax.debug.print(
-                "[Train Neural Galerkin] Time step t={t}/{tmax}",
-                t=jnp.round(t, 2),
-                tmax=times[-1],
-            ),
-            lambda _: None,
-            (None,),
-        )
+        if verbose:
+            _ = jax.lax.cond(
+                i % print_loss_every == 0,
+                lambda _: jax.debug.print(
+                    "[Train Neural Galerkin] Time step t={t}/{tmax}",
+                    t=jnp.round(t, 2),
+                    tmax=times[-1],
+                ),
+                lambda _: None,
+                (None,),
+            )
 
         batch, data, param_data, _ = get_batch(
             train_data.data, train_data.param_data, None
         )
 
         params = _rk4_step(batch=batch, loss=loss, params=params, dt=dt)
-
-        # Print train loss value during optimization
-        if verbose:
-            _print_fn(t, None, print_loss_every, prefix="[train Neural Galerkin] ")
 
         idx_traced_int64 = jnp.argwhere(t == times_saved, size=n_times_saved)[0][0]
 
