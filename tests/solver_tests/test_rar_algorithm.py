@@ -155,6 +155,7 @@ def control_shape_after_solve_with_rar(start_iter, update_every):
 
 
 def test_rar_with_various_combination_of_start_and_update_values(all_tests):
+    print("HERE")
     # long test run only if --all_tests
     if all_tests:
         start_iter_list = [0, 3]
