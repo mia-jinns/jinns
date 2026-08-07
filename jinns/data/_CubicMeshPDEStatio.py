@@ -102,7 +102,6 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
     n_start: int = eqx.field(static=True)
 
     # --- Below fields are not passed as arguments to __init__
-    p: Float[Array, " n"] | None = eqx.field(init=False)
     rar_iter_from_last_sampling: int | None = eqx.field(init=False)
     rar_iter_nb: int | None = eqx.field(init=False)
     curr_omega_idx: int = eqx.field(init=False)
@@ -143,7 +142,6 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
 
         (
             self.n_start,
-            self.p,
             self.rar_iter_from_last_sampling,
             self.rar_iter_nb,
         ) = _check_and_set_rar_parameters(self.rar_parameters, self.n, n_start)
@@ -458,14 +456,13 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
     def _get_omega_operands(
         self,
     ) -> tuple[
-        PRNGKeyArray, Float[Array, " n dim"], int, int | None, Float[Array, " n"] | None
+        PRNGKeyArray, Float[Array, " n dim"], int, int | None
     ]:
         return (
             self.key,
             self.omega,
             self.curr_omega_idx,
             self.omega_batch_size,
-            self.p,
         )
 
     def inside_batch(

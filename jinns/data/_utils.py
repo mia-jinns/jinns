@@ -71,36 +71,25 @@ def make_cartesian_product(
 
 def _reset_batch_idx_and_permute(
     operands: tuple[
-        PRNGKeyArray, Float[Array, " n dimension"], int, None, Float[Array, " n"] | None
+        PRNGKeyArray, Float[Array, " n dimension"], int, None
     ],
 ) -> tuple[PRNGKeyArray, Float[Array, " n dimension"], int]:
-    key, domain, curr_idx, _, p = operands
+    key, domain, curr_idx, _ = operands
     # resetting counter
     curr_idx = 0
     # reshuffling
     key, subkey = jax.random.split(key)
-    if p is None:
-        domain = jax.random.permutation(subkey, domain, axis=0, independent=False)
-    else:
-        # otherwise p is used to avoid collocation points not in n_start
-        # NOTE that replace=True to avoid undefined behaviour but then, the
-        # domain.shape[0] does not really grow as in the original RAR. instead,
-        # it always comprises the same number of points, but the points are
-        # updated
-        domain = jax.random.choice(
-            subkey, domain, shape=(domain.shape[0],), replace=True, p=p
-        )
-
+    domain = jax.random.permutation(subkey, domain, axis=0, independent=False)
     # return updated
     return (key, domain, curr_idx)
 
 
 def _increment_batch_idx(
     operands: tuple[
-        PRNGKeyArray, Float[Array, " n dimension"], int, int, Float[Array, " n"] | None
+        PRNGKeyArray, Float[Array, " n dimension"], int, int
     ],
 ) -> tuple[PRNGKeyArray, Float[Array, " n dimension"], int]:
-    key, domain, curr_idx, batch_size, _ = operands
+    key, domain, curr_idx, batch_size = operands
     # simply increases counter and get the batch
     curr_idx += batch_size
     return (key, domain, curr_idx)
@@ -110,7 +99,7 @@ def _reset_or_increment(
     bend: int,
     n_eff: int,
     operands: tuple[
-        PRNGKeyArray, Float[Array, " n dimension"], int, int, Float[Array, " n"] | None
+        PRNGKeyArray, Float[Array, " n dimension"], int, int
     ],
 ) -> tuple[PRNGKeyArray, Float[Array, " n dimension"], int]:
     """
@@ -143,7 +132,7 @@ def _reset_or_increment(
 
 def _check_and_set_rar_parameters(
     rar_parameters: None | dict, n: int, n_start: None | int
-) -> tuple[int, Float[Array, " n"] | None, int | None, int | None]:
+) -> tuple[int, int | None, int | None]:
     if rar_parameters is not None and n_start is None:
         raise ValueError(
             "n_start must be provided in the context of RAR sampling scheme"
@@ -156,11 +145,6 @@ def _check_and_set_rar_parameters(
                 "You asked for RAR sampling but didn't provide"
                 f"a proper `n_start` {n_start=}. Setting it to 0."
             )
-        # Default p is None. However, in the RAR sampling scheme we use 0
-        # probability to specify non-used collocation points (i.e. points
-        # above n_start). Thus, p is a vector of probability of shape (nt, 1).
-        p = jnp.zeros((n,))
-        p = p.at[:n_start].set(1 / n_start)
         # set internal counter for the number of gradient steps since the
         # last new collocation points have been added
         # It is not 0 to ensure the first iteration of RAR happens just
@@ -171,8 +155,7 @@ def _check_and_set_rar_parameters(
         rar_iter_nb = 0
     else:
         n_start = n
-        p = None
         rar_iter_from_last_sampling = None
         rar_iter_nb = None
 
-    return n_start, p, rar_iter_from_last_sampling, rar_iter_nb
+    return n_start, rar_iter_from_last_sampling, rar_iter_nb

@@ -166,7 +166,6 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             # NOTE below re-do CubicMeshPDE.__init__() ? Maybe useless?
             (
                 self.n_start,
-                self.p,
                 self.rar_iter_from_last_sampling,
                 self.rar_iter_nb,
             ) = _check_and_set_rar_parameters(self.rar_parameters, self.n, self.n_start)
@@ -408,13 +407,12 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
     def _get_domain_operands(
         self,
-    ) -> tuple[PRNGKeyArray, Float[Array, " n 1+dim"], int, int | None, Array | None]:
+    ) -> tuple[PRNGKeyArray, Float[Array, " n 1+dim"], int, int | None]:
         return (
             self.key,
             self.domain,
             self.curr_domain_idx,
             self.domain_batch_size,
-            self.p,
         )
 
     def domain_batch(

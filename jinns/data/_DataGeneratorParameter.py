@@ -113,7 +113,7 @@ class DataGeneratorParameter(AbstractDataGenerator):
         # datagenerator, which would cause eqx.Module to error.
 
         # 1) Call self.generate_data() to generate a dictionnary that merges the scattered data between `user_data` and `param_ranges`
-        self.key, _param_n_samples = self.generate_data(self.key)
+        self.key, _param_n_samples = self.generate_data(self.key, self.n)
 
         # 2) Use the dictionnary to populate the field of the eqx.Module.
         self.param_n_samples = DGParams(_param_n_samples, "DGParams")
@@ -127,7 +127,7 @@ class DataGeneratorParameter(AbstractDataGenerator):
             self.curr_param_idx = DGParams(param_keys_and_curr_idx)
 
     def generate_data(
-        self, key: PRNGKeyArray
+        self, key: PRNGKeyArray, sample_size: int
     ) -> tuple[PRNGKeyArray, dict[str, Float[Array, " n 1"]]]:
         """
         Generate parameter samples, either through generation
@@ -141,24 +141,24 @@ class DataGeneratorParameter(AbstractDataGenerator):
         for i, k in enumerate(self._all_params_keys):
             if self.user_data and k in self.user_data.keys():
                 try:
-                    param_n_samples[k] = self.user_data[k].reshape((self.n, 1))
+                    param_n_samples[k] = self.user_data[k].reshape((sample_size, 1))
                 except TypeError:
                     shape = self.user_data[k].shape
                     raise TypeError(
                         "Wrong shape for user provided parameters"
                         f" in user_data dictionary at key='{k}' got {shape} "
-                        f"and expected {(self.n, 1)}."
+                        f"and expected {(sample_size, 1)}."
                     )
             else:
                 if self.method == "grid":
                     xmin, xmax = self.param_ranges[k][0], self.param_ranges[k][1]
-                    partial = (xmax - xmin) / self.n
+                    partial = (xmax - xmin) / sample_size
                     # shape (n, 1)
                     param_n_samples[k] = jnp.arange(xmin, xmax, partial)[:, None]
                 elif self.method == "uniform":
                     xmin, xmax = self.param_ranges[k][0], self.param_ranges[k][1]
                     param_n_samples[k] = jax.random.uniform(
-                        subkeys[i], shape=(self.n, 1), minval=xmin, maxval=xmax
+                        subkeys[i], shape=(sample_size, 1), minval=xmin, maxval=xmax
                     )
                 else:
                     raise ValueError("Method " + self.method + " is not implemented.")

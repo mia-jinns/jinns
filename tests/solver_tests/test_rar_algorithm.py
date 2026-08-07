@@ -155,7 +155,6 @@ def control_shape_after_solve_with_rar(start_iter, update_every):
 
 
 def test_rar_with_various_combination_of_start_and_update_values(all_tests):
-    print("HERE")
     # long test run only if --all_tests
     if all_tests:
         start_iter_list = [0, 3]
@@ -167,52 +166,4 @@ def test_rar_with_various_combination_of_start_and_update_values(all_tests):
         print(
             "\ntest_rar_with_various_combination_of_start_and_update_values "
             "has been skipped due to missing --all_tests option\n"
-        )
-
-
-def test_rar_error_with_SPINN(all_tests):
-    # long test run only if --all_tests
-    if all_tests:
-        train_data, rar_parameters = get_datagenerator_rar(0, 1)
-        # ensure same batch size in time & space for SPINN
-        d = 3
-        r = 25
-        eqx_list = [
-            [eqx.nn.Linear, 1, 8],
-            [jax.nn.tanh],
-            [eqx.nn.Linear, 8, r],
-        ]
-        key = jax.random.PRNGKey(12345)
-        key, subkey = random.split(key)
-        u, init_nn_params = jinns.nn.SPINN_MLP.create(
-            subkey, d, r, eqx_list, "PDENonStatio"
-        )
-
-        init_params = jinns.parameters.Params(
-            nn_params=init_nn_params,
-            eq_params={"sigma": sigma, "alpha": alpha, "mu": mu},
-        )
-        loss = jinns.loss.LossPDENonStatio(
-            u=u,
-            loss_weights=loss_weights,
-            dynamic_loss=OU_fpe_non_statio_2D_loss,
-            initial_condition_fun=u0,
-            norm_norm_weights=norm_weights,
-            norm_samples=mc_samples,
-            params=init_params,
-        )
-        # expect error
-        with pytest.raises(NotImplementedError):
-            tx = optax.adamw(learning_rate=1e-3)
-            jinns.solve(
-                init_params=init_params,
-                data=train_data,
-                optimizer=tx,
-                loss=loss,
-                n_iter=2,
-            )
-    else:
-        print(
-            "\ntest_rar_error_with_SPINN has been skipped due not missing "
-            "--all_tests option\n"
         )
