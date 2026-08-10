@@ -662,11 +662,29 @@ class LossPDENonStatio(
     def _get_normalization_loss_batch(
         self, batch: PDENonStatioBatch
     ) -> tuple[Array, Array]:
+        assert self.norm_weights is not None
+        assert self.norm_samples is not None
+
+        if batch.domain_batch.shape[0] > self.max_norm_time_slices:
+            warnings.warn(
+                "domain_batch size is bigger than max_norm_time_slices"
+                " attribute of LossPDENonStatio. The batch will then be subsampled."
+                " This check has been set to avoid memory explosion"
+                " in normalization loss computation."
+            )
+        if self.norm_samples.shape[0] > self.max_norm_samples_omega:
+            raise ValueError(
+                "Number of norm_samples is bigger than max_norm_samples_omega"
+                " attribute of LossPDENonStatio. Increase max_norm_samples_omega or reduce the"
+                " number of norm_samples. This check has been set to avoid memory explosion"
+                " in normalization loss computation."
+            )
+
         batches = (
             batch.domain_batch[: self.max_norm_time_slices, 0:1],
             self.norm_samples[: self.max_norm_samples_omega],  # type: ignore -> cannot narrow a class attr
         )
-        assert self.norm_weights is not None
+
         if isinstance(self.u, (PINN, HyperPINN)):
             return (
                 make_cartesian_product(
