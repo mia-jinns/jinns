@@ -261,6 +261,10 @@ def solve(
     # RAR sampling init (ouside scanned function to avoid dynamic slice error)
     # If RAR is not used the _rar_step_*() are juste None and data is unchanged
     data, _rar_step_true, _rar_step_false = init_rar(data)  # type: ignore
+    if data.rar_parameters is not None and key is None:
+        raise ValueError(
+            "key argument must be passed to jinns.solve() when using RAR procedure"
+        )
 
     # Seq2seq
     curr_seq = 0
@@ -369,6 +373,19 @@ def solve(
         else:
             subkey = None
 
+        # Trigger RAR (updates the batch AND data AND param_data)
+        loss, params, data, param_data, batch = trigger_rar(
+            i,
+            loss,
+            optimization.params,
+            data,
+            param_data,
+            batch,
+            subkey,
+            _rar_step_true,
+            _rar_step_false,
+        )
+
         (train_loss_value, params, last_non_nan_params, opt_state, loss, loss_terms) = (
             _loss_evaluate_and_gradient_step(
                 i=i,
@@ -441,11 +458,6 @@ def solve(
             best_iter_id = 0
             best_val_params = params
             best_val_criterion = jnp.nan
-
-        # Trigger RAR
-        loss, params, data = trigger_rar(
-            i, loss, params, data, _rar_step_true, _rar_step_false
-        )
 
         # save loss value and selected parameters
         stored_objects, loss_container = _store_loss_and_params(

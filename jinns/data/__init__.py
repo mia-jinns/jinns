@@ -5,7 +5,7 @@ from ._DataGeneratorObservations import DataGeneratorObservations
 from ._DataGeneratorParameter import DataGeneratorParameter, DGParams
 from ._Batchs import ODEBatch, PDEStatioBatch, PDENonStatioBatch
 
-from ._utils import append_obs_batch, append_param_batch
+from ._utils import RARParameters, append_obs_batch, append_param_batch
 
 __all__ = [
     "DataGeneratorODE",
@@ -19,4 +19,5 @@ __all__ = [
     "PDENonStatioBatch",
     "append_obs_batch",
     "append_param_batch",
+    "RARParameters",
 ]

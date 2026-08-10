@@ -73,24 +73,9 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         sampled points over the domain.
         **Note** that Sobol and Halton approaches use scipy modules and will not
         be JIT compatible.
-    rar_parameters : Dict[str, int], default=None
-        Defaults to None: do not use Residual Adaptative Resampling.
-        Otherwise a dictionary with keys
-        - `start_iter`: the iteration at which we start the RAR sampling scheme (we first have a "burn-in" period).
-        - `update_every`: the number of gradient steps taken between
-        each update of collocation points in the RAR algo.
-        - `sample_size`: the size of the sample from which we will select new
-        collocation points.
-        - `selected_sample_size`: the number of selected
-        points from the sample to be added to the current collocation
-        points.
-    n_start : int, default=None
-        Defaults to None. The effective size of n used at start time.
-        This value must be
-        provided when rar_parameters is not None. Otherwise we set internally
-        n_start = n and this is hidden from the user.
-        In RAR, n_start
-        then corresponds to the initial number of omega points we train the PINN.
+    rar_parameters : RARParameters | None, default=None
+        A data class to specify the Residual Adaptative Resampling procedure. See
+       the docstring from RARParameters
     """
 
     tmin: float
@@ -165,10 +150,9 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
             # NOTE below re-do CubicMeshPDE.__init__() ? Maybe useless?
             (
-                self.n_start,
                 self.rar_iter_from_last_sampling,
                 self.rar_iter_nb,
-            ) = _check_and_set_rar_parameters(self.rar_parameters, self.n, self.n_start)
+            ) = _check_and_set_rar_parameters(self.rar_parameters, self.n)
         elif self.method == "uniform":
             self.key, domain_times = self.generate_time_data(self.key, self.n)
             self.domain = jnp.concatenate([domain_times, self.omega], axis=1)
@@ -425,19 +409,9 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         bstart = self.curr_domain_idx
         bend = bstart + self.domain_batch_size
 
-        # Compute the effective number of used collocation points
-        if self.rar_parameters is not None:
-            n_eff = (
-                self.n_start
-                + self.rar_iter_nb  # type: ignore
-                * self.rar_parameters["selected_sample_size"]
-            )
-        else:
-            n_eff = self.n
-
         new_attributes = _reset_or_increment(
             bend,
-            n_eff,
+            self.n,
             self._get_domain_operands(),  # type: ignore
             # ignore since the case self.domain_batch_size is None has been
             # handled above

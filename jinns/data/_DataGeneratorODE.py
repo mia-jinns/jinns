@@ -11,7 +11,11 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import PRNGKeyArray, Array, Float
 from jinns.data._Batchs import ODEBatch
-from jinns.data._utils import _check_and_set_rar_parameters, _reset_or_increment
+from jinns.data._utils import (
+    RARParameters,
+    _check_and_set_rar_parameters,
+    _reset_or_increment,
+)
 from jinns.data._AbstractDataGenerator import AbstractDataGenerator
 
 if TYPE_CHECKING:
@@ -42,16 +46,9 @@ class DataGeneratorODE(AbstractDataGenerator):
         The method that generates the `nt` time points. `grid` means
         regularly spaced points over the domain. `uniform` means uniformly
         sampled points over the domain
-    rar_parameters : None | RarParameterDict, default=None
-       A TypedDict to specify the Residual Adaptative Resampling procedure. See
-       the docstring from RarParameterDict
-    n_start : None | int, default=None
-        Defaults to None. The effective size of nt used at start time.
-        This value must be
-        provided when rar_parameters is not None. Otherwise we set internally
-        n_start = nt and this is hidden from the user.
-        In RAR, n_start
-        then corresponds to the initial number of points we train the PINN.
+    rar_parameters : RARParameters | None, default=None
+       A data class to specify the Residual Adaptative Resampling procedure. See
+       the docstring from RARParameters
     """
 
     key: PRNGKeyArray
@@ -60,8 +57,7 @@ class DataGeneratorODE(AbstractDataGenerator):
     tmax: float
     temporal_batch_size: int | None = eqx.field(static=True)
     method: str = eqx.field(static=True)
-    rar_parameters: None | dict[str, int]
-    n_start: None | int
+    rar_parameters: RARParameters | None
 
     # --- Below fields are not passed as arguments to __init__
     rar_iter_from_last_sampling: int | None = eqx.field(init=False)
@@ -78,8 +74,7 @@ class DataGeneratorODE(AbstractDataGenerator):
         tmax: float,
         temporal_batch_size: int | None = None,
         method: str = "uniform",
-        rar_parameters: None | dict[str, int] = None,
-        n_start: None | int = None,
+        rar_parameters: RARParameters | None = None,
     ):
         self.key = key
         self.nt = nt
@@ -87,14 +82,12 @@ class DataGeneratorODE(AbstractDataGenerator):
         self.tmax = tmax
         self.temporal_batch_size = temporal_batch_size
         self.method = method
-        self.n_start = n_start
         self.rar_parameters = rar_parameters
 
         (
-            self.n_start,
             self.rar_iter_from_last_sampling,
             self.rar_iter_nb,
-        ) = _check_and_set_rar_parameters(self.rar_parameters, self.nt, self.n_start)
+        ) = _check_and_set_rar_parameters(self.rar_parameters, self.nt)
 
         if self.temporal_batch_size is not None:
             self.curr_time_idx = self.nt + self.temporal_batch_size
@@ -128,9 +121,6 @@ class DataGeneratorODE(AbstractDataGenerator):
         """
         Construct a complete set of `self.nt` time points according to the
         specified `self.method`
-
-        Note that self.times has always size self.nt and not self.n_start, even
-        in RAR scheme, we must allocate all the collocation points
         """
         key, subkey = jax.random.split(self.key)
         if self.method == "grid":
@@ -169,19 +159,9 @@ class DataGeneratorODE(AbstractDataGenerator):
         bstart = self.curr_time_idx
         bend = bstart + self.temporal_batch_size
 
-        # Compute the effective number of used collocation points
-        if self.rar_parameters is not None and self.n_start is not None:
-            nt_eff = (
-                self.n_start
-                + self.rar_iter_nb  # type: ignore
-                * self.rar_parameters["selected_sample_size"]
-            )
-        else:
-            nt_eff = self.nt
-
         new_attributes = _reset_or_increment(
             bend,
-            nt_eff,
+            self.nt,
             self._get_time_operands(),  # type: ignore
             # ignore since the case self.temporal_batch_size is None has been
             # handled above

@@ -16,6 +16,7 @@ from typing import Literal
 from jinns.data._Batchs import PDEStatioBatch
 from jinns.data._utils import _check_and_set_rar_parameters, _reset_or_increment
 from jinns.data._AbstractDataGenerator import AbstractDataGenerator
+from jinns.data._utils import RARParameters
 
 
 class CubicMeshPDEStatio(AbstractDataGenerator):
@@ -60,7 +61,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         sampled points over the domain.
         **Note** that Sobol and Halton approaches use scipy modules and will not
         be JIT compatible.
-    rar_parameters : dict[str, int], default=None
+    rar_parameters : RARParameters | None, default=None
         Defaults to None: do not use Residual Adaptative Resampling.
         Otherwise a dictionary with keys
         - `start_iter`: the iteration at which we start the RAR sampling scheme (we first have a "burn-in" period).
@@ -71,13 +72,6 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         - `selected_sample_size`: the number of selected
         points from the sample to be added to the current collocation
         points.
-    n_start : int, default=None
-        Defaults to None. The effective size of n used at start time.
-        This value must be
-        provided when rar_parameters is not None. Otherwise we set internally
-        n_start = n and this is hidden from the user.
-        In RAR, n_start
-        then corresponds to the initial number of points we train the PINN on.
     """
 
     key: PRNGKeyArray
@@ -98,9 +92,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
     min_pts: tuple[float, ...]
     max_pts: tuple[float, ...]
     method: Literal["grid", "uniform", "sobol", "halton"] = eqx.field(static=True)
-    rar_parameters: None | dict[str, int]
-    n_start: int = eqx.field(static=True)
-
+    rar_parameters: RARParameters | None
     # --- Below fields are not passed as arguments to __init__
     rar_iter_from_last_sampling: int | None = eqx.field(init=False)
     rar_iter_nb: int | None = eqx.field(init=False)
@@ -123,8 +115,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         min_pts: tuple[float, ...],
         max_pts: tuple[float, ...],
         method: Literal["grid", "uniform", "sobol", "halton"] = "uniform",
-        rar_parameters: dict[str, int] | None = None,
-        n_start: int | None = None,
+        rar_parameters: RARParameters | None = None,
     ):
         self.key = key
         self.n = n
@@ -141,10 +132,9 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         assert self.dim == len(self.max_pts) and isinstance(self.max_pts, tuple)
 
         (
-            self.n_start,
             self.rar_iter_from_last_sampling,
             self.rar_iter_nb,
-        ) = _check_and_set_rar_parameters(self.rar_parameters, self.n, n_start)
+        ) = _check_and_set_rar_parameters(self.rar_parameters, self.n)
 
         if self.method == "grid" and self.dim == 2:
             perfect_sq = int(jnp.round(jnp.sqrt(self.n)) ** 2)
@@ -455,9 +445,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
 
     def _get_omega_operands(
         self,
-    ) -> tuple[
-        PRNGKeyArray, Float[Array, " n dim"], int, int | None
-    ]:
+    ) -> tuple[PRNGKeyArray, Float[Array, " n dim"], int, int | None]:
         return (
             self.key,
             self.omega,
@@ -477,22 +465,12 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
             # Avoid unnecessary reshuffling
             return self, self.omega
 
-        # Compute the effective number of used collocation points
-        if self.rar_parameters is not None:
-            n_eff = (
-                self.n_start
-                + self.rar_iter_nb  # type: ignore
-                * self.rar_parameters["selected_sample_size"]
-            )
-        else:
-            n_eff = self.n
-
         bstart = self.curr_omega_idx
         bend = bstart + self.omega_batch_size
 
         new_attributes = _reset_or_increment(
             bend,
-            n_eff,
+            self.n,
             self._get_omega_operands(),  # type: ignore
             # ignore since the case self.omega_batch_size is None has been
             # handled above
