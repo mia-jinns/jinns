@@ -122,6 +122,7 @@ nav:
       - DataGenerators:
         - Main DataGenerators: 'api/datagenerators/datagenerators_core.md'
         - Other DataGenerators: 'api/datagenerators/datagenerators_other.md'
+        - RAR: 'api/datagenerators/rar.md'
       - Loss:
         - Dynamic loss: 'api/loss/dynamic_loss.md'
         - Boundary Condition: 'api/loss/boundary_condition.md'

@@ -13,7 +13,7 @@ import optax
 import jax
 import jax.numpy as jnp
 from jaxtyping import Float, Array, PRNGKeyArray
-from jinns.solver._rar import init_rar, trigger_rar
+from jinns.data._rar import _init_rar, _trigger_rar
 from jinns.solver._utils import (
     _check_batch_size,
     _init_stored_weights_terms,
@@ -260,7 +260,7 @@ def solve(
 
     # RAR sampling init (ouside scanned function to avoid dynamic slice error)
     # If RAR is not used the _rar_step_*() are juste None and data is unchanged
-    data, _rar_step_true, _rar_step_false = init_rar(data)  # type: ignore
+    data, __rar_step_true, __rar_step_false = _init_rar(data)  # type: ignore
     if data.rar_parameters is not None and key is None:
         raise ValueError(
             "key argument must be passed to jinns.solve() when using RAR procedure"
@@ -374,7 +374,7 @@ def solve(
             subkey = None
 
         # Trigger RAR (updates the batch AND data AND param_data)
-        loss, params, data, param_data, batch = trigger_rar(
+        loss, params, data, param_data, batch = _trigger_rar(
             i,
             loss,
             optimization.params,
@@ -382,8 +382,8 @@ def solve(
             param_data,
             batch,
             subkey,
-            _rar_step_true,
-            _rar_step_false,
+            __rar_step_true,
+            __rar_step_false,
         )
 
         (train_loss_value, params, last_non_nan_params, opt_state, loss, loss_terms) = (

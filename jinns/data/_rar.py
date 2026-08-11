@@ -51,6 +51,25 @@ if TYPE_CHECKING:
     ]
 
 
+def _check_and_set_rar_parameters(
+    rar_parameters: RARParameters | None, n: int
+) -> tuple[int | None, int | None]:
+    if rar_parameters is not None:
+        # set internal counter for the number of gradient steps since the
+        # last new collocation points have been added
+        # It is not 0 to ensure the first iteration of RAR happens just
+        # after start_iter. See the _proceed_to_rar() function in _rar.py
+        rar_iter_from_last_sampling = rar_parameters.update_every - 1
+        # set iternal counter for the number of times collocation points
+        # have been added
+        rar_iter_nb = 0
+    else:
+        rar_iter_from_last_sampling = None
+        rar_iter_nb = None
+
+    return rar_iter_from_last_sampling, rar_iter_nb
+
+
 def _proceed_to_rar(data: DataGeneratorWithRAR, i: int) -> Bool[Array, " "]:
     """Utilility function with various check to ensure we can proceed with the rar_step.
     Return True if yes, and False otherwise"""
@@ -70,7 +89,7 @@ def _proceed_to_rar(data: DataGeneratorWithRAR, i: int) -> Bool[Array, " "]:
 
 
 @partial(jax.jit, static_argnames=["_rar_step_true", "_rar_step_false"])
-def trigger_rar(
+def _trigger_rar(
     i: int,
     loss: AnyLoss,
     params: Params,
@@ -97,7 +116,7 @@ def trigger_rar(
         return loss, params, data, param_data, batch
 
 
-def init_rar(
+def _init_rar(
     data: DataGeneratorWithRAR,
 ) -> tuple[
     DataGeneratorWithRAR,
@@ -108,8 +127,7 @@ def init_rar(
     Separated from the main rar, because the initialization to get _true and
     _false cannot be jit-ted.
     """
-    # NOTE if a user misspell some entry of ``rar_parameters`` the error
-    # risks to be a bit obscure but it should be ok.
+
     if data.rar_parameters is None:
         _rar_step_true, _rar_step_false = None, None
     else:
@@ -137,7 +155,7 @@ def _rar_step_init(
     This is a kind of manual declaration of static argnums
     """
 
-    def rar_step_true(operands: RAROperands) -> RARReturns:
+    def _rar_step_true(operands: RAROperands) -> RARReturns:
         loss, params, data, param_data, batch, key, it = operands
         assert data.rar_parameters is not None
 
@@ -150,9 +168,6 @@ def _rar_step_init(
             Array,
             jax.tree.reduce(
                 jnp.add,
-                # jax.tree.map(
-                #     lambda v: (jnp.linalg.norm(v, axis=-1) ** 2).flatten(), dyn_on_s
-                # ),
                 loss.values_and_grad_per_sample(params, batch)[0].dyn_loss,
                 0,
             ),
@@ -283,7 +298,7 @@ def _rar_step_init(
         # have side effects in this function that will be jitted
         return data, param_data, batch
 
-    def rar_step_false(operands: RAROperands) -> RARReturns:
+    def _rar_step_false(operands: RAROperands) -> RARReturns:
         _, _, data, param_data, batch, _, i = operands
 
         assert data.rar_parameters is not None  # for type checker
@@ -306,4 +321,4 @@ def _rar_step_init(
             data.rar_iter_from_last_sampling = new_rar_iter_from_last_sampling
         return data, param_data, batch
 
-    return rar_step_true, rar_step_false
+    return _rar_step_true, _rar_step_false
