@@ -51,6 +51,8 @@ class RARParameters(eqx.Module):
     k: Array | None = eqx.field(default=None, static=True, kw_only=True)
     c: Array | None = eqx.field(default=None, static=True, kw_only=True)
 
+    _rar_iter_from_last_sampling: int = eqx.field(init=False)
+
     def __post_init__(self):
         if self.method == "D" and (self.k is None or self.c is None):
             raise ValueError("k and c must be specified for RAR-D")
@@ -59,6 +61,8 @@ class RARParameters(eqx.Module):
         if self.k is not None and self.c is not None:
             self.k = jnp.array(self.k)
             self.c = jnp.array(self.c)
+
+        self._rar_iter_from_last_sampling = 0
 
 
 def append_param_batch(
@@ -174,18 +178,16 @@ def _reset_or_increment(
 
 def _check_and_set_rar_parameters(
     rar_parameters: RARParameters | None, n: int
-) -> tuple[int | None, int | None]:
+) -> int | None:
     if rar_parameters is not None:
         # set internal counter for the number of gradient steps since the
         # last new collocation points have been added
         # It is not 0 to ensure the first iteration of RAR happens just
         # after start_iter. See the _proceed_to_rar() function in _rar.py
-        rar_iter_from_last_sampling = rar_parameters.update_every - 1
+        _rar_iter_from_last_sampling = rar_parameters.update_every - 1
         # set iternal counter for the number of times collocation points
         # have been added
-        rar_iter_nb = 0
     else:
-        rar_iter_from_last_sampling = None
-        rar_iter_nb = None
+        _rar_iter_from_last_sampling = None
 
-    return rar_iter_from_last_sampling, rar_iter_nb
+    return _rar_iter_from_last_sampling

@@ -149,10 +149,11 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.domain = make_cartesian_product(half_domain_times, half_domain_omega)
 
             # NOTE below re-do CubicMeshPDE.__init__() ? Maybe useless?
-            (
-                self.rar_iter_from_last_sampling,
-                self.rar_iter_nb,
-            ) = _check_and_set_rar_parameters(self.rar_parameters, self.n)
+            self.rar_parameters = eqx.tree_at(
+                lambda pt: pt._rar_iter_from_last_sampling,
+                self.rar_parameters,
+                _check_and_set_rar_parameters(self.rar_parameters, self.n),
+            )
         elif self.method == "uniform":
             self.key, domain_times = self.generate_time_data(self.key, self.n)
             self.domain = jnp.concatenate([domain_times, self.omega], axis=1)

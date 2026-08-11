@@ -94,8 +94,6 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
     method: Literal["grid", "uniform", "sobol", "halton"] = eqx.field(static=True)
     rar_parameters: RARParameters | None
     # --- Below fields are not passed as arguments to __init__
-    rar_iter_from_last_sampling: int | None = eqx.field(init=False)
-    rar_iter_nb: int | None = eqx.field(init=False)
     curr_omega_idx: int = eqx.field(init=False)
     curr_omega_border_idx: int = eqx.field(init=False)
     omega: Float[Array, " n dim"] = eqx.field(init=False)
@@ -131,10 +129,11 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         assert self.dim == len(self.min_pts) and isinstance(self.min_pts, tuple)
         assert self.dim == len(self.max_pts) and isinstance(self.max_pts, tuple)
 
-        (
-            self.rar_iter_from_last_sampling,
-            self.rar_iter_nb,
-        ) = _check_and_set_rar_parameters(self.rar_parameters, self.n)
+        self.rar_parameters = eqx.tree_at(
+            lambda pt: pt._rar_iter_from_last_sampling,
+            self.rar_parameters,
+            _check_and_set_rar_parameters(self.rar_parameters, self.n),
+        )
 
         if self.method == "grid" and self.dim == 2:
             perfect_sq = int(jnp.round(jnp.sqrt(self.n)) ** 2)

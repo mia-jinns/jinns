@@ -60,8 +60,6 @@ class DataGeneratorODE(AbstractDataGenerator):
     rar_parameters: RARParameters | None
 
     # --- Below fields are not passed as arguments to __init__
-    rar_iter_from_last_sampling: int | None = eqx.field(init=False)
-    rar_iter_nb: int | None = eqx.field(init=False)
     curr_time_idx: int = eqx.field(init=False)
     times: Float[Array, " nt 1"] = eqx.field(init=False)
 
@@ -84,10 +82,11 @@ class DataGeneratorODE(AbstractDataGenerator):
         self.method = method
         self.rar_parameters = rar_parameters
 
-        (
-            self.rar_iter_from_last_sampling,
-            self.rar_iter_nb,
-        ) = _check_and_set_rar_parameters(self.rar_parameters, self.nt)
+        self.rar_parameters = eqx.tree_at(
+            lambda pt: pt._rar_iter_from_last_sampling,
+            self.rar_parameters,
+            _check_and_set_rar_parameters(self.rar_parameters, self.nt),
+        )
 
         if self.temporal_batch_size is not None:
             self.curr_time_idx = self.nt + self.temporal_batch_size

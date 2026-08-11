@@ -19,7 +19,7 @@ jinns.parameters.EqParams.clear()
 jinns.data.DGParams.clear()
 
 key = random.PRNGKey(1)
-n = 117
+n = 99
 nb = None
 ni = 4
 xmin = -3
@@ -104,66 +104,40 @@ n_iter = int(10)
 params = init_params
 
 
-def get_datagenerator_rar(start_iter, update_every):
-    rar_parameters = {
-        "start_iter": start_iter,  # the gradient step at which RAR algo starts (enables a burn in period)
-        "update_every": update_every,  # nb of gradient steps between two RAR procedures
-        "sample_size": 20,  # the number of new candidates space points
-        "selected_sample_size": 7,
-    }
-    n_start = 10  # the initial number of spatial collocation points at beginning
+n_start = 10  # the initial number of spatial collocation points at beginning
 
-    key = random.PRNGKey(12345)
+key = random.PRNGKey(12345)
 
-    key, subkey = random.split(key)
-    train_data = jinns.data.CubicMeshPDENonStatio(
-        key=subkey,
-        n=n,
-        nb=nb,
-        ni=ni,
-        dim=2,
-        min_pts=(xmin, ymin),
-        max_pts=(xmax, ymax),
-        tmin=tmin,
-        tmax=tmax,
-        method=method,
-        rar_parameters=rar_parameters,
-        n_start=n_start,
+key, subkey = random.split(key)
+train_data = jinns.data.CubicMeshPDENonStatio(
+    key=subkey,
+    n=n,
+    nb=nb,
+    ni=ni,
+    dim=2,
+    min_pts=(xmin, ymin),
+    max_pts=(xmax, ymax),
+    tmin=tmin,
+    tmax=tmax,
+    method=method,
+    rar_parameters=jinns.data.RARParameters(
+        start_iter=0, update_every=1, novelty_proportion=0.05, method="D", k=2.0, c=0.0
+    ),
+)
+
+
+# @pytest.fixture
+# def all_tests(pytestconfig):
+#     return pytestconfig.getoption("all_tests")
+
+
+def test_rar_proc_OU():
+    _, loss_values, _, _, _, _, _, _, _, _, _, _ = jinns.solve(
+        init_params=params,
+        data=train_data,
+        optimizer=tx,
+        loss=loss,
+        n_iter=n_iter,
+        key=key,
     )
-
-    return train_data, rar_parameters
-
-
-@pytest.fixture
-def all_tests(pytestconfig):
-    return pytestconfig.getoption("all_tests")
-
-
-def test_data_proba_shape_before_solve():
-    train_data, rar_parameters = get_datagenerator_rar(1, 1)
-    assert (train_data.p != 0).sum() == train_data.n_start
-
-
-def control_shape_after_solve_with_rar(start_iter, update_every):
-    train_data, rar_parameters = get_datagenerator_rar(start_iter, update_every)
-    _, _, _, train_data, _, _, _, _, _, _, _, _ = jinns.solve(
-        init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
-    )
-    assert (train_data.p != 0).sum() == train_data.n_start + jnp.round(
-        (n_iter - rar_parameters["start_iter"]) / rar_parameters["update_every"]
-    ) * rar_parameters["selected_sample_size"]
-
-
-def test_rar_with_various_combination_of_start_and_update_values(all_tests):
-    # long test run only if --all_tests
-    if all_tests:
-        start_iter_list = [0, 3]
-        update_every_list = [1, 3]
-        for start_iter in start_iter_list:
-            for update_every in update_every_list:
-                control_shape_after_solve_with_rar(start_iter, update_every)
-    else:
-        print(
-            "\ntest_rar_with_various_combination_of_start_and_update_values "
-            "has been skipped due to missing --all_tests option\n"
-        )
+    assert jnp.allclose(loss_values[-1], 4978.02179599, atol=1e-5)

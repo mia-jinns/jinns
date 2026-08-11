@@ -4,7 +4,7 @@ from __future__ import (
 
 from typing import TYPE_CHECKING, Callable, TypeAlias, Any, cast
 from functools import partial
-from jaxtyping import Float, Array, Bool, PRNGKeyArray
+from jaxtyping import Array, Bool, PRNGKeyArray
 import jax
 import jax.numpy as jnp
 import equinox as eqx
@@ -33,9 +33,6 @@ if TYPE_CHECKING:
 
         rar_parameters: RARParameters | None
         n_start: int
-        rar_iter_from_last_sampling: int
-        rar_iter_nb: int
-        p: Float[Array, " n 1"]
 
     RAROperands: TypeAlias = tuple[
         Any,
@@ -51,25 +48,6 @@ if TYPE_CHECKING:
     ]
 
 
-def _check_and_set_rar_parameters(
-    rar_parameters: RARParameters | None, n: int
-) -> tuple[int | None, int | None]:
-    if rar_parameters is not None:
-        # set internal counter for the number of gradient steps since the
-        # last new collocation points have been added
-        # It is not 0 to ensure the first iteration of RAR happens just
-        # after start_iter. See the _proceed_to_rar() function in _rar.py
-        rar_iter_from_last_sampling = rar_parameters.update_every - 1
-        # set iternal counter for the number of times collocation points
-        # have been added
-        rar_iter_nb = 0
-    else:
-        rar_iter_from_last_sampling = None
-        rar_iter_nb = None
-
-    return rar_iter_from_last_sampling, rar_iter_nb
-
-
 def _proceed_to_rar(data: DataGeneratorWithRAR, i: int) -> Bool[Array, " "]:
     """Utilility function with various check to ensure we can proceed with the rar_step.
     Return True if yes, and False otherwise"""
@@ -80,7 +58,8 @@ def _proceed_to_rar(data: DataGeneratorWithRAR, i: int) -> Bool[Array, " "]:
         jnp.asarray(data.rar_parameters.start_iter <= i),
         # check if enough iterations since last points added
         jnp.asarray(
-            (data.rar_parameters.update_every - 1) == data.rar_iter_from_last_sampling
+            (data.rar_parameters.update_every - 1)
+            == data.rar_parameters._rar_iter_from_last_sampling
         ),
     ]
 
@@ -135,7 +114,9 @@ def _init_rar(
             data.rar_parameters.novelty_proportion
         )
 
-        data = eqx.tree_at(lambda m: m.rar_iter_from_last_sampling, data, 0)
+        data = eqx.tree_at(
+            lambda m: m.rar_parameters._rar_iter_from_last_sampling, data, 0
+        )
 
     return data, _rar_step_true, _rar_step_false
 
@@ -292,7 +273,9 @@ def _rar_step_init(
         ## End (Update the batch with the novelty)
 
         # update RAR parameters for all cases
-        data = eqx.tree_at(lambda m: m.rar_iter_from_last_sampling, data, 0)
+        data = eqx.tree_at(
+            lambda m: m.rar_parameters._rar_iter_from_last_sampling, data, 0
+        )
 
         # NOTE must return data to be correctly updated because we cannot
         # have side effects in this function that will be jitted
@@ -310,15 +293,17 @@ def _rar_step_init(
             lambda: 1,
         )
 
-        new_rar_iter_from_last_sampling = data.rar_iter_from_last_sampling + increment
+        new__rar_iter_from_last_sampling = (
+            data.rar_parameters._rar_iter_from_last_sampling + increment
+        )
         if isinstance(data, eqx.Module):
             data = eqx.tree_at(
-                lambda m: m.rar_iter_from_last_sampling,
+                lambda m: m.rar_parameters._rar_iter_from_last_sampling,
                 data,
-                new_rar_iter_from_last_sampling,
+                new__rar_iter_from_last_sampling,
             )
         else:
-            data.rar_iter_from_last_sampling = new_rar_iter_from_last_sampling
+            data._rar_iter_from_last_sampling = new__rar_iter_from_last_sampling
         return data, param_data, batch
 
     return _rar_step_true, _rar_step_false
