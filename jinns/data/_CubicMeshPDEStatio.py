@@ -129,11 +129,12 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         assert self.dim == len(self.min_pts) and isinstance(self.min_pts, tuple)
         assert self.dim == len(self.max_pts) and isinstance(self.max_pts, tuple)
 
-        self.rar_parameters = eqx.tree_at(
-            lambda pt: pt._rar_iter_from_last_sampling,
-            self.rar_parameters,
-            _check_and_set_rar_parameters(self.rar_parameters, self.n),
-        )
+        if self.rar_parameters is not None:
+            self.rar_parameters = eqx.tree_at(
+                lambda pt: pt._rar_iter_from_last_sampling,
+                self.rar_parameters,
+                _check_and_set_rar_parameters(self.rar_parameters, self.n),
+            )
 
         if self.method == "grid" and self.dim == 2:
             perfect_sq = int(jnp.round(jnp.sqrt(self.n)) ** 2)
@@ -493,14 +494,12 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         Float[Array, " 1 2"] | Float[Array, " (nb//4) 2 4"] | None,
         int,
         int | None,
-        None,
     ]:
         return (
             self.key,
             self.omega_border,
             self.curr_omega_border_idx,
             self.omega_border_batch_size,
-            None,
         )
 
     def border_batch(

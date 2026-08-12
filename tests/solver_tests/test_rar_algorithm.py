@@ -46,6 +46,13 @@ mc_samples = jnp.concatenate(
     axis=-1,
 )
 
+norm_samples = jinns.loss.NormalizationSamples(
+    samples=mc_samples,
+    weights=volume,
+    min_pts=(int_xmin, int_ymin),
+    max_pts=(int_xmax, int_ymax),
+)
+
 
 eqx_list = (
     (eqx.nn.Linear, 3, 3),
@@ -92,8 +99,7 @@ with pytest.warns(UserWarning):
         loss_weights=loss_weights,
         dynamic_loss=OU_fpe_non_statio_2D_loss,
         initial_condition_fun=u0,
-        norm_weights=norm_weights,
-        norm_samples=mc_samples,
+        norm_samples=norm_samples,
         params=init_params,
     )
 

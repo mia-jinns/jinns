@@ -183,7 +183,7 @@ class DataGeneratorParameter(AbstractDataGenerator):
                 everything_but_key = _reset_or_increment(
                     idx_k + self.param_batch_size,  # type: ignore
                     self.n,
-                    (key_k, param_k, idx_k, self.param_batch_size, None),  # type: ignore
+                    (key_k, param_k, idx_k, self.param_batch_size),  # type: ignore
                 )[1:]
                 return everything_but_key
 

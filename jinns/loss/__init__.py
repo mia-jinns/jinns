@@ -17,7 +17,7 @@ from ._loss_weights import (
     LossWeightsPDEStatio,
 )
 from ._loss_weight_updates import soft_adapt, lr_annealing, ReLoBRaLo
-
+from ._NormalizationSamples import NormalizationSamples
 from ._operators import (
     divergence_fwd,
     divergence_rev,
@@ -59,4 +59,5 @@ __all__ = [
     "Neumann",
     "BoundaryConditionAbstract",
     "equation_on_all_facets_equal",
+    "NormalizationSamples",
 ]

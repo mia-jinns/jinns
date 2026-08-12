@@ -7,6 +7,8 @@ import equinox as eqx
 import optax
 import jinns
 
+from jinns.loss._NormalizationSamples import NormalizationSamples
+
 
 @pytest.fixture
 def train_OU_init():
@@ -80,6 +82,13 @@ def train_OU_init():
 
     OU_statio_1D_loss = OUStatio1DLoss()
 
+    norm_samples = NormalizationSamples(
+        samples=good_mc_samples,
+        weights=volume,
+        min_pts=(good_mc_params["int_xmin"],),
+        max_pts=(good_mc_params["int_xmax"],),
+    )
+
     # Catching an expected UserWarning since no border condition is given
     # for this specific PDE (Fokker-Planck).
     with pytest.warns(UserWarning):
@@ -87,8 +96,7 @@ def train_OU_init():
             u=u,
             loss_weights=loss_weights,
             dynamic_loss=OU_statio_1D_loss,
-            norm_weights=good_mc_params["norm_weights"],
-            norm_samples=good_mc_samples,
+            norm_samples=norm_samples,
             params=init_params,
         )
 

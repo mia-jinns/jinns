@@ -8,6 +8,9 @@ import optax
 from jax.scipy.stats import multivariate_normal
 import jinns
 
+from jinns.data._RARParameters import RARParameters
+from jinns.loss._NormalizationSamples import NormalizationSamples
+
 
 @pytest.fixture
 def train_OU_init():
@@ -24,13 +27,6 @@ def train_OU_init():
     u, init_nn_params = jinns.nn.PINN_MLP.create(
         key=subkey, eqx_list=eqx_list, eq_type="PDENonStatio"
     )
-    rar_parameters = {
-        "start_iter": 1000,  # the gradient step at which RAR algo starts (enables a burn in period)
-        "update_every": 500,  # nb of gradient steps between two RAR procedures
-        "sample_size": 22,  # the number of new candidates time points
-        "selected_sample_size": 5,
-    }
-    n_start = 500  # the initial number of spatial collocation points at beginning
 
     n = 25
     nb = None
@@ -55,8 +51,14 @@ def train_OU_init():
         tmin=tmin,
         tmax=tmax,
         method=method,
-        rar_parameters=rar_parameters,
-        n_start=n_start,
+        rar_parameters=RARParameters(
+            start_iter=0,
+            update_every=10,
+            novelty_proportion=0.05,
+            method="D",
+            k=2.0,
+            c=0.0,
+        ),
     )
 
     Tmax = 5
@@ -77,7 +79,6 @@ def train_OU_init():
 
     n_samples = 10
     volume = (int_xmax - int_xmin) * (int_ymax - int_ymin)
-    norm_weights = volume
     key, subkey1, subkey2 = random.split(key, 3)
     mc_samples = jnp.concatenate(
         [
@@ -89,6 +90,13 @@ def train_OU_init():
             ),
         ],
         axis=-1,
+    )
+
+    norm_samples = NormalizationSamples(
+        samples=mc_samples,
+        weights=volume,
+        min_pts=(int_xmin, int_ymin),
+        max_pts=(int_xmax, int_ymax),
     )
 
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
@@ -106,8 +114,7 @@ def train_OU_init():
             loss_weights=loss_weights,
             dynamic_loss=OU_fpe_non_statio_2D_loss,
             initial_condition_fun=u0,
-            norm_weights=norm_weights,
-            norm_samples=mc_samples,
+            norm_samples=norm_samples,
             params=init_params,
         )
 
@@ -126,7 +133,12 @@ def train_OU_10it(train_OU_init):
     tx = optax.adamw(learning_rate=1e-3)
     n_iter = 10
     params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _, _, _, _ = jinns.solve(
-        init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
+        init_params=params,
+        data=train_data,
+        optimizer=tx,
+        loss=loss,
+        n_iter=n_iter,
+        key=random.PRNGKey(2),
     )
     return total_loss_list[-1]
 
@@ -140,4 +152,4 @@ def test_initial_loss_OU(train_OU_init):
 
 def test_10it_OU(train_OU_10it):
     total_loss_val = train_OU_10it
-    assert jnp.allclose(total_loss_val, 9063.50015507, atol=1e-5)
+    assert jnp.allclose(total_loss_val, 9071.12968974, atol=1e-5)

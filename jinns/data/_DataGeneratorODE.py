@@ -82,11 +82,12 @@ class DataGeneratorODE(AbstractDataGenerator):
         self.method = method
         self.rar_parameters = rar_parameters
 
-        self.rar_parameters = eqx.tree_at(
-            lambda pt: pt._rar_iter_from_last_sampling,
-            self.rar_parameters,
-            _check_and_set_rar_parameters(self.rar_parameters, self.nt),
-        )
+        if self.rar_parameters is not None:
+            self.rar_parameters = eqx.tree_at(
+                lambda pt: pt._rar_iter_from_last_sampling,
+                self.rar_parameters,
+                _check_and_set_rar_parameters(self.rar_parameters, self.nt),
+            )
 
         if self.temporal_batch_size is not None:
             self.curr_time_idx = self.nt + self.temporal_batch_size

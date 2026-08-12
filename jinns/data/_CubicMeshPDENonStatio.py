@@ -149,11 +149,12 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.domain = make_cartesian_product(half_domain_times, half_domain_omega)
 
             # NOTE below re-do CubicMeshPDE.__init__() ? Maybe useless?
-            self.rar_parameters = eqx.tree_at(
-                lambda pt: pt._rar_iter_from_last_sampling,
-                self.rar_parameters,
-                _check_and_set_rar_parameters(self.rar_parameters, self.n),
-            )
+            if self.rar_parameters is not None:
+                self.rar_parameters = eqx.tree_at(
+                    lambda pt: pt._rar_iter_from_last_sampling,
+                    self.rar_parameters,
+                    _check_and_set_rar_parameters(self.rar_parameters, self.n),
+                )
         elif self.method == "uniform":
             self.key, domain_times = self.generate_time_data(self.key, self.n)
             self.domain = jnp.concatenate([domain_times, self.omega], axis=1)
@@ -435,14 +436,12 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         Float[Array, " nb 1+1 2"] | Float[Array, " (nb//4) 2+1 4"] | None,
         int,
         int | None,
-        None,
     ]:
         return (
             self.key,
             self.border,
             self.curr_border_idx,
             self.border_batch_size,
-            None,
         )
 
     def border_batch(
@@ -494,13 +493,12 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
     def _get_initial_operands(
         self,
-    ) -> tuple[PRNGKeyArray, Float[Array, " ni dim"] | None, int, int | None, None]:
+    ) -> tuple[PRNGKeyArray, Float[Array, " ni dim"] | None, int, int | None]:
         return (
             self.key,
             self.initial,
             self.curr_initial_idx,
             self.initial_batch_size,
-            None,
         )
 
     def initial_batch(

@@ -72,7 +72,7 @@ def make_cartesian_product(
 
 
 def _reset_batch_idx_and_permute(
-    operands: tuple[PRNGKeyArray, Float[Array, " n dimension"], int, None],
+    operands: tuple[PRNGKeyArray, Float[Array, " n dimension"], int, int],
 ) -> tuple[PRNGKeyArray, Float[Array, " n dimension"], int]:
     key, domain, curr_idx, _ = operands
     # resetting counter
@@ -96,7 +96,7 @@ def _increment_batch_idx(
 def _reset_or_increment(
     bend: int,
     n_eff: int,
-    operands: tuple[PRNGKeyArray, Float[Array, " n dimension"], int, int],
+    operands: tuple[PRNGKeyArray, Float[Array, " n dimension"], int, int | None],
 ) -> tuple[PRNGKeyArray, Float[Array, " n dimension"], int]:
     """
     Factorize the code of the jax.lax.cond which checks if we have seen all the
