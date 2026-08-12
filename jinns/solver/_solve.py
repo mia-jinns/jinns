@@ -13,7 +13,7 @@ import optax
 import jax
 import jax.numpy as jnp
 from jaxtyping import Float, Array, PRNGKeyArray
-from jinns.data._rar import _init_rar, _trigger_rar
+from jinns.data._rar import _trigger_rar
 from jinns.solver._utils import (
     _check_batch_size,
     _init_stored_weights_terms,
@@ -258,16 +258,10 @@ def solve(
         # but this seems like a hack and there is no better way
         # https://github.com/google-deepmind/optax/issues/384
 
-    # RAR sampling init (ouside scanned function to avoid dynamic slice error)
-    # If RAR is not used the _rar_step_*() are juste None and data is unchanged
-    data, __rar_step_true, __rar_step_false = _init_rar(data)  # type: ignore
     if data.rar_parameters is not None and key is None:
         raise ValueError(
             "key argument must be passed to jinns.solve() when using RAR procedure"
         )
-
-    # Seq2seq
-    curr_seq = 0
 
     train_loss_values = jnp.zeros((n_iter))
     # depending on obs_batch_sharding we will get the simple get_batch or the
@@ -311,7 +305,6 @@ def solve(
         opt_state=opt_state,
     )
     optimization_extra = OptimizationExtraContainer(
-        curr_seq=curr_seq,
         best_iter_id=0,
         best_val_criterion=jnp.nan,
         best_val_params=init_params,
@@ -373,7 +366,7 @@ def solve(
         else:
             subkey = None
 
-        # Trigger RAR (updates the batch AND data AND param_data)
+        # Trigger RAR for collocation points (updates the batch AND data AND param_data)
         loss, params, data, param_data, batch = _trigger_rar(
             i,
             loss,
@@ -382,8 +375,6 @@ def solve(
             param_data,
             batch,
             subkey,
-            __rar_step_true,
-            __rar_step_false,
         )
 
         (train_loss_value, params, last_non_nan_params, opt_state, loss, loss_terms) = (
@@ -481,7 +472,6 @@ def solve(
                 params, last_non_nan_params, opt_state
             ),  # , params_mask),
             OptimizationExtraContainer(
-                curr_seq,
                 best_iter_id,
                 best_val_criterion,
                 best_val_params,

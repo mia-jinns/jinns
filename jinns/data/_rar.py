@@ -2,8 +2,7 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
-from typing import TYPE_CHECKING, Callable, TypeAlias, Any, cast
-from functools import partial
+from typing import TYPE_CHECKING, TypeAlias, Any, cast
 from jaxtyping import Array, Bool, PRNGKeyArray
 import jax
 import jax.numpy as jnp
@@ -14,7 +13,7 @@ from jinns.data._DataGeneratorParameter import DataGeneratorParameter, DGParams
 from jinns.data._DataGeneratorODE import DataGeneratorODE
 from jinns.data._CubicMeshPDEStatio import CubicMeshPDEStatio
 from jinns.data._CubicMeshPDENonStatio import CubicMeshPDENonStatio
-from jinns.data._utils import RARParameters
+from jinns.data._RARParameters import RARParameters
 from jinns.nn._hyperpinn import HyperPINN
 from jinns.nn._spinn import SPINN
 from jinns.data._utils import append_param_batch
@@ -67,7 +66,7 @@ def _proceed_to_rar(data: DataGeneratorWithRAR, i: int) -> Bool[Array, " "]:
     return proceed
 
 
-@partial(jax.jit, static_argnames=["_rar_step_true", "_rar_step_false"])
+@jax.jit
 def _trigger_rar(
     i: int,
     loss: AnyLoss,
@@ -76,8 +75,6 @@ def _trigger_rar(
     param_data: DataGeneratorParameter | None,
     batch: AnyBatch,
     key: PRNGKeyArray,
-    _rar_step_true: Callable[[RAROperands], RARReturns],
-    _rar_step_false: Callable[[RAROperands], RARReturns],
 ) -> tuple[
     AnyLoss, Params, DataGeneratorWithRAR, DataGeneratorParameter | None, AnyBatch
 ]:
@@ -95,215 +92,165 @@ def _trigger_rar(
         return loss, params, data, param_data, batch
 
 
-def _init_rar(
-    data: DataGeneratorWithRAR,
-) -> tuple[
-    DataGeneratorWithRAR,
-    Callable[[RAROperands], RARReturns] | None,
-    Callable[[RAROperands], RARReturns] | None,
-]:
-    """
-    Separated from the main rar, because the initialization to get _true and
-    _false cannot be jit-ted.
-    """
+def _rar_step_true(operands: RAROperands) -> RARReturns:
+    loss, params, data, param_data, batch, key, it = operands
+    assert data.rar_parameters is not None
 
-    if data.rar_parameters is None:
-        _rar_step_true, _rar_step_false = None, None
+    if isinstance(loss.u, HyperPINN) or isinstance(loss.u, SPINN):
+        raise NotImplementedError("RAR not implemented for hyperPINN and SPINN")
+
+    # the signature we get from tree.reduce is Array | int
+    # we are sure this is Array so we use the cast to get rid of int
+    res = cast(
+        Array,
+        jax.tree.reduce(
+            jnp.add,
+            loss.values_and_grad_per_sample(params, batch)[0].dyn_loss,
+            0,
+        ),
+    )
+    res_abs = jnp.abs(res.squeeze())
+    batch_size = res_abs.shape[
+        0
+    ]  # get the batch_size this way so that we are indepedent
+    # of which DG subclass we work with
+
+    # Here we create the novelty that be incorporated to the batch and the DGs
+    novelty_sample_size = round(batch_size * data.rar_parameters.novelty_proportion)
+    if isinstance(data, DataGeneratorODE):
+        key, subkey = jax.random.split(key)
+        new_samples = data.sample_in_time_domain(subkey, novelty_sample_size)
+    elif isinstance(data, CubicMeshPDEStatio) and not isinstance(
+        data, CubicMeshPDENonStatio
+    ):
+        key, *subkeys = jax.random.split(key, data.dim + 1)
+        new_samples = data.sample_in_omega_domain(subkeys, novelty_sample_size)
+    elif isinstance(data, CubicMeshPDENonStatio):
+        key, subkey = jax.random.split(key)
+        new_samples_times = data.sample_in_time_domain(subkey, novelty_sample_size)
+        if data.dim == 1:
+            key, subkeys = jax.random.split(key, 2)
+        else:
+            key, *subkeys = jax.random.split(key, data.dim + 1)
+        new_samples_omega = data.sample_in_omega_domain(subkeys, novelty_sample_size)
+        new_samples = jnp.concatenate([new_samples_times, new_samples_omega], axis=1)
     else:
-        _rar_step_true, _rar_step_false = _rar_step_init(
-            data.rar_parameters.novelty_proportion
+        raise ValueError("Wrong DataGenerator type")
+    if param_data is not None:
+        key, subkey = jax.random.split(key)
+        _, _param_n_samples = param_data.generate_data(subkey, batch_size)
+        new_param_samples = DGParams(_param_n_samples, "DGParams")
+
+    # RAR-G
+    ## Select the m points with higher dynamic loss, they will be conserved
+    if data.rar_parameters.method == "G":
+        keep_idx = jnp.argsort(res_abs, descending=True)[
+            : round(batch_size * (1 - data.rar_parameters.novelty_proportion))
+        ]
+    # RAR-D
+    elif data.rar_parameters.method == "D":
+        assert data.rar_parameters.k is not None
+        assert data.rar_parameters.c is not None
+
+        res_normalized = res_abs / (jnp.max(res_abs) + 1e-6)
+        prop_weights = res_normalized**data.rar_parameters.k + data.rar_parameters.c
+        weights = prop_weights / jnp.sum(prop_weights)
+        keep_idx = jax.random.choice(
+            key,
+            a=jnp.arange(res_abs.shape[0]),
+            shape=(round(batch_size * (1 - data.rar_parameters.novelty_proportion)),),
+            replace=False,
+            p=weights.flatten(),
         )
+    else:
+        raise ValueError("Unknown RAR method")
 
-        data = eqx.tree_at(
-            lambda m: m.rar_parameters._rar_iter_from_last_sampling, data, 0
+    ## Introduce novelty samples with the novelty_sample_size samples that have been sampled
+    ## Begin (Update the batch with the novelty)
+    ### for each param with a jax.tree.map
+    if param_data is not None:
+        param_batch = jax.tree.map(
+            lambda b, new_b: jnp.concatenate([b[keep_idx], new_b], axis=0),
+            batch.param_batch_dict,
+            new_param_samples,
         )
+    else:
+        param_batch = None
+    if isinstance(batch, ODEBatch) and isinstance(data, DataGeneratorODE):
+        arr = jnp.concatenate([batch.temporal_batch[keep_idx], new_samples], axis=0)
+        batch = eqx.tree_at(lambda pt: pt.temporal_batch, batch, arr)
 
-    return data, _rar_step_true, _rar_step_false
-
-
-def _rar_step_init(
-    novelty_proportion,
-) -> tuple[
-    Callable[[RAROperands], RARReturns],
-    Callable[[RAROperands], RARReturns],
-]:
-    """
-    This is a wrapper because the sampling size and
-    selected_sample_size, must be treated as static
-    in order to slice. So they must be set before jitting and not with the jitted
-    dictionary values rar["test_points_nb"] and rar["added_points_nb"]
-
-    This is a kind of manual declaration of static argnums
-    """
-
-    def _rar_step_true(operands: RAROperands) -> RARReturns:
-        loss, params, data, param_data, batch, key, it = operands
-        assert data.rar_parameters is not None
-
-        if isinstance(loss.u, HyperPINN) or isinstance(loss.u, SPINN):
-            raise NotImplementedError("RAR not implemented for hyperPINN and SPINN")
-
-        # the signature we get from tree.reduce is Array | int
-        # we are sure this is Array so we use the cast to get rid of int
-        res = cast(
-            Array,
-            jax.tree.reduce(
-                jnp.add,
-                loss.values_and_grad_per_sample(params, batch)[0].dyn_loss,
-                0,
-            ),
-        )
-        res_abs = jnp.abs(res.squeeze())
-        batch_size = res_abs.shape[
-            0
-        ]  # get the batch_size this way so that we are indepedent
-        # of which DG subclass we work with
-
-        # Here we create the novelty that be incorporated to the batch and the DGs
-        novelty_sample_size = round(batch_size * novelty_proportion)
-        if isinstance(data, DataGeneratorODE):
-            key, subkey = jax.random.split(key)
-            new_samples = data.sample_in_time_domain(subkey, novelty_sample_size)
-        elif isinstance(data, CubicMeshPDEStatio) and not isinstance(
+        # Also add the new points ie update the fixed datasets of the DGs
+        if data.temporal_batch_size is not None:
+            new_times = data.times.at[
+                data.curr_time_idx : data.curr_time_idx * data.temporal_batch_size
+            ].set(  # type: ignore
+                batch.temporal_batch
+            )
+        else:
+            new_times = batch.temporal_batch
+        data = eqx.tree_at(lambda m: m.times, data, new_times)
+    elif isinstance(batch, PDEStatioBatch) or isinstance(batch, PDENonStatioBatch):
+        arr = jnp.concatenate([batch.domain_batch[keep_idx], new_samples], axis=0)
+        batch = eqx.tree_at(lambda pt: pt.domain_batch, batch, arr)
+        # Also add the new points ie update the fixed datasets of the DGs
+        if isinstance(data, CubicMeshPDEStatio) and not isinstance(
             data, CubicMeshPDENonStatio
         ):
-            key, *subkeys = jax.random.split(key, data.dim + 1)
-            new_samples = data.sample_in_omega_domain(subkeys, novelty_sample_size)
-        elif isinstance(data, CubicMeshPDENonStatio):
-            key, subkey = jax.random.split(key)
-            new_samples_times = data.sample_in_time_domain(subkey, novelty_sample_size)
-            if data.dim == 1:
-                key, subkeys = jax.random.split(key, 2)
-            else:
-                key, *subkeys = jax.random.split(key, data.dim + 1)
-            new_samples_omega = data.sample_in_omega_domain(
-                subkeys, novelty_sample_size
-            )
-            new_samples = jnp.concatenate(
-                [new_samples_times, new_samples_omega], axis=1
-            )
-        else:
-            raise ValueError("Wrong DataGenerator type")
-        if param_data is not None:
-            key, subkey = jax.random.split(key)
-            _, _param_n_samples = param_data.generate_data(subkey, batch_size)
-            new_param_samples = DGParams(_param_n_samples, "DGParams")
-
-        # RAR-G
-        ## Select the m points with higher dynamic loss, they will be conserved
-        if data.rar_parameters.method == "G":
-            keep_idx = jnp.argsort(res_abs, descending=True)[
-                : round(batch_size * (1 - novelty_proportion))
-            ]
-        # RAR-D
-        elif data.rar_parameters.method == "D":
-            assert data.rar_parameters.k is not None
-            assert data.rar_parameters.c is not None
-
-            res_normalized = res_abs / (jnp.max(res_abs) + 1e-6)
-            prop_weights = res_normalized**data.rar_parameters.k + data.rar_parameters.c
-            weights = prop_weights / jnp.sum(prop_weights)
-            keep_idx = jax.random.choice(
-                key,
-                a=jnp.arange(res_abs.shape[0]),
-                shape=(round(batch_size * (1 - novelty_proportion)),),
-                replace=False,
-                p=weights.flatten(),
-            )
-        else:
-            raise ValueError("Unknown RAR method")
-
-        ## Introduce novelty samples with the novelty_sample_size samples that have been sampled
-        ## Begin (Update the batch with the novelty)
-        ### for each param with a jax.tree.map
-        if param_data is not None:
-            param_batch = jax.tree.map(
-                lambda b, new_b: jnp.concatenate([b[keep_idx], new_b], axis=0),
-                batch.param_batch_dict,
-                new_param_samples,
-            )
-        else:
-            param_batch = None
-        if isinstance(batch, ODEBatch) and isinstance(data, DataGeneratorODE):
-            arr = jnp.concatenate([batch.temporal_batch[keep_idx], new_samples], axis=0)
-            batch = eqx.tree_at(lambda pt: pt.temporal_batch, batch, arr)
-
-            # Also add the new points ie update the fixed datasets of the DGs
-            if data.temporal_batch_size is not None:
-                new_times = data.times.at[
-                    data.curr_time_idx : data.curr_time_idx * data.temporal_batch_size
+            if data.omega_batch_size is not None:
+                new_omega = data.omega.at[
+                    data.curr_omega_idx : data.curr_omega_idx * data.omega_batch_size
                 ].set(  # type: ignore
-                    batch.temporal_batch
+                    batch.domain_batch
                 )
             else:
-                new_times = batch.temporal_batch
-            data = eqx.tree_at(lambda m: m.times, data, new_times)
-        elif isinstance(batch, PDEStatioBatch) or isinstance(batch, PDENonStatioBatch):
-            arr = jnp.concatenate([batch.domain_batch[keep_idx], new_samples], axis=0)
-            batch = eqx.tree_at(lambda pt: pt.domain_batch, batch, arr)
-            # Also add the new points ie update the fixed datasets of the DGs
-            if isinstance(data, CubicMeshPDEStatio) and not isinstance(
-                data, CubicMeshPDENonStatio
-            ):
-                if data.omega_batch_size is not None:
-                    new_omega = data.omega.at[
-                        data.curr_omega_idx : data.curr_omega_idx
-                        * data.omega_batch_size
-                    ].set(  # type: ignore
-                        batch.domain_batch
-                    )
-                else:
-                    new_omega = batch.domain_batch
-                data = eqx.tree_at(lambda m: m.omega, data, new_omega)
-            elif isinstance(data, CubicMeshPDENonStatio):
-                if data.domain_batch_size is not None:
-                    new_domain = data.domain.at[
-                        data.curr_domain_idx : data.curr_domain_idx
-                        * data.domain_batch_size
-                    ].set(  # type: ignore
-                        batch.domain_batch
-                    )
-                else:
-                    new_domain = batch.domain_batch
-                data = eqx.tree_at(lambda m: m.domain, data, new_domain)
-        else:
-            raise ValueError
-        ## Here is the batch we will return
-        batch = append_param_batch(batch, param_batch)
-        ## End (Update the batch with the novelty)
+                new_omega = batch.domain_batch
+            data = eqx.tree_at(lambda m: m.omega, data, new_omega)
+        elif isinstance(data, CubicMeshPDENonStatio):
+            if data.domain_batch_size is not None:
+                new_domain = data.domain.at[
+                    data.curr_domain_idx : data.curr_domain_idx * data.domain_batch_size
+                ].set(  # type: ignore
+                    batch.domain_batch
+                )
+            else:
+                new_domain = batch.domain_batch
+            data = eqx.tree_at(lambda m: m.domain, data, new_domain)
+    else:
+        raise ValueError
+    ## Here is the batch we will return
+    batch = append_param_batch(batch, param_batch)
+    ## End (Update the batch with the novelty)
 
-        # update RAR parameters for all cases
+    # update RAR parameters for all cases
+    data = eqx.tree_at(lambda m: m.rar_parameters._rar_iter_from_last_sampling, data, 0)
+
+    # NOTE must return data to be correctly updated because we cannot
+    # have side effects in this function that will be jitted
+    return data, param_data, batch
+
+
+def _rar_step_false(operands: RAROperands) -> RARReturns:
+    _, _, data, param_data, batch, _, i = operands
+
+    assert data.rar_parameters is not None  # for type checker
+
+    # Add 1 only if we are after the burn in period
+    increment = jax.lax.cond(
+        i <= data.rar_parameters.start_iter,
+        lambda: 0,
+        lambda: 1,
+    )
+
+    new__rar_iter_from_last_sampling = (
+        data.rar_parameters._rar_iter_from_last_sampling + increment
+    )
+    if isinstance(data, eqx.Module):
         data = eqx.tree_at(
-            lambda m: m.rar_parameters._rar_iter_from_last_sampling, data, 0
+            lambda m: m.rar_parameters._rar_iter_from_last_sampling,
+            data,
+            new__rar_iter_from_last_sampling,
         )
-
-        # NOTE must return data to be correctly updated because we cannot
-        # have side effects in this function that will be jitted
-        return data, param_data, batch
-
-    def _rar_step_false(operands: RAROperands) -> RARReturns:
-        _, _, data, param_data, batch, _, i = operands
-
-        assert data.rar_parameters is not None  # for type checker
-
-        # Add 1 only if we are after the burn in period
-        increment = jax.lax.cond(
-            i <= data.rar_parameters.start_iter,
-            lambda: 0,
-            lambda: 1,
-        )
-
-        new__rar_iter_from_last_sampling = (
-            data.rar_parameters._rar_iter_from_last_sampling + increment
-        )
-        if isinstance(data, eqx.Module):
-            data = eqx.tree_at(
-                lambda m: m.rar_parameters._rar_iter_from_last_sampling,
-                data,
-                new__rar_iter_from_last_sampling,
-            )
-        else:
-            data._rar_iter_from_last_sampling = new__rar_iter_from_last_sampling
-        return data, param_data, batch
-
-    return _rar_step_true, _rar_step_false
+    else:
+        data._rar_iter_from_last_sampling = new__rar_iter_from_last_sampling
+    return data, param_data, batch

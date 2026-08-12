@@ -12,10 +12,10 @@ import jax.numpy as jnp
 from jaxtyping import PRNGKeyArray, Array, Float
 from jinns.data._Batchs import ODEBatch
 from jinns.data._utils import (
-    RARParameters,
     _check_and_set_rar_parameters,
     _reset_or_increment,
 )
+from jinns.data._RARParameters import RARParameters
 from jinns.data._AbstractDataGenerator import AbstractDataGenerator
 
 if TYPE_CHECKING:
