@@ -203,12 +203,18 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         self.key, self.omega = self.generate_omega_data(self.key)
         self.key, self.omega_border = self.generate_omega_border_data(self.key)
 
+    @staticmethod
     def sample_in_omega_domain(
-        self, keys: list[PRNGKeyArray], sample_size: int
+        keys: list[PRNGKeyArray],
+        sample_size: int,
+        dim: int,
+        method: Literal["uniform", "sobol", "halton"],
+        min_pts: tuple[float, ...],
+        max_pts: tuple[float, ...],
     ) -> Float[Array, " n dim"]:
-        if self.method == "uniform":
-            if self.dim == 1:
-                xmin, xmax = self.min_pts[0], self.max_pts[0]
+        if method == "uniform":
+            if dim == 1:
+                xmin, xmax = min_pts[0], max_pts[0]
                 return jax.random.uniform(
                     *keys, shape=(sample_size, 1), minval=xmin, maxval=xmax
                 )
@@ -218,35 +224,41 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
                     jax.random.uniform(
                         keys[i],
                         (sample_size, 1),
-                        minval=self.min_pts[i],
-                        maxval=self.max_pts[i],
+                        minval=min_pts[i],
+                        maxval=max_pts[i],
                     )
-                    for i in range(self.dim)
+                    for i in range(dim)
                 ],
                 axis=-1,
             )
         else:
-            return self._qmc_in_omega_domain(keys[0], sample_size)
+            return CubicMeshPDEStatio._qmc_in_omega_domain(
+                keys[0], sample_size, dim, method, min_pts, max_pts
+            )
 
+    @staticmethod
     def _qmc_in_omega_domain(
-        self, subkey: PRNGKeyArray, sample_size: int
+        subkey: PRNGKeyArray,
+        sample_size: int,
+        dim: int,
+        method: Literal["sobol", "halton"],
+        min_pts: tuple[float, ...],
+        max_pts: tuple[float, ...],
     ) -> Float[Array, "n dim"]:
-        qmc_generator = qmc.Sobol if self.method == "sobol" else qmc.Halton
-        if self.dim == 1:
+        qmc_generator = qmc.Sobol if method == "sobol" else qmc.Halton
+        if dim == 1:
             qmc_seq = qmc_generator(
-                d=self.dim,
+                d=dim,
                 scramble=True,
                 rng=np.random.default_rng(np.uint32(subkey)),
             )
             u = qmc_seq.random(n=sample_size)
-            return jnp.array(
-                qmc.scale(u, l_bounds=self.min_pts[0], u_bounds=self.max_pts[0])
-            )
+            return jnp.array(qmc.scale(u, l_bounds=min_pts[0], u_bounds=max_pts[0]))
         sampler = qmc.Sobol(
-            d=self.dim, scramble=True, rng=np.random.default_rng(np.uint32(subkey))
+            d=dim, scramble=True, rng=np.random.default_rng(np.uint32(subkey))
         )
         samples = sampler.random(n=sample_size)
-        samples = qmc.scale(samples, l_bounds=self.min_pts, u_bounds=self.max_pts)
+        samples = qmc.scale(samples, l_bounds=min_pts, u_bounds=max_pts)
         return jnp.array(samples)
 
     def sample_in_omega_border_domain(
@@ -405,10 +417,24 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         elif self.method in ["uniform", "sobol", "halton"]:
             if self.dim == 1 or self.method in ["sobol", "halton"]:
                 key, subkey = jax.random.split(key, 2)
-                omega = self.sample_in_omega_domain([subkey], sample_size=data_size)
+                omega = self.sample_in_omega_domain(
+                    [subkey],
+                    sample_size=data_size,
+                    dim=self.dim,
+                    method=self.method,
+                    min_pts=self.min_pts,
+                    max_pts=self.max_pts,
+                )
             else:
                 key, *subkeys = jax.random.split(key, self.dim + 1)
-                omega = self.sample_in_omega_domain(subkeys, sample_size=data_size)
+                omega = self.sample_in_omega_domain(
+                    subkeys,
+                    sample_size=data_size,
+                    dim=self.dim,
+                    method=self.method,
+                    min_pts=self.min_pts,
+                    max_pts=self.max_pts,
+                )
         else:
             raise ValueError("Method " + self.method + " is not implemented.")
         return key, omega

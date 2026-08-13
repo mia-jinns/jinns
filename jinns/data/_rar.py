@@ -109,7 +109,9 @@ def _rar_step_true(operands: RAROperands) -> RARReturns:
             0,
         ),
     )
-    res_abs = jnp.abs(res.squeeze())
+    res = jnp.atleast_2d(res)
+    res = jnp.sum(res**2, axis=-1)
+    res_abs = jnp.abs(res)
     batch_size = res_abs.shape[
         0
     ]  # get the batch_size this way so that we are indepedent
@@ -124,15 +126,31 @@ def _rar_step_true(operands: RAROperands) -> RARReturns:
         data, CubicMeshPDENonStatio
     ):
         key, *subkeys = jax.random.split(key, data.dim + 1)
-        new_samples = data.sample_in_omega_domain(subkeys, novelty_sample_size)
+        new_samples = CubicMeshPDEStatio.sample_in_omega_domain(
+            subkeys,
+            novelty_sample_size,
+            data.dim,
+            data.method,  # type: ignore
+            data.min_pts,
+            data.max_pts,
+        )
     elif isinstance(data, CubicMeshPDENonStatio):
         key, subkey = jax.random.split(key)
-        new_samples_times = data.sample_in_time_domain(subkey, novelty_sample_size)
+        new_samples_times = CubicMeshPDENonStatio.sample_in_time_domain(
+            subkey, novelty_sample_size, data.tmin, data.tmax
+        )
         if data.dim == 1:
             key, subkeys = jax.random.split(key, 2)
         else:
             key, *subkeys = jax.random.split(key, data.dim + 1)
-        new_samples_omega = data.sample_in_omega_domain(subkeys, novelty_sample_size)
+        new_samples_omega = CubicMeshPDEStatio.sample_in_omega_domain(
+            subkeys,
+            novelty_sample_size,
+            data.dim,
+            data.method,  # type: ignore
+            data.min_pts,
+            data.max_pts,
+        )
         new_samples = jnp.concatenate([new_samples_times, new_samples_omega], axis=1)
     else:
         raise ValueError("Wrong DataGenerator type")
@@ -162,6 +180,7 @@ def _rar_step_true(operands: RAROperands) -> RARReturns:
             replace=False,
             p=weights.flatten(),
         )
+        jax.debug.print("{x}", x=keep_idx)
     else:
         raise ValueError("Unknown RAR method")
 
@@ -182,12 +201,10 @@ def _rar_step_true(operands: RAROperands) -> RARReturns:
 
         # Also add the new points ie update the fixed datasets of the DGs
         if data.temporal_batch_size is not None:
-            new_times = data.times.at[
-                data.curr_time_idx : data.curr_time_idx * data.temporal_batch_size
-            ].set(  # type: ignore
-                batch.temporal_batch
+            new_times = jax.lax.dynamic_update_slice_in_dim(
+                data.times, batch.temporal_batch, data.curr_time_idx, 0
             )
-        else:
+        else:  # NOTE that this branch is currently out of unit tests
             new_times = batch.temporal_batch
         data = eqx.tree_at(lambda m: m.times, data, new_times)
     elif isinstance(batch, PDEStatioBatch) or isinstance(batch, PDENonStatioBatch):
@@ -198,20 +215,18 @@ def _rar_step_true(operands: RAROperands) -> RARReturns:
             data, CubicMeshPDENonStatio
         ):
             if data.omega_batch_size is not None:
-                new_omega = data.omega.at[
-                    data.curr_omega_idx : data.curr_omega_idx * data.omega_batch_size
-                ].set(  # type: ignore
-                    batch.domain_batch
+                new_omega = jax.lax.dynamic_update_slice_in_dim(
+                    data.omega, batch.domain_batch, data.curr_omega_idx, 0
                 )
-            else:
+            else:  # NOTE that this branch is currently out of unit tests
                 new_omega = batch.domain_batch
             data = eqx.tree_at(lambda m: m.omega, data, new_omega)
         elif isinstance(data, CubicMeshPDENonStatio):
-            if data.domain_batch_size is not None:
-                new_domain = data.domain.at[
-                    data.curr_domain_idx : data.curr_domain_idx * data.domain_batch_size
-                ].set(  # type: ignore
-                    batch.domain_batch
+            if (
+                data.domain_batch_size is not None
+            ):  # NOTE that this branch is currently out of unit tests
+                new_domain = jax.lax.dynamic_update_slice_in_dim(
+                    data.domain, batch.domain_batch, data.curr_domain_idx, 0
                 )
             else:
                 new_domain = batch.domain_batch
@@ -242,15 +257,12 @@ def _rar_step_false(operands: RAROperands) -> RARReturns:
         lambda: 1,
     )
 
-    new__rar_iter_from_last_sampling = (
+    new_rar_iter_from_last_sampling = (
         data.rar_parameters._rar_iter_from_last_sampling + increment
     )
-    if isinstance(data, eqx.Module):
-        data = eqx.tree_at(
-            lambda m: m.rar_parameters._rar_iter_from_last_sampling,
-            data,
-            new__rar_iter_from_last_sampling,
-        )
-    else:
-        data._rar_iter_from_last_sampling = new__rar_iter_from_last_sampling
+    data = eqx.tree_at(
+        lambda m: m.rar_parameters._rar_iter_from_last_sampling,
+        data,
+        new_rar_iter_from_last_sampling,
+    )
     return data, param_data, batch

@@ -6,6 +6,7 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
+from abc import abstractmethod
 from dataclasses import InitVar
 from typing import TYPE_CHECKING, Callable, Any, TypeVar, Generic, ClassVar
 import warnings
@@ -42,12 +43,12 @@ from jinns.parameters._params import Params
 from jinns.nn._pinn import PINN
 from jinns.nn._spinn import SPINN
 from jinns.nn._hyperpinn import HyperPINN
-from jinns.loss._NormalizationSamples import NormalizationSamples
 
 if TYPE_CHECKING:
     # imports for type hints only
     from jinns.nn._abstract_pinn import AbstractPINN
     from jinns.loss._BoundaryConditionAbstract import BoundaryConditionAbstract
+    from jinns.loss._NormalizationSamples import NormalizationSamples
 
 
 # For the same reason that we have the TypeVar in _abstract_loss.py, we have them
@@ -159,6 +160,10 @@ class _LossPDEAbstract(
             boundary_loss_fun = None
 
         return boundary_loss_fun
+
+    @abstractmethod
+    def _get_normalization_loss_batch(self, batch: PDEStatioBatch | PDENonStatioBatch):
+        pass
 
 
 class LossPDEStatio(

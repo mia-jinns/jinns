@@ -6,6 +6,7 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 import warnings
+from typing import Literal
 import equinox as eqx
 import numpy as np
 import jax
@@ -109,10 +110,6 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         Note that neither __init__ or __post_init__ are called when udating a
         Module with eqx.tree_at!
         """
-        # sanity check
-        if ni is None:
-            raise ValueError("`ni` cannot be None.")
-
         super().__init__(**kwargs)
         self.tmin = tmin
         self.tmax = tmax
@@ -159,7 +156,9 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.key, domain_times = self.generate_time_data(self.key, self.n)
             self.domain = jnp.concatenate([domain_times, self.omega], axis=1)
         elif self.method in ["sobol", "halton"]:
-            self.key, self.domain = self.qmc_in_time_omega_domain(self.key, self.n)
+            self.key, self.domain = self.qmc_in_time_omega_domain(
+                self.key, self.n, self.method, self.dim, self.min_pts, self.max_pts
+            )
         else:
             raise ValueError(
                 f'Bad value for method. Got {self.method}, expected "grid" or "uniform" or "sobol" or "halton"'
@@ -225,43 +224,37 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.border_batch_size = None
             self.curr_border_idx = 0
 
-        if ni is not None:
-            if self.method == "grid":
-                perfect_sq = int(jnp.round(jnp.sqrt(self.ni)) ** 2)
-                if self.ni != perfect_sq:
-                    warnings.warn(
-                        "Grid sampling is requested in dimension 2 with a non"
-                        f" perfect square dataset size (self.ni = {self.ni})."
-                        f" Modifying self.ni to self.ni = {perfect_sq}."
-                    )
-                self.ni = perfect_sq
-            if self.method in ["sobol", "halton"]:
-                log2_n = jnp.log2(self.ni)
-                lower_pow = 2 ** jnp.floor(log2_n)
-                higher_pow = 2 ** jnp.ceil(log2_n)
-                closest_power_of_two = (
-                    lower_pow
-                    if (self.ni - lower_pow) < (higher_pow - self.ni)
-                    else higher_pow
+        if self.method == "grid":
+            perfect_sq = int(jnp.round(jnp.sqrt(self.ni)) ** 2)
+            if self.ni != perfect_sq:
+                warnings.warn(
+                    "Grid sampling is requested in dimension 2 with a non"
+                    f" perfect square dataset size (self.ni = {self.ni})."
+                    f" Modifying self.ni to self.ni = {perfect_sq}."
                 )
-                if self.n != closest_power_of_two:
-                    warnings.warn(
-                        f"QuasiMonteCarlo sampling with {self.method} requires sample size to be a power fo 2."
-                        f"Modfiying self.n from {self.ni} to {closest_power_of_two}.",
-                    )
-                self.ni = int(closest_power_of_two)
-            self.key, self.initial = self.generate_omega_data(
-                self.key, data_size=self.ni
+            self.ni = perfect_sq
+        if self.method in ["sobol", "halton"]:
+            log2_n = jnp.log2(self.ni)
+            lower_pow = 2 ** jnp.floor(log2_n)
+            higher_pow = 2 ** jnp.ceil(log2_n)
+            closest_power_of_two = (
+                lower_pow
+                if (self.ni - lower_pow) < (higher_pow - self.ni)
+                else higher_pow
             )
+            if self.n != closest_power_of_two:
+                warnings.warn(
+                    f"QuasiMonteCarlo sampling with {self.method} requires sample size to be a power fo 2."
+                    f"Modfiying self.n from {self.ni} to {closest_power_of_two}.",
+                )
+            self.ni = int(closest_power_of_two)
+        self.key, self.initial = self.generate_omega_data(self.key, data_size=self.ni)
 
-            if self.initial_batch_size is None or self.initial_batch_size == self.ni:
-                self.curr_initial_idx = 0
-            else:
-                self.curr_initial_idx = self.ni + self.initial_batch_size
-                # to be sure there is a shuffling at first get_batch()
+        if self.initial_batch_size is None or self.initial_batch_size == self.ni:
+            self.curr_initial_idx = 0
         else:
-            self.initial = None
-            self.initial_batch_size = None
+            self.curr_initial_idx = self.ni + self.initial_batch_size
+            # to be sure there is a shuffling at first get_batch()
 
         # the following attributes will not be used anymore
         self.omega = None  # type: ignore
@@ -279,29 +272,36 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             partial_times = (self.tmax - self.tmin) / nt
             return key, jnp.arange(self.tmin, self.tmax, partial_times)[:, None]
         elif self.method in ["uniform", "sobol", "halton"]:
-            return key, self.sample_in_time_domain(subkey, nt)
+            return key, self.sample_in_time_domain(subkey, nt, self.tmin, self.tmax)
         raise ValueError("Method " + self.method + " is not implemented.")
 
+    @staticmethod
     def sample_in_time_domain(
-        self, key: PRNGKeyArray, nt: int
+        key: PRNGKeyArray, nt: int, tmin: float, tmax: float
     ) -> Float[Array, " nt 1"]:
-        return jax.random.uniform(key, (nt, 1), minval=self.tmin, maxval=self.tmax)
+        return jax.random.uniform(key, (nt, 1), minval=tmin, maxval=tmax)
 
+    @staticmethod
     def qmc_in_time_omega_domain(
-        self, key: PRNGKeyArray, sample_size: int
+        key: PRNGKeyArray,
+        sample_size: int,
+        method: Literal["sobol", "halton"],
+        dim: int,
+        min_pts: tuple[float, ...],
+        max_pts: tuple[float, ...],
     ) -> tuple[PRNGKeyArray, Float[Array, "n 1+dim"]]:
         """
         Because in Quasi-Monte Carlo sampling we cannot concatenate two vectors generated independently
         We generate time and omega samples jointly
         """
         key, subkey = jax.random.split(key, 2)
-        qmc_generator = qmc.Sobol if self.method == "sobol" else qmc.Halton
+        qmc_generator = qmc.Sobol if method == "sobol" else qmc.Halton
         sampler = qmc_generator(
-            d=self.dim + 1, scramble=True, rng=np.random.default_rng(np.uint32(subkey))
+            d=dim + 1, scramble=True, rng=np.random.default_rng(np.uint32(subkey))
         )
         samples = sampler.random(n=sample_size)
         samples[:, 1:] = qmc.scale(
-            samples[:, 1:], l_bounds=self.min_pts, u_bounds=self.max_pts
+            samples[:, 1:], l_bounds=min_pts, u_bounds=max_pts
         )  # We scale omega domain to be in (min_pts, max_pts)
         return key, jnp.array(samples)
 
