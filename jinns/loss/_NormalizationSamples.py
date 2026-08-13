@@ -2,7 +2,7 @@
 Implement the equinox Module for the normalization samples
 """
 
-from typing import Literal, get_args, cast
+from typing import Literal, get_args
 from dataclasses import InitVar
 import jax
 from jaxtyping import Float, Array, PRNGKeyArray
@@ -11,6 +11,7 @@ import equinox as eqx
 
 from jinns.data._Batchs import PDENonStatioBatch, PDEStatioBatch
 from jinns.data._CubicMeshPDEStatio import CubicMeshPDEStatio
+from jinns.data._CubicMeshPDENonStatio import CubicMeshPDENonStatio
 from jinns.data._RARParameters import RARParameters
 from jinns.nn._hyperpinn import HyperPINN
 from jinns.nn._spinn import SPINN
@@ -18,6 +19,7 @@ from jinns.parameters._params import Params
 
 # if TYPE_CHECKING:
 from jinns.loss._LossPDE import _LossPDEAbstract
+from jinns.utils._types import AnyBatch
 
 AvailableNormSamplesAndWeightsUpdateMethods = Literal["RAR", "resample"]
 
@@ -140,59 +142,92 @@ class NormalizationSamples(eqx.Module):
                 " number of norm_samples. This check has been set to avoid memory explosion"
                 " in normalization loss computation."
             )
+        self.rar_parameters = rar_parameters
 
-    # def update_samples_and_weights(
-    #     self,
-    #     iteration_nb: int,
-    #     data: CubicMeshPDEStatio | CubicMeshPDENonStatio,
-    #     params: Params[Array],
-    #     key: PRNGKeyArray,
-    # ) -> Self:
-    #     """
-    #     Update the weights and samples according to a predefined scheme
+    def update_samples_and_weights(
+        self,
+        loss: _LossPDEAbstract,
+        iteration_nb: int,
+        data: CubicMeshPDEStatio | CubicMeshPDENonStatio,
+        params: Params[Array],
+        batch: AnyBatch,
+        key: PRNGKeyArray,
+    ) -> _LossPDEAbstract:
+        """
+        Update the weights and samples according to a predefined scheme
 
-    #     """
-    #     old_samples = self.samples
-    #     old_weights = self.weights
+        """
+        old_samples = self.samples
+        old_weights = self.weights
 
-    #     if self.update_samples_and_weights_method == "resample":
-    #         # Simple resampling in the domain
-    #         if len(data.min_pts) == 1: # 1D case
-    #             key, subkey = jax.random.split(key)
-    #             new_samples = jax.random.uniform(
-    #                 subkey,
-    #                 shape=(old_samples.shape[0], 1),
-    #                 minval=data.min_pts[0],
-    #                 maxval=data.max_pts[0],
-    #             )
-    #         elif len(data.min_pts) == 2: # 2D case
-    #             key, subkey1, subkey2 = jax.random.split(key, 3)
-    #             new_samples = jnp.stack(
-    #                 [
-    #                     jax.random.uniform(subkey1, shape=(old_samples.shape[0],),
-    #                         minval=data.min_pts[0], maxval=data.max_pts[0]),
-    #                     jax.random.uniform(subkey2, shape=(old_samples.shape[0],),
-    #                         minval=data.min_pts[1], maxval=data.max_pts[1]),
-    #                 ],
-    #                 axis=1,
-    #             )
-    #         new_weights = old_weights
-    #     elif self.update_samples_and_weights_method == "RAR":
-    #         pass
-    #     else:
-    #         raise ValueError("update_samples_and_weights_method for "
-    #                          "samples and weights not implemented")
+        if self.update_samples_and_weights_method == "resample":
+            # Simple resampling in the domain
+            if len(data.min_pts) == 1:  # 1D case
+                key, subkey = jax.random.split(key)
+                new_samples = jax.random.uniform(
+                    subkey,
+                    shape=(old_samples.shape[0], 1),
+                    minval=data.min_pts[0],
+                    maxval=data.max_pts[0],
+                )
+            elif len(data.min_pts) == 2:  # 2D case
+                key, subkey1, subkey2 = jax.random.split(key, 3)
+                new_samples = jnp.stack(
+                    [
+                        jax.random.uniform(
+                            subkey1,
+                            shape=(old_samples.shape[0],),
+                            minval=data.min_pts[0],
+                            maxval=data.max_pts[0],
+                        ),
+                        jax.random.uniform(
+                            subkey2,
+                            shape=(old_samples.shape[0],),
+                            minval=data.min_pts[1],
+                            maxval=data.max_pts[1],
+                        ),
+                    ],
+                    axis=1,
+                )
+            new_weights = old_weights
 
-    #     # At iteration 0 we do not do any update
-    #     (new_samples, new_weights) = jax.lax.cond(
-    #         iteration_nb == 0,
-    #         lambda _: (old_samples, old_weights),
-    #         lambda _: (new_samples, new_weights),
-    #         None,
-    #     )
-    #     return eqx.tree_at(
-    #         lambda pt: (pt.samples, pt.weights), self, (new_samples, new_weights)
-    #     )
+            # At iteration 0 we do not do any update
+            (new_samples, new_weights) = jax.lax.cond(
+                iteration_nb == 0,
+                lambda _: (old_samples, old_weights),
+                lambda _: (new_samples, new_weights),
+                None,
+            )
+            return eqx.tree_at(
+                lambda pt: (pt.samples, pt.weights), self, (new_samples, new_weights)
+            )
+        elif self.update_samples_and_weights_method == "RAR":
+            assert loss.norm_samples is not None
+            assert loss.norm_samples.rar_parameters is not None
+            loss = jax.lax.cond(
+                jnp.all(
+                    jnp.array(
+                        [
+                            # check if burn-in period has ended
+                            jnp.asarray(
+                                loss.norm_samples.rar_parameters.start_iter
+                                <= iteration_nb
+                            ),
+                            # check if enough iterations since last points added
+                            jnp.asarray(
+                                (loss.norm_samples.rar_parameters.update_every - 1)
+                                == loss.norm_samples.rar_parameters._rar_iter_from_last_sampling
+                            ),
+                        ]
+                    )
+                ),
+                lambda op: _rar_step_true_norm_samples(*op),
+                lambda op: _rar_step_false_norm_samples(*op),
+                (loss, params, batch, key, iteration_nb),
+            )
+            return loss
+        else:
+            return loss
 
 
 def _rar_step_true_norm_samples(
@@ -210,16 +245,13 @@ def _rar_step_true_norm_samples(
 
     # the signature we get from tree.reduce is Array | int
     # we are sure this is Array so we use the cast to get rid of int
-    res = cast(
-        Array,
-        jax.tree.reduce(
-            jnp.add,
-            loss.values_and_grad_per_sample(
-                params, loss._get_normalization_loss_batch(batch)
-            )[0].dyn_loss,
-            0,
-        ),
-    )
+    norm_batch = loss._get_normalization_loss_batch(batch)[0]
+
+    def get_res_for_a_t(b_for_a_t):
+        return jax.vmap(lambda x, p: loss.u(x, p), (0, None))(b_for_a_t, params)
+
+    get_res_for_all_t = jax.vmap(get_res_for_a_t)
+    res = jnp.mean(get_res_for_all_t(norm_batch), axis=0)
     res = jnp.atleast_2d(res)
     res = jnp.sum(res**2, axis=-1)
     res_abs = jnp.abs(res)
@@ -229,9 +261,13 @@ def _rar_step_true_norm_samples(
     novelty_sample_size = round(
         norm_samples_size * loss.norm_samples.rar_parameters.novelty_proportion
     )
-    key, subkey = jax.random.split(key, loss.norm_samples.dim + 1)
+    if loss.norm_samples.dim == 1:
+        key, subkey = jax.random.split(key, 2)
+        subkey = [subkey]
+    else:
+        key, *subkey = jax.random.split(key, loss.norm_samples.dim + 1)
     new_samples = CubicMeshPDEStatio.sample_in_omega_domain(
-        keys=[subkey] if loss.norm_samples.dim == 1 else subkey,
+        keys=subkey,
         sample_size=novelty_sample_size,
         dim=loss.norm_samples.dim,
         method="uniform",
@@ -283,99 +319,6 @@ def _rar_step_true_norm_samples(
         (arr, weights),
     )
     return loss
-
-    # new_omega = data.omega.at[
-    #         data.curr_omega_idx : data.curr_omega_idx * data.omega_batch_size
-    #     ].set(  # type: ignore
-    #         batch.domain_batch
-    #     )
-    # else:
-    #     new_omega = batch.domain_batch
-    # data = eqx.tree_at(lambda m: m.omega, data, new_omega)
-    # if isinstance(data, CubicMeshPDEStatio) and not isinstance(
-    #     data, CubicMeshPDENonStatio
-    # ):
-    #     key, *subkeys = jax.random.split(key, data.dim + 1)
-    #     new_samples = data.sample_in_omega_domain(subkeys, novelty_sample_size)
-    # elif isinstance(data, CubicMeshPDENonStatio):
-    #     key, subkey = jax.random.split(key)
-    #     new_samples_times = data.sample_in_time_domain(subkey, novelty_sample_size)
-    #     if data.dim == 1:
-    #         key, subkeys = jax.random.split(key, 2)
-    #     else:
-    #         key, *subkeys = jax.random.split(key, data.dim + 1)
-    #     new_samples_omega = data.sample_in_omega_domain(subkeys, novelty_sample_size)
-    #     new_samples = jnp.concatenate([new_samples_times, new_samples_omega], axis=1)
-    # else:
-    #     raise ValueError("Wrong DataGenerator type")
-    # if param_data is not None:
-    #     key, subkey = jax.random.split(key)
-    #     _, _param_n_samples = param_data.generate_data(subkey, batch_size)
-    #     new_param_samples = DGParams(_param_n_samples, "DGParams")
-
-    ## Introduce novelty samples with the novelty_sample_size samples that have been sampled
-    ## Begin (Update the batch with the novelty)
-    ### for each param with a jax.tree.map
-    # if param_data is not None:
-    #     param_batch = jax.tree.map(
-    #         lambda b, new_b: jnp.concatenate([b[keep_idx], new_b], axis=0),
-    #         batch.param_batch_dict,
-    #         new_param_samples,
-    #     )
-    # else:
-    #     param_batch = None
-    # if isinstance(batch, ODEBatch) and isinstance(data, DataGeneratorODE):
-    #     arr = jnp.concatenate([batch.temporal_batch[keep_idx], new_samples], axis=0)
-    #     batch = eqx.tree_at(lambda pt: pt.temporal_batch, batch, arr)
-
-    #     # Also add the new points ie update the fixed datasets of the DGs
-    #     if data.temporal_batch_size is not None:
-    #         new_times = data.times.at[
-    #             data.curr_time_idx : data.curr_time_idx * data.temporal_batch_size
-    #         ].set(  # type: ignore
-    #             batch.temporal_batch
-    #         )
-    #     else:
-    #         new_times = batch.temporal_batch
-    #     data = eqx.tree_at(lambda m: m.times, data, new_times)
-    # elif isinstance(batch, PDEStatioBatch) or isinstance(batch, PDENonStatioBatch):
-    #     arr = jnp.concatenate([batch.domain_batch[keep_idx], new_samples], axis=0)
-    #     batch = eqx.tree_at(lambda pt: pt.domain_batch, batch, arr)
-    #     # Also add the new points ie update the fixed datasets of the DGs
-    #     if isinstance(data, CubicMeshPDEStatio) and not isinstance(
-    #         data, CubicMeshPDENonStatio
-    #     ):
-    #         if data.omega_batch_size is not None:
-    #             new_omega = data.omega.at[
-    #                 data.curr_omega_idx : data.curr_omega_idx * data.omega_batch_size
-    #             ].set(  # type: ignore
-    #                 batch.domain_batch
-    #             )
-    #         else:
-    #             new_omega = batch.domain_batch
-    #         data = eqx.tree_at(lambda m: m.omega, data, new_omega)
-    #     elif isinstance(data, CubicMeshPDENonStatio):
-    #         if data.domain_batch_size is not None:
-    #             new_domain = data.domain.at[
-    #                 data.curr_domain_idx : data.curr_domain_idx * data.domain_batch_size
-    #             ].set(  # type: ignore
-    #                 batch.domain_batch
-    #             )
-    #         else:
-    #             new_domain = batch.domain_batch
-    #         data = eqx.tree_at(lambda m: m.domain, data, new_domain)
-    # else:
-    #     raise ValueError
-    # ## Here is the batch we will return
-    # batch = append_param_batch(batch, param_batch)
-    # ## End (Update the batch with the novelty)
-
-    # # update RAR parameters for all cases
-    # data = eqx.tree_at(lambda m: m.rar_parameters._rar_iter_from_last_sampling, data, 0)
-
-    # # NOTE must return data to be correctly updated because we cannot
-    # # have side effects in this function that will be jitted
-    # return data, param_data, batch
 
 
 def _rar_step_false_norm_samples(

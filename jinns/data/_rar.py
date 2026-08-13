@@ -180,7 +180,6 @@ def _rar_step_true(operands: RAROperands) -> RARReturns:
             replace=False,
             p=weights.flatten(),
         )
-        jax.debug.print("{x}", x=keep_idx)
     else:
         raise ValueError("Unknown RAR method")
 

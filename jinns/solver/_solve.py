@@ -8,12 +8,13 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 import time
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, cast
 import optax
 import jax
 import jax.numpy as jnp
 from jaxtyping import Float, Array, PRNGKeyArray
 from jinns.data._rar import _trigger_rar
+from jinns.loss._LossPDE import LossPDENonStatio, LossPDEStatio
 from jinns.solver._utils import (
     _check_batch_size,
     _init_stored_weights_terms,
@@ -376,6 +377,18 @@ def solve(
             batch,
             subkey,
         )
+
+        if (
+            isinstance(loss, (LossPDEStatio, LossPDENonStatio))
+            and loss.norm_samples is not None
+        ):
+            if key is not None:
+                key, subkey = jax.random.split(key)
+            else:
+                subkey = None  # still be None currently
+            loss = loss.norm_samples.update_samples_and_weights(
+                loss, i, data, optimization.params, batch, cast(PRNGKeyArray, subkey)
+            )
 
         (train_loss_value, params, last_non_nan_params, opt_state, loss, loss_terms) = (
             _loss_evaluate_and_gradient_step(

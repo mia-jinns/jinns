@@ -595,7 +595,6 @@ class LossPDENonStatio(
             batch.domain_batch[: self.norm_samples.max_time_slices, 0:1],
             self.norm_samples.samples[: self.norm_samples.max_samples_omega],  # type: ignore -> cannot narrow a class attr
         )
-
         if isinstance(self.u, (PINN, HyperPINN)):
             return (
                 make_cartesian_product(
