@@ -239,7 +239,7 @@ def _rar_step_true_norm_samples(
 ) -> _LossPDEAbstract:
     assert loss.norm_samples is not None
     assert loss.norm_samples.rar_parameters is not None
-
+    jax.debug.print("{x}", x=i)
     if isinstance(loss.u, HyperPINN) or isinstance(loss.u, SPINN):
         raise NotImplementedError("RAR not implemented for hyperPINN and SPINN")
 
@@ -251,10 +251,9 @@ def _rar_step_true_norm_samples(
         return jax.vmap(lambda x, p: loss.u(x, p), (0, None))(b_for_a_t, params)
 
     get_res_for_all_t = jax.vmap(get_res_for_a_t)
-    res = jnp.mean(get_res_for_all_t(norm_batch), axis=0)
+    res = jnp.max(get_res_for_all_t(norm_batch), axis=0)  # NOTE
     res = jnp.atleast_2d(res)
-    res = jnp.sum(res**2, axis=-1)
-    res_abs = jnp.abs(res)
+    res_abs = jnp.sum(res**2, axis=-1)
     norm_samples_size = res_abs.shape[0]
 
     # Here we create the novelty that be incorporated to the norm samples
@@ -284,7 +283,29 @@ def _rar_step_true_norm_samples(
                 * (1 - loss.norm_samples.rar_parameters.novelty_proportion)
             )
         ]
-        weights = loss.norm_samples.weights
+        best_norm_samples = loss.norm_samples.samples[keep_idx]
+        mu = jnp.mean(best_norm_samples, axis=0)
+        cov = jnp.cov(best_norm_samples, rowvar=False)
+        # jax.debug.print("{x}",x=(mu, cov))
+        new_samples = jax.random.multivariate_normal(
+            key=key, mean=mu, cov=cov, shape=(norm_samples_size,)
+        )
+        new_weights = jax.scipy.stats.multivariate_normal.pdf(
+            new_samples, mean=mu, cov=cov
+        )
+
+        loss = eqx.tree_at(
+            lambda m: m.norm_samples.rar_parameters._rar_iter_from_last_sampling,
+            loss,
+            0,
+        )
+
+        return eqx.tree_at(
+            lambda pt: (pt.norm_samples.samples, pt.norm_samples.weights),
+            loss,
+            (new_samples, new_weights),
+        )
+
     # RAR-D
     elif loss.norm_samples.rar_parameters.method == "D":
         assert loss.norm_samples.rar_parameters.k is not None
@@ -295,7 +316,7 @@ def _rar_step_true_norm_samples(
             res_normalized**loss.norm_samples.rar_parameters.k
             + loss.norm_samples.rar_parameters.c
         )
-        weights = prop_weights / jnp.sum(prop_weights)
+        prop_weights = prop_weights / jnp.sum(prop_weights)
         keep_idx = jax.random.choice(
             key,
             a=jnp.arange(res_abs.shape[0]),
@@ -306,11 +327,12 @@ def _rar_step_true_norm_samples(
                 ),
             ),
             replace=False,
-            p=weights.flatten(),
+            p=prop_weights,
         )
     else:
         raise ValueError("Unknown RAR method")
 
+    weights = loss.norm_samples.weights  # NOTE that weights could change here
     ## Introduce novelty samples with the novelty_sample_size samples that have been sampled
     arr = jnp.concatenate([loss.norm_samples.samples[keep_idx], new_samples], axis=0)
     loss = eqx.tree_at(
@@ -318,6 +340,12 @@ def _rar_step_true_norm_samples(
         loss,
         (arr, weights),
     )
+
+    # update RAR parameters for all cases
+    loss = eqx.tree_at(
+        lambda m: m.norm_samples.rar_parameters._rar_iter_from_last_sampling, loss, 0
+    )
+
     return loss
 
 

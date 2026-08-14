@@ -54,4 +54,6 @@ class RARParameters(eqx.Module):
             self.k = jnp.array(self.k)
             self.c = jnp.array(self.c)
 
-        self._rar_iter_from_last_sampling = 0
+        # It is not 0 to ensure the first iteration of RAR happens just
+        # after start_iter. See the _proceed_to_rar() function in _rar.py
+        self._rar_iter_from_last_sampling = self.update_every - 1
