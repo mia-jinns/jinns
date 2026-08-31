@@ -485,9 +485,7 @@ def solve(
         return (
             i,
             loss,
-            OptimizationContainer(
-                params, last_non_nan_params, opt_state
-            ),  # , params_mask),
+            OptimizationContainer(params, last_non_nan_params, opt_state),
             OptimizationExtraContainer(
                 best_iter_id,
                 best_val_criterion,
