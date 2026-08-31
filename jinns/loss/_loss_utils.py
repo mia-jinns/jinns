@@ -88,7 +88,6 @@ def vmap_vmap_fun_normalization(
 
     cart_prod_t_x = batch[0]
     norm_weights_for_x = batch[1]
-
     v_u = jax.vmap(  # outer vmap over t
         jax.vmap(  # inner vmap over x and norm_weights if it is an array
             fun,

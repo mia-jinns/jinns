@@ -8,6 +8,7 @@ from jax.scipy.stats import multivariate_normal
 import jinns
 import jinns.data
 import jinns.loss
+from jinns.loss._NormalizationSamples import NormalizationSamples
 
 
 @pytest.fixture
@@ -46,6 +47,8 @@ def train_OU_init():
     int_xmin, int_xmax = -3, 3
     int_ymin, int_ymax = -3, 3
 
+    min_pts = (int_xmin, int_ymin)
+    max_pts = (int_xmax, int_ymax)
     n_mc_samples = int(13)
     volume = (int_xmax - int_xmin) * (int_ymax - int_ymin)
     key, subkey1, subkey2 = random.split(key, 3)
@@ -68,61 +71,89 @@ def train_OU_init():
     )
     dynamic_loss = jinns.loss.OU_FPENonStatioLoss2D(Tmax=Tmax)
 
-    return u, init_params, loss_weights, dynamic_loss, u0, mc_samples, volume
+    return (
+        u,
+        init_params,
+        loss_weights,
+        dynamic_loss,
+        u0,
+        mc_samples,
+        volume,
+        min_pts,
+        max_pts,
+    )
 
 
 def test_wrong_mc_weights(train_OU_init):
-    u, init_params, loss_weights, dynamic_loss, u0, mc_samples, volume = train_OU_init
-
-    # Catching an expected Error cause norm_weights are None
-    with pytest.raises(ValueError), pytest.warns(UserWarning):
-        _ = jinns.loss.LossPDENonStatio(
-            u=u,
-            loss_weights=loss_weights,
-            dynamic_loss=dynamic_loss,
-            initial_condition_fun=u0,
-            norm_weights=None,
-            norm_samples=mc_samples,
-            params=init_params,
-        )
+    (
+        u,
+        init_params,
+        loss_weights,
+        dynamic_loss,
+        u0,
+        mc_samples,
+        volume,
+        min_pts,
+        max_pts,
+    ) = train_OU_init
 
     # Catching an expected Error because norm_weights does not have the same
     # leading dimensions as mc_samples
-    with pytest.raises(ValueError), pytest.warns(UserWarning):
+    with pytest.raises(ValueError):
+        norm_samples = NormalizationSamples(
+            samples=mc_samples,
+            weights=jnp.array(2 * [volume]),
+            min_pts=min_pts,
+            max_pts=max_pts,
+        )
         _ = jinns.loss.LossPDENonStatio(
             u=u,
             loss_weights=loss_weights,
             dynamic_loss=dynamic_loss,
             initial_condition_fun=u0,
-            norm_weights=jnp.array(2 * [volume]),
-            norm_samples=mc_samples,
+            norm_samples=norm_samples,
             params=init_params,
         )
 
 
 def test_broadcast_norm_weights(train_OU_init):
-    u, init_params, loss_weights, dynamic_loss, u0, mc_samples, volume = train_OU_init
+    (
+        u,
+        init_params,
+        loss_weights,
+        dynamic_loss,
+        u0,
+        mc_samples,
+        volume,
+        min_pts,
+        max_pts,
+    ) = train_OU_init
     with pytest.warns(UserWarning):
-        nw1 = volume
+        norm_samples = NormalizationSamples(
+            samples=mc_samples, weights=volume, min_pts=min_pts, max_pts=max_pts
+        )
         loss1 = jinns.loss.LossPDENonStatio(
             u=u,
             loss_weights=loss_weights,
             dynamic_loss=dynamic_loss,
             initial_condition_fun=u0,
-            norm_weights=nw1,
-            norm_samples=mc_samples,
+            norm_samples=norm_samples,
             params=init_params,
         )
 
     with pytest.warns(UserWarning):
-        nw2 = jnp.array([volume] * mc_samples.shape[0])
+        norm_samples = NormalizationSamples(
+            samples=mc_samples,
+            weights=jnp.array([volume] * mc_samples.shape[0]),
+            min_pts=min_pts,
+            max_pts=max_pts,
+        )
         loss2 = jinns.loss.LossPDENonStatio(
             u=u,
             loss_weights=loss_weights,
             dynamic_loss=dynamic_loss,
             initial_condition_fun=u0,
-            norm_weights=nw2,
-            norm_samples=mc_samples,
+            norm_samples=norm_samples,
             params=init_params,
         )
 

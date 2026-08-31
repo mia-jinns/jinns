@@ -16,6 +16,7 @@ from typing import Literal
 from jinns.data._Batchs import PDEStatioBatch
 from jinns.data._utils import _check_and_set_rar_parameters, _reset_or_increment
 from jinns.data._AbstractDataGenerator import AbstractDataGenerator
+from jinns.data._RARParameters import RARParameters
 
 
 class CubicMeshPDEStatio(AbstractDataGenerator):
@@ -60,7 +61,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         sampled points over the domain.
         **Note** that Sobol and Halton approaches use scipy modules and will not
         be JIT compatible.
-    rar_parameters : dict[str, int], default=None
+    rar_parameters : RARParameters | None, default=None
         Defaults to None: do not use Residual Adaptative Resampling.
         Otherwise a dictionary with keys
         - `start_iter`: the iteration at which we start the RAR sampling scheme (we first have a "burn-in" period).
@@ -71,13 +72,6 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         - `selected_sample_size`: the number of selected
         points from the sample to be added to the current collocation
         points.
-    n_start : int, default=None
-        Defaults to None. The effective size of n used at start time.
-        This value must be
-        provided when rar_parameters is not None. Otherwise we set internally
-        n_start = n and this is hidden from the user.
-        In RAR, n_start
-        then corresponds to the initial number of points we train the PINN on.
     """
 
     key: PRNGKeyArray
@@ -98,13 +92,8 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
     min_pts: tuple[float, ...]
     max_pts: tuple[float, ...]
     method: Literal["grid", "uniform", "sobol", "halton"] = eqx.field(static=True)
-    rar_parameters: None | dict[str, int]
-    n_start: int = eqx.field(static=True)
-
+    rar_parameters: RARParameters | None
     # --- Below fields are not passed as arguments to __init__
-    p: Float[Array, " n"] | None = eqx.field(init=False)
-    rar_iter_from_last_sampling: int | None = eqx.field(init=False)
-    rar_iter_nb: int | None = eqx.field(init=False)
     curr_omega_idx: int = eqx.field(init=False)
     curr_omega_border_idx: int = eqx.field(init=False)
     omega: Float[Array, " n dim"] = eqx.field(init=False)
@@ -124,8 +113,7 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         min_pts: tuple[float, ...],
         max_pts: tuple[float, ...],
         method: Literal["grid", "uniform", "sobol", "halton"] = "uniform",
-        rar_parameters: dict[str, int] | None = None,
-        n_start: int | None = None,
+        rar_parameters: RARParameters | None = None,
     ):
         self.key = key
         self.n = n
@@ -141,12 +129,12 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         assert self.dim == len(self.min_pts) and isinstance(self.min_pts, tuple)
         assert self.dim == len(self.max_pts) and isinstance(self.max_pts, tuple)
 
-        (
-            self.n_start,
-            self.p,
-            self.rar_iter_from_last_sampling,
-            self.rar_iter_nb,
-        ) = _check_and_set_rar_parameters(self.rar_parameters, self.n, n_start)
+        if self.rar_parameters is not None:
+            self.rar_parameters = eqx.tree_at(
+                lambda pt: pt._rar_iter_from_last_sampling,
+                self.rar_parameters,
+                _check_and_set_rar_parameters(self.rar_parameters, self.n),
+            )
 
         if self.method == "grid" and self.dim == 2:
             perfect_sq = int(jnp.round(jnp.sqrt(self.n)) ** 2)
@@ -215,12 +203,18 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         self.key, self.omega = self.generate_omega_data(self.key)
         self.key, self.omega_border = self.generate_omega_border_data(self.key)
 
+    @staticmethod
     def sample_in_omega_domain(
-        self, keys: list[PRNGKeyArray], sample_size: int
+        keys: list[PRNGKeyArray],
+        sample_size: int,
+        dim: int,
+        method: Literal["uniform", "sobol", "halton"],
+        min_pts: tuple[float, ...],
+        max_pts: tuple[float, ...],
     ) -> Float[Array, " n dim"]:
-        if self.method == "uniform":
-            if self.dim == 1:
-                xmin, xmax = self.min_pts[0], self.max_pts[0]
+        if method == "uniform":
+            if dim == 1:
+                xmin, xmax = min_pts[0], max_pts[0]
                 return jax.random.uniform(
                     *keys, shape=(sample_size, 1), minval=xmin, maxval=xmax
                 )
@@ -230,35 +224,41 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
                     jax.random.uniform(
                         keys[i],
                         (sample_size, 1),
-                        minval=self.min_pts[i],
-                        maxval=self.max_pts[i],
+                        minval=min_pts[i],
+                        maxval=max_pts[i],
                     )
-                    for i in range(self.dim)
+                    for i in range(dim)
                 ],
                 axis=-1,
             )
         else:
-            return self._qmc_in_omega_domain(keys[0], sample_size)
+            return CubicMeshPDEStatio._qmc_in_omega_domain(
+                keys[0], sample_size, dim, method, min_pts, max_pts
+            )
 
+    @staticmethod
     def _qmc_in_omega_domain(
-        self, subkey: PRNGKeyArray, sample_size: int
+        subkey: PRNGKeyArray,
+        sample_size: int,
+        dim: int,
+        method: Literal["sobol", "halton"],
+        min_pts: tuple[float, ...],
+        max_pts: tuple[float, ...],
     ) -> Float[Array, "n dim"]:
-        qmc_generator = qmc.Sobol if self.method == "sobol" else qmc.Halton
-        if self.dim == 1:
+        qmc_generator = qmc.Sobol if method == "sobol" else qmc.Halton
+        if dim == 1:
             qmc_seq = qmc_generator(
-                d=self.dim,
+                d=dim,
                 scramble=True,
                 rng=np.random.default_rng(np.uint32(subkey)),
             )
             u = qmc_seq.random(n=sample_size)
-            return jnp.array(
-                qmc.scale(u, l_bounds=self.min_pts[0], u_bounds=self.max_pts[0])
-            )
+            return jnp.array(qmc.scale(u, l_bounds=min_pts[0], u_bounds=max_pts[0]))
         sampler = qmc.Sobol(
-            d=self.dim, scramble=True, rng=np.random.default_rng(np.uint32(subkey))
+            d=dim, scramble=True, rng=np.random.default_rng(np.uint32(subkey))
         )
         samples = sampler.random(n=sample_size)
-        samples = qmc.scale(samples, l_bounds=self.min_pts, u_bounds=self.max_pts)
+        samples = qmc.scale(samples, l_bounds=min_pts, u_bounds=max_pts)
         return jnp.array(samples)
 
     def sample_in_omega_border_domain(
@@ -417,10 +417,24 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         elif self.method in ["uniform", "sobol", "halton"]:
             if self.dim == 1 or self.method in ["sobol", "halton"]:
                 key, subkey = jax.random.split(key, 2)
-                omega = self.sample_in_omega_domain([subkey], sample_size=data_size)
+                omega = self.sample_in_omega_domain(
+                    [subkey],
+                    sample_size=data_size,
+                    dim=self.dim,
+                    method=self.method,
+                    min_pts=self.min_pts,
+                    max_pts=self.max_pts,
+                )
             else:
                 key, *subkeys = jax.random.split(key, self.dim + 1)
-                omega = self.sample_in_omega_domain(subkeys, sample_size=data_size)
+                omega = self.sample_in_omega_domain(
+                    subkeys,
+                    sample_size=data_size,
+                    dim=self.dim,
+                    method=self.method,
+                    min_pts=self.min_pts,
+                    max_pts=self.max_pts,
+                )
         else:
             raise ValueError("Method " + self.method + " is not implemented.")
         return key, omega
@@ -457,15 +471,12 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
 
     def _get_omega_operands(
         self,
-    ) -> tuple[
-        PRNGKeyArray, Float[Array, " n dim"], int, int | None, Float[Array, " n"] | None
-    ]:
+    ) -> tuple[PRNGKeyArray, Float[Array, " n dim"], int, int | None]:
         return (
             self.key,
             self.omega,
             self.curr_omega_idx,
             self.omega_batch_size,
-            self.p,
         )
 
     def inside_batch(
@@ -480,22 +491,12 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
             # Avoid unnecessary reshuffling
             return self, self.omega
 
-        # Compute the effective number of used collocation points
-        if self.rar_parameters is not None:
-            n_eff = (
-                self.n_start
-                + self.rar_iter_nb  # type: ignore
-                * self.rar_parameters["selected_sample_size"]
-            )
-        else:
-            n_eff = self.n
-
         bstart = self.curr_omega_idx
         bend = bstart + self.omega_batch_size
 
         new_attributes = _reset_or_increment(
             bend,
-            n_eff,
+            self.n,
             self._get_omega_operands(),  # type: ignore
             # ignore since the case self.omega_batch_size is None has been
             # handled above
@@ -519,14 +520,12 @@ class CubicMeshPDEStatio(AbstractDataGenerator):
         Float[Array, " 1 2"] | Float[Array, " (nb//4) 2 4"] | None,
         int,
         int | None,
-        None,
     ]:
         return (
             self.key,
             self.omega_border,
             self.curr_omega_border_idx,
             self.omega_border_batch_size,
-            None,
         )
 
     def border_batch(

@@ -73,6 +73,14 @@ def train_NSPipeFlow_init():
         min_pts=(xmin, ymin),
         max_pts=(xmax, ymax),
         method=method,
+        rar_parameters=jinns.data.RARParameters(
+            start_iter=0,
+            update_every=10,
+            novelty_proportion=0.05,
+            method="D",
+            k=2.0,
+            c=0.0,
+        ),
     )
 
     rho = 1.0
@@ -98,7 +106,7 @@ def train_NSPipeFlow_init():
             params=init_params,
         )
 
-    return init_params, loss, train_data
+    return init_params, loss, train_data, key
 
 
 @pytest.fixture
@@ -106,7 +114,7 @@ def train_NSPipeFlow_10it(train_NSPipeFlow_init):
     """
     Fixture that requests a fixture
     """
-    init_params, loss, train_data = train_NSPipeFlow_init
+    init_params, loss, train_data, key = train_NSPipeFlow_init
 
     # NOTE we need to waste one get_batch() here to stay synchronized with the
     # notebook
@@ -119,13 +127,18 @@ def train_NSPipeFlow_10it(train_NSPipeFlow_init):
     n_iter = 10
 
     params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _, _, _, _ = jinns.solve(
-        init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
+        init_params=params,
+        data=train_data,
+        optimizer=tx,
+        loss=loss,
+        n_iter=n_iter,
+        key=key,
     )
     return total_loss_list[9]
 
 
 def test_initial_loss_NSPipeFlow(train_NSPipeFlow_init):
-    init_params, loss, train_data = train_NSPipeFlow_init
+    init_params, loss, train_data, _ = train_NSPipeFlow_init
 
     assert jnp.allclose(
         loss.evaluate(init_params, train_data.get_batch()[1])[0], 0.01114236, atol=1e-5
@@ -134,4 +147,4 @@ def test_initial_loss_NSPipeFlow(train_NSPipeFlow_init):
 
 def test_10it_NSPipeFlow(train_NSPipeFlow_10it):
     total_loss_val = train_NSPipeFlow_10it
-    assert jnp.allclose(total_loss_val, 0.01099278, atol=1e-5)
+    assert jnp.allclose(total_loss_val, 0.01164477, atol=1e-5)

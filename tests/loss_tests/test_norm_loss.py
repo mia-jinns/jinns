@@ -8,6 +8,7 @@ from jax.scipy.stats import multivariate_normal
 import jinns
 import jinns.data
 import jinns.loss
+from jinns.loss._NormalizationSamples import NormalizationSamples
 
 
 @pytest.fixture
@@ -42,6 +43,8 @@ def train_OU_init():
     int_xmin, int_xmax = -3, 3
     int_ymin, int_ymax = -3, 3
 
+    min_pts = (int_xmin, int_ymin)
+    max_pts = (int_xmax, int_ymax)
     n_mc_samples = int(13)
     volume = (int_xmax - int_xmin) * (int_ymax - int_ymin)
     key, subkey1, subkey2 = random.split(key, 3)
@@ -57,6 +60,10 @@ def train_OU_init():
         axis=-1,
     )
 
+    norm_samples = NormalizationSamples(
+        samples=mc_samples, weights=volume, min_pts=min_pts, max_pts=max_pts
+    )
+
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
         dyn_loss=jnp.array(1.0),
         initial_condition=jnp.array(1 * Tmax),
@@ -65,11 +72,11 @@ def train_OU_init():
 
     dynamic_loss = jinns.loss.OU_FPENonStatioLoss2D(Tmax=Tmax)
 
-    return u, init_params, loss_weights, dynamic_loss, u0, mc_samples, volume
+    return u, init_params, loss_weights, dynamic_loss, u0, norm_samples
 
 
 def test_unidimensionality(train_OU_init):
-    u, init_params, loss_weights, dynamic_loss, u0, mc_samples, volume = train_OU_init
+    u, init_params, loss_weights, dynamic_loss, u0, norm_samples = train_OU_init
 
     with pytest.warns(UserWarning):
         loss = jinns.loss.LossPDENonStatio(
@@ -77,8 +84,7 @@ def test_unidimensionality(train_OU_init):
             loss_weights=loss_weights,
             dynamic_loss=dynamic_loss,
             initial_condition_fun=u0,
-            norm_weights=volume,
-            norm_samples=mc_samples,
+            norm_samples=norm_samples,
             params=init_params,
         )
 

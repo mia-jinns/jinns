@@ -7,6 +7,7 @@ import equinox as eqx
 import optax
 from jax.scipy.stats import multivariate_normal
 import jinns
+from jinns.loss._NormalizationSamples import NormalizationSamples
 
 
 @pytest.fixture
@@ -70,7 +71,6 @@ def train_OU_init():
 
     n_samples = 32
     volume = (int_xmax - int_xmin) * (int_ymax - int_ymin)
-    norm_weights = volume
     key, subkey1, subkey2 = random.split(key, 3)
     mc_samples = jnp.concatenate(
         [
@@ -82,6 +82,13 @@ def train_OU_init():
             ),
         ],
         axis=-1,
+    )
+
+    norm_samples = NormalizationSamples(
+        samples=mc_samples,
+        weights=volume,
+        min_pts=(int_xmin, int_ymin),
+        max_pts=(int_xmax, int_ymax),
     )
 
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
@@ -97,8 +104,7 @@ def train_OU_init():
             loss_weights=loss_weights,
             dynamic_loss=OU_fpe_non_statio_2D_loss,
             initial_condition_fun=u0,
-            norm_weights=norm_weights,
-            norm_samples=mc_samples,
+            norm_samples=norm_samples,
             params=init_params,
         )
 

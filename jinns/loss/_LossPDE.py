@@ -6,6 +6,7 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 
+from abc import abstractmethod
 from dataclasses import InitVar
 from typing import TYPE_CHECKING, Callable, Any, TypeVar, Generic, ClassVar
 import warnings
@@ -43,11 +44,11 @@ from jinns.nn._pinn import PINN
 from jinns.nn._spinn import SPINN
 from jinns.nn._hyperpinn import HyperPINN
 
-
 if TYPE_CHECKING:
     # imports for type hints only
     from jinns.nn._abstract_pinn import AbstractPINN
     from jinns.loss._BoundaryConditionAbstract import BoundaryConditionAbstract
+    from jinns.loss._NormalizationSamples import NormalizationSamples
 
 
 # For the same reason that we have the TypeVar in _abstract_loss.py, we have them
@@ -74,7 +75,6 @@ class _LossPDEAbstract(
     r"""
     Parameters
     ----------
-
     loss_weights : LossWeightsPDEStatio | LossWeightsPDENonStatio, default=None
         The loss weights for the differents term : dynamic loss,
         initial condition (if LossWeightsPDENonStatio), boundary conditions if
@@ -87,19 +87,6 @@ class _LossPDEAbstract(
         A BoundaryCondition object implementing
         operator $\mathcal{B}[u](inputs)=f(x)$.
         Can be None
-    norm_samples : Float[Array, " nb_norm_samples dimension"], default=None
-        Monte-Carlo sample points for computing the
-        normalization constant. Default is None.
-    norm_weights : Float[Array, " nb_norm_samples"] | float | int, default=None
-        The importance sampling weights for Monte-Carlo integration of the
-        normalization constant. Must be provided if `norm_samples` is provided.
-        `norm_weights` should be broadcastble to
-        `norm_samples`.
-        Alternatively, the user can pass a float or an integer that will be
-        made broadcastable to `norm_samples`.
-        These corresponds to the weights $w_k = \frac{1}{q(x_k)}$ where
-        $q(\cdot)$ is the proposal p.d.f. and $x_k$ are the Monte-Carlo samples.
-        **If using SPINN, `norm_weights` must be a scalar**.
     obs_slice : tuple[EllipsisType | slice, ...] | EllipsisType | slice | None, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
@@ -109,6 +96,9 @@ class _LossPDEAbstract(
         losses that might need some randomness. Note that special care must be
         taken when splitting the key because in-place updates are forbidden in
         eqx.Modules.
+    norm_samples : NormalizationSamples | None
+        A NormalizationSamples object with all the needed attributes and methods
+        for normalization loss computations
     """
 
     # NOTE static=True only for leaf attributes that are not valid JAX types
@@ -116,17 +106,15 @@ class _LossPDEAbstract(
     u: eqx.AbstractVar[AbstractPINN]
     dynamic_loss: tuple[eqx.AbstractVar[Y] | None, ...]
     boundary_condition: BoundaryConditionAbstract | None
-    norm_samples: Float[Array, " nb_norm_samples dimension"] | None
-    norm_weights: Float[Array, " nb_norm_samples"] | None
     key: PRNGKeyArray | None
+    norm_samples: NormalizationSamples | None
 
     def __init__(
         self,
         *,
         boundary_condition: BoundaryConditionAbstract | None = None,
-        norm_samples: Float[Array, " nb_norm_samples dimension"] | None = None,
-        norm_weights: Float[Array, " nb_norm_samples"] | float | int | None = None,
         key: PRNGKeyArray | None = None,
+        norm_samples: NormalizationSamples | None = None,
         **kwargs: Any,  # for arguments for super()
     ):
         super().__init__(
@@ -135,46 +123,18 @@ class _LossPDEAbstract(
             **kwargs,
         )
         self.boundary_condition = boundary_condition
+        self.norm_samples = norm_samples
         if self.boundary_condition is None:
             warnings.warn("Missing boundary condition.")
-
-        if norm_samples is not None:
-            self.norm_samples = norm_samples
-            if norm_weights is None:
-                raise ValueError(
-                    "`norm_weights` must be provided when `norm_samples` is used!"
-                )
-            if isinstance(self.u, PINN):
-                if isinstance(norm_weights, (int, float)):
-                    norm_weights = jnp.array(norm_weights) * jnp.ones(
-                        (norm_samples.shape[0],)
-                    )
-                elif isinstance(norm_weights, Array) and (
-                    norm_weights.shape == (1,) or norm_weights.ndim == 0
-                ):
-                    # if user provided norm_weights=jnp.array([0.1]) or
-                    # jnp.array(0.1)...
-                    norm_weights = norm_weights * jnp.ones((norm_samples.shape[0],))
-                if not (norm_weights.shape[0] == norm_samples.shape[0]):
-                    raise ValueError(
-                        "norm_weights and norm_samples must have the same leading dimension"
-                    )
-                self.norm_weights = norm_weights
-            elif isinstance(self.u, SPINN):
-                if not (
-                    isinstance(norm_weights, (int, float))
-                    or (
-                        isinstance(norm_weights, Array)
-                        and norm_weights.squeeze().shape == ()
-                    )
-                ):
-                    raise ValueError("norm_weights must be scalar when using SPINN")
-                self.norm_weights = jnp.array(norm_weights)
-        else:
-            self.norm_samples = norm_samples
-            self.norm_weights = None
-
         self.key = key
+
+    def _update_norm_samples(self, *args):
+        assert self.norm_samples is not None
+        return eqx.tree_at(
+            lambda pt: pt.norm_samples,
+            self,
+            self.norm_samples.update_samples_and_weights(*args),
+        )
 
     def _get_norm_loss_fun(
         self,
@@ -208,6 +168,10 @@ class _LossPDEAbstract(
             boundary_loss_fun = None
 
         return boundary_loss_fun
+
+    @abstractmethod
+    def _get_normalization_loss_batch(self, batch: PDEStatioBatch | PDENonStatioBatch):
+        pass
 
 
 class LossPDEStatio(
@@ -260,25 +224,12 @@ class LossPDEStatio(
     params : InitVar[Params[Array]], default=None
         The main Params object of the problem needed to instanciate the
         DerivativeKeysODE if the latter is not specified.
-
     update_weight_method : Literal['soft_adapt', 'lr_annealing', 'ReLoBRaLo'], default=None
         Default is None meaning no update for loss weights. Otherwise a string
     boundary_condition : BoundaryConditionAbstract | None
         A BoundaryCondition object implementing
         operator $\mathcal{B}[u](inputs)=f(x)$.
         Can be None
-    norm_samples : Float[Array, " nb_norm_samples dimension"], default=None
-        Monte-Carlo sample points for computing the
-        normalization constant. Default is None.
-    norm_weights : Float[Array, " nb_norm_samples"] | float | int, default=None
-        The importance sampling weights for Monte-Carlo integration of the
-        normalization constant. Must be provided if `norm_samples` is provided.
-        `norm_weights` should have the same leading dimension as
-        `norm_samples`.
-        Alternatively, the user can pass a float or an integer.
-        These corresponds to the weights $w_k = \frac{1}{q(x_k)}$ where
-        $q(\cdot)$ is the proposal p.d.f. and $x_k$ are the Monte-Carlo samples.
-        **If using SPINN, `norm_weights` must be a scalar**.
     obs_slice : tuple[EllipsisType | slice, ...] | EllipsisType | slice | None, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
@@ -381,7 +332,8 @@ class LossPDEStatio(
         Float[Array, " nb_norm_samples dimension"] | None,
         Float[Array, " nb_norm_samples"] | None,
     ]:
-        return (self.norm_samples, self.norm_weights)
+        assert self.norm_samples is not None
+        return (self.norm_samples.samples, self.norm_samples.weights)
 
     def _prepare_loss_terms(
         self,
@@ -405,8 +357,12 @@ class LossPDEStatio(
         dyn_loss_fun = self._get_dyn_loss_fun()
 
         # normalization part
-        norm_batch = self._get_normalization_loss_batch(batch)
-        norm_loss_fun = self._get_norm_loss_fun()
+        if self.norm_samples is not None:
+            norm_batch = self._get_normalization_loss_batch(batch)
+            norm_loss_fun = self._get_norm_loss_fun()
+        else:
+            norm_batch = None
+            norm_loss_fun = None
 
         # boundary part
         border_batch = batch.border_batch
@@ -498,14 +454,6 @@ class LossPDENonStatio(
     t0 : float | Float[Array, " 1"], default=None
         The time at which to apply the initial condition. If None, the time
         is set to `0` by default.
-    max_norm_time_slices : int, default=100
-        The maximum number of time points in the Cartesian product with the
-        omega points to create the set of collocation points upon which the
-        normalization constant is computed.
-    max_norm_samples_omega : int, default=1000
-        The maximum number of omega points in the Cartesian product with the
-        time points to create the set of collocation points upon which the
-        normalization constant is computed.
     params : InitVar[Params[Array]], default=None
         The main `Params` object of the problem needed to instanciate the
         `DerivativeKeysODE` if the latter is not specified.
@@ -515,18 +463,6 @@ class LossPDENonStatio(
         A BoundaryCondition object implementing
         operator $\mathcal{B}[u](inputs)=f(x)$.
         Can be None
-    norm_samples : Float[Array, " nb_norm_samples dimension"], default=None
-        Monte-Carlo sample points for computing the
-        normalization constant. Default is None.
-    norm_weights : Float[Array, " nb_norm_samples"] | float | int, default=None
-        The importance sampling weights for Monte-Carlo integration of the
-        normalization constant. Must be provided if `norm_samples` is provided.
-        `norm_weights` should have the same leading dimension as
-        `norm_samples`.
-        Alternatively, the user can pass a float or an integer.
-        These corresponds to the weights $w_k = \frac{1}{q(x_k)}$ where
-        $q(\cdot)$ is the proposal p.d.f. and $x_k$ are the Monte-Carlo samples.
-        **If using SPINN, `norm_weights` must be a scalar**.
     obs_slice : tuple[EllipsisType | slice, ...] | EllipsisType | slice | None, default=None
         slice object specifying the begininning/ending of the PINN output
         that is observed (this is then useful for multidim PINN). Default is None.
@@ -547,8 +483,6 @@ class LossPDENonStatio(
     initial_condition_fun: Callable[[Float[Array, " dimension"]], Array] | None = (
         eqx.field(static=True)
     )
-    max_norm_samples_omega: int = eqx.field(static=True)
-    max_norm_time_slices: int = eqx.field(static=True)
 
     _reduction_functions: ClassVar[PDENonStatioComponents[Callable]] = eqx.field(
         static=True,
@@ -607,8 +541,6 @@ class LossPDENonStatio(
         initial_condition_fun: Callable[[Float[Array, " dimension"]], Array]
         | None = None,
         t0: int | float | Float[Array, " "] | None = None,
-        max_norm_time_slices: int = 100,
-        max_norm_samples_omega: int = 1000,
         params: Params[Array] | None = None,
         **kwargs: Any,  # this is arguments for super()
     ):
@@ -654,36 +586,40 @@ class LossPDENonStatio(
 
         self.initial_condition_fun = initial_condition_fun
 
-        # with the variables below we avoid memory overflow since a cartesian
-        # product is taken
-        self.max_norm_time_slices = max_norm_time_slices
-        self.max_norm_samples_omega = max_norm_samples_omega
-
     def _get_normalization_loss_batch(
         self, batch: PDENonStatioBatch
     ) -> tuple[Array, Array]:
+        assert self.norm_samples is not None
+
+        if batch.domain_batch.shape[0] > self.norm_samples.max_time_slices:
+            warnings.warn(
+                "domain_batch size is bigger than norm_samples.max_time_slices"
+                " attribute of LossPDENonStatio. The batch will then be subsampled."
+                " This check has been set to avoid memory explosion"
+                " in normalization loss computation."
+            )
+
         batches = (
-            batch.domain_batch[: self.max_norm_time_slices, 0:1],
-            self.norm_samples[: self.max_norm_samples_omega],  # type: ignore -> cannot narrow a class attr
+            batch.domain_batch[: self.norm_samples.max_time_slices, 0:1],
+            self.norm_samples.samples[: self.norm_samples.max_samples_omega],  # type: ignore -> cannot narrow a class attr
         )
-        assert self.norm_weights is not None
         if isinstance(self.u, (PINN, HyperPINN)):
             return (
                 make_cartesian_product(
                     batches[0],
                     batches[1],
                 ).reshape(batches[0].shape[0], batches[1].shape[0], -1),
-                self.norm_weights,
+                self.norm_samples.weights,
             )
         elif isinstance(self.u, SPINN):
-            # norm_weights is nec. a scalar as no other case is implemented
+            # norm_samples.weights is nec. a scalar as no other case is implemented
             assert batches[1].shape[0] % batches[0].shape[0] == 0
             rep_t = batches[1].shape[0] // batches[0].shape[0]
             return (
                 jnp.concatenate(
                     [jnp.repeat(batches[0], rep_t, axis=0), batches[1]], axis=-1
                 ),
-                self.norm_weights,
+                self.norm_samples.weights,
             )
         else:
             raise ValueError(

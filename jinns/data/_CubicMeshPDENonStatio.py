@@ -6,6 +6,7 @@ from __future__ import (
     annotations,
 )  # https://docs.python.org/3/library/typing.html#constant
 import warnings
+from typing import Literal
 import equinox as eqx
 import numpy as np
 import jax
@@ -73,24 +74,9 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         sampled points over the domain.
         **Note** that Sobol and Halton approaches use scipy modules and will not
         be JIT compatible.
-    rar_parameters : Dict[str, int], default=None
-        Defaults to None: do not use Residual Adaptative Resampling.
-        Otherwise a dictionary with keys
-        - `start_iter`: the iteration at which we start the RAR sampling scheme (we first have a "burn-in" period).
-        - `update_every`: the number of gradient steps taken between
-        each update of collocation points in the RAR algo.
-        - `sample_size`: the size of the sample from which we will select new
-        collocation points.
-        - `selected_sample_size`: the number of selected
-        points from the sample to be added to the current collocation
-        points.
-    n_start : int, default=None
-        Defaults to None. The effective size of n used at start time.
-        This value must be
-        provided when rar_parameters is not None. Otherwise we set internally
-        n_start = n and this is hidden from the user.
-        In RAR, n_start
-        then corresponds to the initial number of omega points we train the PINN.
+    rar_parameters : RARParameters | None, default=None
+        A data class to specify the Residual Adaptative Resampling procedure. See
+       the docstring from RARParameters
     """
 
     tmin: float
@@ -124,10 +110,6 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         Note that neither __init__ or __post_init__ are called when udating a
         Module with eqx.tree_at!
         """
-        # sanity check
-        if ni is None:
-            raise ValueError("`ni` cannot be None.")
-
         super().__init__(**kwargs)
         self.tmin = tmin
         self.tmax = tmax
@@ -164,17 +146,19 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.domain = make_cartesian_product(half_domain_times, half_domain_omega)
 
             # NOTE below re-do CubicMeshPDE.__init__() ? Maybe useless?
-            (
-                self.n_start,
-                self.p,
-                self.rar_iter_from_last_sampling,
-                self.rar_iter_nb,
-            ) = _check_and_set_rar_parameters(self.rar_parameters, self.n, self.n_start)
+            if self.rar_parameters is not None:
+                self.rar_parameters = eqx.tree_at(
+                    lambda pt: pt._rar_iter_from_last_sampling,
+                    self.rar_parameters,
+                    _check_and_set_rar_parameters(self.rar_parameters, self.n),
+                )
         elif self.method == "uniform":
             self.key, domain_times = self.generate_time_data(self.key, self.n)
             self.domain = jnp.concatenate([domain_times, self.omega], axis=1)
         elif self.method in ["sobol", "halton"]:
-            self.key, self.domain = self.qmc_in_time_omega_domain(self.key, self.n)
+            self.key, self.domain = self.qmc_in_time_omega_domain(
+                self.key, self.n, self.method, self.dim, self.min_pts, self.max_pts
+            )
         else:
             raise ValueError(
                 f'Bad value for method. Got {self.method}, expected "grid" or "uniform" or "sobol" or "halton"'
@@ -240,43 +224,37 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             self.border_batch_size = None
             self.curr_border_idx = 0
 
-        if ni is not None:
-            if self.method == "grid":
-                perfect_sq = int(jnp.round(jnp.sqrt(self.ni)) ** 2)
-                if self.ni != perfect_sq:
-                    warnings.warn(
-                        "Grid sampling is requested in dimension 2 with a non"
-                        f" perfect square dataset size (self.ni = {self.ni})."
-                        f" Modifying self.ni to self.ni = {perfect_sq}."
-                    )
-                self.ni = perfect_sq
-            if self.method in ["sobol", "halton"]:
-                log2_n = jnp.log2(self.ni)
-                lower_pow = 2 ** jnp.floor(log2_n)
-                higher_pow = 2 ** jnp.ceil(log2_n)
-                closest_power_of_two = (
-                    lower_pow
-                    if (self.ni - lower_pow) < (higher_pow - self.ni)
-                    else higher_pow
+        if self.method == "grid":
+            perfect_sq = int(jnp.round(jnp.sqrt(self.ni)) ** 2)
+            if self.ni != perfect_sq:
+                warnings.warn(
+                    "Grid sampling is requested in dimension 2 with a non"
+                    f" perfect square dataset size (self.ni = {self.ni})."
+                    f" Modifying self.ni to self.ni = {perfect_sq}."
                 )
-                if self.n != closest_power_of_two:
-                    warnings.warn(
-                        f"QuasiMonteCarlo sampling with {self.method} requires sample size to be a power fo 2."
-                        f"Modfiying self.n from {self.ni} to {closest_power_of_two}.",
-                    )
-                self.ni = int(closest_power_of_two)
-            self.key, self.initial = self.generate_omega_data(
-                self.key, data_size=self.ni
+            self.ni = perfect_sq
+        if self.method in ["sobol", "halton"]:
+            log2_n = jnp.log2(self.ni)
+            lower_pow = 2 ** jnp.floor(log2_n)
+            higher_pow = 2 ** jnp.ceil(log2_n)
+            closest_power_of_two = (
+                lower_pow
+                if (self.ni - lower_pow) < (higher_pow - self.ni)
+                else higher_pow
             )
+            if self.n != closest_power_of_two:
+                warnings.warn(
+                    f"QuasiMonteCarlo sampling with {self.method} requires sample size to be a power fo 2."
+                    f"Modfiying self.n from {self.ni} to {closest_power_of_two}.",
+                )
+            self.ni = int(closest_power_of_two)
+        self.key, self.initial = self.generate_omega_data(self.key, data_size=self.ni)
 
-            if self.initial_batch_size is None or self.initial_batch_size == self.ni:
-                self.curr_initial_idx = 0
-            else:
-                self.curr_initial_idx = self.ni + self.initial_batch_size
-                # to be sure there is a shuffling at first get_batch()
+        if self.initial_batch_size is None or self.initial_batch_size == self.ni:
+            self.curr_initial_idx = 0
         else:
-            self.initial = None
-            self.initial_batch_size = None
+            self.curr_initial_idx = self.ni + self.initial_batch_size
+            # to be sure there is a shuffling at first get_batch()
 
         # the following attributes will not be used anymore
         self.omega = None  # type: ignore
@@ -294,29 +272,36 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             partial_times = (self.tmax - self.tmin) / nt
             return key, jnp.arange(self.tmin, self.tmax, partial_times)[:, None]
         elif self.method in ["uniform", "sobol", "halton"]:
-            return key, self.sample_in_time_domain(subkey, nt)
+            return key, self.sample_in_time_domain(subkey, nt, self.tmin, self.tmax)
         raise ValueError("Method " + self.method + " is not implemented.")
 
+    @staticmethod
     def sample_in_time_domain(
-        self, key: PRNGKeyArray, nt: int
+        key: PRNGKeyArray, nt: int, tmin: float, tmax: float
     ) -> Float[Array, " nt 1"]:
-        return jax.random.uniform(key, (nt, 1), minval=self.tmin, maxval=self.tmax)
+        return jax.random.uniform(key, (nt, 1), minval=tmin, maxval=tmax)
 
+    @staticmethod
     def qmc_in_time_omega_domain(
-        self, key: PRNGKeyArray, sample_size: int
+        key: PRNGKeyArray,
+        sample_size: int,
+        method: Literal["sobol", "halton"],
+        dim: int,
+        min_pts: tuple[float, ...],
+        max_pts: tuple[float, ...],
     ) -> tuple[PRNGKeyArray, Float[Array, "n 1+dim"]]:
         """
         Because in Quasi-Monte Carlo sampling we cannot concatenate two vectors generated independently
         We generate time and omega samples jointly
         """
         key, subkey = jax.random.split(key, 2)
-        qmc_generator = qmc.Sobol if self.method == "sobol" else qmc.Halton
+        qmc_generator = qmc.Sobol if method == "sobol" else qmc.Halton
         sampler = qmc_generator(
-            d=self.dim + 1, scramble=True, rng=np.random.default_rng(np.uint32(subkey))
+            d=dim + 1, scramble=True, rng=np.random.default_rng(np.uint32(subkey))
         )
         samples = sampler.random(n=sample_size)
         samples[:, 1:] = qmc.scale(
-            samples[:, 1:], l_bounds=self.min_pts, u_bounds=self.max_pts
+            samples[:, 1:], l_bounds=min_pts, u_bounds=max_pts
         )  # We scale omega domain to be in (min_pts, max_pts)
         return key, jnp.array(samples)
 
@@ -408,13 +393,12 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
     def _get_domain_operands(
         self,
-    ) -> tuple[PRNGKeyArray, Float[Array, " n 1+dim"], int, int | None, Array | None]:
+    ) -> tuple[PRNGKeyArray, Float[Array, " n 1+dim"], int, int | None]:
         return (
             self.key,
             self.domain,
             self.curr_domain_idx,
             self.domain_batch_size,
-            self.p,
         )
 
     def domain_batch(
@@ -427,19 +411,9 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         bstart = self.curr_domain_idx
         bend = bstart + self.domain_batch_size
 
-        # Compute the effective number of used collocation points
-        if self.rar_parameters is not None:
-            n_eff = (
-                self.n_start
-                + self.rar_iter_nb  # type: ignore
-                * self.rar_parameters["selected_sample_size"]
-            )
-        else:
-            n_eff = self.n
-
         new_attributes = _reset_or_increment(
             bend,
-            n_eff,
+            self.n,
             self._get_domain_operands(),  # type: ignore
             # ignore since the case self.domain_batch_size is None has been
             # handled above
@@ -462,14 +436,12 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
         Float[Array, " nb 1+1 2"] | Float[Array, " (nb//4) 2+1 4"] | None,
         int,
         int | None,
-        None,
     ]:
         return (
             self.key,
             self.border,
             self.curr_border_idx,
             self.border_batch_size,
-            None,
         )
 
     def border_batch(
@@ -521,13 +493,12 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
 
     def _get_initial_operands(
         self,
-    ) -> tuple[PRNGKeyArray, Float[Array, " ni dim"] | None, int, int | None, None]:
+    ) -> tuple[PRNGKeyArray, Float[Array, " ni dim"] | None, int, int | None]:
         return (
             self.key,
             self.initial,
             self.curr_initial_idx,
             self.initial_batch_size,
-            None,
         )
 
     def initial_batch(

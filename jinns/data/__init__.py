@@ -4,7 +4,7 @@ from ._CubicMeshPDENonStatio import CubicMeshPDENonStatio
 from ._DataGeneratorObservations import DataGeneratorObservations
 from ._DataGeneratorParameter import DataGeneratorParameter, DGParams
 from ._Batchs import ODEBatch, PDEStatioBatch, PDENonStatioBatch
-
+from ._RARParameters import RARParameters
 from ._utils import append_obs_batch, append_param_batch
 
 __all__ = [
@@ -19,4 +19,5 @@ __all__ = [
     "PDENonStatioBatch",
     "append_obs_batch",
     "append_param_batch",
+    "RARParameters",
 ]
