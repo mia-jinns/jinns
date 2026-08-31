@@ -12,8 +12,9 @@ import optax
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-from jaxtyping import Array
+from jaxtyping import Array, PRNGKeyArray
 from jinns.data._CubicMeshPDEStatio import CubicMeshPDEStatio
+from jinns.data._rar import _trigger_rar
 from jinns.loss._LossPDE import LossPDEStatio
 from jinns.loss._DynamicLossAbstract import PDEStatio
 from jinns.loss._loss_weights import LossWeightsPDEStatio
@@ -57,6 +58,7 @@ def solve_ng(
     ahead_of_time: bool = True,
     extra_optax_args_and_kwargs_ic: dict[str, Callable | GetJinnsVariableName]
     | None = None,
+    key: PRNGKeyArray | None = None,
 ):
     """
     Solve the PDE with the Neural Galerkin approach. In this approach the variation of the parameters
@@ -84,6 +86,11 @@ def solve_ng(
     - Evolutional Deep Neural Network, Y. Du et al, 2021
     - Neural semi-Lagrangian method for high-dimensional advection-diffusion problems, E. Franck et al., 2025
     """
+    if data.rar_parameters is not None and key is None:
+        raise ValueError(
+            "key argument must be passed to jinns.solve() when using RAR procedure"
+        )
+
     assert isinstance(loss, LossPDEStatio)
     assert loss.boundary_condition is None
     assert loss.norm_samples is None
@@ -154,7 +161,7 @@ def solve_ng(
         loss_ic = LossPDEStatio(
             u=loss.u,
             dynamic_loss=ic_as_dyn_loss,
-            loss_weights=LossWeightsPDEStatio(dyn_loss=1.0),
+            loss_weights=LossWeightsPDEStatio(dyn_loss=jnp.array(1.0)),
             derivative_keys=DerivativeKeysPDEStatio.from_str(
                 dyn_loss="nn_params", params=init_params
             ),
@@ -197,7 +204,7 @@ def solve_ng(
 
     def _one_time_step(carry, t):
         # jax.debug.print("t={x}", x=(t, jnp.isin(t, times_saved)))
-        (i, loss, params, train_data, nn_params_saved) = carry
+        (i, loss, params, train_data, nn_params_saved, key) = carry
 
         if verbose:
             _ = jax.lax.cond(
@@ -213,6 +220,21 @@ def solve_ng(
 
         batch, data, param_data, _ = get_batch(
             train_data.data, train_data.param_data, None
+        )
+
+        if key is not None:
+            key, subkey = jax.random.split(key)
+        else:
+            subkey = None
+        # Trigger RAR for collocation points (updates the batch AND data AND param_data)
+        loss, params, data, param_data, batch = _trigger_rar(
+            i,
+            loss,
+            params,
+            train_data.data,
+            train_data.param_data,
+            batch,
+            subkey,
         )
 
         params = _rk4_step(batch=batch, loss=loss, params=params, dt=dt)
@@ -238,6 +260,7 @@ def solve_ng(
             params,
             DataGeneratorContainer(data, param_data, None),
             nn_params_saved,
+            key,
         ), None
 
     params_t0_fl = jnp.concatenate(
@@ -248,7 +271,7 @@ def solve_ng(
 
     nn_params_saved = jnp.stack([params_t0_fl for _ in range(n_times_saved)], axis=0)
 
-    carry = (0, loss, params_t0, train_data, nn_params_saved)
+    carry = (0, loss, params_t0, train_data, nn_params_saved, key)
 
     def train_fun(carry):
         # NOTE that we start the scan at times[1:] since params was already compute for times[0]
@@ -270,7 +293,7 @@ def solve_ng(
     else:
         carry, _ = train_fun(carry)
 
-    (_, loss, params_final, train_data, nn_params_saved) = carry
+    (_, loss, params_final, train_data, nn_params_saved, key) = carry
 
     params_saved = tuple(
         eqx.tree_at(
@@ -281,7 +304,7 @@ def solve_ng(
         for i in range(nn_params_saved.shape[0])
     )
 
-    return params_final, params_saved
+    return loss, train_data.data, train_data.param_data, params_final, params_saved
 
 
 def _rk4_step(batch, loss, params, dt):
