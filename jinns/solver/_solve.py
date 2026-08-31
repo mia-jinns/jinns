@@ -378,6 +378,7 @@ def solve(
             subkey,
         )
 
+        # Trigger the update on the normalization sample is such strategy is defined
         if (
             isinstance(loss, (LossPDEStatio, LossPDENonStatio))
             and loss.norm_samples is not None
@@ -386,9 +387,7 @@ def solve(
                 key, subkey = jax.random.split(key)
             else:
                 subkey = None  # still be None currently
-            loss = loss.norm_samples.update_samples_and_weights(
-                loss, i, data, optimization.params, batch, cast(PRNGKeyArray, subkey)
-            )
+            loss = loss._update_norm_samples(i, cast(PRNGKeyArray, subkey))
 
         (train_loss_value, params, last_non_nan_params, opt_state, loss, loss_terms) = (
             _loss_evaluate_and_gradient_step(

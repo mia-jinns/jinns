@@ -2,30 +2,23 @@
 Implement the equinox Module for the normalization samples
 """
 
-from typing import Literal, get_args
+from __future__ import (
+    annotations,
+)  # https://docs.python.org/3/library/typing.html#constant
+from typing import Literal, get_args, Any
 from dataclasses import InitVar
 import jax
 from jaxtyping import Float, Array, PRNGKeyArray
 import jax.numpy as jnp
 import equinox as eqx
 
-from jinns.data._Batchs import PDENonStatioBatch, PDEStatioBatch
 from jinns.data._CubicMeshPDEStatio import CubicMeshPDEStatio
-from jinns.data._CubicMeshPDENonStatio import CubicMeshPDENonStatio
-from jinns.data._RARParameters import RARParameters
-from jinns.nn._hyperpinn import HyperPINN
-from jinns.nn._spinn import SPINN
-from jinns.parameters._params import Params
 
-# if TYPE_CHECKING:
-from jinns.loss._LossPDE import _LossPDEAbstract
-from jinns.utils._types import AnyBatch
-
-AvailableNormSamplesAndWeightsUpdateMethods = Literal["RAR", "resample"]
+AvailableNormSamplesAndWeightsUpdateMethods = Literal["resample"]
 
 
 class NormalizationSamples(eqx.Module):
-    """
+    r"""
     Module for the normalization samples used in norm_loss computations
 
     Parameters
@@ -51,11 +44,10 @@ class NormalizationSamples(eqx.Module):
         in `n` dimension, this represents $(x_{1, max}, x_{2,max}, ...,
         x_{n,max})$
     update_samples_and_weights_method : AvailableNormSamplesAndWeightsUpdateMethods | None
-        XXX
-    rar_parameters: RARParameters | None
-        XXX
-    u_type: InitVar[str]
-        XXX
+        The strategy to update the normalization samples. Currently the only implemented strategy
+        is resampling the colocation points on the same domain. Default is None.
+    u_type: InitVar[Literal["PINN", "SPINN"]], default="PINN"
+        The type of PINN architecture that is used for the PINN.
     max_time_slices : int, default=100
         The maximum number of time points in the Cartesian product with the
         omega points to create the set of collocation points upon which the
@@ -66,6 +58,10 @@ class NormalizationSamples(eqx.Module):
         time points to create the set of collocation points upon which the
         normalization constant is computed.
         Only used with LossPDENonStatio
+    method_kwargs : dict[Any, Any] | None, default=None
+        The hyperparameters needed for the sample and weight update passed as a dictionary.
+        For `update_samples_and_weights_method="resample"`, the hyperparameter that must be passed
+        is `resample_every`, the value matching this key is a positive integer.
     """
 
     samples: Float[Array, " nb_samples dimension"] = eqx.field(kw_only=True)
@@ -75,12 +71,12 @@ class NormalizationSamples(eqx.Module):
     update_samples_and_weights_method: (
         AvailableNormSamplesAndWeightsUpdateMethods | None
     ) = eqx.field(kw_only=True, default=None, static=True)
-    rar_parameters: RARParameters | None = eqx.field(kw_only=True, default=None)
-    max_samples_omega: int = eqx.field(static=True)
-    max_time_slices: int = eqx.field(static=True)
-    dim: int = eqx.field(static=True, init=False)
+    max_samples_omega: int = eqx.field(static=True, kw_only=True)
+    max_time_slices: int = eqx.field(static=True, kw_only=True)
+    dim: int = eqx.field(static=True, init=False, kw_only=True)
+    method_kwargs: dict[Any, Any] | None = eqx.field(static=True, kw_only=True)
 
-    u_type: InitVar[str]
+    u_type: InitVar[Literal["PINN", "SPINN"]]
 
     def __init__(
         self,
@@ -89,10 +85,10 @@ class NormalizationSamples(eqx.Module):
         min_pts: tuple[float, ...],
         max_pts: tuple[float, ...],
         update_samples_and_weights_method=None,
-        rar_parameters=None,
         u_type="PINN",
         max_time_slices: int = 100,
         max_samples_omega: int = 1000,
+        method_kwargs: dict[Any, Any] | None = None,
     ):
         if (
             update_samples_and_weights_method is not None
@@ -102,8 +98,6 @@ class NormalizationSamples(eqx.Module):
             raise ValueError(
                 f"{update_samples_and_weights_method=} is not a valid method"
             )
-        if update_samples_and_weights_method == "RAR" and rar_parameters is None:
-            raise ValueError("rar_parameters attribute must be set!")
         self.update_samples_and_weights_method = update_samples_and_weights_method
         self.samples = samples
         self.min_pts = min_pts
@@ -142,236 +136,47 @@ class NormalizationSamples(eqx.Module):
                 " number of norm_samples. This check has been set to avoid memory explosion"
                 " in normalization loss computation."
             )
-        self.rar_parameters = rar_parameters
+        self.method_kwargs = method_kwargs
 
     def update_samples_and_weights(
         self,
-        loss: _LossPDEAbstract,
         iteration_nb: int,
-        data: CubicMeshPDEStatio | CubicMeshPDENonStatio,
-        params: Params[Array],
-        batch: AnyBatch,
         key: PRNGKeyArray,
-    ) -> _LossPDEAbstract:
+    ) -> NormalizationSamples:
         """
         Update the weights and samples according to a predefined scheme
 
         """
-        old_samples = self.samples
-        old_weights = self.weights
 
         if self.update_samples_and_weights_method == "resample":
-            # Simple resampling in the domain
-            if len(data.min_pts) == 1:  # 1D case
-                key, subkey = jax.random.split(key)
-                new_samples = jax.random.uniform(
-                    subkey,
-                    shape=(old_samples.shape[0], 1),
-                    minval=data.min_pts[0],
-                    maxval=data.max_pts[0],
-                )
-            elif len(data.min_pts) == 2:  # 2D case
-                key, subkey1, subkey2 = jax.random.split(key, 3)
-                new_samples = jnp.stack(
-                    [
-                        jax.random.uniform(
-                            subkey1,
-                            shape=(old_samples.shape[0],),
-                            minval=data.min_pts[0],
-                            maxval=data.max_pts[0],
-                        ),
-                        jax.random.uniform(
-                            subkey2,
-                            shape=(old_samples.shape[0],),
-                            minval=data.min_pts[1],
-                            maxval=data.max_pts[1],
-                        ),
-                    ],
-                    axis=1,
-                )
-            new_weights = old_weights
-
+            assert self.method_kwargs is not None
             # At iteration 0 we do not do any update
             (new_samples, new_weights) = jax.lax.cond(
-                iteration_nb == 0,
-                lambda _: (old_samples, old_weights),
-                lambda _: (new_samples, new_weights),
-                None,
+                iteration_nb % self.method_kwargs["resample_every"] == 0,
+                lambda _: self.resample(key),
+                lambda _: (self.samples, self.weights),
+                key,
             )
             return eqx.tree_at(
                 lambda pt: (pt.samples, pt.weights), self, (new_samples, new_weights)
             )
-        elif self.update_samples_and_weights_method == "RAR":
-            assert loss.norm_samples is not None
-            assert loss.norm_samples.rar_parameters is not None
-            loss = jax.lax.cond(
-                jnp.all(
-                    jnp.array(
-                        [
-                            # check if burn-in period has ended
-                            jnp.asarray(
-                                loss.norm_samples.rar_parameters.start_iter
-                                <= iteration_nb
-                            ),
-                            # check if enough iterations since last points added
-                            jnp.asarray(
-                                (loss.norm_samples.rar_parameters.update_every - 1)
-                                == loss.norm_samples.rar_parameters._rar_iter_from_last_sampling
-                            ),
-                        ]
-                    )
-                ),
-                lambda op: _rar_step_true_norm_samples(*op),
-                lambda op: _rar_step_false_norm_samples(*op),
-                (loss, params, batch, key, iteration_nb),
-            )
-            return loss
         else:
-            return loss
+            return self
 
-
-def _rar_step_true_norm_samples(
-    loss: _LossPDEAbstract,
-    params: Params[Array],
-    batch: PDEStatioBatch | PDENonStatioBatch,
-    key: PRNGKeyArray,
-    i: int,
-) -> _LossPDEAbstract:
-    assert loss.norm_samples is not None
-    assert loss.norm_samples.rar_parameters is not None
-    jax.debug.print("{x}", x=i)
-    if isinstance(loss.u, HyperPINN) or isinstance(loss.u, SPINN):
-        raise NotImplementedError("RAR not implemented for hyperPINN and SPINN")
-
-    # the signature we get from tree.reduce is Array | int
-    # we are sure this is Array so we use the cast to get rid of int
-    norm_batch = loss._get_normalization_loss_batch(batch)[0]
-
-    def get_res_for_a_t(b_for_a_t):
-        return jax.vmap(lambda x, p: loss.u(x, p), (0, None))(b_for_a_t, params)
-
-    get_res_for_all_t = jax.vmap(get_res_for_a_t)
-    res = jnp.max(get_res_for_all_t(norm_batch), axis=0)  # NOTE
-    res = jnp.atleast_2d(res)
-    res_abs = jnp.sum(res**2, axis=-1)
-    norm_samples_size = res_abs.shape[0]
-
-    # Here we create the novelty that be incorporated to the norm samples
-    novelty_sample_size = round(
-        norm_samples_size * loss.norm_samples.rar_parameters.novelty_proportion
-    )
-    if loss.norm_samples.dim == 1:
-        key, subkey = jax.random.split(key, 2)
-        subkey = [subkey]
-    else:
-        key, *subkey = jax.random.split(key, loss.norm_samples.dim + 1)
-    new_samples = CubicMeshPDEStatio.sample_in_omega_domain(
-        keys=subkey,
-        sample_size=novelty_sample_size,
-        dim=loss.norm_samples.dim,
-        method="uniform",
-        min_pts=loss.norm_samples.min_pts,
-        max_pts=loss.norm_samples.max_pts,
-    )
-
-    # RAR-G
-    ## Select the m points with higher dynamic loss, they will be conserved
-    if loss.norm_samples.rar_parameters.method == "G":
-        keep_idx = jnp.argsort(res_abs, descending=True)[
-            : round(
-                norm_samples_size
-                * (1 - loss.norm_samples.rar_parameters.novelty_proportion)
-            )
-        ]
-        best_norm_samples = loss.norm_samples.samples[keep_idx]
-        mu = jnp.mean(best_norm_samples, axis=0)
-        cov = jnp.cov(best_norm_samples, rowvar=False)
-        # jax.debug.print("{x}",x=(mu, cov))
-        new_samples = jax.random.multivariate_normal(
-            key=key, mean=mu, cov=cov, shape=(norm_samples_size,)
+    def resample(self, key: PRNGKeyArray):
+        old_samples = self.samples
+        old_weights = self.weights
+        if self.dim == 1:
+            key, subkey = jax.random.split(key, 2)
+            subkey = [subkey]
+        else:
+            key, *subkey = jax.random.split(key, self.dim + 1)
+        new_samples = CubicMeshPDEStatio.sample_in_omega_domain(
+            keys=subkey,
+            sample_size=old_samples.shape[0],
+            dim=self.dim,
+            method="uniform",
+            min_pts=self.min_pts,
+            max_pts=self.max_pts,
         )
-        new_weights = jax.scipy.stats.multivariate_normal.pdf(
-            new_samples, mean=mu, cov=cov
-        )
-
-        loss = eqx.tree_at(
-            lambda m: m.norm_samples.rar_parameters._rar_iter_from_last_sampling,
-            loss,
-            0,
-        )
-
-        return eqx.tree_at(
-            lambda pt: (pt.norm_samples.samples, pt.norm_samples.weights),
-            loss,
-            (new_samples, new_weights),
-        )
-
-    # RAR-D
-    elif loss.norm_samples.rar_parameters.method == "D":
-        assert loss.norm_samples.rar_parameters.k is not None
-        assert loss.norm_samples.rar_parameters.c is not None
-
-        res_normalized = res_abs / (jnp.max(res_abs) + 1e-6)
-        prop_weights = (
-            res_normalized**loss.norm_samples.rar_parameters.k
-            + loss.norm_samples.rar_parameters.c
-        )
-        prop_weights = prop_weights / jnp.sum(prop_weights)
-        keep_idx = jax.random.choice(
-            key,
-            a=jnp.arange(res_abs.shape[0]),
-            shape=(
-                round(
-                    norm_samples_size
-                    * (1 - loss.norm_samples.rar_parameters.novelty_proportion)
-                ),
-            ),
-            replace=False,
-            p=prop_weights,
-        )
-    else:
-        raise ValueError("Unknown RAR method")
-
-    weights = loss.norm_samples.weights  # NOTE that weights could change here
-    ## Introduce novelty samples with the novelty_sample_size samples that have been sampled
-    arr = jnp.concatenate([loss.norm_samples.samples[keep_idx], new_samples], axis=0)
-    loss = eqx.tree_at(
-        lambda pt: (pt.norm_samples.samples, pt.norm_samples.weights),
-        loss,
-        (arr, weights),
-    )
-
-    # update RAR parameters for all cases
-    loss = eqx.tree_at(
-        lambda m: m.norm_samples.rar_parameters._rar_iter_from_last_sampling, loss, 0
-    )
-
-    return loss
-
-
-def _rar_step_false_norm_samples(
-    loss: _LossPDEAbstract,
-    params: Params[Array],
-    batch: PDEStatioBatch | PDENonStatioBatch,
-    key: PRNGKeyArray,
-    i: int,
-) -> _LossPDEAbstract:
-    assert loss.norm_samples is not None
-    assert loss.norm_samples.rar_parameters is not None  # for type checker
-
-    # Add 1 only if we are after the burn in period
-    increment = jax.lax.cond(
-        i <= loss.norm_samples.rar_parameters.start_iter,
-        lambda: 0,
-        lambda: 1,
-    )
-
-    new_rar_iter_from_last_sampling = (
-        loss.norm_samples.rar_parameters._rar_iter_from_last_sampling + increment
-    )
-    loss = eqx.tree_at(
-        lambda m: m.norm_samples.rar_parameters._rar_iter_from_last_sampling,
-        loss,
-        new_rar_iter_from_last_sampling,
-    )
-    return loss
+        return new_samples, old_weights

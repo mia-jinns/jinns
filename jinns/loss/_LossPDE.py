@@ -128,6 +128,14 @@ class _LossPDEAbstract(
             warnings.warn("Missing boundary condition.")
         self.key = key
 
+    def _update_norm_samples(self, *args):
+        assert self.norm_samples is not None
+        return eqx.tree_at(
+            lambda pt: pt.norm_samples,
+            self,
+            self.norm_samples.update_samples_and_weights(*args),
+        )
+
     def _get_norm_loss_fun(
         self,
     ) -> Callable[[tuple[Array, Array], Params[Array]], Array] | None:

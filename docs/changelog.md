@@ -1,5 +1,9 @@
 # Changelog
 
+* v1.10.0:
+
+    - Introduce a brand new implementation of Residual Adaptative Resampling [!103](https://gitlab.com/mia_jinns/jinns/-/merge_requests/103). Normalization samples are also refactored. Expect breaking changes for old code using those features. See RAR documentation and the Ornstein Uhlenbeck 2D example.
+
 * v1.9.4:
 
     - Fix Neumann boundary condition not working in 1D [!102](https://gitlab.com/mia_jinns/jinns/-/merge_requests/102)
