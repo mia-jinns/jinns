@@ -156,7 +156,7 @@ def _rar_step_true(operands: RAROperands) -> RARReturns:
         raise ValueError("Wrong DataGenerator type")
     if param_data is not None:
         key, subkey = jax.random.split(key)
-        _, _param_n_samples = param_data.generate_data(subkey, batch_size)
+        _, _param_n_samples = param_data.generate_data(subkey, novelty_sample_size)
         new_param_samples = DGParams(_param_n_samples, "DGParams")
 
     # RAR-G
@@ -187,11 +187,25 @@ def _rar_step_true(operands: RAROperands) -> RARReturns:
     ## Begin (Update the batch with the novelty)
     ### for each param with a jax.tree.map
     if param_data is not None:
-        param_batch = jax.tree.map(
-            lambda b, new_b: jnp.concatenate([b[keep_idx], new_b], axis=0),
-            batch.param_batch_dict,
-            new_param_samples,
-        )
+        if data.rar_parameters.update_params:
+            # DataGeneratorParameters.param_n_samples and param_batch is updated by RAR too
+            param_batch = jax.tree.map(
+                lambda b, new_b: jnp.concatenate([b[keep_idx], new_b], axis=0),
+                batch.param_batch_dict,
+                new_param_samples,
+            )
+            new_param_n_samples = jax.tree.map(
+                lambda s, b, idx: jax.lax.dynamic_update_slice_in_dim(s, b, idx, 0),
+                param_data.param_n_samples,
+                param_batch,
+                param_data.curr_param_idx,
+            )
+            param_data = eqx.tree_at(
+                lambda pt: pt.param_n_samples, param_data, new_param_n_samples
+            )
+        else:
+            # DataGeneratorParameters and param_batch is unaltered by RAR
+            param_batch = batch.param_batch_dict
     else:
         param_batch = None
     if isinstance(batch, ODEBatch) and isinstance(data, DataGeneratorODE):
