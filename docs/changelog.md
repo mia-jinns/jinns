@@ -1,5 +1,9 @@
 # Changelog
 
+* v1.10.1:
+
+    - RAR can now update the parameter batch and the DataGeneratorParameters while metamodeling with RAR. But this becomes the default behaviour but this can be deactivated with `RARParameters.update_params=False` [!104](https://gitlab.com/mia_jinns/jinns/-/merge_requests/104).
+
 * v1.10.0:
 
     - Introduce a brand new implementation of Residual Adaptative Resampling [!103](https://gitlab.com/mia_jinns/jinns/-/merge_requests/103). Normalization samples are also refactored. Expect breaking changes for old code using those features. See RAR documentation and the Ornstein Uhlenbeck 2D example.
