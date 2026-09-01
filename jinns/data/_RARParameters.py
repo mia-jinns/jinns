@@ -34,6 +34,9 @@ class RARParameters(eqx.Module):
         the float value of k, only for RAR-D. When no prior information the article recommends k=2.0
     c : Array | None
         the float value of c, only for RAR-D. When no prior information the article recommends c=0.0
+    update_params : bool, default=True
+        in the case of a metamodel, when a DataGeneratorParameter is also used, if True, the batches of paramaters
+        and the DataGeneratorParameters are also modified by the RAR procedure.
     """
 
     update_every: int = eqx.field(static=True, kw_only=True)
@@ -42,6 +45,7 @@ class RARParameters(eqx.Module):
     start_iter: int = eqx.field(default=0, static=True, kw_only=True)
     k: Array | None = eqx.field(default=None, static=True, kw_only=True)
     c: Array | None = eqx.field(default=None, static=True, kw_only=True)
+    update_params: bool = eqx.field(default=True, static=True, kw_only=True)
 
     _rar_iter_from_last_sampling: int = eqx.field(init=False)
 

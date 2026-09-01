@@ -11,4 +11,4 @@ jinns.solve(
 )
 ```
 
-For `GradientTransformExtraArgs` which require extra arguments to their`update()` function, see the notebook [Tutorial Forward Problem](Notebooks/Tutorials/implementing_your_own_PDE_problem) for an example on how to pass these extra arguments in jinns.
+For `GradientTransformExtraArgs` which require extra arguments to their`update()` function, see the notebook [Tutorial Forward Problem](../../../Notebooks/Tutorials/implementing_your_own_PDE_problem) for an example on how to pass these extra arguments in jinns.
