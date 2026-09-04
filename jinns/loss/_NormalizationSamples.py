@@ -48,11 +48,18 @@ class NormalizationSamples(eqx.Module):
         is resampling the colocation points on the same domain. Default is None.
     u_type: InitVar[Literal["PINN", "SPINN"]], default="PINN"
         The type of PINN architecture that is used for the PINN.
-    max_time_slices : int, default=100
-        The maximum number of time points in the Cartesian product with the
-        omega points to create the set of collocation points upon which the
-        normalization constant is computed.
-        Only used with LossPDENonStatio
+    time_slices : int | Float[Array, " n_time_slices 1"] | None, default=None
+        This argument needs to be specified for computing the normalization loss for LossPDENonStatio.
+        If an integer is passed, then the time collocation points used for integration are chosen
+        by taking the `time_slices` first time collocation points from the domain batch
+        (they can then be different at each gradient step).
+        If a 1D array is passed, then `time_slices` is the array of time collocation points
+        used for the integration (and remain fixed over the whole optimization process).
+        Recall that the normalization batch is computed as a cartesian product between
+        a set of time collocation points (chosen depending on `time_slices`) and the sample of space
+        collocation points `NormalizationSamples.samples`. Therefore, the user should carefully
+        watch the memory complexity of the problem.
+        This argument should remain None for stationary losses.
     max_samples_omega : int, default=1000
         The maximum number of omega points in the Cartesian product with the
         time points to create the set of collocation points upon which the
@@ -71,8 +78,12 @@ class NormalizationSamples(eqx.Module):
     update_samples_and_weights_method: (
         AvailableNormSamplesAndWeightsUpdateMethods | None
     ) = eqx.field(kw_only=True, default=None, static=True)
+
+    time_slices: int | Float[Array, " n_time_slices 1"] | None = eqx.field(
+        static=True, kw_only=True, default=None
+    )
     max_samples_omega: int = eqx.field(static=True, kw_only=True)
-    max_time_slices: int = eqx.field(static=True, kw_only=True)
+
     dim: int = eqx.field(static=True, init=False, kw_only=True)
     method_kwargs: dict[Any, Any] | None = eqx.field(static=True, kw_only=True)
 
@@ -86,7 +97,7 @@ class NormalizationSamples(eqx.Module):
         max_pts: tuple[float, ...],
         update_samples_and_weights_method=None,
         u_type="PINN",
-        max_time_slices: int = 100,
+        time_slices: int | Float[Array, " n_time_slices 1"] | None = None,
         max_samples_omega: int = 1000,
         method_kwargs: dict[Any, Any] | None = None,
     ):
@@ -125,17 +136,31 @@ class NormalizationSamples(eqx.Module):
                 raise ValueError("weights must be scalar when using SPINN")
             self.weights = jnp.array(weights)
 
-        # with the variables below we avoid memory overflow since a cartesian
-        # product is taken
-        self.max_time_slices = max_time_slices
         self.max_samples_omega = max_samples_omega
-        if self.samples.shape[0] > self.max_samples_omega:
-            raise ValueError(
-                "Number of norm_samples is bigger than max_samples_omega"
-                " attribute of LossPDENonStatio. Increase max_samples_omega or reduce the"
-                " number of norm_samples. This check has been set to avoid memory explosion"
-                " in normalization loss computation."
-            )
+
+        if time_slices is not None:
+            if isinstance(time_slices, int):
+                self.time_slices = time_slices
+            else:
+                # this is an array
+                if time_slices.ndim == 1:
+                    self.time_slices = time_slices[:, None]
+                else:
+                    # this is a Float[Array, "n_time_slices 1"]
+                    self.time_slices = time_slices
+            # with the variables below we avoid memory overflow since a cartesian
+            # product is taken
+            if self.samples.shape[0] > self.max_samples_omega:
+                raise ValueError(
+                    "Number of norm_samples is bigger than max_samples_omega"
+                    " attribute of LossPDENonStatio. Increase max_samples_omega or reduce the"
+                    " number of norm_samples. This check has been set to avoid memory explosion"
+                    " in normalization loss computation."
+                )
+        else:
+            # assign None
+            self.time_slices = time_slices
+
         self.method_kwargs = method_kwargs
 
     def update_samples_and_weights(

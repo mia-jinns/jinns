@@ -105,6 +105,7 @@ def test_wrong_mc_weights(train_OU_init):
             weights=jnp.array(2 * [volume]),
             min_pts=min_pts,
             max_pts=max_pts,
+            time_slices=100,
         )
         _ = jinns.loss.LossPDENonStatio(
             u=u,
@@ -130,7 +131,11 @@ def test_broadcast_norm_weights(train_OU_init):
     ) = train_OU_init
     with pytest.warns(UserWarning):
         norm_samples = NormalizationSamples(
-            samples=mc_samples, weights=volume, min_pts=min_pts, max_pts=max_pts
+            samples=mc_samples,
+            weights=volume,
+            min_pts=min_pts,
+            max_pts=max_pts,
+            time_slices=100,
         )
         loss1 = jinns.loss.LossPDENonStatio(
             u=u,
@@ -147,6 +152,7 @@ def test_broadcast_norm_weights(train_OU_init):
             weights=jnp.array([volume] * mc_samples.shape[0]),
             min_pts=min_pts,
             max_pts=max_pts,
+            time_slices=100,
         )
         loss2 = jinns.loss.LossPDENonStatio(
             u=u,

@@ -89,6 +89,7 @@ def train_OU_init():
         weights=volume,
         min_pts=(int_xmin, int_ymin),
         max_pts=(int_xmax, int_ymax),
+        time_slices=100,
     )
 
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
