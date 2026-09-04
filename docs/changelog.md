@@ -2,6 +2,7 @@
 
 * v1.10.1:
 
+    - Breaking change: fix bug where non stationary and stationary cases were badly handled in NormalizationSamples, now `NormalizationSamples.time_slices` *must* be passed for non stationary problems. This option now offers more modeling possibilities, see NormalizationSamples documentation for more details. Previous behaviour can be recovered simply by setting `time_slices=100` in non stationary problems. See [!105](https://gitlab.com/mia_jinns/jinns/-/merge_requests/105).
     - RAR can now update the parameter batch and the DataGeneratorParameters while metamodeling with RAR. But this becomes the default behaviour but this can be deactivated with `RARParameters.update_params=False` [!104](https://gitlab.com/mia_jinns/jinns/-/merge_requests/104).
 
 * v1.10.0:
