@@ -590,17 +590,23 @@ class LossPDENonStatio(
         self, batch: PDENonStatioBatch
     ) -> tuple[Array, Array]:
         assert self.norm_samples is not None
-
-        if batch.domain_batch.shape[0] > self.norm_samples.max_time_slices:
-            warnings.warn(
-                "domain_batch size is bigger than norm_samples.max_time_slices"
-                " attribute of LossPDENonStatio. The batch will then be subsampled."
-                " This check has been set to avoid memory explosion"
-                " in normalization loss computation."
-            )
+        assert self.norm_samples.time_slices is not None
+        if isinstance(self.norm_samples.time_slices, int):
+            if batch.domain_batch.shape[0] > self.norm_samples.time_slices:
+                warnings.warn(
+                    "domain_batch size is bigger than norm_samples.max_time_slices"
+                    " attribute of LossPDENonStatio. The batch will then be subsampled."
+                    " This check has been set to avoid memory explosion"
+                    " in normalization loss computation."
+                )
+            times_for_integration = batch.domain_batch[
+                : self.norm_samples.time_slices, 0:1
+            ]
+        else:
+            times_for_integration = self.norm_samples.time_slices
 
         batches = (
-            batch.domain_batch[: self.norm_samples.max_time_slices, 0:1],
+            times_for_integration,
             self.norm_samples.samples[: self.norm_samples.max_samples_omega],  # type: ignore -> cannot narrow a class attr
         )
         if isinstance(self.u, (PINN, HyperPINN)):

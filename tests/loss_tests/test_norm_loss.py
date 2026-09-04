@@ -61,7 +61,11 @@ def train_OU_init():
     )
 
     norm_samples = NormalizationSamples(
-        samples=mc_samples, weights=volume, min_pts=min_pts, max_pts=max_pts
+        samples=mc_samples,
+        weights=volume,
+        min_pts=min_pts,
+        max_pts=max_pts,
+        time_slices=100,
     )
 
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
