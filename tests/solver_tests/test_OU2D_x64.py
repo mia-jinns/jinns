@@ -236,7 +236,7 @@ def train_OU_init_parametrized(request):
             max_pts=(int_xmax, int_ymax),
             time_slices=100,
         )
-    if request.param == "time_array":
+    elif request.param == "time_array":
         norm_samples = NormalizationSamples(
             samples=mc_samples,
             weights=volume,
