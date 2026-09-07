@@ -140,7 +140,8 @@ def _rar_step_true(operands: RAROperands) -> RARReturns:
             subkey, novelty_sample_size, data.tmin, data.tmax
         )
         if data.dim == 1:
-            key, subkeys = jax.random.split(key, 2)
+            key, subkey = jax.random.split(key, 2)
+            subkeys = [subkey]
         else:
             key, *subkeys = jax.random.split(key, data.dim + 1)
         new_samples_omega = CubicMeshPDEStatio.sample_in_omega_domain(
