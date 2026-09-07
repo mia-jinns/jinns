@@ -238,6 +238,11 @@ def solve(
             # vectorization using `n`, and the same checks must be done
             _check_batch_size(param_data, data, "n")
 
+    if loss.dynamic_loss == (None,) and data.rar_parameters is not None:
+        raise ValueError(
+            "A DataGenerator with RAR cannot be passed when dynamic loss is None."
+        )
+
     if obs_data is not None and param_data is not None:
         # obs_data batch dimensions need only to be aligned with param_data
         # batch dimensions if the latter exist
