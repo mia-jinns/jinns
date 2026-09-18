@@ -374,9 +374,12 @@ def _rk4_step(batch, loss, params, dt):
 
 
 def _get_dnu_dt(batch, loss, params):
-    residuals, du_dnu = loss.values_and_grad_per_sample(params, batch)
+    du_dnu = jax.jacrev(jax.vmap(lambda x, p: loss.u(x, p), (0, None)), 1)(
+        batch.domain_batch, params
+    )
+    du_dnu = du_dnu.nn_params  # only keep gradients wrt to nn_params
+    residuals = loss.evaluate_per_sample(params, batch)
     residuals = residuals.dyn_loss[0]
-    du_dnu = du_dnu.dyn_loss[0].nn_params  # only keep gradients wrt to nn_params
     M, M_tmp = _process_du_dnu(du_dnu, batch.domain_batch.shape[0])
 
     L = _process_residuals(residuals, M_tmp)
