@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     from jinns.solver._utils import GetJinnsVariableName
 
 
-def solve_ng(
+def solve_neural_galerkin(
     *,
     times,
     times_saved: Array,

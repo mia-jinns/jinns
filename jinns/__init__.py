@@ -8,11 +8,11 @@ from jinns import plot as plot
 from jinns import nn as nn
 from jinns.solver._solve import solve
 from jinns.solver._solve_alternate import solve_alternate
-from jinns.solver._solve_ng import solve_ng
+from jinns.solver._solve_ng import solve_neural_galerkin
 
 from jinns import optimizers as optimizers
 
-__all__ = ["nn", "solve", "solve_alternate", "solve_ng"]
+__all__ = ["nn", "solve", "solve_alternate", "solve_neural_galerkin"]
 
 import warnings
 
