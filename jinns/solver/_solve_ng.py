@@ -30,6 +30,7 @@ from jinns.utils._containers import (
     DataGeneratorContainer,
 )
 from jinns.optimizers._natural_gradient import NGDState
+import warnings
 
 if TYPE_CHECKING:
     from jinns.loss._abstract_loss import AbstractLoss
@@ -159,14 +160,17 @@ def solve_neural_galerkin(
                 return u(x, params) - initial_condition_fun(x)
 
         ic_as_dyn_loss = InitialConditionAsDynamicLoss()
-        loss_ic = LossPDEStatio(
-            u=loss.u,
-            dynamic_loss=ic_as_dyn_loss,
-            loss_weights=LossWeightsPDEStatio(dyn_loss=jnp.array(1.0)),
-            derivative_keys=DerivativeKeysPDEStatio.from_str(
-                dyn_loss="nn_params", params=init_params
-            ),
-        )
+        with warnings.catch_warnings(action="ignore"):
+            # Here we catch the "Missing BC" warning as it is intended
+            # in the neural Galerking approach
+            loss_ic = LossPDEStatio(
+                u=loss.u,
+                dynamic_loss=ic_as_dyn_loss,
+                loss_weights=LossWeightsPDEStatio(dyn_loss=jnp.array(1.0)),
+                derivative_keys=DerivativeKeysPDEStatio.from_str(
+                    dyn_loss="nn_params", params=init_params
+                ),
+            )
         res = solve(
             n_iter=n_iter_ic,
             init_params=init_params_ic,
