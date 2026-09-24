@@ -59,6 +59,7 @@ def solve_ng(
     extra_optax_args_and_kwargs_ic: dict[str, Callable | GetJinnsVariableName]
     | None = None,
     key: PRNGKeyArray | None = None,
+    scheme: str = "rk4",
 ):
     """
     Solve the PDE with the Neural Galerkin approach. In this approach the variation of the parameters
@@ -67,7 +68,7 @@ def solve_ng(
 
     This function solves PDE with time dependency but, in this methodology,
     the dependency on time only appears through the parameters.
-    Therefore the loss that is passed (and therefore the PINN) are here defined as StatioPDE (and therefore PINN
+    Therefore the loss that is passed (and the PINN) are here defined as StatioPDE (and therefore PINN
     without time as input). The loss must only evaluate the dynamic_loss attribute (attributes inducing other terms must
     be None).
     Same for the DataGenerator, it must then be a CubicMeshPDEStatio.
@@ -88,7 +89,7 @@ def solve_ng(
     """
     if data.rar_parameters is not None and key is None:
         raise ValueError(
-            "key argument must be passed to jinns.solve() when using RAR procedure"
+            "`key` argument must be passed to jinns.solve() when using RAR procedure"
         )
 
     assert isinstance(loss, LossPDEStatio)
@@ -181,7 +182,7 @@ def solve_ng(
         )
         return res[0]
 
-    print("\n\n 1 - Fitting the initial condition for t0=", times[0])
+    print("\n\n #-- Fitting the initial condition for t0=", times[0])
     params_t0 = _fit_ic(
         n_iter_ic,
         optimizer_ic,
@@ -198,12 +199,11 @@ def solve_ng(
     ################################
     # 2) Get the parameter dynamic #
     ################################
-    print("\n\n 2 - Resolving the parameter dynamic")
+    print("\n\n #-- Solving the parameters' ODE.")
     times_saved = jnp.array(times_saved)
     n_times_saved = len(times_saved)
 
     def _one_time_step(carry, t):
-        # jax.debug.print("t={x}", x=(t, jnp.isin(t, times_saved)))
         (i, loss, params, train_data, nn_params_saved, key) = carry
 
         if verbose:
@@ -237,7 +237,10 @@ def solve_ng(
             subkey,
         )
 
-        params = _rk4_step(batch=batch, loss=loss, params=params, dt=dt)
+        if scheme.lower() in ["rk4", "rk-4"]:
+            params = _rk4_step(batch=batch, loss=loss, params=params, dt=dt)
+        elif scheme.lower() in ["euler", "rk1", "rk-1"]:
+            params = _rk1_step(batch=batch, loss=loss, params=params, dt=dt)
 
         idx_traced_int64 = jnp.argwhere(t == times_saved, size=n_times_saved)[0][0]
 
@@ -307,6 +310,25 @@ def solve_ng(
     return loss, train_data.data, train_data.param_data, params_final, params_saved
 
 
+def _rk1_step(batch, loss, params, dt):
+    "Compute explicit Euler update (~ RK1)"
+    dnu_dt_k1 = _get_dnu_dt(batch, loss, params)
+
+    return eqx.tree_at(
+        lambda pt: pt.nn_params,
+        params,
+        jax.tree.map(lambda a, b: a + b * dt, params.nn_params, dnu_dt_k1.nn_params),
+    )
+
+
+def _rk2_step(batch, loss, params, dt):
+    """
+    Compte the next value of the parameters following Runge Kutta scheme of
+    4th order.
+    """
+    return NotImplementedError
+
+
 def _rk4_step(batch, loss, params, dt):
     """
     Compte the next value of the parameters following Runge Kutta scheme of
@@ -314,16 +336,7 @@ def _rk4_step(batch, loss, params, dt):
 
     """
     dnu_dt_k1 = _get_dnu_dt(batch, loss, params)
-    # print("SIMPLIFIED SCHEME FOR DEBUG")
-    # return eqx.tree_at(
-    #     lambda pt: pt.nn_params,
-    #     params,
-    #     jax.tree.map(
-    #         lambda a, b: a + b * dt,
-    #         params.nn_params,
-    #         dnu_dt_k1.nn_params
-    #     ),
-    # )
+
     dnu_dt_k2 = _get_dnu_dt(
         batch,
         loss,
@@ -362,8 +375,9 @@ def _rk4_step(batch, loss, params, dt):
         lambda pt: pt.nn_params,
         params,
         jax.tree.map(
-            lambda a, b, c, d, e: a
-            + (1 / 6 * b + 1 / 3 * c + 1 / 3 * d + 1 / 6 * e) * dt,
+            lambda a, b, c, d, e: (
+                a + (1 / 6 * b + 1 / 3 * c + 1 / 3 * d + 1 / 6 * e) * dt
+            ),
             params.nn_params,
             dnu_dt_k1.nn_params,
             dnu_dt_k2.nn_params,
