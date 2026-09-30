@@ -65,6 +65,7 @@ def solve(
     extra_optax_args_and_kwargs: dict[str, Callable | GetJinnsVariableName]
     | None = None,
     key: PRNGKeyArray | None = None,
+    loop_type: str = "while",
 ) -> tuple[
     Params[Array],
     Float[Array, " n_iter"],
@@ -345,7 +346,7 @@ def solve(
         key,
     )
 
-    def _one_iteration(carry: SolveCarry) -> SolveCarry:
+    def _one_iteration(carry: SolveCarry, _: int) -> tuple[SolveCarry, None]:
         # Note that optimizer are not part of the carry since
         # the former is not tractable and the latter (while it could be
         # hashable) must be static because of the equinox `filter_spec` (https://github.com/patrick-kidger/equinox/issues/1036)
@@ -498,7 +499,7 @@ def solve(
             stored_objects,
             validation_crit_values,
             key,
-        )
+        ), None
 
     if verbose:
         print("Initialization time:", time.time() - initialization_time)
@@ -508,15 +509,20 @@ def solve(
     # concern obs_batch, but it could lead to more complex scheme in the future
     if obs_batch_sharding is not None:
         while break_fun(carry):
-            carry = _one_iteration(carry)
+            carry = (lambda carry: _one_iteration(carry, 0)[0])(carry)
     else:
 
-        def train_fun(carry):
-            return jax.lax.while_loop(break_fun, _one_iteration, carry)
+        def train_fun_while(carry):
+            return jax.lax.while_loop(
+                break_fun, lambda carry: _one_iteration(carry, 0)[0], carry
+            )
+
+        def train_fun_scan(carry):
+            return jax.lax.scan(_one_iteration, carry, xs=jnp.arange(n_iter))[0]
 
         if ahead_of_time:
             start = time.time()
-            compiled_train_fun = jax.jit(train_fun).lower(carry).compile()
+            compiled_train_fun = jax.jit(train_fun_while).lower(carry).compile()
             end = time.time()
             if verbose:
                 print("\nCompilation took\n", end - start, "\n")
@@ -528,7 +534,10 @@ def solve(
             if verbose:
                 print("\nTraining took\n", end - start, "\n")
         else:
-            carry = train_fun(carry)
+            if loop_type == "while":
+                carry = train_fun_while(carry)
+            elif loop_type == "scan":
+                carry = train_fun_scan(carry)
 
     (
         i,

@@ -61,6 +61,9 @@ def solve_neural_galerkin(
     | None = None,
     key: PRNGKeyArray | None = None,
     scheme: str = "rk4",
+    args_callback_init=None,
+    fun_callback=None,
+    times_callback=None,
 ):
     """
     Solve the PDE with the Neural Galerkin approach. In this approach the variation of the parameters
@@ -173,7 +176,7 @@ def solve_neural_galerkin(
             )
         res = solve(
             n_iter=n_iter_ic,
-            init_params=init_params_ic,
+            init_params=jax.lax.stop_gradient(init_params_ic),
             data=data_ic,
             loss=loss_ic,
             optimizer=optimizer_ic,
@@ -183,6 +186,7 @@ def solve_neural_galerkin(
             extra_optax_args_and_kwargs=extra_optax_args_and_kwargs_ic,
             ahead_of_time=ahead_of_time,
             verbose=verbose,
+            loop_type="scan" if not ahead_of_time else "while",
         )
         return res[0]
 
@@ -199,6 +203,7 @@ def solve_neural_galerkin(
         ahead_of_time,
         initial_condition_fun,
     )
+    params_t0 = init_params_ic
 
     ################################
     # 2) Get the parameter dynamic #
@@ -208,7 +213,7 @@ def solve_neural_galerkin(
     n_times_saved = len(times_saved)
 
     def _one_time_step(carry, t):
-        (i, loss, params, train_data, nn_params_saved, key) = carry
+        (i, loss, params, train_data, nn_params_saved, args_callback, key) = carry
 
         if verbose:
             _ = jax.lax.cond(
@@ -246,6 +251,17 @@ def solve_neural_galerkin(
         elif scheme.lower() in ["euler", "rk1", "rk-1"]:
             params = _rk1_step(batch=batch, loss=loss, params=params, dt=dt)
 
+        if times_callback is not None and fun_callback is not None:
+            # TODO this does not handle well duplicata in obs batch (times) due to rounding
+            idx = jnp.argwhere(t == times_callback, size=len(times_callback))[0][0]
+            # jax.debug.print("{x}", x=(idx, t, times_callback))
+            args_callback = jax.lax.cond(
+                jnp.isin(t, times_callback),
+                lambda _: fun_callback(idx, t, params, loss, args_callback),
+                lambda _: args_callback,
+                None,
+            )
+
         idx_traced_int64 = jnp.argwhere(t == times_saved, size=n_times_saved)[0][0]
 
         nn_params_saved = jax.lax.cond(
@@ -267,6 +283,7 @@ def solve_neural_galerkin(
             params,
             DataGeneratorContainer(data, param_data, None),
             nn_params_saved,
+            args_callback,
             key,
         ), None
 
@@ -278,7 +295,7 @@ def solve_neural_galerkin(
 
     nn_params_saved = jnp.stack([params_t0_fl for _ in range(n_times_saved)], axis=0)
 
-    carry = (0, loss, params_t0, train_data, nn_params_saved, key)
+    carry = (0, loss, params_t0, train_data, nn_params_saved, args_callback_init, key)
 
     def train_fun(carry):
         # NOTE that we start the scan at times[1:] since params was already compute for times[0]
@@ -300,18 +317,26 @@ def solve_neural_galerkin(
     else:
         carry, _ = train_fun(carry)
 
-    (_, loss, params_final, train_data, nn_params_saved, key) = carry
+    (_, loss, params_final, train_data, nn_params_saved, args_callback, key) = carry
 
-    params_saved = tuple(
-        eqx.tree_at(
-            lambda pt: pt.nn_params,
-            params_final,
-            _params_array_to_pytree(nn_params_saved[i], params_final.nn_params),
-        )
-        for i in range(nn_params_saved.shape[0])
+    # params_saved = tuple(
+    #     eqx.tree_at(
+    #         lambda pt: pt.nn_params,
+    #         params_final,
+    #         _params_array_to_pytree(nn_params_saved[i], params_final.nn_params),
+    #     )
+    #     for i in range(nn_params_saved.shape[0])
+    # )
+    params_saved = nn_params_saved
+
+    return (
+        loss,
+        train_data.data,
+        train_data.param_data,
+        params_final,
+        params_saved,
+        args_callback,
     )
-
-    return loss, train_data.data, train_data.param_data, params_final, params_saved
 
 
 def _rk1_step(batch, loss, params, dt):
