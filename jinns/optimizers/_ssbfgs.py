@@ -7,7 +7,7 @@ import os
 
 os.environ["JAX_PLATFORMS"] = "cpu"
 
-from typing import Callable, NamedTuple
+from typing import Callable, NamedTuple, Literal
 from jaxtyping import Float, Int, Array
 
 # import warnings
@@ -197,8 +197,8 @@ def self_scaled_bfgs_or_broyden(
     return base.GradientTransformationExtraArgs(init_fn, update_fn)  # type: ignore
 
 
-class ScaleBySSBFGSState_(NamedTuple):
-    """State for SS-BFGS solver.
+class ScaleBySSBroydenFamilyState(NamedTuple):
+    """State for SS-Broyden class of algorithms.
 
     Attributes:
     count: iteration of the algorithm.
@@ -215,15 +215,16 @@ class ScaleBySSBFGSState_(NamedTuple):
     linesearch_state: NamedTuple
 
 
-def self_scaled_bfgs_or_broyden_(
+def scale_by_SSBroyden_family(
     linesearch: LINESEARCH_TYPE | None = None,
-    broyden: bool = False,
+    member: Literal["BFGS", "SSBFGS", "DFP", "SSDFP", "Broyden", "SSBroyden"] = "SSBroyden",
 ) -> base.GradientTransformationExtraArgs:
     r"""
-    Scales updates by ssBFGS or ssBroyden.
+    Scales updates with one algorithm member from the SSBroyden family
 
-    The implementation is taken from the [scimba package](https://gitlab.com/scimba/scimba)
-    The algorithms are described in [this article](https://arxiv.org/pdf/2405.04230)
+    The algorithms are described in [this article](https://arxiv.org/pdf/2405.04230).
+    This implementation closely follows Self-Scaled Broyden Family of Quasi-Newton Methods in JAX, Bioli and Abarrategi, 2026;
+    [link](https://arxiv.org/pdf/2603.10599)
 
     Parameters
     ----------
@@ -231,32 +232,22 @@ def self_scaled_bfgs_or_broyden_(
         It is recommended to use a linesearch method that computes a learning rate,
         a.k.a. stepsize, to satisfy some criterion such as a sufficient decrease of the objective
         by additional calls to the objective
-        by default optax.scale_by_zoom_linesearch(max_linesearch_steps=25, initial_guess_strategy="one")
-        is used for ssBroyden
-        by default optax.scale_by_backtracking_linesearch(max_backtracking_steps=15)
-        is used for ssBFGS
-    broyden
-        If False then ssBFGS updates will be used, else ssBroyden.
+    member
+        The type of algorithm used as defined in Table 1 of [this article](https://arxiv.org/pdf/2603.10599)
     Returns
     -------
     optax.GradientTransformationExtraArgs
-        The ssBFGS or ssBroyden optimizer
+        The ssBroyden optimizer
     """
 
     if linesearch is None:
-        # the _linesearch instanciation choices below are made by empirical
-        # observation, feel free to experiment other combinations
-        if broyden:
-            linesearch = _linesearch.scale_by_zoom_linesearch(
-                max_linesearch_steps=25,
-                initial_guess_strategy="one",
-            )
-        else:
-            linesearch = _linesearch.scale_by_backtracking_linesearch(
-                max_backtracking_steps=15,
-            )
+        linesearch = _linesearch.scale_by_zoom_linesearch(
+            max_linesearch_steps=25,
+            initial_guess_strategy="one",
+        )
 
-    def init_fn(params_pt: Params) -> ScaleBySSBFGSState_:
+
+    def init_fn(params_pt: Params) -> ScaleBySSBroydenFamilyState:
         # params = jnp.concatenate(
         #     jax.tree.map(lambda l: l.flatten(), jax.tree.leaves(params_pt)), axis=0
         # )
@@ -264,7 +255,7 @@ def self_scaled_bfgs_or_broyden_(
         # the unmodified optax linesearch which works for arbitrary PyTree
         # whereas the update_fn of ssBFGS or ssBroyden is written for
         # jnp.array only
-        return ScaleBySSBFGSState_(
+        return ScaleBySSBroydenFamilyState(
             count=jnp.asarray(0, dtype=jnp.int32),
             params=optax.tree.zeros_like(params_pt),
             updates=optax.tree.zeros_like(params_pt),
@@ -273,66 +264,87 @@ def self_scaled_bfgs_or_broyden_(
         )
 
     def update_fn(
-        grad_k_pt: Params,
-        state: ScaleBySSBFGSState,
-        theta_k_pt: Params,
+        gradk_pt: Params,
+        state: ScaleBySSBroydenFamilyState,
+        thetak_pt: Params,
         value: jax.typing.ArrayLike,
         grad_pt: Params,
         value_fn: Callable[..., tuple[jax.typing.ArrayLike, base.Updates]],
         grad_fn: Callable[..., tuple[jax.typing.ArrayLike, base.Updates]],
         **extra_args_for_fn,
-    ) -> tuple[base.Updates, ScaleBySSBFGSState]:
-        # theta_k = jnp.concatenate(
-        #     jax.tree.map(lambda l: l.flatten(), jax.tree.leaves(theta_k_pt)), axis=0
-        # )
-        # grad_k = jnp.concatenate(
-        #     jax.tree.map(lambda l: l.flatten(), jax.tree.leaves(grad_k_pt)), axis=0
-        # )
-        # grad = jnp.concatenate(
-        #     jax.tree.map(lambda l: l.flatten(), jax.tree.leaves(grad_pt)), axis=0
-        # )
-        direction = lx.PyTreeLinearOperator(
-            -state.hk, jax.eval_shape(lambda: grad_k_pt)
+    ) -> tuple[base.Updates, ScaleBySSBroydenFamilyState]:
+
+        dk = lx.PyTreeLinearOperator(
+            -state.hk, jax.eval_shape(lambda: gradk_pt)
         )
-        s_k_pt, linesearch_state = linesearch.update(
-            direction.mv(grad_k_pt),
+        sk_pt, linesearch_state = linesearch.update(
+            dk.mv(gradk_pt),
             state.linesearch_state,
-            theta_k_pt,
+            thetak_pt, # type: ignore
             value=value,  # type: ignore
             grad=grad_pt,  # type: ignore
             value_fn=value_fn,  # type: ignore
             **extra_args_for_fn,
         )
-        # s_k = jnp.concatenate(
-        #     jax.tree.map(lambda l: l.flatten(), jax.tree.leaves(s_k_pt)), axis=0
-        # )
 
         # compute some values for next turn:
-        alpha_k = linesearch_state.learning_rate  # type: ignore
+        alphak = linesearch_state.learning_rate  # type: ignore
 
-        theta_kp1_pt = optax.apply_updates(theta_k_pt, s_k_pt)
+        thetakp1_pt = optax.apply_updates(thetak_pt, sk_pt) # theta is x in the article
 
         # get the gradients at theta_kp1
-        grad_kp1_pt = grad_fn(theta_kp1_pt, **extra_args_for_fn)
+        gradkp1_pt = grad_fn(thetakp1_pt, **extra_args_for_fn)
 
-        # grad_kp1 = jnp.concatenate(
-        #     jax.tree.map(lambda l: l.flatten(), jax.tree.leaves(grad_kp1_pt)), axis=0
-        # )
+        # sk_pt = jax.tree.map(lambda a, b: a - b, thetakp1_pt, thetak_pt) # no need to recompute
+        yk_pt = jax.tree.map(lambda a, b: a - b, gradkp1_pt, gradk_pt)
+        yksk = lx.PyTreeLinearOperator(yk_pt, (1,)).mv(sk_pt)  # scalar
 
-        # s_k = theta_kp1 - theta_k
-        y_k_pt = jax.tree.map(lambda a, b: a - b, grad_kp1_pt, grad_k_pt)
+        rhok_pt = 1 / yksk
 
-        Hkyk_pt = lx.PyTreeLinearOperator(state.hk, jax.eval_shape(lambda: y_k_pt))
-        yk_dot_Hkyk = (lx.IdentityLinearOperator(y_k_pt) @ Hkyk_pt).mv(y_k_pt)  # scalar
-        yk_dot_sk = lx.PyTreeLinearOperator(y_k_pt, (1,)).mv(s_k_pt)  # scalar
+        Hkyk_pt = lx.PyTreeLinearOperator(state.hk, jax.eval_shape(lambda: yk_pt))
+        ykHkyk = (lx.IdentityLinearOperator(yk_pt) @ Hkyk_pt).mv(yk_pt)  # scalar
 
-        v_k = jax.tree.map(
-            lambda a, b: jnp.sqrt(yk_dot_Hkyk) * (a / yk_dot_sk - b / yk_dot_Hkyk),
-            s_k_pt,
-            Hkyk_pt.mv(y_k_pt),
+        vk = jax.tree.map(
+            lambda a, b: (a / yksk - b / ykHkyk),
+            sk_pt,
+            Hkyk_pt.mv(yk_pt),
         )
+        
+        # we use the fact that Bksk = -alphak*grad_k (see Eq. 5 of Optimizing the Optimizers, 2026)
+        skgradk = lx.PyTreeLinearOperator(sk_pt, (1,)).mv(gradk_pt)  # scalar
+        bk = - alphak / yksk * skgradk  # scalar
 
-        sk_dot_grad_k = lx.PyTreeLinearOperator(s_k_pt, (1,)).mv(grad_k_pt)  # scalar
+        hk = ykHkyk / yksk
+
+        if member == "BFGS":
+            thetak = 0.
+            tauk = 1.0
+        elif member == "SSBFGS":
+            thetak = 0.
+            sigma_k = 1 + a_k * th_k
+            sigma_k_pow = sigma_k ** (-1 / (numel - 1))
+
+            tau_k = jnp.where(
+                th_k > 0,
+                tau_k * jnp.minimum(sigma_k_pow, 1.0 / th_k),
+                jnp.minimum(tau_k * sigma_k_pow, sigma_k),
+            )
+        elif member == "DFP":
+        elif member == "SSDFP":
+        elif member == "Broyden":
+        elif member == "SSBroyden":
+        else:
+            raise ValueError("Wrong member value, must be either BFGS, SSBFGS, DFS, SSDFP, Broyden or SSBroyden")
+
+        ak = hk * bk - 1.0
+        ck = jnp.sqrt(ak / (ak + 1.0))
+        rhok_minus = jnp.minimum(1.0, hk * (1 - ck))
+        thetak_minus= (rhok_minus - 1) / ak
+        thetak_plus = 1.0 / rhok_minus
+        thetak = jnp.maximum(thetak_minus, jnp.minimum(thetak_plus, (1.0 - bk) / bk))
+
+        phik = (1 - thetak) / (1.0 + ak * thetak)
+
 
         # Hkyk = state.hk @ y_k
         # yk_dot_Hkyk = y_k @ Hkyk
