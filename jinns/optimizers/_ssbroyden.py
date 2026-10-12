@@ -116,11 +116,13 @@ def scale_by_SSBroyden_family(
         # get the gradients at theta_kp1
         gradkp1_pt = grad_fn(thetakp1_pt, **extra_args_for_fn)
 
-        yk_pt = jax.tree.map(lambda a, b: a - b, gradkp1_pt, gradk_pt)
+        yk = (
+            jax.flatten_util.ravel_pytree(gradkp1_pt)[0] - gradk
+        )  # jax.tree.map(lambda a, b: a - b, gradkp1_pt, gradk_pt)
 
         # Next operation is a scalar product of a PyTree distributed array
         # This can be handled leaf by leaf
-        yk = jax.flatten_util.ravel_pytree(yk_pt)[0]
+        # yk = jax.flatten_util.ravel_pytree(yk_pt)[0]
         sk = jax.flatten_util.ravel_pytree(sk_pt)[0]
         yksk = jnp.dot(yk, sk)
 
@@ -167,11 +169,11 @@ def scale_by_SSBroyden_family(
                 sigmak = 1 + ak * thetak  # pylint: disable=possibly-used-before-assignment
                 sigmak_pow = jnp.abs(sigmak) ** (1 / (1 - N))
                 rhopk = jnp.minimum(1.0, 1.0 / bk)
-                tauk = jax.lax.cond(
+
+                tauk = jnp.where(  # sensibly faster than lax.cond
                     thetak > 0,
-                    lambda _: rhopk * jnp.minimum(sigmak_pow, 1.0 / thetak),
-                    lambda _: jnp.minimum(rhopk * sigmak_pow, sigmak),
-                    None,
+                    rhopk * jnp.minimum(sigmak_pow, 1.0 / thetak),
+                    jnp.minimum(rhopk * sigmak_pow, sigmak),
                 )
 
         phik = (1 - thetak) / (1.0 + ak * thetak)
