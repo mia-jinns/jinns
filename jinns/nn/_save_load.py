@@ -229,5 +229,5 @@ def load_pinn(
     elif isinstance(u_reloaded, (PINN, SPINN)):
         params = Params(nn_params=u_reloaded.init_params, eq_params=eq_params_reloaded)
     else:
-        raise ValueError("Wrong type for u_reloaded")
+        raise ValueError("Wrong type for u_reloaded.")
     return u_reloaded, params
