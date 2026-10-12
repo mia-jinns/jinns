@@ -44,12 +44,12 @@ class ScaleBySSBroydenFamilyState(NamedTuple):
 
 def scale_by_SSBroyden_family(
     linesearch: LINESEARCH_TYPE | None = None,
-    member: Literal[
+    method: Literal[
         "BFGS", "SSBFGS", "DFP", "SSDFP", "Broyden", "SSBroyden"
     ] = "SSBroyden",
 ) -> base.GradientTransformationExtraArgs:
     r"""
-    Scales updates with one algorithm member from the SSBroyden family
+    Scales updates with one algorithm method from the SSBroyden family
 
     The algorithms are described in [this article](https://arxiv.org/pdf/2405.04230).
     This implementation closely follows Self-Scaled Broyden Family of Quasi-Newton Methods in JAX, Bioli and Abarrategi, 2026;
@@ -61,7 +61,7 @@ def scale_by_SSBroyden_family(
         It is recommended to use a linesearch method that computes a learning rate,
         a.k.a. stepsize, to satisfy some criterion such as a sufficient decrease of the objective
         by additional calls to the objective
-    member
+    method
         The type of algorithm used as defined in Table 1 of [this article](https://arxiv.org/pdf/2603.10599)
     Returns
     -------
@@ -103,10 +103,10 @@ def scale_by_SSBroyden_family(
         grad_fn: Callable[..., tuple[jax.typing.ArrayLike, base.Updates]],
         **extra_args_for_fn,
     ) -> tuple[base.Updates, ScaleBySSBroydenFamilyState]:
-        params_struct = jax.tree.structure(gradk_pt)
-        dk = -state.hk @ jax.flatten_util.ravel_pytree(gradk_pt)
+        gradk, unravelfn_params = jax.flatten_util.ravel_pytree(gradk_pt)
+        dk = -state.hk @ gradk
         sk_pt, linesearch_state = linesearch.update(
-            jax.tree.unflatten(params_struct, dk),
+            unravelfn_params(dk),
             state.linesearch_state,
             thetak_pt,  # type: ignore
             value=value,  # type: ignore
@@ -128,34 +128,38 @@ def scale_by_SSBroyden_family(
         # Next operation is a scalar product of a PyTree distributed array
         # This can be handled leaf by leaf
         yksk = jnp.sum(
-            jnp.concatenate(
-                jax.tree.leaves(
-                    jax.tree.map(lambda a, b: jnp.sum(jnp.dot(a, b)), yk_pt, sk_pt)
-                ),
-                axis=0,
-            )
+            jax.flatten_util.ravel_pytree(yk_pt)[0]
+            * jax.flatten_util.ravel_pytree(sk_pt)[0]
+            # jnp.concatenate(
+            #     jax.tree.leaves(
+            #         jax.tree.map(lambda a, b: jnp.sum(jnp.dot(a.flatten, b)), yk_pt, sk_pt)
+            #     ),
+            #     axis=0,
+            # )
         )
 
         rhok = 1 / yksk
 
-        yk = jax.flatten_util.ravel_pytree(yk_pt)
+        yk = jax.flatten_util.ravel_pytree(yk_pt)[0]
         Hkyk = state.hk @ yk
         ykHkyk = yk @ Hkyk
 
         vk_pt = jax.tree.map(
             lambda a, b: (a / yksk - b / ykHkyk),
             sk_pt,
-            jax.tree.unflatten(params_struct, Hkyk),
+            unravelfn_params(Hkyk),
         )
 
         # next operation is a scalar product
         skgradk = jnp.sum(
-            jnp.concatenate(
-                jax.tree.leaves(
-                    jax.tree.map(lambda a, b: jnp.sum(jnp.dot(a, b)), sk_pt, gradk_pt)
-                ),
-                axis=0,
-            )
+            jax.flatten_util.ravel_pytree(gradk_pt)[0]
+            * jax.flatten_util.ravel_pytree(sk_pt)[0]
+            # jnp.concatenate(
+            #     jax.tree.leaves(
+            #         jax.tree.map(lambda a, b: jnp.sum(jnp.dot(a, b)), sk_pt, gradk_pt)
+            #     ),
+            #     axis=0,
+            # )
         )
         # we use the fact that Bksk = -sk*grad_k (see Eq. 5 of Optimizing the Optimizers, 2026)
         bk = -alphak / yksk * skgradk  # scalar
@@ -164,11 +168,11 @@ def scale_by_SSBroyden_family(
 
         # Computation of thetak
         ak = hk * bk - 1.0
-        if member == "BFGS" or member == "SSBFGS":
+        if method == "BFGS" or method == "SSBFGS":
             thetak = 0.0
-        elif member == "DFP" or member == "SSDFP":
+        elif method == "DFP" or method == "SSDFP":
             thetak = 1.0
-        elif member == "Broyden" or member == "SSBroyden":
+        elif method == "Broyden" or method == "SSBroyden":
             ck = jnp.sqrt(ak / (ak + 1.0))
             rhok_minus = jnp.minimum(1.0, hk * (1 - ck))
             thetak_minus = (rhok_minus - 1) / ak
@@ -179,28 +183,114 @@ def scale_by_SSBroyden_family(
 
         # Computation of tauk
         N = state.hk.shape[0]
-        if member == "BFGS" or member == "DFP" or member == "Broyden":
+        if method == "BFGS" or method == "DFP" or method == "Broyden":
             tauk = 1.0
-        elif member == "SSBFGS" or member == "SSDFP" or member == "SSBroyden":
+        else:
             sigmak = 1 + ak * thetak  # pylint: disable=possibly-used-before-assignment
             sigmak_pow = jnp.abs(sigmak) ** (1 / (1 - N))
             rhopk = jnp.minimum(1.0, 1.0 / bk)
-            tauk = jax.lax.cond(
-                thetak > 0,
-                lambda _: rhopk * jnp.minimum(sigmak_pow, 1.0 / thetak),
-                lambda _: jnp.minimum(rhopk * sigmak_pow, sigmak),
-            )
+            if method == "SSBFGS":
+                # in this case thetak = 0. and the jax.lax.cond raises an error because it cannot
+                # handle 1./ thetak, hence this specific branch
+                tauk = jnp.minimum(rhopk * sigmak_pow, sigmak)
+                # tauk = jnp.minimum(1.0, -yksk / (alphak * (skgradk)))
+            elif method == "SSDFP" or method == "SSBroyden":
+                sigmak = 1 + ak * thetak  # pylint: disable=possibly-used-before-assignment
+                sigmak_pow = jnp.abs(sigmak) ** (1 / (1 - N))
+                rhopk = jnp.minimum(1.0, 1.0 / bk)
+                tauk = jax.lax.cond(
+                    thetak > 0,
+                    lambda _: rhopk * jnp.minimum(sigmak_pow, 1.0 / thetak),
+                    lambda _: jnp.minimum(rhopk * sigmak_pow, sigmak),
+                    None,
+                )
 
         phik = (1 - thetak) / (1.0 + ak * thetak)
 
         # outer products of PyTrees distributed arrays
-        vk = jax.flatten_util.ravel_pytree(vk_pt)
+        vk = jax.flatten_util.ravel_pytree(vk_pt)[0]
         vkvk = jnp.outer(vk, vk)
-        sk = jax.flatten_util.ravel_pytree(sk_pt)
+        sk = jax.flatten_util.ravel_pytree(sk_pt)[0]
         sksk = jnp.outer(sk, sk)
 
-        Hkp1 = 1.0 / tauk * (state.hk + phik * ykHkyk * vkvk) + rhok * sksk  # pylint: disable=possibly-used-before-assignment
+        ##################################
+        ##################################
+        # theta_k = jnp.concatenate(
+        #     jax.tree.map(lambda l: l.flatten(), jax.tree.leaves(thetak_pt)), axis=0
+        # )
+        # grad_k = jnp.concatenate(
+        #     jax.tree.map(lambda l: l.flatten(), jax.tree.leaves(gradk_pt)), axis=0
+        # )
+        # grad = jnp.concatenate(
+        #     jax.tree.map(lambda l: l.flatten(), jax.tree.leaves(grad_pt)), axis=0
+        # )
+        # direction = -state.hk @ grad_k
+        # s_k = jnp.concatenate(
+        #     jax.tree.map(lambda l: l.flatten(), jax.tree.leaves(sk_pt)), axis=0
+        # )
 
+        # # compute some values for next turn:
+        # alpha_k = linesearch_state.learning_rate  # type: ignore
+
+        # theta_kp1 = optax.apply_updates(theta_k, s_k)
+
+        # # get the gradients at theta_kp1
+        # grad_kp1_pt = grad_fn(
+        #     params_array_to_pytree(theta_kp1, thetak_pt), **extra_args_for_fn
+        # )
+
+        # grad_kp1 = jnp.concatenate(
+        #     jax.tree.map(lambda l: l.flatten(), jax.tree.leaves(grad_kp1_pt)), axis=0
+        # )
+
+        # # s_k = theta_kp1 - theta_k
+        # y_k = grad_kp1 - grad_k
+        # Hkyk = state.hk @ y_k
+        # yk_dot_Hkyk = y_k @ Hkyk
+        # yk_dot_sk = y_k @ s_k
+        # v_k = jnp.sqrt(yk_dot_Hkyk) * (s_k / (yk_dot_sk) - Hkyk / yk_dot_Hkyk)
+
+        # # method ssbfgs
+        # tau_k = jnp.minimum(1.0, -yk_dot_sk / (alpha_k * (s_k @ grad_k)))
+        # phi_k = 1.0
+
+        # # # method ssbroyden
+        # # if broyden:
+        # #     numel = theta_k.shape[0]
+        # #     b_k = -alpha_k * (s_k @ grad_k) / yk_dot_sk
+        # #     h_k = yk_dot_Hkyk / yk_dot_sk
+        # #     a_k = h_k * b_k - 1.0
+        # #     c_k = jnp.sqrt(a_k / (a_k + 1.0))
+        # #     rhom_k = jnp.minimum(1.0, h_k * (1 - c_k))
+        # #     thetam_k = (rhom_k - 1) / a_k
+        # #     thetap_k = 1.0 / rhom_k
+        # #     th_k = jnp.maximum(thetam_k, jnp.minimum(thetap_k, (1.0 - b_k) / b_k))
+        # #     sigma_k = 1 + a_k * th_k
+        # #     sigma_k_pow = sigma_k ** (-1 / (numel - 1))
+
+        # #     tau_k = jnp.where(
+        # #         th_k > 0,
+        # #         tau_k * jnp.minimum(sigma_k_pow, 1.0 / th_k),
+        # #         jnp.minimum(tau_k * sigma_k_pow, sigma_k),
+        # #     )
+        # #     phi_k = (1 - th_k) / (1.0 + a_k * th_k)
+
+        # temp1 = (Hkyk[:, None] @ Hkyk[None, :]) / yk_dot_Hkyk
+        # temp2 = phi_k * (v_k[:, None] @ v_k[None, :])
+        # temp3 = (s_k[:, None] @ s_k[None, :]) / yk_dot_sk
+        # H_kp1 = (1.0 / tau_k) * (state.hk - temp1 + temp2) + temp3
+        ###############################################
+        ###############################################
+        # jax.debug.print("{x}", x=(yk_dot_Hkyk, ykHkyk, sk[:5], s_k[:5], yk_dot_sk, yksk))
+
+        # jax.debug.print("{x}", x=(temp1[:5,:5], (jnp.outer(Hkyk, Hkyk) / ykHkyk)[:5,:5], temp2[:5,:5], (phik * ykHkyk * vkvk)[:5,:5], temp3[:5,:5], ((s_k[:, None] @ s_k[None, :]) / yk_dot_sk)[:5,:5]))
+        Hkp1 = (
+            1.0
+            / tauk  # pylint: disable=possibly-used-before-assignment
+            * (state.hk - jnp.outer(Hkyk, Hkyk) / ykHkyk + phik * ykHkyk * vkvk)
+            + rhok * sksk
+        )  # pylint: disable=possibly-used-before-assignment
+        # jax.debug.print("{x}", x=(H_kp1[:5,:5], Hkp1[:5, :5]))
         new_state = ScaleBySSBroydenFamilyState(
             count=numerics.safe_increment(state.count),  # type: ignore
             params=thetakp1_pt,  # type: ignore
@@ -211,3 +301,33 @@ def scale_by_SSBroyden_family(
         return sk_pt, new_state
 
     return base.GradientTransformationExtraArgs(init_fn, update_fn)  # type: ignore
+
+
+# from jinns.nn._hyperpinn import _get_param_nb
+
+
+# def params_array_to_pytree(
+#     params_array,
+#     params,
+# ):
+#     """Helper function: from matrix to PyTree representation of parameters.
+#     This function converts the raw matrix representation of the network
+#     trainable parameters into a `Params` object with the correct PyTree structure to
+#     be handled by optax for the updates.
+
+#     Same as for NGD but it is applied on the whole Params with the
+#     treatment for nn_params and eq_params
+#     """
+#     _, params_cumsum = _get_param_nb(params)
+#     flat = eqx.tree_at(
+#         jax.tree.leaves,
+#         params,
+#         jnp.split(params_array, params_cumsum[:-1]),
+#     )
+
+#     return jax.tree.map(
+#         lambda a, b: a.reshape(b.shape),
+#         flat,
+#         params,
+#         is_leaf=eqx.is_inexact_array,
+#     )

@@ -94,7 +94,7 @@ def train_heat_init():
 def test_heat_ssbfgs_10it(train_heat_init):
     init_params, loss, train_data, key = train_heat_init
     n_iter = 10
-    tx = jinns.optimizers.self_scaled_bfgs_or_broyden()
+    tx = jinns.optimizers.scale_by_SSBroyden_family(method="SSBFGS")
     params = init_params
 
     def callback_value_fn(params, batch, loss):
