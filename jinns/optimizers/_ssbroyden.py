@@ -39,9 +39,7 @@ class ScaleBySSBroydenFamilyState(NamedTuple):
 
 def scale_by_SSBroyden_family(
     linesearch: LINESEARCH_TYPE | None = None,
-    method: Literal[
-        "BFGS", "SSBFGS", "DFP", "SSDFP", "Broyden", "SSBroyden"
-    ] = "SSBroyden",
+    method: Literal["BFGS", "SSBFGS", "Broyden", "SSBroyden"] = "SSBroyden",
 ) -> base.GradientTransformationExtraArgs:
     r"""
     Scales updates with one algorithm method from the SSBroyden family
@@ -131,25 +129,18 @@ def scale_by_SSBroyden_family(
         Hkyk = state.hk @ yk
         ykHkyk = yk @ Hkyk
 
-        vk_pt = jax.tree.map(
-            lambda a, b: (a / yksk - b / ykHkyk),
-            sk_pt,
-            unravelfn_params(Hkyk),
-        )
+        vk = sk / yksk - Hkyk / ykHkyk
 
         # next operation is a scalar product
         skgradk = jnp.dot(gradk, sk)
         # we use the fact that Bksk = -sk*grad_k (see Eq. 5 of Optimizing the Optimizers, 2026)
         bk = -alphak / yksk * skgradk  # scalar
-
         hk = ykHkyk / yksk
+        ak = hk * bk - 1.0
 
         # Computation of thetak
-        ak = hk * bk - 1.0
         if method == "BFGS" or method == "SSBFGS":
             thetak = 0.0
-        elif method == "DFP" or method == "SSDFP":
-            thetak = 1.0
         elif method == "Broyden" or method == "SSBroyden":
             ck = jnp.sqrt(ak / (ak + 1.0))
             rhok_minus = jnp.minimum(1.0, hk * (1 - ck))
@@ -161,7 +152,7 @@ def scale_by_SSBroyden_family(
 
         # Computation of tauk
         N = state.hk.shape[0]
-        if method == "BFGS" or method == "DFP" or method == "Broyden":
+        if method == "BFGS" or method == "Broyden":
             tauk = 1.0
         else:
             sigmak = 1 + ak * thetak  # pylint: disable=possibly-used-before-assignment
@@ -172,7 +163,7 @@ def scale_by_SSBroyden_family(
                 # handle 1./ thetak, hence this specific branch
                 tauk = jnp.minimum(rhopk * sigmak_pow, sigmak)
                 # tauk = jnp.minimum(1.0, -yksk / (alphak * (skgradk)))
-            elif method == "SSDFP" or method == "SSBroyden":
+            elif method == "SSBroyden":
                 sigmak = 1 + ak * thetak  # pylint: disable=possibly-used-before-assignment
                 sigmak_pow = jnp.abs(sigmak) ** (1 / (1 - N))
                 rhopk = jnp.minimum(1.0, 1.0 / bk)
@@ -186,7 +177,6 @@ def scale_by_SSBroyden_family(
         phik = (1 - thetak) / (1.0 + ak * thetak)
 
         # outer products of PyTrees distributed arrays
-        vk = jax.flatten_util.ravel_pytree(vk_pt)[0]
         vkvk = jnp.outer(vk, vk)
         sksk = jnp.outer(sk, sk)
 
