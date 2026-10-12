@@ -1,11 +1,6 @@
-"""ssbfgs and ssbroyden implementation.
-Taken and adapted from scimba v1.3.3
-https://gitlab.com/scimba/scimba
 """
-
-import os
-
-os.environ["JAX_PLATFORMS"] = "cpu"
+SSBroyden family of algorithms
+"""
 
 from typing import Callable, NamedTuple, Literal
 from jaxtyping import Float, Int, Array
@@ -127,20 +122,12 @@ def scale_by_SSBroyden_family(
 
         # Next operation is a scalar product of a PyTree distributed array
         # This can be handled leaf by leaf
-        yksk = jnp.sum(
-            jax.flatten_util.ravel_pytree(yk_pt)[0]
-            * jax.flatten_util.ravel_pytree(sk_pt)[0]
-            # jnp.concatenate(
-            #     jax.tree.leaves(
-            #         jax.tree.map(lambda a, b: jnp.sum(jnp.dot(a.flatten, b)), yk_pt, sk_pt)
-            #     ),
-            #     axis=0,
-            # )
-        )
+        yk = jax.flatten_util.ravel_pytree(yk_pt)[0]
+        sk = jax.flatten_util.ravel_pytree(sk_pt)[0]
+        yksk = jnp.dot(yk, sk)
 
         rhok = 1 / yksk
 
-        yk = jax.flatten_util.ravel_pytree(yk_pt)[0]
         Hkyk = state.hk @ yk
         ykHkyk = yk @ Hkyk
 
@@ -151,16 +138,7 @@ def scale_by_SSBroyden_family(
         )
 
         # next operation is a scalar product
-        skgradk = jnp.sum(
-            jax.flatten_util.ravel_pytree(gradk_pt)[0]
-            * jax.flatten_util.ravel_pytree(sk_pt)[0]
-            # jnp.concatenate(
-            #     jax.tree.leaves(
-            #         jax.tree.map(lambda a, b: jnp.sum(jnp.dot(a, b)), sk_pt, gradk_pt)
-            #     ),
-            #     axis=0,
-            # )
-        )
+        skgradk = jnp.dot(gradk, sk)
         # we use the fact that Bksk = -sk*grad_k (see Eq. 5 of Optimizing the Optimizers, 2026)
         bk = -alphak / yksk * skgradk  # scalar
 
@@ -210,7 +188,6 @@ def scale_by_SSBroyden_family(
         # outer products of PyTrees distributed arrays
         vk = jax.flatten_util.ravel_pytree(vk_pt)[0]
         vkvk = jnp.outer(vk, vk)
-        sk = jax.flatten_util.ravel_pytree(sk_pt)[0]
         sksk = jnp.outer(sk, sk)
 
         ##################################
