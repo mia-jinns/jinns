@@ -126,7 +126,7 @@ class PINN(AbstractPINN):
         super().__init__()  # type: ignore because super just have an AbstractVar...
 
         if eq_type not in ["ODE", "PDEStatio", "PDENonStatio"]:
-            raise RuntimeError("Wrong parameter value for eq_type")
+            raise RuntimeError(f"Wrong parameter value for eq_type, got {eq_type}.")
         # saving the static part of the model and initial parameters
         self.eq_type = eq_type
 
