@@ -1,5 +1,7 @@
 import pytest
 
+import warnings
+
 import jax
 import jinns
 from jax import random
@@ -122,12 +124,16 @@ def neural_galerkin_fkpp1d_init():
 
     fisher_dynamic_loss_ode = FisherKPP_statio()
 
-    loss_pinn_ode = jinns.loss.LossPDEStatio(
-        u=u_pinn_ode,
-        loss_weights=jinns.loss.LossWeightsPDEStatio(dyn_loss=1),
-        dynamic_loss=fisher_dynamic_loss_ode,
-        params=init_params_pinn_ode,
-    )
+    with warnings.catch_warnings():
+        # Here we catch the "Missing BC" warning as it is intended
+        # in the neural Galerking approach
+        warnings.simplefilter("ignore", UserWarning)
+        loss_pinn_ode = jinns.loss.LossPDEStatio(
+            u=u_pinn_ode,
+            loss_weights=jinns.loss.LossWeightsPDEStatio(dyn_loss=1),
+            dynamic_loss=fisher_dynamic_loss_ode,
+            params=init_params_pinn_ode,
+        )
 
     return init_params_pinn_ode, loss_pinn_ode, train_data_ode
 

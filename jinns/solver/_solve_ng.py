@@ -160,9 +160,11 @@ def solve_neural_galerkin(
                 return u(x, params) - initial_condition_fun(x)
 
         ic_as_dyn_loss = InitialConditionAsDynamicLoss()
-        with warnings.catch_warnings(action="ignore"):
+        with warnings.catch_warnings():
             # Here we catch the "Missing BC" warning as it is intended
             # in the neural Galerking approach
+            warnings.simplefilter("ignore", UserWarning)
+
             loss_ic = LossPDEStatio(
                 u=loss.u,
                 dynamic_loss=ic_as_dyn_loss,
@@ -171,19 +173,19 @@ def solve_neural_galerkin(
                     dyn_loss="nn_params", params=init_params
                 ),
             )
-        res = solve(
-            n_iter=n_iter_ic,
-            init_params=init_params_ic,
-            data=data_ic,
-            loss=loss_ic,
-            optimizer=optimizer_ic,
-            print_loss_every=n_iter_ic // 10,
-            opt_state=opt_state_ic,
-            param_data=param_data_ic,
-            extra_optax_args_and_kwargs=extra_optax_args_and_kwargs_ic,
-            ahead_of_time=ahead_of_time,
-            verbose=verbose,
-        )
+            res = solve(
+                n_iter=n_iter_ic,
+                init_params=init_params_ic,
+                data=data_ic,
+                loss=loss_ic,
+                optimizer=optimizer_ic,
+                print_loss_every=n_iter_ic // 10,
+                opt_state=opt_state_ic,
+                param_data=param_data_ic,
+                extra_optax_args_and_kwargs=extra_optax_args_and_kwargs_ic,
+                ahead_of_time=ahead_of_time,
+                verbose=verbose,
+            )
         return res[0]
 
     print("\n\n #-- Fitting the initial condition for t0=", times[0])
@@ -243,7 +245,7 @@ def solve_neural_galerkin(
 
         if scheme.lower() in ["rk4", "rk-4"]:
             params = _rk4_step(batch=batch, loss=loss, params=params, dt=dt)
-        elif scheme.lower() in ["euler", "rk1", "rk-1"]:
+        elif scheme.lower() in ["explicit-euler", "rk1", "rk-1"]:
             params = _rk1_step(batch=batch, loss=loss, params=params, dt=dt)
 
         idx_traced_int64 = jnp.argwhere(t == times_saved, size=n_times_saved)[0][0]
@@ -284,23 +286,24 @@ def solve_neural_galerkin(
         # NOTE that we start the scan at times[1:] since params was already compute for times[0]
         return jax.lax.scan(_one_time_step, carry, times[1:])
 
-    if ahead_of_time:
-        start = time.time()
-        compiled_train_fun = jax.jit(train_fun).lower(carry).compile()
-        end = time.time()
-        if verbose:
-            print("\nCompilation took\n", end - start, "\n")
+    with warnings.catch_warnings(action="ignore"):
+        if ahead_of_time:
+            start = time.time()
+            compiled_train_fun = jax.jit(train_fun).lower(carry).compile()
+            end = time.time()
+            if verbose:
+                print("\nCompilation took\n", end - start, "\n")
 
-        start = time.time()
-        carry, _ = compiled_train_fun(carry)
-        jax.block_until_ready(carry)
-        end = time.time()
-        if verbose:
-            print("\nTraining took\n", end - start, "\n")
-    else:
-        carry, _ = train_fun(carry)
+            start = time.time()
+            carry, _ = compiled_train_fun(carry)
+            jax.block_until_ready(carry)
+            end = time.time()
+            if verbose:
+                print("\nTraining took\n", end - start, "\n")
+        else:
+            carry, _ = train_fun(carry)
 
-    (_, loss, params_final, train_data, nn_params_saved, key) = carry
+        (_, loss, params_final, train_data, nn_params_saved, key) = carry
 
     params_saved = tuple(
         eqx.tree_at(
