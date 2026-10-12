@@ -72,7 +72,7 @@ def scale_by_SSBroyden_family(
         params = jnp.concatenate(
             jax.tree.map(lambda l: l.flatten(), jax.tree.leaves(params_pt)), axis=0
         )
-        # NOTE that we pass the Params as PyTree to linesearch beacuase it is
+        # NOTE that we pass the Params as PyTree to linesearch beacause it is
         # the unmodified optax linesearch which works for arbitrary PyTree
         # whereas the update_fn of ssBFGS or ssBroyden is written for
         # jnp.array only
@@ -80,9 +80,7 @@ def scale_by_SSBroyden_family(
             count=jnp.asarray(0, dtype=jnp.int32),
             params=optax.tree.zeros_like(params_pt),
             updates=optax.tree.zeros_like(params_pt),
-            hk=jnp.eye(
-                params.shape[0]
-            ),  # jax.tree.map(lambda l: jnp.eye(l.shape[0]), params_pt),
+            hk=jnp.eye(params.shape[0]),
             linesearch_state=linesearch.init(params_pt),  # type: ignore
         )
 
@@ -116,13 +114,9 @@ def scale_by_SSBroyden_family(
         # get the gradients at theta_kp1
         gradkp1_pt = grad_fn(thetakp1_pt, **extra_args_for_fn)
 
-        yk = (
-            jax.flatten_util.ravel_pytree(gradkp1_pt)[0] - gradk
-        )  # jax.tree.map(lambda a, b: a - b, gradkp1_pt, gradk_pt)
-
+        yk = jax.flatten_util.ravel_pytree(gradkp1_pt)[0] - gradk
         # Next operation is a scalar product of a PyTree distributed array
         # This can be handled leaf by leaf
-        # yk = jax.flatten_util.ravel_pytree(yk_pt)[0]
         sk = jax.flatten_util.ravel_pytree(sk_pt)[0]
         yksk = jnp.dot(yk, sk)
 
@@ -135,7 +129,7 @@ def scale_by_SSBroyden_family(
 
         # next operation is a scalar product
         skgradk = jnp.dot(gradk, sk)
-        # we use the fact that Bksk = -sk*grad_k (see Eq. 5 of Optimizing the Optimizers, 2026)
+        # we use the fact that Bksk = -sk*grad_k (see Eq. 5 of https://arxiv.org/abs/2501.16371)
         bk = -alphak / yksk * skgradk  # scalar
         hk = ykHkyk / yksk
         ak = hk * bk - 1.0
