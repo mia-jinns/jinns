@@ -19,9 +19,9 @@ For now in jinns we implement in the form of `optax.GradientTransformExtraArgs`
 
 Self-scaled version of Broyden's and BFGS (Broyden–Fletcher–Goldfarb–Shanno) quasi-Newton methods for approximating the Hessian.
 
-Our implementation is based on the [Scimba](https://www.scimba.org/) source code. The algorithms are described in [this article](https://arxiv.org/pdf/2405.04230).
+Our implementation is based on the [Scimba](https://www.scimba.org/) source code. The algorithms are described in these articles: https://arxiv.org/pdf/2405.04230 and https://arxiv.org/pdf/2603.10599
 
-::: jinns.optimizers.self_scaled_bfgs_or_broyden
+::: jinns.optimizers.scale_by_SSBroyden_family
     options:
         heading_level: 3
 
