@@ -24,7 +24,7 @@ class RARParameters(eqx.Module):
         - either "G" for RAR-G, ie, new points replace the batch points with the lowest dynamic loss
         - either "D" for RAR-D, ie, new points replace the batch points that have not been selected when
         `resampling batch_size * (1 - novelty_proportion)` points among the batch points with weigths given
-        by the formula (2) in the article below. In this case, RARParameters must specify the keys 'k' and 'c'
+        by the formula (2) in the article above. In this case, RARParameters must specify the keys 'k' and 'c'
         with float values as defined in the formula.
     start_iter : int, default=0
         the iteration at which we start the RAR sampling scheme (we first have a "burn-in" period).
