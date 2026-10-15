@@ -148,5 +148,6 @@ nav:
         - Derivative keys: 'api/advanced/derivative_keys.md'
         - Adaptative loss weights: 'api/advanced/loss_weight_updates.md'
     - Misc:
+      - Loss implementation details: 'jinns_loss_computation_details.md'
       - Framework & notations: 'maths/introduction_to_pinns.md'
       - 'maths/fokker_planck.md'
