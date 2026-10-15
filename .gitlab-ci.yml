@@ -107,8 +107,6 @@ publish_package:
     - saas-linux-small-amd64
   only:
     - tags
-  rules:
-    - !reference [.default_rules, rules]
 
 pages:
   stage: publish
