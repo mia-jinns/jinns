@@ -1,3 +1,12 @@
+spec:
+  inputs:
+    only_doc_and_pages:
+      type: boolean
+      default: false
+      description: "Skip all jobs except build_doc and pages. Can be passed in a git push with -o ci.input='only_doc_and_pages=true'"
+
+---
+
 image: "registry.gitlab.com/mia_jinns/docker-image-quarto-jax-sphinx:main"
 
 stages:
@@ -6,6 +15,10 @@ stages:
   - build
   - publish
 
+.default_rules:
+  rules:
+    - if: $[[ inputs.only_doc_and_pages ]] == false
+
 .base_ruff: # from https://docs.astral.sh/ruff/integrations/#github-actions
   stage: linting
   interruptible: true
@@ -13,6 +26,8 @@ stages:
     name: ghcr.io/astral-sh/ruff:0.11.8-alpine
   before_script:
     - ruff --version
+  rules:
+    - !reference [.default_rules, rules]
 
 Ruff Check:
   extends: .base_ruff
@@ -21,11 +36,15 @@ Ruff Check:
   artifacts:
     reports:
       codequality: jinns/code-quality-report.json
+  rules:
+    - !reference [.default_rules, rules]
 
 Ruff Format:
   extends: .base_ruff
   script:
     - ruff format jinns --diff
+  rules:
+    - !reference [.default_rules, rules]
 
 run_tests:
   stage: tests
@@ -37,6 +56,8 @@ run_tests:
   script:
     - pytest --cov=jinns
   coverage: '/TOTAL.*\s+(\d+%)$/'
+  rules:
+    - !reference [.default_rules, rules]
 
 build_doc:
   stage: build
@@ -69,6 +90,8 @@ build_package:
     expire_in: 1 week
   tags:
     - saas-linux-small-amd64
+  rules:
+    - !reference [.default_rules, rules]
 
 
 publish_package:

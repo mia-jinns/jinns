@@ -1,0 +1,58 @@
+""" """
+
+from typing import Literal
+import equinox as eqx
+
+
+class RARParameters(eqx.Module):
+    """
+    Dataclass to specify the Residual Adaptative Resampling procedure
+
+    RAR methods as inspired from https://arxiv.org/pdf/2207.10289
+    However the critical difference is that the dataset size is fixed. So new points replace others
+
+
+    Parameters
+    ----------
+    update_every : int
+        the number of gradient steps taken between
+        each update of collocation points in the RAR algo.
+    novelty_proportion : float
+        the proportion of the batchsize which is replaced
+        by new samples at each RAR step
+    method : Literal['G', 'D']
+        - either "G" for RAR-G, ie, new points replace the batch points with the lowest dynamic loss
+        - either "D" for RAR-D, ie, new points replace the batch points that have not been selected when
+        `resampling batch_size * (1 - novelty_proportion)` points among the batch points with weigths given
+        by the formula (2) in the article above. In this case, RARParameters must specify the keys 'k' and 'c'
+        with float values as defined in the formula.
+    start_iter : int, default=0
+        the iteration at which we start the RAR sampling scheme (we first have a "burn-in" period).
+    k : float | None
+        the float value of k, only for RAR-D. When no prior information the article recommends k=2.0
+    c : float | None
+        the float value of c, only for RAR-D. When no prior information the article recommends c=0.0
+    update_params : bool, default=True
+        in the case of a metamodel, when a DataGeneratorParameter is also used, if True, the batches of paramaters
+        and the DataGeneratorParameters are also modified by the RAR procedure.
+    """
+
+    update_every: int = eqx.field(static=True, kw_only=True)
+    novelty_proportion: float = eqx.field(static=True, kw_only=True)
+    method: Literal["G", "D"] = eqx.field(static=True, kw_only=True)
+    start_iter: int = eqx.field(default=0, static=True, kw_only=True)
+    k: float | None = eqx.field(default=None, static=True, kw_only=True)
+    c: float | None = eqx.field(default=None, static=True, kw_only=True)
+    update_params: bool = eqx.field(default=True, static=True, kw_only=True)
+
+    _rar_iter_from_last_sampling: int = eqx.field(init=False)
+
+    def __post_init__(self):
+        if self.method == "D" and (self.k is None or self.c is None):
+            raise ValueError("k and c must be specified for RAR-D")
+        if self.novelty_proportion < 0 or self.novelty_proportion > 1:
+            raise ValueError("novelty_proportion must be in [0; 1]")
+
+        # It is not 0 to ensure the first iteration of RAR happens just
+        # after start_iter. See the _proceed_to_rar() function in _rar.py
+        self._rar_iter_from_last_sampling = self.update_every - 1

@@ -39,6 +39,9 @@ def train_GLV_init():
         tmax=tmax,
         temporal_batch_size=batch_size,
         method=method,
+        rar_parameters=jinns.data.RARParameters(
+            start_iter=0, update_every=10, novelty_proportion=0.5, method="G"
+        ),
     )
 
     key, subkey = random.split(key)
@@ -73,7 +76,7 @@ def train_GLV_init():
         params=init_params,
     )
 
-    return init_params, loss, train_data
+    return init_params, loss, train_data, key
 
 
 @pytest.fixture
@@ -81,7 +84,7 @@ def train_GLV_10it(train_GLV_init):
     """
     Fixture that requests a fixture
     """
-    init_params, loss, train_data = train_GLV_init
+    init_params, loss, train_data, key = train_GLV_init
 
     # NOTE we need to waste one get_batch() here to stay synchronized with the
     # notebook
@@ -100,13 +103,18 @@ def train_GLV_10it(train_GLV_init):
     tx = optax.adam(learning_rate=1e-3)
     n_iter = 10
     params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _, _, _, _ = jinns.solve(
-        init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
+        init_params=params,
+        data=train_data,
+        optimizer=tx,
+        loss=loss,
+        n_iter=n_iter,
+        key=key,
     )
     return total_loss_list[9]
 
 
 def test_initial_loss_GLV(train_GLV_init):
-    init_params, loss, train_data = train_GLV_init
+    init_params, loss, train_data, _ = train_GLV_init
     assert jnp.allclose(
         loss.evaluate(init_params, train_data.get_batch()[1])[0],
         4436.11625511,
@@ -116,4 +124,4 @@ def test_initial_loss_GLV(train_GLV_init):
 
 def test_10it_GLV(train_GLV_10it):
     total_loss_val = train_GLV_10it
-    assert jnp.allclose(total_loss_val, 4369.26174334, atol=1e-5)
+    assert jnp.allclose(total_loss_val, 4372.49535624, atol=1e-5)

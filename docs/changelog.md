@@ -1,6 +1,26 @@
 # Changelog
 
-* v.1.9.3:
+* v1.10.2:
+
+    - jinns now implements the Neural Galerkin approach for solving time-dependent PDEs. See [!110](https://gitlab.com/mia_jinns/jinns/-/merge_requests/110) and the new tutorial notebooks
+    - This version contains diverse minor fixes from [!107](https://gitlab.com/mia_jinns/jinns/-/merge_requests/107), [!108](https://gitlab.com/mia_jinns/jinns/-/merge_requests/108) and [!109](https://gitlab.com/mia_jinns/jinns/-/merge_requests/109). Expect a minor breaking change in existing code using ssBFGS because in a change in the default linesearch that is used.
+
+* v1.10.1:
+
+    - Breaking change: fix bug where non stationary and stationary cases were badly handled in NormalizationSamples, now `NormalizationSamples.time_slices` *must* be passed for non stationary problems. This option now offers more modeling possibilities, see NormalizationSamples documentation for more details. Previous behaviour can be recovered simply by setting `time_slices=100` in non stationary problems. See [!105](https://gitlab.com/mia_jinns/jinns/-/merge_requests/105).
+    - RAR can now update the parameter batch and the DataGeneratorParameters while metamodeling with RAR. But this becomes the default behaviour but this can be deactivated with `RARParameters.update_params=False` [!104](https://gitlab.com/mia_jinns/jinns/-/merge_requests/104).
+
+* v1.10.0:
+
+    - Introduce a brand new implementation of Residual Adaptative Resampling [!103](https://gitlab.com/mia_jinns/jinns/-/merge_requests/103). Normalization samples are also refactored. Expect breaking changes for old code using those features. See RAR documentation and the Ornstein Uhlenbeck 2D example.
+
+* v1.9.4:
+
+    - Fix Neumann boundary condition not working in 1D [!102](https://gitlab.com/mia_jinns/jinns/-/merge_requests/102)
+    - Add the support for metamodeling with vanilla PINN architectures (passing batchs of parameters in entry of the PINN) [!101](https://gitlab.com/mia_jinns/jinns/-/merge_requests/101)
+    - Fix reload weights and biases bug [!100](https://gitlab.com/mia_jinns/jinns/-/merge_requests/100)
+
+* v1.9.3:
 
     - Fix bug when passing an array of importance weights for each MC sample when computing normalization loss for PINNs.
     - Set a better default value for `print_loss_every` argument of `jinns.solve()`.
@@ -8,7 +28,7 @@
 
     Changes are from [!99](https://gitlab.com/mia_jinns/jinns/-/merge_requests/99)
 
-* v.1.9.2:
+* v1.9.2:
 
     - Allow for more complex `optax` optimizers. Add a first implementation ssBroyden and ssBFGS based on Scimba implementation [project repo](https://gitlab.com/scimba/scimba). The algorithms are described in [this article](https://arxiv.org/pdf/2405.04230). Have a look at the tutorial notebooks for usage.
 

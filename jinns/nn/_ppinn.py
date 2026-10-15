@@ -59,23 +59,27 @@ class PPINN_MLP(PINN):
         subtree is kept; 2) False, in which case the leaf or subtree is
         replaced with replace; 3) a callable Leaf -> bool, in which case this is evaluated on the leaf or mapped over the subtree, and the leaf kept or replaced as appropriate.
     eqx_network_list
-            A list of eqx.nn.MLP objects with same input
-            dimensions. They represent the parallel subnetworks of the PPIN MLP.
-            Their respective outputs are concatenated.
+        A list of eqx.nn.MLP objects with same input
+        dimensions. They represent the parallel subnetworks of the PPIN MLP.
+        Their respective outputs are concatenated.
+    hyperparams
+        A list of keys from Params.eq_params that will be considered as
+        hyperparameters for metamodeling (a `DataGeneratorParameter` instance must
+        have been given to `jinns.solve()` from which batchs of parameters will be
+        drawn - and transferred to Params.eq_params). Default is None.
     """
 
     eqx_network_list: InitVar[list[eqx.Module]] = eqx.field(kw_only=True)
-    init_params: tuple[PINN, ...] = eqx.field(
-        init=False
-    )  # overriding parent attribute type
+    init_params: tuple[PINN, ...]  # overriding parent attribute type
     static: tuple[PINN, ...] = eqx.field(
-        init=False, static=True
+        static=True
     )  # overriding parent attribute type
 
-    def __post_init__(self, eqx_network, eqx_network_list):
-        super().__post_init__(
+    def __init__(self, eqx_network_list, **PINN_kwargs):
+        super().__init__(
             eqx_network=eqx_network_list[0],  # this is not used since it is
             # overwritten just below
+            **PINN_kwargs,
         )
         params, static = eqx.partition(eqx_network_list[0], self.filter_spec)
         self.init_params, self.static = (params,), (static,)
@@ -100,6 +104,17 @@ class PPINN_MLP(PINN):
             # collocation points (eg for plotting, whithout using
             # DataGenerators)
             inputs = inputs[None]
+
+        if self.hyperparams is not None:
+            eq_params_batch = jnp.concatenate(
+                [getattr(params.eq_params, k).flatten() for k in self.hyperparams],  # pylint: disable=E1133
+                axis=0,
+            )
+            inputs = jnp.concatenate(
+                [inputs, eq_params_batch],
+                axis=0,
+            )
+
         transformed_inputs = self.input_transform(inputs, params)
 
         outs = []
@@ -149,6 +164,7 @@ class PPINN_MLP(PINN):
             | None
         ) = None,
         slice_solution: slice | None = None,
+        hyperparams: list[str] | None = None,
     ) -> tuple[Self, tuple[PINN, ...]]:
         r"""
         Utility function to create a Parrallel PINN neural network for Jinns.
@@ -194,6 +210,11 @@ class PPINN_MLP(PINN):
             useful when the PPINN MLP is also used to output equation parameters for
             example Note that it must be a slice and not an integer (a
             preprocessing of the user provided argument takes care of it).
+        hyperparams
+            A list of keys from Params.eq_params that will be considered as
+            hyperparameters for metamodeling (a `DataGeneratorParameter` instance must
+            have been given to `jinns.solve()` from which batchs of parameters will be
+            drawn - and transferred to Params.eq_params). Default is None.
 
 
         Returns
@@ -218,11 +239,11 @@ class PPINN_MLP(PINN):
                 eqx_network_list.append(MLP(key=subkey, eqx_list=eqx_list))
 
         ppinn = cls(
-            eqx_network=None,  # type: ignore
             eqx_network_list=cast(list[eqx.Module], eqx_network_list),
             slice_solution=slice_solution,  # type: ignore
             eq_type=eq_type,
             input_transform=input_transform,  # type: ignore
             output_transform=output_transform,  # type: ignore
+            hyperparams=hyperparams,
         )
         return ppinn, ppinn.init_params

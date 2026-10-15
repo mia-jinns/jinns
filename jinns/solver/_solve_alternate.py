@@ -333,7 +333,6 @@ def solve_alternate(
         # between the outer while loop and inner loops
     )
     optimization_extra = OptimizationExtraContainer(
-        curr_seq=None,
         best_iter_id=None,
         best_val_criterion=None,
         best_val_params=None,

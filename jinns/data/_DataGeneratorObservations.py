@@ -540,7 +540,7 @@ class DataGeneratorObservations(AbstractDataGenerator):
         new_key, new_indices, new_curr_idx = _reset_or_increment(
             curr_idx + obs_batch_size,
             n,
-            (key, indices, curr_idx, obs_batch_size, None),  # type: ignore
+            (key, indices, curr_idx, obs_batch_size),  # type: ignore
             # ignore since the case self.obs_batch_size is None has been
             # handled above
         )

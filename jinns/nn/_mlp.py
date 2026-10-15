@@ -59,15 +59,11 @@ class MLP(eqx.Module):
 
     # NOTE that the following should NOT be declared as static otherwise the
     # eqx.partition that we use in the PINN module will misbehave
-    layers: list[CallableMLPModule | Callable[[Array], Array]] = eqx.field(init=False)
+    layers: list[CallableMLPModule | Callable[[Array], Array]]
 
-    def __post_init__(self, key, eqx_list):
+    def __init__(self, key, eqx_list):
+        super().__init__()
         self.layers = []
-        # nb_keys_required = sum(1 if len(l) > 1 else 0 for l in eqx_list)
-        # keys = jax.random.split(key, nb_keys_required)
-        # we need a global split
-        # before the loop to maintain strict equivalency with eqx.nn.MLP
-        # for debugging purpose
         k = 0
         for l in eqx_list:
             if len(l) == 1:
@@ -119,6 +115,7 @@ class PINN_MLP(PINN):
         ) = None,
         slice_solution: slice | None = None,
         filter_spec: PyTree[Union[bool, Callable[[Any], bool]]] = None,
+        hyperparams: list[str] | None = None,
     ) -> tuple[Self, PINN]:
         r"""
         Instanciate standard PINN MLP object. The actual NN is either passed as
@@ -189,6 +186,12 @@ class PINN_MLP(PINN):
             subtree is kept; 2) False, in which case the leaf or subtree is
             replaced with replace; 3) a callable Leaf -> bool, in which case this is evaluated on the leaf or mapped over the subtree, and the leaf kept or replaced as appropriate.
 
+        hyperparams
+            A list of keys from Params.eq_params that will be considered as
+            hyperparameters for metamodeling (a `DataGeneratorParameter` instance must
+            have been given to `jinns.solve()` from which batchs of parameters will be
+            drawn - and transferred to Params.eq_params). Default is None.
+
         Returns
         -------
         mlp
@@ -214,5 +217,6 @@ class PINN_MLP(PINN):
             input_transform=input_transform,  # type: ignore
             output_transform=output_transform,  # type: ignore
             filter_spec=filter_spec,
+            hyperparams=hyperparams,
         )
         return mlp, mlp.init_params

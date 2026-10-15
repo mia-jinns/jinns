@@ -68,3 +68,61 @@ def test_jitting_reloaded_pinn_with_params(save_reload_with_params):
     v_u_reloaded_jitted = jax.jit(v_u_reloaded)
 
     v_u_reloaded_jitted(test_points, params_reloaded)
+
+
+@pytest.fixture
+def save_reload_with_params_and_hyperparams(tmpdir):
+    jax.config.update("jax_enable_x64", True)
+    key = random.PRNGKey(2)
+    eqx_list = (
+        (eqx.nn.Linear, 6, 8),  # input is 2 + 2 + 2
+        (jax.nn.tanh,),
+        (eqx.nn.Linear, 8, 1),
+    )
+    key, subkey = random.split(key)
+    kwargs_creation = {
+        "key": subkey,
+        "eqx_list": eqx_list,
+        "eq_type": "PDENonStatio",
+        "hyperparams": ["a", "b"],
+    }
+    u, params = jinns.nn.PINN_MLP.create(**kwargs_creation)
+    key, subkey = jax.random.split(key, 2)
+    test_params = jax.random.normal(subkey, shape=(10, 2))
+    params = jinns.parameters.Params(
+        nn_params=params, eq_params={"a": test_params, "b": test_params}
+    )
+    # Save
+    filename = str(tmpdir.join("test"))
+    save_pinn(filename, u, params, kwargs_creation)
+
+    # Reload
+    u_reloaded, params_reloaded = load_pinn(filename, type_="pinn_mlp")
+    return key, params, u, params_reloaded, u_reloaded
+
+
+def test_equality_save_reload_with_params_and_hyperparams(
+    save_reload_with_params_and_hyperparams,
+):
+    """
+    Test if we have correctly reloaded the same model
+    """
+
+    key, params, u, params_reloaded, u_reloaded = (
+        save_reload_with_params_and_hyperparams
+    )
+    key, subkey = jax.random.split(key, 2)
+    test_points = jax.random.normal(subkey, shape=(10, 2))
+
+    v_u = jax.vmap(
+        u, (0, jinns.parameters.Params(nn_params=None, eq_params={"a": 0, "b": 0}))
+    )
+    v_u_reloaded = jax.vmap(
+        u_reloaded,
+        (0, jinns.parameters.Params(nn_params=None, eq_params={"a": 0, "b": 0})),
+    )
+
+    assert jnp.allclose(
+        v_u(test_points, params),
+        v_u_reloaded(test_points, params_reloaded),
+    )

@@ -94,7 +94,7 @@ def train_heat_init():
 def test_heat_ssbfgs_10it(train_heat_init):
     init_params, loss, train_data, key = train_heat_init
     n_iter = 10
-    tx = jinns.optimizers.self_scaled_bfgs_or_broyden()
+    tx = jinns.optimizers.scale_by_SSBroyden_family(method="SSBFGS")
     params = init_params
 
     def callback_value_fn(params, batch, loss):
@@ -136,4 +136,4 @@ def test_heat_ssbfgs_10it(train_heat_init):
         extra_optax_args_and_kwargs=extra_optax_args_and_kwargs,
     )
 
-    assert jnp.allclose(total_loss_list[-1], 0.22506650003694814, atol=1e-6)
+    assert jnp.allclose(total_loss_list[-1], 0.22381502, atol=1e-6)

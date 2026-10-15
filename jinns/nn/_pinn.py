@@ -78,7 +78,12 @@ class PINN(AbstractPINN):
         Each of its leaves should either be 1) True, in which case the leaf or
         subtree is kept; 2) False, in which case the leaf or subtree is
         replaced with replace; 3) a callable Leaf -> bool, in which case this is evaluated on the leaf or mapped over the subtree, and the leaf kept or replaced as appropriate.
-
+    hyperparams : list[str], default=None
+            A list of keys from Params.eq_params that will be considered as
+            hyperparameters for metamodeling (a `DataGeneratorParameter` instance must
+            have been given to `jinns.solve()` from which batchs of parameters will be
+            drawn - and transferred to Params.eq_params). Mandatory for HyperPINN,
+            otherwise default is None.
 
     Raises
     ------
@@ -98,33 +103,56 @@ class PINN(AbstractPINN):
         [Float[Array, " input_dim"], Float[Array, " output_dim"], Params[Array]],
         Float[Array, " output_dim"],
     ] = eqx.field(static=True, kw_only=True, default=None)
+    hyperparams: list[str] | None = eqx.field(static=True, kw_only=True, default=None)
 
     eqx_network: InitVar[eqx.Module] = eqx.field(kw_only=True)
     filter_spec: PyTree[Union[bool, Callable[[Any], bool]]] = eqx.field(
         static=True, kw_only=True, default=eqx.is_inexact_array
     )
 
-    init_params: PINN = eqx.field(init=False)
-    static: PINN = eqx.field(init=False, static=True)
+    init_params: PINN
+    static: PINN = eqx.field(static=True)
 
-    def __post_init__(self, eqx_network):
-        if self.eq_type not in ["ODE", "PDEStatio", "PDENonStatio"]:
-            raise RuntimeError("Wrong parameter value for eq_type")
+    def __init__(
+        self,
+        eq_type,
+        eqx_network,
+        slice_solution=None,
+        input_transform=None,
+        output_transform=None,
+        filter_spec=None,
+        hyperparams=None,
+    ):
+        super().__init__()  # type: ignore because super just have an AbstractVar...
+
+        if eq_type not in ["ODE", "PDEStatio", "PDENonStatio"]:
+            raise RuntimeError(f"Wrong parameter value for eq_type, got {eq_type}.")
         # saving the static part of the model and initial parameters
+        self.eq_type = eq_type
 
-        if self.filter_spec is None:
+        if filter_spec is None:
             self.filter_spec = eqx.is_inexact_array
+        else:
+            self.filter_spec = filter_spec
 
         self.init_params, self.static = eqx.partition(eqx_network, self.filter_spec)
 
-        if self.input_transform is None:
+        if input_transform is None:
             self.input_transform = lambda _in, _params: _in
+        else:
+            self.input_transform = input_transform
 
-        if self.output_transform is None:
+        if output_transform is None:
             self.output_transform = lambda _in_pinn, _out_pinn, _params: _out_pinn
+        else:
+            self.output_transform = output_transform
 
-        if self.slice_solution is None:
+        if slice_solution is None:
             self.slice_solution = jnp.s_[:]
+        else:
+            self.slice_solution = slice_solution
+
+        self.hyperparams = hyperparams
 
         if isinstance(self.slice_solution, int):
             # rewrite it as a slice to ensure that axis does not disappear when
@@ -175,6 +203,16 @@ class PINN(AbstractPINN):
             # collocation points (eg for plotting, whithout using
             # DataGenerators)
             inputs = inputs[None]
+
+        if self.hyperparams is not None:
+            eq_params_batch = jnp.concatenate(
+                [getattr(params.eq_params, k).flatten() for k in self.hyperparams],  # pylint: disable=E1133
+                axis=0,
+            )
+            inputs = jnp.concatenate(
+                [inputs, eq_params_batch],
+                axis=0,
+            )
 
         model = eqx.combine(params.nn_params, self.static)
 

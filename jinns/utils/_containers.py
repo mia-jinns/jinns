@@ -43,7 +43,6 @@ class OptimizationContainer(eqx.Module):
 
 
 class OptimizationExtraContainer(eqx.Module):
-    curr_seq: int | None
     best_iter_id: (
         int | None
     )  # the best iteration number (that which achieves best_val_params and best_val_params)

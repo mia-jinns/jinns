@@ -60,12 +60,25 @@ class SPINN(AbstractPINN):
     )
     eqx_spinn_network: InitVar[eqx.Module] = eqx.field(kw_only=True)
 
-    init_params: SPINN = eqx.field(init=False)
-    static: SPINN = eqx.field(init=False, static=True)
+    init_params: SPINN
+    static: SPINN = eqx.field(static=True)
 
-    def __post_init__(self, eqx_spinn_network):
-        if self.filter_spec is None:
+    def __init__(self, eq_type, eqx_spinn_network, d, r, m=1, filter_spec=None):
+        super().__init__()  # type: ignore because super just have an AbstractVar...
+
+        if eq_type not in ["ODE", "PDEStatio", "PDENonStatio"]:
+            raise RuntimeError("Wrong parameter value for eq_type")
+        # saving the static part of the model and initial parameters
+        self.eq_type = eq_type
+
+        if filter_spec is None:
             self.filter_spec = eqx.is_inexact_array
+        else:
+            self.filter_spec = filter_spec
+
+        self.m = m
+        self.d = d
+        self.r = r
 
         self.init_params, self.static = eqx.partition(
             eqx_spinn_network, self.filter_spec

@@ -3,6 +3,8 @@ import abc
 from typing import Self, TYPE_CHECKING
 import equinox as eqx
 
+from jinns.data._RARParameters import RARParameters
+
 if TYPE_CHECKING:
     from jinns.utils._types import AnyBatch
 
@@ -13,6 +15,8 @@ class AbstractDataGenerator(eqx.Module):
     The way to go for correct type hints apparently
     https://github.com/patrick-kidger/equinox/issues/1002 + https://docs.kidger.site/equinox/pattern/
     """
+
+    rar_parameters = eqx.AbstractVar[RARParameters]
 
     @abc.abstractmethod
     def get_batch(self) -> tuple[Self, AnyBatch]:

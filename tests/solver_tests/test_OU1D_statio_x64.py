@@ -7,6 +7,9 @@ import equinox as eqx
 import optax
 import jinns
 
+from jinns.loss._NormalizationSamples import NormalizationSamples
+from jinns.data._RARParameters import RARParameters
+
 
 @pytest.fixture
 def train_OU_init():
@@ -28,6 +31,14 @@ def train_OU_init():
         min_pts=(xmin,),
         max_pts=(xmax,),
         method=method,
+        rar_parameters=RARParameters(
+            start_iter=0,
+            update_every=10,
+            novelty_proportion=0.5,
+            method="D",
+            k=2.0,
+            c=0.0,
+        ),
     )
 
     key, subkey = random.split(key)
@@ -80,6 +91,13 @@ def train_OU_init():
 
     OU_statio_1D_loss = OUStatio1DLoss()
 
+    norm_samples = NormalizationSamples(
+        samples=good_mc_samples,
+        weights=volume,
+        min_pts=(good_mc_params["int_xmin"],),
+        max_pts=(good_mc_params["int_xmax"],),
+    )
+
     # Catching an expected UserWarning since no border condition is given
     # for this specific PDE (Fokker-Planck).
     with pytest.warns(UserWarning):
@@ -87,12 +105,11 @@ def train_OU_init():
             u=u,
             loss_weights=loss_weights,
             dynamic_loss=OU_statio_1D_loss,
-            norm_weights=good_mc_params["norm_weights"],
-            norm_samples=good_mc_samples,
+            norm_samples=norm_samples,
             params=init_params,
         )
 
-    return init_params, loss, train_data
+    return init_params, loss, train_data, key
 
 
 @pytest.fixture
@@ -100,20 +117,25 @@ def train_OU_10it(train_OU_init):
     """
     Fixture that requests a fixture
     """
-    init_params, loss, train_data = train_OU_init
+    init_params, loss, train_data, key = train_OU_init
 
     params = init_params
 
     tx = optax.adamw(learning_rate=1e-4)
     n_iter = 10
     params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _, _, _, _ = jinns.solve(
-        init_params=params, data=train_data, optimizer=tx, loss=loss, n_iter=n_iter
+        init_params=params,
+        data=train_data,
+        optimizer=tx,
+        loss=loss,
+        n_iter=n_iter,
+        key=key,
     )
     return total_loss_list[-1]
 
 
 def test_initial_loss_OU(train_OU_init):
-    init_params, loss, train_data = train_OU_init
+    init_params, loss, train_data, _ = train_OU_init
     _, batch = train_data.get_batch()
     l_init, _ = loss.evaluate(init_params, batch)
     assert jnp.allclose(l_init, 5.4723706, atol=1e-5)
@@ -121,4 +143,4 @@ def test_initial_loss_OU(train_OU_init):
 
 def test_10it_OU(train_OU_10it):
     total_loss_val = train_OU_10it
-    assert jnp.allclose(total_loss_val, 5.42388546, atol=1e-5)
+    assert jnp.allclose(total_loss_val, 5.36114244, atol=1e-5)
