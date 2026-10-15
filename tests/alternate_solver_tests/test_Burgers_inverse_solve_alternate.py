@@ -180,7 +180,7 @@ def train_solve_alternate_ssbroyden_adam(test_init):
         eq_params={"nu": 1},
     )
     alternate_txs = jinns.parameters.Params(
-        nn_params=jinns.optimizers.self_scaled_bfgs_or_broyden(broyden=True),
+        nn_params=jinns.optimizers.scale_by_SSBroyden_family(method="SSBroyden"),
         eq_params={
             "nu": optax.adam(1e-4),
         },

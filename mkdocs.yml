@@ -89,7 +89,7 @@ nav:
       - Using validation module: 'Notebooks/Tutorials/introducing_validation_loss.ipynb'
       - Simple inverse problem: 'Notebooks/Tutorials/1D_non_stationary_Burgers_JointEstimation_Vanilla.ipynb'
       - Alternate inverse problem: 'Notebooks/Tutorials/tuto_GLV_inverse_problem.ipynb'
-      - Natural gradient descent: 'Notebooks/Tutorials/tuto_GLV_inverse_problem.ipynb'
+      - Neural Galerkin: 'Notebooks/Tutorials/NeuralGalerkin_tuto.ipynb'
     - Examples:
       - Forward problems:
         - ODE:
@@ -136,7 +136,10 @@ nav:
         - 'api/pinn/ppinn.md'
         - 'api/pinn/save_load.md'
       - Plot: 'api/plot.md'
-      - Solve: 'api/solver.md'
+      - Solve:
+        - Solve: 'api/solve/solve.md'
+        - Alternate solve: 'api/solve/solve_alternate.md'
+        - Neural Galerkin: 'api/solve/solve_neural_galerkin.md'
       - Optimizers: 
         - Optax: 'api/optimizers/optax.md'
         - Second order: 'api/optimizers/preconditionners.md'

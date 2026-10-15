@@ -1,9 +1,7 @@
 """ """
 
 from typing import Literal
-import jax.numpy as jnp
 import equinox as eqx
-from jaxtyping import Array
 
 
 class RARParameters(eqx.Module):
@@ -26,13 +24,13 @@ class RARParameters(eqx.Module):
         - either "G" for RAR-G, ie, new points replace the batch points with the lowest dynamic loss
         - either "D" for RAR-D, ie, new points replace the batch points that have not been selected when
         `resampling batch_size * (1 - novelty_proportion)` points among the batch points with weigths given
-        by the formula (2) in the article below. In this case, RARParameters must specify the keys 'k' and 'c'
+        by the formula (2) in the article above. In this case, RARParameters must specify the keys 'k' and 'c'
         with float values as defined in the formula.
     start_iter : int, default=0
         the iteration at which we start the RAR sampling scheme (we first have a "burn-in" period).
-    k : Array | None
+    k : float | None
         the float value of k, only for RAR-D. When no prior information the article recommends k=2.0
-    c : Array | None
+    c : float | None
         the float value of c, only for RAR-D. When no prior information the article recommends c=0.0
     update_params : bool, default=True
         in the case of a metamodel, when a DataGeneratorParameter is also used, if True, the batches of paramaters
@@ -43,8 +41,8 @@ class RARParameters(eqx.Module):
     novelty_proportion: float = eqx.field(static=True, kw_only=True)
     method: Literal["G", "D"] = eqx.field(static=True, kw_only=True)
     start_iter: int = eqx.field(default=0, static=True, kw_only=True)
-    k: Array | None = eqx.field(default=None, static=True, kw_only=True)
-    c: Array | None = eqx.field(default=None, static=True, kw_only=True)
+    k: float | None = eqx.field(default=None, static=True, kw_only=True)
+    c: float | None = eqx.field(default=None, static=True, kw_only=True)
     update_params: bool = eqx.field(default=True, static=True, kw_only=True)
 
     _rar_iter_from_last_sampling: int = eqx.field(init=False)
@@ -54,9 +52,6 @@ class RARParameters(eqx.Module):
             raise ValueError("k and c must be specified for RAR-D")
         if self.novelty_proportion < 0 or self.novelty_proportion > 1:
             raise ValueError("novelty_proportion must be in [0; 1]")
-        if self.k is not None and self.c is not None:
-            self.k = jnp.array(self.k)
-            self.c = jnp.array(self.c)
 
         # It is not 0 to ensure the first iteration of RAR happens just
         # after start_iter. See the _proceed_to_rar() function in _rar.py

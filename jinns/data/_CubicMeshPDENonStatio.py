@@ -237,17 +237,19 @@ class CubicMeshPDENonStatio(CubicMeshPDEStatio):
             log2_n = jnp.log2(self.ni)
             lower_pow = 2 ** jnp.floor(log2_n)
             higher_pow = 2 ** jnp.ceil(log2_n)
-            closest_power_of_two = (
-                lower_pow
-                if (self.ni - lower_pow) < (higher_pow - self.ni)
-                else higher_pow
+            closest_power_of_two = int(
+                jnp.round(
+                    lower_pow
+                    if (self.ni - lower_pow) < (higher_pow - self.ni)
+                    else higher_pow
+                )
             )
             if self.n != closest_power_of_two:
                 warnings.warn(
                     f"QuasiMonteCarlo sampling with {self.method} requires sample size to be a power fo 2."
                     f"Modfiying self.n from {self.ni} to {closest_power_of_two}.",
                 )
-            self.ni = int(closest_power_of_two)
+            self.ni = closest_power_of_two
         self.key, self.initial = self.generate_omega_data(self.key, data_size=self.ni)
 
         if self.initial_batch_size is None or self.initial_batch_size == self.ni:

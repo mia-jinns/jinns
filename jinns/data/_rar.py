@@ -195,12 +195,15 @@ def _rar_step_true(operands: RAROperands) -> RARReturns:
                 batch.param_batch_dict,
                 new_param_samples,
             )
-            new_param_n_samples = jax.tree.map(
-                lambda s, b, idx: jax.lax.dynamic_update_slice_in_dim(s, b, idx, 0),
-                param_data.param_n_samples,
-                param_batch,
-                param_data.curr_param_idx,
-            )
+            if param_data.param_batch_size is not None:
+                new_param_n_samples = jax.tree.map(
+                    lambda s, b, idx: jax.lax.dynamic_update_slice_in_dim(s, b, idx, 0),
+                    param_data.param_n_samples,
+                    param_batch,
+                    param_data.curr_param_idx,
+                )
+            else:
+                new_param_n_samples = param_batch
             param_data = eqx.tree_at(
                 lambda pt: pt.param_n_samples, param_data, new_param_n_samples
             )

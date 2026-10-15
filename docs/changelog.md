@@ -1,5 +1,10 @@
 # Changelog
 
+* v1.10.2:
+
+    - jinns now implements the Neural Galerkin approach for solving time-dependent PDEs. See [!110](https://gitlab.com/mia_jinns/jinns/-/merge_requests/110) and the new tutorial notebooks
+    - This version contains diverse minor fixes from [!107](https://gitlab.com/mia_jinns/jinns/-/merge_requests/107), [!108](https://gitlab.com/mia_jinns/jinns/-/merge_requests/108) and [!109](https://gitlab.com/mia_jinns/jinns/-/merge_requests/109). Expect a minor breaking change in existing code using ssBFGS because in a change in the default linesearch that is used.
+
 * v1.10.1:
 
     - Breaking change: fix bug where non stationary and stationary cases were badly handled in NormalizationSamples, now `NormalizationSamples.time_slices` *must* be passed for non stationary problems. This option now offers more modeling possibilities, see NormalizationSamples documentation for more details. Previous behaviour can be recovered simply by setting `time_slices=100` in non stationary problems. See [!105](https://gitlab.com/mia_jinns/jinns/-/merge_requests/105).
