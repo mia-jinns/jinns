@@ -90,6 +90,7 @@ nav:
       - Simple inverse problem: 'Notebooks/Tutorials/1D_non_stationary_Burgers_JointEstimation_Vanilla.ipynb'
       - Alternate inverse problem: 'Notebooks/Tutorials/tuto_GLV_inverse_problem.ipynb'
       - Neural Galerkin: 'Notebooks/Tutorials/NeuralGalerkin_tuto.ipynb'
+      - PIMLDay Tutorials: 'https://mia_jinns.gitlab.io/tutoriel-jinns/'
     - Examples:
       - Forward problems:
         - ODE:
