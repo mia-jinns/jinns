@@ -64,6 +64,7 @@ def solve(
     ahead_of_time: bool = True,
     extra_optax_args_and_kwargs: dict[str, Callable | GetJinnsVariableName]
     | None = None,
+    compile_only: bool = False,
     key: PRNGKeyArray | None = None,
 ) -> tuple[
     Params[Array],
@@ -181,6 +182,9 @@ def solve(
             dictionary.
 
         See the tutorial notebooks for examples of usage.
+    compile_only
+        If True, no optimization is performed, the step function is compiled and returned.
+        Default `False`.
     key
         Default `None`. A JAX random key that can be used for diverse purpose in
         the main iteration loop.
@@ -517,6 +521,10 @@ def solve(
         if ahead_of_time:
             start = time.time()
             compiled_train_fun = jax.jit(train_fun).lower(carry).compile()
+
+            if compile_only:
+                return compiled_train_fun, carry # pyright: ignore
+            
             end = time.time()
             if verbose:
                 print("\nCompilation took\n", end - start, "\n")
