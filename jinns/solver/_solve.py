@@ -523,8 +523,8 @@ def solve(
             compiled_train_fun = jax.jit(train_fun).lower(carry).compile()
 
             if compile_only:
-                return compiled_train_fun, carry # pyright: ignore
-            
+                return compiled_train_fun, carry  # pyright: ignore
+
             end = time.time()
             if verbose:
                 print("\nCompilation took\n", end - start, "\n")

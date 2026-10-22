@@ -13,7 +13,13 @@ from jinns.solver._solve_discrete_pinn import solve_discrete_pinn
 
 from jinns import optimizers as optimizers
 
-__all__ = ["nn", "solve", "solve_alternate", "solve_neural_galerkin", "solve_discrete_pinn"]
+__all__ = [
+    "nn",
+    "solve",
+    "solve_alternate",
+    "solve_neural_galerkin",
+    "solve_discrete_pinn",
+]
 
 import warnings
 
