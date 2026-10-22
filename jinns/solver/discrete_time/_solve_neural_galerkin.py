@@ -16,10 +16,6 @@ from jaxtyping import Array, PRNGKeyArray
 from jinns.data._CubicMeshPDEStatio import CubicMeshPDEStatio
 from jinns.data._rar import _trigger_rar
 from jinns.loss._LossPDE import LossPDEStatio
-from jinns.loss._DynamicLossAbstract import PDEStatio
-from jinns.loss._loss_weights import LossWeightsPDEStatio
-from jinns.parameters._derivative_keys import DerivativeKeysPDEStatio
-from jinns.solver._solve import solve
 from jinns.solver._utils import (
     _check_batch_size,
     _build_get_batch,
@@ -30,6 +26,7 @@ from jinns.utils._containers import (
     DataGeneratorContainer,
 )
 from jinns.optimizers._natural_gradient import NGDState
+from jinns.solver.discrete_time._utils import _fit_ic
 import warnings
 
 if TYPE_CHECKING:
@@ -142,52 +139,6 @@ def solve_neural_galerkin(
     ################################################
     # 1) Fit the initial condition for t0=times[0] #
     ################################################
-    def _fit_ic(
-        n_iter_ic,
-        optimizer_ic,
-        opt_state_ic,
-        data_ic,
-        param_data_ic,
-        loss,
-        init_params_ic,
-        extra_optax_args_and_kwargs_ic,
-        ahead_of_time,
-        initial_condition_fun,
-    ):
-        # The trick is to interpret the IC as a dynamic loss
-        class InitialConditionAsDynamicLoss(PDEStatio):
-            def equation(self, x, u, params):
-                return u(x, params) - initial_condition_fun(x)
-
-        ic_as_dyn_loss = InitialConditionAsDynamicLoss()
-        with warnings.catch_warnings():
-            # Here we catch the "Missing BC" warning as it is intended
-            # in the neural Galerking approach
-            warnings.simplefilter("ignore", UserWarning)
-
-            loss_ic = LossPDEStatio(
-                u=loss.u,
-                dynamic_loss=ic_as_dyn_loss,
-                loss_weights=LossWeightsPDEStatio(dyn_loss=jnp.array(1.0)),
-                derivative_keys=DerivativeKeysPDEStatio.from_str(
-                    dyn_loss="nn_params", params=init_params
-                ),
-            )
-            res = solve(
-                n_iter=n_iter_ic,
-                init_params=init_params_ic,
-                data=data_ic,
-                loss=loss_ic,
-                optimizer=optimizer_ic,
-                print_loss_every=n_iter_ic // 10,
-                opt_state=opt_state_ic,
-                param_data=param_data_ic,
-                extra_optax_args_and_kwargs=extra_optax_args_and_kwargs_ic,
-                ahead_of_time=ahead_of_time,
-                verbose=verbose,
-            )
-        return res[0]
-
     print("\n\n #-- Fitting the initial condition for t0=", times[0])
     params_t0 = _fit_ic(
         n_iter_ic,
@@ -200,6 +151,7 @@ def solve_neural_galerkin(
         extra_optax_args_and_kwargs_ic,
         ahead_of_time,
         initial_condition_fun,
+        verbose,
     )
 
     ################################

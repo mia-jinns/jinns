@@ -7,7 +7,7 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 import time
-from typing import TYPE_CHECKING, Callable, Literal
+from typing import TYPE_CHECKING, Callable, Literal, cast
 from dataclasses import asdict
 import optax
 import jax
@@ -27,15 +27,16 @@ from jinns.parameters._params import Params
 from jinns.optimizers._natural_gradient import NGDState
 from jinns.utils._DictToModuleMeta import DictToModuleMeta
 
-import warnings
-
 from jinns.utils._containers import OptimizationContainer
+from jinns.solver.discrete_time._utils import _fit_ic
+
 
 if TYPE_CHECKING:
     from jinns.loss._abstract_loss import AbstractLoss
     from jinns.data._DataGeneratorParameter import DataGeneratorParameter
     from jinns.data._AbstractDataGenerator import AbstractDataGenerator
     from jinns.solver._utils import GetJinnsVariableName
+    from jinns.utils._types import SolveCarry
 
 
 def solve_discrete_pinn(
@@ -136,51 +137,6 @@ def solve_discrete_pinn(
     ################################################
     # 1) Fit the initial condition for t0=times[0] #
     ################################################
-    def _fit_ic(
-        n_iter_ic,
-        optimizer_ic,
-        opt_state_ic,
-        data_ic,
-        param_data_ic,
-        loss,
-        init_params_ic,
-        extra_optax_args_and_kwargs_ic,
-        ahead_of_time,
-        initial_condition_fun,
-    ):
-        # The trick is to interpret the IC as a dynamic loss
-        class InitialConditionAsDynamicLoss(PDEStatio):
-            def equation(self, x, u, params):
-                return u(x, params) - initial_condition_fun(x)
-
-        ic_as_dyn_loss = InitialConditionAsDynamicLoss()
-        with warnings.catch_warnings():
-            # Here we catch the "Missing BC" warning as it is intended
-            # in the neural Galerking approach
-            warnings.simplefilter("ignore", UserWarning)
-
-            loss_ic = LossPDEStatio(
-                u=loss.u,
-                dynamic_loss=ic_as_dyn_loss,
-                loss_weights=LossWeightsPDEStatio(dyn_loss=jnp.array(1.0)),
-                derivative_keys=DerivativeKeysPDEStatio.from_str(
-                    dyn_loss="nn_params", params=init_params
-                ),
-            )
-            res = solve(
-                n_iter=n_iter_ic,
-                init_params=init_params_ic,
-                data=data_ic,
-                loss=loss_ic,
-                optimizer=optimizer_ic,
-                print_loss_every=n_iter_ic // 10,
-                opt_state=opt_state_ic,
-                param_data=param_data_ic,
-                extra_optax_args_and_kwargs=extra_optax_args_and_kwargs_ic,
-                ahead_of_time=ahead_of_time,
-                verbose=verbose,
-            )
-        return res[0]
 
     print("\n\n #-- Fitting the initial condition for t0=", times[0])
     params_t0 = _fit_ic(
@@ -194,6 +150,7 @@ def solve_discrete_pinn(
         extra_optax_args_and_kwargs_ic,
         ahead_of_time,
         initial_condition_fun,
+        verbose,
     )
 
     ################################
@@ -243,10 +200,10 @@ def solve_discrete_pinn(
         (
             (dyn_loss_rk1,),
             DerivativeKeysPDEStatio(params=params_t0_),
-            LossWeightsPDEStatio(dyn_loss=1.0),
+            LossWeightsPDEStatio(dyn_loss=jnp.array(1.0)),
         ),
     )
-    compiled_solve, carry = solve(
+    compiled_solve, carry = solve(  # pyright: ignore
         n_iter=n_iter,
         init_params=params_t0_,
         data=data,
@@ -258,6 +215,18 @@ def solve_discrete_pinn(
         verbose=False,
         compile_only=True,
     )
+    if TYPE_CHECKING:
+        carry = cast(SolveCarry, carry)
+        compiled_solve = cast(Callable[[SolveCarry], SolveCarry], compiled_solve)
+
+    n_loss_values_by_step = len(carry[6].train_loss_values)
+    # all_loss_terms_saved = jax.tree.map(
+    #     lambda _: jnp.zeros(((n_time_steps - 1) * n_loss_values_by_step),),
+    #     carry[6].stored_loss_terms
+    # )
+    all_train_loss_values_saved = jnp.zeros(
+        ((n_time_steps - 1) * n_loss_values_by_step),
+    )
 
     params_t0_fl, unravel_params = jax.flatten_util.ravel_pytree(params_t0.nn_params)
     # Only JAX arrays can be index with traced value (the result from jnp.argwhere)
@@ -267,7 +236,7 @@ def solve_discrete_pinn(
 
     # since we use an AOT compiled function, this cannot be used
     # in another JIT compiled function
-    step = 1
+    step = 1  # start at one!
     start = time.time()
     while step < n_time_steps:
         t = times[step]
@@ -287,12 +256,16 @@ def solve_discrete_pinn(
         carry = compiled_solve(carry)
 
         # TODO: JIT the steps below
+
+        # update prev_params
         new_params = carry[2].params
         new_params = eqx.tree_at(
             lambda pt: pt.eq_params.prev_params.nn_params,  # NOTE this forbids eq_params updates!
             new_params,
             new_params.nn_params,
         )
+
+        # refresh carry for next time step
         carry = eqx.tree_at(
             lambda pt: (pt[0], pt[2]),
             carry,
@@ -305,9 +278,24 @@ def solve_discrete_pinn(
                 ),
             ),
         )
-        step += 1
-        idx_traced_int64 = jnp.argwhere(t == times_saved, size=n_times_saved)[0][0]
 
+        # save the loss terms
+        idx = (step - 1) * n_loss_values_by_step
+        all_train_loss_values_saved = jax.lax.dynamic_update_slice(
+            all_train_loss_values_saved, carry[6].train_loss_values, (idx,)
+        )
+        # all_loss_terms_saved = jax.tree.map(
+        #     lambda l, a: jax.lax.dynamic_update_slice(
+        #         l,
+        #         a,
+        #         (idx,)
+        #     ),
+        #     all_loss_terms_saved,
+        #     carry[6].stored_loss_terms
+        # )
+
+        # save the parameters at requested times
+        idx_traced_int64 = jnp.argwhere(t == times_saved, size=n_times_saved)[0][0]
         nn_params_saved = jax.lax.cond(
             jnp.isin(t, times_saved),
             lambda _: nn_params_saved.at[idx_traced_int64].set(
@@ -316,6 +304,9 @@ def solve_discrete_pinn(
             lambda _: nn_params_saved,
             None,
         )
+
+        step += 1
+
     jax.block_until_ready(carry)
     end = time.time()
     if verbose:
@@ -328,4 +319,13 @@ def solve_discrete_pinn(
         for i in range(nn_params_saved.shape[0])
     )
 
-    return params_saved
+    loss = carry[1]
+    train_data = carry[4]
+
+    return (
+        loss,
+        train_data.data,
+        train_data.param_data,
+        params_saved,
+        all_train_loss_values_saved,
+    )
