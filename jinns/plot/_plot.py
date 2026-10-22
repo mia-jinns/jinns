@@ -244,6 +244,70 @@ def _plot_2D_statio(
         return values_grid
 
 
+def plot2d_slice_time_discrete(
+    fun_list,
+    xydata,
+    time_slices,
+    title="",
+    cbar_mode="each",
+    figsize=(5, 5),
+    cmap="inferno",
+    vmin=None,
+    vmax=None,
+):
+    """
+    The plot 2D function adapted to time discrete approaches: Discrete PINNs and Neural Galerkin
+
+    In such approaches, the PINN is stationary and the time dependency is modeled
+    on the parameters. Then we have one parameter object for each time slice.
+    We must have len(fun_list) == len(time_slices)
+
+    Parameters
+    ----------
+    fun_list
+        a list of stationary PINNs (with signature f: R^2 -> R) approximating the solution for each time slice
+        in `time_slices`. Hence parameters have been bound to the function, e.g.
+        `u_est_pinn_at_times = [partial(u_pinn, params=p) for p in params_saved]`
+    xydata
+        a tuple for the discretization of each 1D dimension
+    time_slices
+        the time slices :math:`t_i` at which to plot.
+    title
+        title of the plot, by default ""
+    figsize
+        size of the figure, by default (10, 10)
+    """
+    assert len(fun_list) == len(time_slices)
+
+    fig = plt.figure(figsize=figsize)
+
+    grid = ImageGrid(
+        fig,
+        111,  # similar to subplot(111)
+        nrows_ncols=(1, len(time_slices)),  # creates 1xn_slices grid of Axes
+        axes_pad=0.2,  # pad between Axes in inch.
+        share_all=True,
+        cbar_location="bottom",
+        cbar_mode=cbar_mode,
+        cbar_size="7%",
+        cbar_pad=0.4,
+    )
+    xx, yy = jnp.meshgrid(*xydata)
+
+    for i, ax in enumerate(grid):
+        t = time_slices[i]
+        v_u_tfixed = vmap(fun_list[i])
+        values = v_u_tfixed(jnp.stack([xx.flatten(), yy.flatten()], axis=1))
+        values = values.reshape(xx.shape)
+        im = ax.pcolormesh(xx, yy, values, cmap=cmap, vmin=vmin, vmax=vmax)
+        ax.set_title(f"t = {t:.2f}")
+        ax.set_xticks([])
+        ax.set_yticks([])
+        cbar = ax.cax.colorbar(im, format=lambda x, _: f"{x:.1e}")
+        cbar.ax.tick_params(labelsize=10, rotation=45)
+    fig.suptitle(f"{title}", y=1)
+
+
 def plot1d_slice(
     fun: Callable[[Float[Array, " "]], Float[Array, " "]],
     xdata: Float[Array, " nx"],
@@ -381,3 +445,51 @@ def plot1d_image(
     ax.set_title(title)
 
     return fig, ax
+
+
+def plot1d_slice_time_discrete(
+    fun_list, xdata, time_slices, title="", figsize=(5, 5), ax=None
+):
+    """
+    The plot 1D function adapted to time discrete approaches: Discrete PINNs and Neural Galerkin
+
+    In such approaches, the PINN is stationary and the time dependency is modeled
+    on the parameters. Then we have one parameter object for each time slice.
+    We must have len(fun_list) == len(time_slices)
+
+    Parameters
+    ----------
+    fun_list
+        a list of stationary PINNs (with signature f: R -> R) approximating the solution for each time slice
+        in `time_slices`. Hence parameters have been bound to the function, e.g.
+        `u_est_pinn_at_times = [partial(u_pinn, params=p) for p in params_saved]`
+    xdata
+        the discretization of space
+    time_slices
+        the time slices :math:`t_i` at which to plot.
+    title
+        title of the plot, by default ""
+    figsize
+        size of the figure, by default (10, 10)
+    ax
+        A pre-defined `matplotlib.Axes` where you want to plot.
+
+    Returns
+    -------
+    ax
+        A `matplotlib.Axes` object
+    """
+    assert len(fun_list) == len(time_slices)
+
+    if ax is None:
+        _, ax = plt.subplots(figsize=figsize)
+
+    for idx, t in enumerate(time_slices):
+        v_u_tfixed = vmap(fun_list[idx])
+        values = v_u_tfixed(xdata)
+        ax.plot(xdata, values, label=f"$t_i={t:.4f}$")
+    ax.set_xlabel("x")
+    ax.set_ylabel(r"$u(t_i, x)$")
+    ax.legend()
+    ax.set_title(title)
+    return ax
