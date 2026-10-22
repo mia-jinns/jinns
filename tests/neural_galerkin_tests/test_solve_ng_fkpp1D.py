@@ -139,7 +139,7 @@ def neural_galerkin_fkpp1d_init():
 
 
 @pytest.fixture
-def solve_neural_galerkin_FKPP1D(neural_galerkin_fkpp1d_init):
+def solve_neural_galerkin_FKPP1D_rk4(neural_galerkin_fkpp1d_init):
     """
     Do the ODE solve in NG
     """
@@ -155,7 +155,7 @@ def solve_neural_galerkin_FKPP1D(neural_galerkin_fkpp1d_init):
             1,
         ]
     )
-    loss, data, param_data, params_final, params_saved = jinns.solve_neural_galerkin(
+    loss, data, _, params_final, _ = jinns.solve_neural_galerkin(
         times=times,
         times_saved=times_saved,
         init_params=init_params_pinn_ode,
@@ -165,16 +165,60 @@ def solve_neural_galerkin_FKPP1D(neural_galerkin_fkpp1d_init):
         n_iter_ic=100,
         optimizer_ic=optax.adam(1e-3),
         print_loss_every=len(times) // 10,
+        scheme="rk4",
     )
 
     return loss, data, params_final
 
 
-def test_ouput_neural_galerkin_fkpp1d(solve_neural_galerkin_FKPP1D):
+def test_ouput_neural_galerkin_fkpp1d_rk4(solve_neural_galerkin_FKPP1D_rk4):
     """
     Test various aspect of the solve_neural_galerkin output
     """
 
-    loss, data, params_final = solve_neural_galerkin_FKPP1D
+    loss, data, params_final = solve_neural_galerkin_FKPP1D_rk4
 
     assert jnp.allclose(loss.u(data.omega[0], params_final)[0], 0.04711226)
+
+
+@pytest.fixture
+def solve_neural_galerkin_FKPP1D_rk1(neural_galerkin_fkpp1d_init):
+    """
+    Do the ODE solve in NG
+    """
+    init_params_pinn_ode, loss_pinn_ode, train_data_ode = neural_galerkin_fkpp1d_init
+    Tmax = 1
+    dt = 0.1
+    times = jnp.arange(tmin, Tmax + dt, dt)
+
+    times_saved = jnp.array(
+        [
+            0.0,
+            0.1,
+            1,
+        ]
+    )
+    loss, data, _, params_final, _ = jinns.solve_neural_galerkin(
+        times=times,
+        times_saved=times_saved,
+        init_params=init_params_pinn_ode,
+        data=train_data_ode,
+        loss=loss_pinn_ode,
+        initial_condition_fun=u0,
+        n_iter_ic=100,
+        optimizer_ic=optax.adam(1e-3),
+        print_loss_every=len(times) // 10,
+        scheme="rk1",
+    )
+
+    return loss, data, params_final
+
+
+def test_ouput_neural_galerkin_fkpp1d_rk1(solve_neural_galerkin_FKPP1D_rk1):
+    """
+    Test various aspect of the solve_neural_galerkin output
+    """
+
+    loss, data, params_final = solve_neural_galerkin_FKPP1D_rk1
+
+    assert jnp.allclose(loss.u(data.omega[0], params_final)[0], -5.57326242e87)
