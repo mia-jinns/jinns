@@ -130,7 +130,7 @@ def neural_galerkin_fkpp1d_init():
         warnings.simplefilter("ignore", UserWarning)
         loss_pinn_ode = jinns.loss.LossPDEStatio(
             u=u_pinn_ode,
-            loss_weights=jinns.loss.LossWeightsPDEStatio(dyn_loss=1),
+            loss_weights=jinns.loss.LossWeightsPDEStatio(dyn_loss=jnp.array(1)),
             dynamic_loss=fisher_dynamic_loss_ode,
             params=init_params_pinn_ode,
         )
@@ -148,11 +148,13 @@ def solve_neural_galerkin_FKPP1D(neural_galerkin_fkpp1d_init):
     dt = 0.1
     times = jnp.arange(tmin, Tmax + dt, dt)
 
-    times_saved = [
-        0.0,
-        0.1,
-        1,
-    ]
+    times_saved = jnp.array(
+        [
+            0.0,
+            0.1,
+            1,
+        ]
+    )
     loss, data, param_data, params_final, params_saved = jinns.solve_neural_galerkin(
         times=times,
         times_saved=times_saved,
@@ -165,7 +167,7 @@ def solve_neural_galerkin_FKPP1D(neural_galerkin_fkpp1d_init):
         print_loss_every=len(times) // 10,
     )
 
-    return times_saved, loss, data, param_data, params_final, params_saved
+    return loss, data, params_final
 
 
 def test_ouput_neural_galerkin_fkpp1d(solve_neural_galerkin_FKPP1D):
@@ -173,12 +175,6 @@ def test_ouput_neural_galerkin_fkpp1d(solve_neural_galerkin_FKPP1D):
     Test various aspect of the solve_neural_galerkin output
     """
 
-    times_saved, loss, data, param_data, params_final, params_saved = (
-        solve_neural_galerkin_FKPP1D
-    )
+    loss, data, params_final = solve_neural_galerkin_FKPP1D
 
-    assert len(times_saved) == len(params_saved)
-    assert all([isinstance(p, jinns.parameters.Params) for p in params_saved])
-    assert isinstance(params_final, jinns.parameters.Params)
-
-    # TODO: assert pinn or loss value ?
+    assert jnp.allclose(loss.u(data.omega[0], params_final)[0], 0.04711226)
