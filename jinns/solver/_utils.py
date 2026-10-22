@@ -629,19 +629,47 @@ def _check_extra_optax_args_and_kwargs(
 
 
 @jit(static_argnames=["prefix"])  # new in jax 0.8.1
-def _print_fn(i: int, loss_val: Float, print_loss_every: int, prefix: str = ""):
+def _print_fn(
+    i: int,
+    loss_val: Float,
+    print_loss_every: int,
+    prefix: str = "",
+    time_discrete: bool = False,
+    t: float | None = None,
+    tmax: float | None = None,
+):
+    """
+    if time_discrete is True then, t and tmax must be passed
+    """
     # note that if the following is not jitted in the main for loop, it is
     # super slow
-    _ = jax.lax.cond(
-        i % print_loss_every == 0,
-        lambda _: jax.debug.print(
-            prefix + "Iteration {i}: loss value = {loss_val}",
-            i=i,
-            loss_val=loss_val,
-        ),
-        lambda _: None,
-        (None,),
-    )
+    if not time_discrete:
+        _ = jax.lax.cond(
+            i % print_loss_every == 0,
+            lambda _: jax.debug.print(
+                prefix + "Iteration {i}: loss value = {loss_val}",
+                i=i,
+                loss_val=loss_val,
+            ),
+            lambda _: None,
+            (None,),
+        )
+    if time_discrete:
+        assert t is not None
+        assert tmax is not None
+        if loss_val is None:
+            loss_val = "/"
+        _ = jax.lax.cond(
+            i % print_loss_every == 0,
+            lambda _: jax.debug.print(
+                "[Train Neural Galerkin] Time step t={t}/{tmax}, loss_value={val}",
+                t=t,
+                tmax=tmax,
+                val=loss_val,
+            ),
+            lambda _: None,
+            (None,),
+        )
 
 
 def _store_loss_and_params(

@@ -1,5 +1,6 @@
 import warnings
 
+import jax
 import jax.numpy as jnp
 
 from jinns.loss import PDEStatio
@@ -55,3 +56,45 @@ def _fit_ic(
             verbose=verbose,
         )
     return res[0]
+
+
+@jax.jit
+def _save_nn_params(t, times_saved, params, nn_params_saved):
+    idx_traced_int64 = jnp.argwhere(t == times_saved, size=len(times_saved))[0][0]
+    nn_params_saved = jax.lax.cond(
+        jnp.isin(t, times_saved),
+        lambda _: nn_params_saved.at[idx_traced_int64].set(
+            jax.flatten_util.ravel_pytree(params.nn_params)[0]
+        ),
+        lambda _: nn_params_saved,
+        None,
+    )
+    return nn_params_saved
+
+
+@jax.jit(static_argnames=["prefix"])  # new in jax 0.8.1
+def _print_fn_time_discrete(
+    i: int,
+    loss_val: str | float | None,
+    print_loss_every: int,
+    prefix: str = "",
+    t: float | None = None,
+    tmax: float | None = None,
+):
+    """ """
+    assert t is not None
+    assert tmax is not None
+    if loss_val is None:
+        loss_val = "/"
+    _ = jax.lax.cond(
+        i % print_loss_every == 0,
+        lambda _: jax.debug.print(
+            "[{prefix}] Time step t={t}/{tmax}, loss_value={val}",
+            prefix=prefix,
+            t=t,
+            tmax=tmax,
+            val=loss_val,
+        ),
+        lambda _: None,
+        (None,),
+    )

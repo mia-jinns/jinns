@@ -26,7 +26,11 @@ from jinns.utils._containers import (
     DataGeneratorContainer,
 )
 from jinns.optimizers._natural_gradient import NGDState
-from jinns.solver.discrete_time._utils import _fit_ic
+from jinns.solver.discrete_time._utils import (
+    _fit_ic,
+    _save_nn_params,
+    _print_fn_time_discrete,
+)
 import warnings
 
 if TYPE_CHECKING:
@@ -165,15 +169,13 @@ def solve_neural_galerkin(
         (i, loss, params, train_data, nn_params_saved, key) = carry
 
         if verbose:
-            _ = jax.lax.cond(
-                i % print_loss_every == 0,
-                lambda _: jax.debug.print(
-                    "[Train Neural Galerkin] Time step t={t}/{tmax}",
-                    t=jnp.round(t, 2),
-                    tmax=times[-1],
-                ),
-                lambda _: None,
-                (None,),
+            _print_fn_time_discrete(
+                i,
+                None,
+                print_loss_every,
+                prefix="[Train Neural Galerkin] ",
+                t=jnp.round(t, 2),
+                tmax=times[-1],
             )
 
         batch, data, param_data, _ = get_batch(
@@ -200,20 +202,7 @@ def solve_neural_galerkin(
         elif scheme.lower() in ["explicit-euler", "rk1", "rk-1"]:
             params = _rk1_step(batch=batch, loss=loss, params=params, dt=dt)
 
-        idx_traced_int64 = jnp.argwhere(t == times_saved, size=n_times_saved)[0][0]
-
-        nn_params_saved = jax.lax.cond(
-            jnp.isin(t, times_saved),
-            lambda _: nn_params_saved.at[idx_traced_int64].set(
-                jnp.concatenate(
-                    jax.tree.map(
-                        lambda pt: pt.flatten(), jax.tree.leaves(params.nn_params)
-                    )
-                )
-            ),
-            lambda _: nn_params_saved,
-            None,
-        )
+        nn_params_saved = _save_nn_params(t, times_saved, params, nn_params_saved)
 
         return (
             i + 1,

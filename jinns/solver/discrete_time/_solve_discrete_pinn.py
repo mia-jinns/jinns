@@ -28,7 +28,11 @@ from jinns.optimizers._natural_gradient import NGDState
 from jinns.utils._DictToModuleMeta import DictToModuleMeta
 
 from jinns.utils._containers import OptimizationContainer
-from jinns.solver.discrete_time._utils import _fit_ic
+from jinns.solver.discrete_time._utils import (
+    _fit_ic,
+    _save_nn_params,
+    _print_fn_time_discrete,
+)
 
 
 if TYPE_CHECKING:
@@ -220,10 +224,6 @@ def solve_discrete_pinn(
         compiled_solve = cast(Callable[[SolveCarry], SolveCarry], compiled_solve)
 
     n_loss_values_by_step = len(carry[6].train_loss_values)
-    # all_loss_terms_saved = jax.tree.map(
-    #     lambda _: jnp.zeros(((n_time_steps - 1) * n_loss_values_by_step),),
-    #     carry[6].stored_loss_terms
-    # )
     all_train_loss_values_saved = jnp.zeros(
         ((n_time_steps - 1) * n_loss_values_by_step),
     )
@@ -241,69 +241,27 @@ def solve_discrete_pinn(
     while step < n_time_steps:
         t = times[step]
         if verbose:
-            _ = jax.lax.cond(
-                step % print_loss_every == 0,
-                lambda _: jax.debug.print(
-                    "[Train Discrete PINN] Time step t={t}/{tmax}, loss value={val}",
-                    t=jnp.round(t, 2),
-                    tmax=times[-1],
-                    val=carry[6].train_loss_values[-1],
-                ),
-                lambda _: None,
-                (None,),
+            _print_fn_time_discrete(
+                step,
+                carry[6].train_loss_values[-1],
+                print_loss_every,
+                prefix="[Train Discrete PINN] ",
+                t=jnp.round(t, 2),
+                tmax=times[-1],
             )
 
         carry = compiled_solve(carry)
 
-        # TODO: JIT the steps below
-
-        # update prev_params
-        new_params = carry[2].params
-        new_params = eqx.tree_at(
-            lambda pt: pt.eq_params.prev_params.nn_params,  # NOTE this forbids eq_params updates!
-            new_params,
-            new_params.nn_params,
-        )
-
-        # refresh carry for next time step
-        carry = eqx.tree_at(
-            lambda pt: (pt[0], pt[2]),
-            carry,
-            (
-                0,  # this needs to be reset
-                OptimizationContainer(
-                    params=new_params,
-                    last_non_nan_params=carry[2].last_non_nan_params,
-                    opt_state=carry[2].opt_state,
-                ),
-            ),
-        )
+        carry, new_params = update_carry_and_params(carry)
 
         # save the loss terms
         idx = (step - 1) * n_loss_values_by_step
         all_train_loss_values_saved = jax.lax.dynamic_update_slice(
             all_train_loss_values_saved, carry[6].train_loss_values, (idx,)
         )
-        # all_loss_terms_saved = jax.tree.map(
-        #     lambda l, a: jax.lax.dynamic_update_slice(
-        #         l,
-        #         a,
-        #         (idx,)
-        #     ),
-        #     all_loss_terms_saved,
-        #     carry[6].stored_loss_terms
-        # )
 
         # save the parameters at requested times
-        idx_traced_int64 = jnp.argwhere(t == times_saved, size=n_times_saved)[0][0]
-        nn_params_saved = jax.lax.cond(
-            jnp.isin(t, times_saved),
-            lambda _: nn_params_saved.at[idx_traced_int64].set(
-                jax.flatten_util.ravel_pytree(new_params.nn_params)[0]
-            ),
-            lambda _: nn_params_saved,
-            None,
-        )
+        nn_params_saved = _save_nn_params(t, times_saved, new_params, nn_params_saved)
 
         step += 1
 
@@ -329,3 +287,29 @@ def solve_discrete_pinn(
         params_saved,
         all_train_loss_values_saved,
     )
+
+
+@jax.jit
+def update_carry_and_params(carry):
+    # update prev_params
+    new_params = carry[2].params
+    new_params = eqx.tree_at(
+        lambda pt: pt.eq_params.prev_params.nn_params,  # NOTE this forbids eq_params updates!
+        new_params,
+        new_params.nn_params,
+    )
+
+    # refresh carry for next time step
+    carry = eqx.tree_at(
+        lambda pt: (pt[0], pt[2]),
+        carry,
+        (
+            0,  # this needs to be reset
+            OptimizationContainer(
+                params=new_params,
+                last_non_nan_params=carry[2].last_non_nan_params,
+                opt_state=carry[2].opt_state,
+            ),
+        ),
+    )
+    return carry, new_params
