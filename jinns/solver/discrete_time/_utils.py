@@ -89,7 +89,7 @@ def _print_fn_time_discrete(
     _ = jax.lax.cond(
         i % print_loss_every == 0,
         lambda _: jax.debug.print(
-            "[{prefix}] Time step t={t}/{tmax}, loss_value={val}",
+            "{prefix} Time step t={t}/{tmax}, loss_value={val}",
             prefix=prefix,
             t=t,
             tmax=tmax,
