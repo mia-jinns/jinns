@@ -58,8 +58,8 @@ def test_euclidean_gradients_equality():
     ni = n
     nb = n
     domain_batch_size = n
-    initial_batch_size = domain_batch_size
-    border_batch_size = domain_batch_size // 4
+    initial_batch_size = domain_batch_size - 1
+    border_batch_size = domain_batch_size // 4 - 4
     dim = 2
     xmin = -1
     xmax = 1
@@ -183,7 +183,7 @@ def test_euclidean_gradients_equality():
     )
 
     euclidean_grad_pytree = jax.tree.map(
-        lambda M, R: jnp.einsum("ijk,ij->k", M, R), Ms, Rs
+        lambda M, R: jnp.einsum("ij,ij->j", M, R), Ms, Rs
     )
     # <=>
     # euclidean_grad_array = jnp.sum(  # NOTE sum because averageing is thanks to reweighting
