@@ -39,7 +39,7 @@ def _reweight_pytree(pt: Component, lw: Component) -> Component:
     )
 
 
-def _post_process_pytree_of_grad(
+def ravel_pytree_of_grad(
     y: Component, param_type: Literal["nn_params", "eq_params"] = "nn_params"
 ) -> Component:  # [Float[Array, "n n_equations n_parameters"], ...]
     """Helper function for NGD: reshape neural network weights.
@@ -95,7 +95,7 @@ def _post_process_pytree_of_grad(
     )
 
 
-def params_array_to_pytree(
+def unravel_array_to_pytree(
     nn_params_array: Float[Array, " n_parameters"],
     params: Params,
     eq_params_array=None,
@@ -189,23 +189,9 @@ def _get_sqrt_weights_per_sample(
         return weights_per_sample_no_avg
 
 
-def assemble_ngd_gram_matrix_and_euclidean_gradient(
-    r: Component,
-    g: Component,
-    sqrt_weights_per_sample: Component,
-    with_eq_params_update=False,
-) -> tuple[
-    Float[Array, "n_parameters n_parameters"],
-    Float[Array, " n_parameters"],
-    Float[Array, " n_eq_parameters"] | None,
-]:
-    """Compute the euclidean gradient of the loss wrt nn_params and the preconditionning matrix
-
-    Returns
-    -------
-    tuple[Float[Array, "n_parameters n_parameters"], Float[Array, " n_parameters"]]
-        tuple(G, eucliden_grad)
-    """
+def weighted_jac_and_residuals(
+    r, g, sqrt_weights_per_sample, with_eq_params_update=False
+):
     # --
     # Compute weights (sqrt{\lambda_{term} / n_{term}}) in front of each sample of each `term`
     # Store these as a PyTree with the same tree structure as r and g.
@@ -218,10 +204,17 @@ def assemble_ngd_gram_matrix_and_euclidean_gradient(
     # ---
     # Flatten the pytree of params gradient as a tuple of (n, n_equations, p)
     # arrays
-    Ms = _post_process_pytree_of_grad(reweighted_g, "nn_params")
-
+    Ms = ravel_pytree_of_grad(reweighted_g, "nn_params")
     Rs = reweighted_r
 
+    Ms_eq_params = None
+    if with_eq_params_update:
+        Ms_eq_params = ravel_pytree_of_grad(reweighted_g, "eq_params")
+
+    return Ms, Rs, Ms_eq_params
+
+
+def get_euclidean_grads(Ms, Rs, Ms_eq_params=None, with_eq_params_update=False):
     # --
     # Form the complete euclidean gradient
 
@@ -232,7 +225,7 @@ def assemble_ngd_gram_matrix_and_euclidean_gradient(
     # Equality can be matched by changing the jinns reduction function internally.
     # See tests/optimizer_tests/test_euclidean_gradient_equality.py
 
-    euclidean_grad_pytree = jax.tree.map(
+    euclidean_grad_pytree_nn_params = jax.tree.map(
         lambda M, R: jnp.einsum("ijk,ij->k", M, R), Ms, Rs
     )
     # which is equivalent to
@@ -241,31 +234,20 @@ def assemble_ngd_gram_matrix_and_euclidean_gradient(
     #    axis=0,
     # ).squeeze()  # shape (n_params,)
     # # NOTE jnp.sum because averaging is done via the (1 / sqrt(n)) reweighting above
-    euclidean_grad_array: Array = jax.tree.reduce(
-        function=jnp.add, tree=euclidean_grad_pytree
+    euclidean_grad_array_nn_params: Array = jax.tree.reduce(
+        function=jnp.add, tree=euclidean_grad_pytree_nn_params
     )
 
     # --
-    # Then assemble the Gram Matrix
-    #   1. Do the mean over the `n` collocation points -> get a `(n_equation, p, p)` array.
-    #      NOTE: jnp.einsum instead of a mean here because averaging is in reweighting above.
-    #   2. Then, do the sum over `n_equation` (axis=0)
-    gram_mat_pytree = jax.tree.map(
-        f=lambda M: jnp.einsum("ijk,ijl->kl", M, M),
-        # <=> lambda M: (M.transpose((1, 2, 0)) @ M.transpose((1, 0, 2))).sum(axis=0),
-        tree=Ms,
-    )
-
-    gram_mat: Array = jax.tree.reduce(function=jnp.add, tree=gram_mat_pytree)
-
-    if not with_eq_params_update:
-        euclidean_grad_array_eq_params = None
-    else:
-        # --
-        # If we want to update eq_params (inverse problem), this is done using
-        # the euclidean gradients wrt eq_params. We can form it from M and R the same way as
-        # for nn_params.
-        Ms_eq_params = _post_process_pytree_of_grad(reweighted_g, "eq_params")
+    # Form eq_params euclidean gradient
+    # (if requested, usually for inverse pb)
+    euclidean_grad_array_eq_params = None
+    if with_eq_params_update:
+        if Ms_eq_params is None:
+            raise ValueError(
+                "Gradient wrt to `eq_params` requested but necessary"
+                "quantity `Ms_eq_params` not provided."
+            )
         euclidean_grad_pytree_eq_params = jax.tree.map(
             lambda M, R: jnp.einsum("ijk,ij->k", M, R), Ms_eq_params, Rs
         )
@@ -273,4 +255,25 @@ def assemble_ngd_gram_matrix_and_euclidean_gradient(
             jnp.add, euclidean_grad_pytree_eq_params
         )
 
-    return gram_mat, euclidean_grad_array, euclidean_grad_array_eq_params
+    return euclidean_grad_array_nn_params, euclidean_grad_array_eq_params
+
+
+def form_jacobian_nn_params(Ms_nn):
+    wJ = Ms_nn.reshape((-1, Ms_nn.shape[-1]))
+    return wJ
+
+
+def full_gramian_from_jacobian(Ms_nn) -> Float[Array, "n_params n_params"]:
+    # --
+    # Assemble the Gram Matrix
+    #   1. Do the mean over the `n` collocation points -> get a `(n_equation, p, p)` array.
+    #      NOTE: jnp.einsum instead of a mean here because averaging is in reweighting above.
+    #   2. Then, do the sum over `n_equation` (axis=0)
+    gram_mat_pytree = jax.tree.map(
+        f=lambda M: jnp.einsum("ijk,ijl->kl", M, M),
+        # <=> lambda M: (M.transpose((1, 2, 0)) @ M.transpose((1, 0, 2))).sum(axis=0),
+        tree=Ms_nn,
+    )
+
+    gram_mat: Array = jax.tree.reduce(function=jnp.add, tree=gram_mat_pytree)
+    return gram_mat

@@ -16,7 +16,7 @@ import jax.numpy as jnp
 import equinox as eqx
 
 from jinns.loss._loss_components import PDENonStatioComponents
-from jinns.optimizers._utils_ngd import _post_process_pytree_of_grad
+from jinns.optimizers._utils_ngd import ravel_pytree_of_grad
 
 
 class LossPDENonStatio_(jinns.loss.LossPDENonStatio):
@@ -174,7 +174,7 @@ def test_euclidean_gradients_equality():
     )
 
     # Flatten the pytree of params gradient as a big (n, n_equations, p) array
-    Ms = _post_process_pytree_of_grad(g)
+    Ms = ravel_pytree_of_grad(g)
 
     # Same for the loss values (residuals) as a `(n, n_equations)` matrix
     Rs = r

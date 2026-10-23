@@ -7,11 +7,15 @@ import jinns
 import jax
 import jax.numpy as jnp
 
-from jinns.optimizers._utils_ngd import Component, _reweight_pytree
 from jinns.optimizers._utils_ngd import (
-    assemble_ngd_gram_matrix_and_euclidean_gradient,
-    params_array_to_pytree,
+    Component,
+    _reweight_pytree,
+    unravel_array_to_pytree,
+    weighted_jac_and_residuals,
+    full_gramian_from_jacobian,
+    get_euclidean_grads,
 )
+from jaxtyping import Float, Array
 
 
 class NGDState(eqx.Module):
@@ -19,9 +23,20 @@ class NGDState(eqx.Module):
 
     Useful internally: it tells `jinns` when to trigger NGD. All custom NGD optimizer state
     should inherit this.
+
+    Parameters
+    ----------
+
+    with_eq_params_update: bool, default = True
+        A boolean specifying if the updates for `params.eq_params` should be applied or not.
+        If True, we are in inverse problem mode and euclidean gradient for eq_params are passed
+        to the optimizer. If False, we are in forward problem mode and they are set to zero.
+        This is useful in `solve_alternate`, as users may want to perform NGD on nn_params
+        while leaving the eq_params untouched during a few steps.
     """
 
     tx_state: optax.OptState  # optimizer state
+    with_eq_params_update: bool = eqx.field(static=True, default=False)
 
 
 class VanillaNGDState(NGDState):
@@ -35,17 +50,27 @@ class VanillaNGDState(NGDState):
     ridge_reg: float, default = 1.0
         The ridge regularization coefficient used to improved the conditioning
         of the Gram matrix that is inverted in the NGD procedure
-    with_eq_params_update: bool, default = True
-        A boolean specifying if the updates for `params.eq_params` should be applied or not.
-        If True, we are in inverse problem mode and euclidean gradient for eq_params are passed
-        to the optimizer. If False, we are in forward problem mode and they are set to zero.
-        This is useful in `solve_alternate`, as users may want to perform NGD on nn_params
-        while leaving the eq_params untouched during a few steps.
     """
 
     sgd_learning_rate: float = 1.0
     ridge_reg: float = 1e-5  # small ridge regularization on diag(G) when inverting
-    with_eq_params_update: bool = eqx.field(static=True, default=False)
+
+
+class MatrixFreeNGDState(NGDState):
+    """State for vanilla Natural Gradient Descent with ridge regularization.
+
+    Parameters
+    ----------
+    sgd_learning_rate: float, default = 1.0
+        The learning rate for the standard gradient descent algorithm run
+        before the linesearch step
+    ridge_reg: float, default = 1.0
+        The ridge regularization coefficient used to improved the conditioning
+        of the Gram matrix that is inverted in the NGD procedure
+    """
+
+    sgd_learning_rate: float = 1.0
+    ridge_reg: float = 1e-5  # small ridge regularization on diag(G) when inverting
 
 
 def vanilla_ngd(
@@ -55,6 +80,7 @@ def vanilla_ngd(
     linesearch: optax.GradientTransformationExtraArgs = optax.scale_by_backtracking_linesearch(
         max_backtracking_steps=15, verbose=True
     ),
+    solver: str = "vanilla",
     eq_params_tx: dict | None = None,
 ) -> optax.GradientTransformationExtraArgs:
     r"""jinns implementation of vanilla Natural Gradient Descent (NGD).
@@ -80,6 +106,8 @@ def vanilla_ngd(
         a.k.a. stepsize, to satisfy some criterion such as a sufficient decrease of the objective
         by additional calls to the objective
         by default optax.scale_by_backtracking_linesearch(max_backtracking_steps=15, verbose=True)
+    solver:
+        which method solver to invert the system. From the full Gram matrix (default) or matrix-free method.
     eq_params_tx
         optional dictionnary of optax optimizers for each eq_params, by default None which means eq_params are not updated (forward problem)
 
@@ -152,43 +180,31 @@ def vanilla_ngd(
         loss_value,
         **_,
     ) -> tuple[optax.Updates, VanillaNGDState]:
-        # -- Compute the necessary quantities from r, g
-        r, g, sqrt_weights_per_sample = r_g_sw
-        gram_mat, euclidean_grad_array_nn, euclidean_grad_array_eq = (
-            assemble_ngd_gram_matrix_and_euclidean_gradient(
-                r=r,
-                g=g,
-                sqrt_weights_per_sample=sqrt_weights_per_sample,
-                with_eq_params_update=ngd_state.with_eq_params_update,
-            )
-        )
-
-        # --
-        # Solve the linear system (G + reg * I) @ natural_grad = eucl_grad to get
-        # the nn_params natural gradient.
-        reg: float = ngd_state.ridge_reg
-        n_param = gram_mat.shape[0]
-        natural_grad_array_nn = jax.scipy.linalg.solve(
-            gram_mat + reg * jnp.eye(n_param), euclidean_grad_array_nn, assume_a="sym"
-        )
-
         # --
         # Final step : restructure the natural gradient as a Params PyTree
         # NOTE: if in inverse problem mode, the leaf at eq_params is filled with standard euclidean
         # gradients, and zeros if in forward problem mode.
-
-        ngd_pytree = params_array_to_pytree(
+        jax.debug.print(
+            "#####################\n ####### EQ PARAMS {a}",
+            a=ngd_state.with_eq_params_update,
+        )
+        ngd_solver = NGD_SOLVERS[solver]()
+        natural_grad_array_nn, euclidean_grad_array_nn, euclidean_grad_array_eq = (
+            ngd_solver.compute_ng(r_g_sw=r_g_sw, ngd_state=ngd_state)
+        )
+        ngd_pytree = unravel_array_to_pytree(
             natural_grad_array_nn, params, euclidean_grad_array_eq
         )
 
         # ---
         # In case of linesearch, we need euclidean grad + value_fn
-        euclidean_grads = params_array_to_pytree(
+        sqrt_weights_per_sample = r_g_sw[2]
+        euclidean_grads = unravel_array_to_pytree(
             euclidean_grad_array_nn, params, euclidean_grad_array_eq
         )
 
         def ngd_value_fn(params):
-            """ """
+            """"""
             # Not using loss.evaluate here cause of the mean(sum()) vs sum(mean)
             # remark. This fn computes the loss we are truly minimizing with NGD.
             new_r = loss.evaluate_per_sample(
@@ -263,3 +279,100 @@ def vanilla_ngd(
         init,  # type: ignore
         update,  # type: ignore
     )
+
+
+def compute_ng_full_gramian(
+    r_g_sw, ngd_state, with_eq_params_update
+) -> tuple[
+    Float[Array, " n_params"],
+    Float[Array, " n_params"],
+    Float[Array, " n_params"] | None,
+]:
+    r, g, sqrt_weights_per_sample = r_g_sw
+
+    # -- Compute the necessary quantities from r, g
+    Ms, Rs, Ms_eq = weighted_jac_and_residuals(
+        r, g, sqrt_weights_per_sample, with_eq_params_update
+    )
+
+    # -- Build the euclidean grads
+    euclidean_grad_array_nn_params, euclidean_grad_array_eq_params = (
+        get_euclidean_grads(Ms, Rs, Ms_eq, with_eq_params_update)
+    )
+
+    # -- Build the gram matrix
+    gram_mat = full_gramian_from_jacobian(Ms)
+
+    # --
+    # Solve the linear system (G + reg * I) @ natural_grad = eucl_grad to get
+    # the nn_params natural gradient.
+    reg: float = ngd_state.ridge_reg
+    n_param = gram_mat.shape[0]
+    natural_grad_array_nn = jax.scipy.linalg.solve(
+        gram_mat + reg * jnp.eye(n_param),
+        euclidean_grad_array_nn_params,
+        assume_a="sym",
+    )
+    return (
+        natural_grad_array_nn,
+        euclidean_grad_array_nn_params,
+        euclidean_grad_array_eq_params,
+    )
+
+
+def compute_ng_matrix_free(
+    r_g_sw: tuple[Component, Component, Component], ngd_state, with_eq_params_update
+) -> tuple[
+    Float[Array, " n_params"],
+    Float[Array, " n_params"],
+    Float[Array, " n_params"] | None,
+]:
+    # TODO
+    raise NotImplementedError
+    (
+        natural_grad_array_nn,
+        euclidean_grad_array_nn_params,
+        euclidean_grad_array_eq_params,
+    ) = None, None, None
+    return (
+        natural_grad_array_nn,
+        euclidean_grad_array_nn_params,
+        euclidean_grad_array_eq_params,
+    )
+
+
+class AbstractNGDSolver:
+    def compute_ng(
+        self, r_g_sw: tuple[Component, Component, Component], ngd_state: VanillaNGDState
+    ) -> tuple[
+        Float[Array, " n_params"],
+        Float[Array, " n_params"],
+        Float[Array, " n_params"] | None,
+    ]:
+        """ """
+        raise NotImplementedError
+        pass
+
+
+class VanillaNGDSolver(AbstractNGDSolver):
+    def compute_ng(
+        self, r_g_sw: tuple[Component, Component, Component], ngd_state: VanillaNGDState
+    ):
+        return compute_ng_full_gramian(
+            r_g_sw, ngd_state, ngd_state.with_eq_params_update
+        )
+
+
+class MatrixFreeNGDSolver(AbstractNGDSolver):
+    def compute_ng(
+        self, r_g_sw: tuple[Component, Component, Component], ngd_state: VanillaNGDState
+    ):
+        return compute_ng_matrix_free(
+            r_g_sw, ngd_state, ngd_state.with_eq_params_update
+        )
+
+
+NGD_SOLVERS = {
+    "vanilla": VanillaNGDSolver,
+    "matrix-free": MatrixFreeNGDSolver,
+}
