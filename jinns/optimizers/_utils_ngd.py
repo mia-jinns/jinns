@@ -74,22 +74,32 @@ def ravel_pytree_of_grad(
         is_leaf=lambda x: isinstance(x, Params),
     )
 
+    # TODO: think of a better way to perform this sequence of operations in JAX
+    # POssible to use ravel_pytree on a correctly filtered pytree ?
+    # l = jax.tree.map(
+    #     lambda pt: jax.flatten_util.ravel_pytree(
+    #         eqx.filter(getattr(pt, param_type), eqx.is_inexact_array)
+    #     ),
+    #     y,
+    #     is_leaf=lambda x: isinstance(x, Params),
+    # )
+
     # Then, flatten each layer of trainable parameters into shape
-    # -> (nb, n_equation, *)
+    # -> (nb x n_equation, *)
     # where
     #  - `n_equation` is the number of  equations for vector valued system of equations.
     #  - `nb` is the number of point in the (mini-)batch for each loss term.
     #  - `*` means the number of free parameters of the layer.
     l = jax.tree.map(
-        lambda leaf: [a.reshape((a.shape[0], a.shape[1], -1)) for a in leaf],
+        lambda leaf: [a.reshape((a.shape[0] * a.shape[1], -1)) for a in leaf],
         l,
         is_leaf=lambda x: isinstance(x, list),
     )
 
-    # Then, concatenate all layers into a shape (nb, n_equation, p) where p is the total
+    # Then, concatenate all layers into a shape (nb x n_equation, p) where p is the total
     # number of free parameters for ALL layers.
     return jax.tree.map(
-        lambda leaf: jnp.concatenate(leaf, axis=2),
+        lambda leaf: jnp.concatenate(leaf, axis=1),
         l,
         is_leaf=lambda x: isinstance(x, list),
     )
@@ -226,7 +236,7 @@ def get_euclidean_grads(Ms, Rs, Ms_eq_params=None, with_eq_params_update=False):
     # See tests/optimizer_tests/test_euclidean_gradient_equality.py
 
     euclidean_grad_pytree_nn_params = jax.tree.map(
-        lambda M, R: jnp.einsum("ijk,ij->k", M, R), Ms, Rs
+        lambda M, R: jnp.einsum("ij,ij->j", M, R), Ms, Rs
     )
     # which is equivalent to
     # >>> euclidean_grad_array = jnp.sum(
@@ -249,7 +259,7 @@ def get_euclidean_grads(Ms, Rs, Ms_eq_params=None, with_eq_params_update=False):
                 "quantity `Ms_eq_params` not provided."
             )
         euclidean_grad_pytree_eq_params = jax.tree.map(
-            lambda M, R: jnp.einsum("ijk,ij->k", M, R), Ms_eq_params, Rs
+            lambda M, R: jnp.einsum("ij,ij->j", M, R), Ms_eq_params, Rs
         )
         euclidean_grad_array_eq_params = jax.tree.reduce(
             jnp.add, euclidean_grad_pytree_eq_params
@@ -270,8 +280,8 @@ def full_gramian_from_jacobian(Ms_nn) -> Float[Array, "n_params n_params"]:
     #      NOTE: jnp.einsum instead of a mean here because averaging is in reweighting above.
     #   2. Then, do the sum over `n_equation` (axis=0)
     gram_mat_pytree = jax.tree.map(
-        f=lambda M: jnp.einsum("ijk,ijl->kl", M, M),
-        # <=> lambda M: (M.transpose((1, 2, 0)) @ M.transpose((1, 0, 2))).sum(axis=0),
+        f=lambda M: jnp.einsum("ij,ik->jk", M, M),
+        # <=> lambda M: (M.transpose((1, 0)) @ M.transpose((0, 1))).sum(axis=0),
         tree=Ms_nn,
     )
 

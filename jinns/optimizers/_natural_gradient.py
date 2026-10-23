@@ -184,10 +184,6 @@ def vanilla_ngd(
         # Final step : restructure the natural gradient as a Params PyTree
         # NOTE: if in inverse problem mode, the leaf at eq_params is filled with standard euclidean
         # gradients, and zeros if in forward problem mode.
-        jax.debug.print(
-            "#####################\n ####### EQ PARAMS {a}",
-            a=ngd_state.with_eq_params_update,
-        )
         ngd_solver = NGD_SOLVERS[solver]()
         natural_grad_array_nn, euclidean_grad_array_nn, euclidean_grad_array_eq = (
             ngd_solver.compute_ng(r_g_sw=r_g_sw, ngd_state=ngd_state)
