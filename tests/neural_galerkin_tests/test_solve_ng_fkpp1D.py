@@ -3,12 +3,16 @@ import pytest
 import warnings
 
 import jax
+
+
 import jinns
 from jax import random
 import jax.numpy as jnp
 import equinox as eqx
 from jax.scipy.stats import norm
 import optax
+
+jax.config.update("jax_enable_x64", True)
 
 xmin = -1
 xmax = 1
@@ -173,10 +177,6 @@ def solve_neural_galerkin_FKPP1D_rk4(neural_galerkin_fkpp1d_init):
 
 
 def test_ouput_neural_galerkin_fkpp1d_rk4(solve_neural_galerkin_FKPP1D_rk4):
-    """
-    Test various aspect of the solve_neural_galerkin output
-    """
-
     loss, data, params_final = solve_neural_galerkin_FKPP1D_rk4
 
     assert jnp.allclose(loss.u(data.omega[0], params_final)[0], 0.04711226)
@@ -217,13 +217,9 @@ def solve_neural_galerkin_FKPP1D_rk1(neural_galerkin_fkpp1d_init):
 
 
 def test_ouput_neural_galerkin_fkpp1d_rk1(solve_neural_galerkin_FKPP1D_rk1):
-    """
-    Test various aspect of the solve_neural_galerkin output
-    """
-
     loss, data, params_final = solve_neural_galerkin_FKPP1D_rk1
 
-    assert jnp.allclose(loss.u(data.omega[0], params_final)[0], -5.57326242e87)
+    assert jnp.allclose(loss.u(data.omega[0], params_final)[0], -5.57290605e87)
 
 
 @pytest.fixture
@@ -261,10 +257,6 @@ def solve_neural_galerkin_FKPP1D_rk2(neural_galerkin_fkpp1d_init):
 
 
 def test_ouput_neural_galerkin_fkpp1d_rk2(solve_neural_galerkin_FKPP1D_rk2):
-    """
-    Test various aspect of the solve_neural_galerkin output
-    """
-
     loss, data, params_final = solve_neural_galerkin_FKPP1D_rk2
 
-    assert jnp.allclose(loss.u(data.omega[0], params_final)[0], -0.35756439)
+    assert jnp.allclose(loss.u(data.omega[0], params_final)[0], -0.3837988)

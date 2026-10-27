@@ -3,12 +3,16 @@ import pytest
 import warnings
 
 import jax
+
+
 import jinns
 from jax import random
 import jax.numpy as jnp
 import equinox as eqx
 from jax.scipy.stats import norm
 import optax
+
+jax.config.update("jax_enable_x64", True)
 
 xmin = -1
 xmax = 1
@@ -42,7 +46,6 @@ def output_transform(x, pinn_out, params):
 
 @pytest.fixture
 def discrete_pinn_fkpp1d_init():
-    jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
 
     # Note that input dim is 1 since the network depends on time
