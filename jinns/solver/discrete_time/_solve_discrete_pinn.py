@@ -184,9 +184,9 @@ def solve_discrete_pinn(
             asdict(params_t0.eq_params) | {"prev_params": params_t0}, "_EqParams"
         )
         params_t0_ = eqx.tree_at(lambda pt: pt.eq_params, params_t0, _eq_params)
+        dyn_loss_rk = _get_dyn_loss_rk1or2(loss.dynamic_loss[0], "prev_params", dt)
         compiled_solve_rk1, carry = _get_compiled_solve_rk(
-            "prev_params",
-            dt,
+            dyn_loss_rk,
             loss,
             params_t0_,
             n_iter,
@@ -209,9 +209,9 @@ def solve_discrete_pinn(
         params_t0_ = eqx.tree_at(lambda pt: pt.eq_params, params_t0, _eq_params)
         # https://fr.wikipedia.org/wiki/M%C3%A9thodes_de_Runge-Kutta#Sch%C3%A9ma_pr%C3%A9dicteur-correcteur_explicite_(RK2)
         # equations from the previous linked paragraph with f being the stationary differential operator
+        dyn_loss_rk1 = _get_dyn_loss_rk1or2(loss.dynamic_loss[0], "prev_params", dt / 2)
         compiled_solve_rk1, carry = _get_compiled_solve_rk(
-            "prev_params",
-            dt / 2,
+            dyn_loss_rk1,
             loss,
             params_t0_,
             n_iter,
@@ -220,9 +220,9 @@ def solve_discrete_pinn(
             param_data,
             extra_optax_args_and_kwargs,
         )
+        dyn_loss_rk2 = _get_dyn_loss_rk1or2(loss.dynamic_loss[0], "rk2_params", dt)
         compiled_solve_rk2, carry2 = _get_compiled_solve_rk(
-            "rk2_params",
-            dt,
+            dyn_loss_rk2,
             loss,
             params_t0_,
             n_iter,
@@ -231,8 +231,8 @@ def solve_discrete_pinn(
             param_data,
             extra_optax_args_and_kwargs,
         )
-        dyn_loss1 = carry[1].dynamic_loss[0]
-        dyn_loss2 = carry2[1].dynamic_loss[0]
+        dyn_loss1 = carry[1].dynamic_loss[0]  # pyright: ignore
+        dyn_loss2 = carry2[1].dynamic_loss[0]  # pyright: ignore
 
         def compiled_solve(carry):
             carry = eqx.tree_at(  # we need to change the loss of the carry because the dynamic loss is a static
@@ -264,9 +264,9 @@ def solve_discrete_pinn(
             "_EqParams",
         )
         params_t0_ = eqx.tree_at(lambda pt: pt.eq_params, params_t0, _eq_params)
+        dyn_loss_rk1 = _get_dyn_loss_rk1or2(loss.dynamic_loss[0], "prev_params", dt / 2)
         compiled_solve_rk1, carry = _get_compiled_solve_rk(
-            "prev_params",
-            dt / 2,
+            dyn_loss_rk1,
             loss,
             params_t0_,
             n_iter,
@@ -274,10 +274,12 @@ def solve_discrete_pinn(
             optimizer,
             param_data,
             extra_optax_args_and_kwargs,
+        )
+        dyn_loss_rk2 = _get_dyn_loss_rk1or2(
+            loss.dynamic_loss[0], "rk4_params_1", dt / 2
         )
         compiled_solve_rk2, carry2 = _get_compiled_solve_rk(
-            "rk4_params_1",
-            dt / 2,
+            dyn_loss_rk2,
             loss,
             params_t0_,
             n_iter,
@@ -286,9 +288,9 @@ def solve_discrete_pinn(
             param_data,
             extra_optax_args_and_kwargs,
         )
+        dyn_loss_rk2_2 = _get_dyn_loss_rk1or2(loss.dynamic_loss[0], "rk4_params_2", dt)
         compiled_solve_rk2_2, carry3 = _get_compiled_solve_rk(
-            "rk4_params_2",
-            dt,
+            dyn_loss_rk2_2,
             loss,
             params_t0_,
             n_iter,
@@ -297,8 +299,9 @@ def solve_discrete_pinn(
             param_data,
             extra_optax_args_and_kwargs,
         )
-        compiled_solve_rk4, carry4 = _get_compiled_solve_rk4(
-            dt / 6,
+        dyn_loss_rk4 = _get_dyn_loss_rk4(loss.dynamic_loss[0], dt / 6)
+        compiled_solve_rk4, carry4 = _get_compiled_solve_rk(
+            dyn_loss_rk4,
             loss,
             params_t0_,
             n_iter,
@@ -308,10 +311,10 @@ def solve_discrete_pinn(
             extra_optax_args_and_kwargs,
         )
 
-        dyn_loss1 = carry[1].dynamic_loss[0]
-        dyn_loss2 = carry2[1].dynamic_loss[0]
-        dyn_loss3 = carry3[1].dynamic_loss[0]
-        dyn_loss4 = carry4[1].dynamic_loss[0]
+        dyn_loss1 = carry[1].dynamic_loss[0]  # pyright: ignore
+        dyn_loss2 = carry2[1].dynamic_loss[0]  # pyright: ignore
+        dyn_loss3 = carry3[1].dynamic_loss[0]  # pyright: ignore
+        dyn_loss4 = carry4[1].dynamic_loss[0]  # pyright: ignore
 
         def compiled_solve(carry):
             carry = eqx.tree_at(  # we need to change the loss of the carry because the dynamic loss is a static
@@ -354,7 +357,7 @@ def solve_discrete_pinn(
         ((n_time_steps - 1) * n_loss_values_by_step),
     )
 
-    params_t0_fl, unravel_params = jax.flatten_util.ravel_pytree(params_t0.nn_params)
+    params_t0_fl, unravel_params = jax.flatten_util.ravel_pytree(params_t0.nn_params)  # pyright: ignore
     # Only JAX arrays can be index with traced value (the result from jnp.argwhere)
     # hence we store it in a flattened way
 
@@ -448,18 +451,11 @@ def update_carry_and_xxx_params(carry, xxx_params="prev_params"):
     return carry, new_params
 
 
-def _get_compiled_solve_rk(
-    space_operator_params_name,
-    dt,
-    loss,
-    params_t0_,
-    n_iter,
-    data,
-    optimizer,
-    param_data,
-    extra_optax_args_and_kwargs,
-):
+def _get_dyn_loss_rk1or2(dyn_loss, space_operator_params_name, dt):
     """
+    From the PDE residuals (without the time derivative component) (ie the space operator <=> dyn_loss),
+    construct the dyn_loss (ie the residuals) that will be minimized in the RK step
+
     RK1 <=> space_operator_params_name == "prev_params"
     """
 
@@ -470,19 +466,49 @@ def _get_compiled_solve_rk(
                 u(x, params)
                 - u(x, params.eq_params.prev_params)
                 + dt
-                * loss.dynamic_loss[0].equation(
+                * dyn_loss.equation(
                     x, u, getattr(params.eq_params, space_operator_params_name)
                 )
             )
 
-    dyn_loss_rk = DynLossRK()
+    return DynLossRK()
+
+
+def _get_dyn_loss_rk4(dyn_loss, dt):
+    class DynLossRK4(PDEStatio):
+        def equation(self, x, u, params):
+            return (
+                u(x, params)
+                - u(x, params.eq_params.prev_params)
+                + dt
+                * (
+                    dyn_loss.equation(x, u, params.eq_params.prev_params)
+                    + 2 * dyn_loss.equation(x, u, params.eq_params.rk4_params_1)
+                    + 2 * dyn_loss.equation(x, u, params.eq_params.rk4_params_2)
+                    + dyn_loss.equation(x, u, params.eq_params.rk4_params_3)
+                )
+            )
+
+    return DynLossRK4()
+
+
+def _get_compiled_solve_rk(
+    dyn_loss,
+    loss,
+    params_t0_,
+    n_iter,
+    data,
+    optimizer,
+    param_data,
+    extra_optax_args_and_kwargs,
+):
     # below we update the dynamic loss and the derivative keys accordingly
     # we also set the loss wegihts to a default useless value
     loss_discrete_pinn = eqx.tree_at(
         lambda pt: (pt.dynamic_loss, pt.derivative_keys, pt.loss_weights),
         loss,
         (
-            (dyn_loss_rk,),
+            (dyn_loss,),
             DerivativeKeysPDEStatio(params=params_t0_),
             LossWeightsPDEStatio(dyn_loss=jnp.array(1.0)),
         ),
@@ -504,64 +530,3 @@ def _get_compiled_solve_rk(
         compiled_solve_rk = cast(Callable[[SolveCarry], SolveCarry], compiled_solve_rk)
 
     return compiled_solve_rk, carry
-
-
-def _get_compiled_solve_rk4(
-    dt,
-    loss,
-    params_t0_,
-    n_iter,
-    data,
-    optimizer,
-    param_data,
-    extra_optax_args_and_kwargs,
-):
-    # we modify the dynamic loss accordingly
-
-    class DynLossRK4(PDEStatio):
-        def equation(self, x, u, params):
-            return (
-                u(x, params)
-                - u(x, params.eq_params.prev_params)
-                + dt
-                * (
-                    loss.dynamic_loss[0].equation(x, u, params.eq_params.prev_params)
-                    + 2
-                    * loss.dynamic_loss[0].equation(x, u, params.eq_params.rk4_params_1)
-                    + 2
-                    * loss.dynamic_loss[0].equation(x, u, params.eq_params.rk4_params_2)
-                    + loss.dynamic_loss[0].equation(x, u, params.eq_params.rk4_params_3)
-                )
-            )
-
-    dyn_loss_rk4 = DynLossRK4()
-    # below we update the dynamic loss and the derivative keys accordingly
-    # we also set the loss wegihts to a default useless value
-    loss_discrete_pinn = eqx.tree_at(
-        lambda pt: (pt.dynamic_loss, pt.derivative_keys, pt.loss_weights),
-        loss,
-        (
-            (dyn_loss_rk4,),
-            DerivativeKeysPDEStatio(params=params_t0_),
-            LossWeightsPDEStatio(dyn_loss=jnp.array(1.0)),
-        ),
-    )
-    compiled_solve_rk4, carry = solve(  # pyright: ignore
-        n_iter=n_iter,
-        init_params=params_t0_,
-        data=data,
-        loss=loss_discrete_pinn,
-        optimizer=optimizer,
-        param_data=param_data,
-        extra_optax_args_and_kwargs=extra_optax_args_and_kwargs,
-        ahead_of_time=True,
-        verbose=False,
-        compile_only=True,
-    )
-    if TYPE_CHECKING:
-        carry = cast(SolveCarry, carry)
-        compiled_solve_rk4 = cast(
-            Callable[[SolveCarry], SolveCarry], compiled_solve_rk4
-        )
-
-    return compiled_solve_rk4, carry
