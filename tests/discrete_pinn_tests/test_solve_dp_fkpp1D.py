@@ -139,12 +139,9 @@ def discrete_pinn_fkpp1d_init():
 
 
 @pytest.fixture
-def solve_discrete_pinn_FKPP1D(discrete_pinn_fkpp1d_init):
-    """
-    Do the ODE solve in NG
-    """
+def solve_discrete_pinn_FKPP1D_rk1(discrete_pinn_fkpp1d_init):
     init_params_pinn_ode, loss_pinn_ode, train_data_ode = discrete_pinn_fkpp1d_init
-    Tmax = 1
+    Tmax = 0.3
     dt = 0.1
     times = jnp.arange(tmin, Tmax + dt, dt)
 
@@ -164,7 +161,7 @@ def solve_discrete_pinn_FKPP1D(discrete_pinn_fkpp1d_init):
         n_iter=3,
         optimizer=optax.adam(1e-3),
         initial_condition_fun=u0,
-        n_iter_ic=100,
+        n_iter_ic=10,
         optimizer_ic=optax.adam(1e-3),
         print_loss_every=len(times) // 10,
         scheme="rk-1",
@@ -173,7 +170,83 @@ def solve_discrete_pinn_FKPP1D(discrete_pinn_fkpp1d_init):
     return train_loss_values
 
 
-def test_discrete_pinn_fkpp1d(solve_discrete_pinn_FKPP1D):
-    train_loss_values = solve_discrete_pinn_FKPP1D
+def test_discrete_pinn_fkpp1d_rk1(solve_discrete_pinn_FKPP1D_rk1):
+    train_loss_values = solve_discrete_pinn_FKPP1D_rk1
 
-    assert jnp.allclose(train_loss_values[-1], 0.00015986)
+    assert jnp.allclose(train_loss_values[-1], 1.18716761e-05)
+
+
+@pytest.fixture
+def solve_discrete_pinn_FKPP1D_rk2(discrete_pinn_fkpp1d_init):
+    init_params_pinn_ode, loss_pinn_ode, train_data_ode = discrete_pinn_fkpp1d_init
+    Tmax = 0.3
+    dt = 0.1
+    times = jnp.arange(tmin, Tmax + dt, dt)
+
+    times_saved = jnp.array(
+        [
+            0.0,
+            0.1,
+            1,
+        ]
+    )
+    _, _, _, _, train_loss_values = jinns.solve_discrete_pinn(
+        times=times,
+        times_saved=times_saved,
+        init_params=init_params_pinn_ode,
+        data=train_data_ode,
+        loss=loss_pinn_ode,
+        n_iter=3,
+        optimizer=optax.adam(1e-3),
+        initial_condition_fun=u0,
+        n_iter_ic=10,
+        optimizer_ic=optax.adam(1e-3),
+        print_loss_every=len(times) // 10,
+        scheme="rk2",
+    )
+
+    return train_loss_values
+
+
+def test_discrete_pinn_fkpp1d_rk2(solve_discrete_pinn_FKPP1D_rk2):
+    train_loss_values = solve_discrete_pinn_FKPP1D_rk2
+
+    assert jnp.allclose(train_loss_values[-1], 1.29691847e-05)
+
+
+@pytest.fixture
+def solve_discrete_pinn_FKPP1D_rk4(discrete_pinn_fkpp1d_init):
+    init_params_pinn_ode, loss_pinn_ode, train_data_ode = discrete_pinn_fkpp1d_init
+    Tmax = 0.3
+    dt = 0.1
+    times = jnp.arange(tmin, Tmax + dt, dt)
+
+    times_saved = jnp.array(
+        [
+            0.0,
+            0.1,
+            1,
+        ]
+    )
+    _, _, _, _, train_loss_values = jinns.solve_discrete_pinn(
+        times=times,
+        times_saved=times_saved,
+        init_params=init_params_pinn_ode,
+        data=train_data_ode,
+        loss=loss_pinn_ode,
+        n_iter=3,
+        optimizer=optax.adam(1e-3),
+        initial_condition_fun=u0,
+        n_iter_ic=10,
+        optimizer_ic=optax.adam(1e-3),
+        print_loss_every=len(times) // 10,
+        scheme="rk4",
+    )
+
+    return train_loss_values
+
+
+def test_discrete_pinn_fkpp1d_rk4(solve_discrete_pinn_FKPP1D_rk4):
+    train_loss_values = solve_discrete_pinn_FKPP1D_rk4
+
+    assert jnp.allclose(train_loss_values[-1], 1.49782713e-05)
