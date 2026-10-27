@@ -7,7 +7,7 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 import jax
 import jax.numpy as jnp
 import equinox as eqx
@@ -45,7 +45,9 @@ def _solve_neural_galerkin(
     verbose: bool = True,
     ahead_of_time: bool = True,
     key: PRNGKeyArray | None = None,
-    scheme: str = "rk4",
+    scheme: Literal[
+        "rk4", "rk-4", "explicit-euler", "rk1", "rk-1", "rk2", "rk-2"
+    ] = "rk4",
 ):
     """
     Solve the PDE with the Neural Galerkin approach. In this approach the variation of the parameters
@@ -124,6 +126,8 @@ def _solve_neural_galerkin(
             params = _rk4_step(batch=batch, loss=loss, params=params, dt=dt)
         elif scheme.lower() in ["explicit-euler", "rk1", "rk-1"]:
             params = _rk1_step(batch=batch, loss=loss, params=params, dt=dt)
+        elif scheme.lower() in ["rk2", "rk-2"]:
+            params = _rk2_step(batch=batch, loss=loss, params=params, dt=dt)
 
         nn_params_saved = _save_nn_params(t, times_saved, params, nn_params_saved)
 
@@ -202,9 +206,23 @@ def _rk1_step(batch, loss, params, dt):
 def _rk2_step(batch, loss, params, dt):
     """
     Compte the next value of the parameters following Runge Kutta scheme of
-    4th order.
+    2nd order.
     """
-    return NotImplementedError
+    dnu_dt_k1 = _get_dnu_dt(batch, loss, params)
+    midpoint = eqx.tree_at(
+        lambda pt: pt.nn_params,
+        params,
+        jax.tree.map(
+            lambda a, b: a + b * dt / 2, params.nn_params, dnu_dt_k1.nn_params
+        ),
+    )
+    dnu_dt_k2 = _get_dnu_dt(batch, loss, midpoint)
+
+    return eqx.tree_at(
+        lambda pt: pt.nn_params,
+        params,
+        jax.tree.map(lambda a, b: a + b * dt, params.nn_params, dnu_dt_k2.nn_params),
+    )
 
 
 def _rk4_step(batch, loss, params, dt):
