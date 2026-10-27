@@ -17,7 +17,6 @@ from jaxtyping import PyTree, Float, Array, PRNGKeyArray
 import optax
 
 
-from jinns.loss._loss_components import ODEComponents
 from jinns.data._utils import append_param_batch, append_obs_batch
 from jinns.utils._utils import _check_nan_in_pytree
 from jinns.data._DataGeneratorODE import DataGeneratorODE
@@ -30,10 +29,6 @@ from jinns.utils._containers import (
     StoredObjectContainer,
 )
 from jinns.optimizers._natural_gradient import NGDState
-from jinns.optimizers._utils_ngd import (
-    _get_sqrt_weights_per_sample,
-    _reweight_pytree,
-)
 
 
 class GetJinnsVariableName(NamedTuple):
@@ -249,7 +244,6 @@ def _loss_evaluate_and_natural_gradient_step(
     state: NGDState,
     optimizer: optax.GradientTransformation,
     params_mask: Params[bool] | None = None,
-    state_field_for_acceleration: str | None = None,
     **__,  # to ignore more arguments
 ):
     """Similar to ` _loss_evaluate_and_euclidean_gradient_step` but for natural gradient.
@@ -282,69 +276,12 @@ def _loss_evaluate_and_natural_gradient_step(
             f"You passed an {type(optimizer)}."
         )
 
-    ## NOTE to enable optimization procedures with acceleration
-    if state_field_for_acceleration is not None:
-        params_accel = getattr(state, state_field_for_acceleration)
-    else:
-        params_accel = None
-        # opt_params_accel = opt_params
-
-    # --
-    # Get the unreduced residuals and their gradient (for each sample)
-    # for each loss term
-    r, g = loss.values_and_grad_per_sample(
-        params_accel if params_accel is not None else params,
-        batch,
-    )
-
-    # --
-    # Preprocess loss_weights if needed: we want to have tuples at field boundary_loss in d>1
-    # because of multiple facets.
-    if not isinstance(r, ODEComponents) and r.boundary_loss is not None:
-        lw_ = eqx.tree_at(
-            lambda pt: pt.boundary_loss,
-            loss.loss_weights,
-            tuple(loss.loss_weights.boundary_loss for _ in range(len(r.boundary_loss))),
-        )
-    else:
-        lw_ = loss.loss_weights
-
-    # --
-    # We can also assemble the total loss and loss_terms from reweighted residuals `r`
-    # NOTE: subtility here, we don't reweight by * 1/sqrt{n} because the averaging is done
-    # inside loss._reduction_functions so we don't want to account twice for it.
-    sqrt_weights_per_sample = _get_sqrt_weights_per_sample(lw=lw_, r=r, batch_norm=True)
-    sqrt_weights_per_sample_no_avg = _get_sqrt_weights_per_sample(
-        lw=lw_, r=r, batch_norm=False
-    )
-    loss_terms = jax.tree.map(
-        lambda red_fun, r_: red_fun(r_),
-        loss._reduction_functions,
-        _reweight_pytree(pt=r, lw=sqrt_weights_per_sample_no_avg),
-    )
-
-    train_loss_value = jnp.sum(
-        jnp.concatenate(
-            jax.tree.leaves(
-                jax.tree.map(
-                    lambda arr: jnp.sum(arr**2, axis=-1),
-                    _reweight_pytree(pt=r, lw=sqrt_weights_per_sample),
-                ),
-            ),
-            axis=0,
-        )
-    )
-
-    params, state = _gradient_step(
-        (r, g, sqrt_weights_per_sample),
+    params, state, train_loss_value, loss_terms = _natural_gradient_step(
+        loss,
         optimizer,
         params,
         state,  # type: ignore
-        params_mask,
-        # extra kwargs passed to the NGD optimizer
-        loss=loss,
-        batch=batch,
-        loss_value=train_loss_value,
+        batch,
     )
 
     # check if any of the parameters is NaN
@@ -565,6 +502,26 @@ def _get_masked_state(state, params_mask):
     )
 
     return opt_state, non_opt_state
+
+
+def _natural_gradient_step(
+    loss,
+    optimizer,
+    params,
+    state,  # type: ignore
+    # params_mask, TODO: is param_mask useful & possible in this new version ?
+    batch,
+):
+    updates, state, loss_val, loss_terms = optimizer.update(
+        loss,  # type: ignore
+        state,
+        params,  # type: ignore
+        batch,
+    )  # Also see optimizer.init for explanation of type ignore
+
+    new_params = optax.apply_updates(params, updates)  # type: ignore
+
+    return (new_params, state, loss_val, loss_terms)
 
 
 def _get_unmasked_state(state, opt_state, non_opt_state):
