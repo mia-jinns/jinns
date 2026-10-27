@@ -7,59 +7,43 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 import time
-from typing import TYPE_CHECKING, Callable
-import optax
+from typing import TYPE_CHECKING
 import jax
 import jax.numpy as jnp
 import equinox as eqx
 from jaxtyping import Array, PRNGKeyArray
-from jinns.data._CubicMeshPDEStatio import CubicMeshPDEStatio
 from jinns.data._rar import _trigger_rar
-from jinns.loss._LossPDE import LossPDEStatio
 from jinns.solver._utils import (
-    _check_batch_size,
     _build_get_batch,
 )
+from jinns.data._CubicMeshPDEStatio import CubicMeshPDEStatio
+from jinns.loss._LossPDE import LossPDEStatio
 from jinns.nn._hyperpinn import _get_param_nb
 from jinns.parameters._params import Params
 from jinns.utils._containers import (
     DataGeneratorContainer,
 )
-from jinns.optimizers._natural_gradient import NGDState
 from jinns.solver.discrete_time._utils import (
-    _fit_ic,
     _save_nn_params,
     _print_fn_time_discrete,
 )
 import warnings
 
 if TYPE_CHECKING:
-    from jinns.loss._abstract_loss import AbstractLoss
     from jinns.data._DataGeneratorParameter import DataGeneratorParameter
-    from jinns.data._AbstractDataGenerator import AbstractDataGenerator
-    from jinns.solver._utils import GetJinnsVariableName
 
 
-def solve_neural_galerkin(
+def _solve_neural_galerkin(
     *,
-    times,
+    params_t0: Params[Array],
+    times: Array,
     times_saved: Array,
-    init_params: Params[Array],
-    data: AbstractDataGenerator,
-    loss: AbstractLoss,
-    initial_condition_fun,
-    n_iter_ic: int,
-    optimizer_ic: optax.GradientTransformation | optax.GradientTransformationExtraArgs,
-    data_ic: AbstractDataGenerator | None = None,
+    data: CubicMeshPDEStatio,
+    loss: LossPDEStatio,
     print_loss_every: int | None = None,
-    opt_state_ic: optax.OptState | NGDState | None = None,
     param_data: DataGeneratorParameter | None = None,
-    param_data_ic: DataGeneratorParameter | None = None,
-    init_params_ic: Params[Array] | None = None,
     verbose: bool = True,
     ahead_of_time: bool = True,
-    extra_optax_args_and_kwargs_ic: dict[str, Callable | GetJinnsVariableName]
-    | None = None,
     key: PRNGKeyArray | None = None,
     scheme: str = "rk4",
 ):
@@ -89,74 +73,13 @@ def solve_neural_galerkin(
     - Evolutional Deep Neural Network, Y. Du et al, 2021
     - Neural semi-Lagrangian method for high-dimensional advection-diffusion problems, E. Franck et al., 2025
     """
-    if data.rar_parameters is not None and key is None:
-        raise ValueError(
-            "`key` argument must be passed to jinns.solve() when using RAR procedure"
-        )
-
-    assert isinstance(loss, LossPDEStatio)
-    assert loss.boundary_condition is None
-    assert loss.norm_samples is None
-    assert isinstance(data, CubicMeshPDEStatio)
-
     dt = times[1] - times[0]
-    n_iter = len(times)
-    initialization_time = time.time()
-
-    if print_loss_every is None:
-        print_loss_every = n_iter // 10
-
-    if data_ic is None:
-        data_ic = data
-
-    if param_data_ic is None:
-        param_data_ic = param_data
-
-    if init_params_ic is None:
-        init_params_ic = init_params
-
-    if param_data is not None:
-        if param_data.param_batch_size is not None:
-            # We need to check that batch sizes will all be compliant for
-            # correct vectorization
-            _check_batch_size(param_data, data, "param_batch_size")
-        else:
-            # If DataGeneratorParameter does not have a batch size we will
-            # vectorization using `n`, and the same checks must be done
-            _check_batch_size(param_data, data, "n")
 
     # depending on obs_batch_sharding we will get the simple get_batch or the
     # get_batch with device_put, the latter is not jittable
     get_batch = _build_get_batch(None)
 
-    # initialize the PyTree for stored loss weights values
-    if loss.update_weight_method is not None:
-        raise ValueError(
-            " Cannot set a value for `loss.update_weight_method` with solve_ng"
-        )
-
     train_data = DataGeneratorContainer(data=data, param_data=param_data, obs_data=None)
-
-    if verbose:
-        print("Initialization time:", time.time() - initialization_time)
-
-    ################################################
-    # 1) Fit the initial condition for t0=times[0] #
-    ################################################
-    print("\n\n #-- Fitting the initial condition for t0=", times[0])
-    params_t0 = _fit_ic(
-        n_iter_ic,
-        optimizer_ic,
-        opt_state_ic,
-        data_ic,
-        param_data_ic,
-        loss,
-        init_params_ic,
-        extra_optax_args_and_kwargs_ic,
-        ahead_of_time,
-        initial_condition_fun,
-        verbose,
-    )
 
     ################################
     # 2) Get the parameter dynamic #
@@ -255,7 +178,14 @@ def solve_neural_galerkin(
         for i in range(nn_params_saved.shape[0])
     )
 
-    return loss, train_data.data, train_data.param_data, params_final, params_saved
+    return (
+        loss,
+        train_data.data,
+        train_data.param_data,
+        params_final,
+        params_saved,
+        None,
+    )
 
 
 def _rk1_step(batch, loss, params, dt):

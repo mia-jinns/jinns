@@ -14,58 +14,40 @@ import jax
 import jax.numpy as jnp
 import equinox as eqx
 from jaxtyping import Array, PRNGKeyArray
-from jinns.data._CubicMeshPDEStatio import CubicMeshPDEStatio
-from jinns.loss._LossPDE import LossPDEStatio
 from jinns.loss._DynamicLossAbstract import PDEStatio
 from jinns.loss._loss_weights import LossWeightsPDEStatio
 from jinns.parameters._derivative_keys import DerivativeKeysPDEStatio
 from jinns.solver._solve import solve
-from jinns.solver._utils import (
-    _check_batch_size,
-)
 from jinns.parameters._params import Params
-from jinns.optimizers._natural_gradient import NGDState
 from jinns.utils._DictToModuleMeta import DictToModuleMeta
-
+from jinns.data._CubicMeshPDEStatio import CubicMeshPDEStatio
+from jinns.loss._LossPDE import LossPDEStatio
 from jinns.utils._containers import OptimizationContainer
 from jinns.solver.discrete_time._utils import (
-    _fit_ic,
     _save_nn_params,
     _print_fn_time_discrete,
 )
 
 
 if TYPE_CHECKING:
-    from jinns.loss._abstract_loss import AbstractLoss
     from jinns.data._DataGeneratorParameter import DataGeneratorParameter
-    from jinns.data._AbstractDataGenerator import AbstractDataGenerator
     from jinns.solver._utils import GetJinnsVariableName
     from jinns.utils._types import SolveCarry
 
 
-def solve_discrete_pinn(
+def _solve_discrete_pinn(
     *,
-    times,
+    params_t0: Params[Array],
+    times: Array,
     times_saved: Array,
-    init_params: Params[Array],
-    data: AbstractDataGenerator,
-    loss: AbstractLoss,
+    data: CubicMeshPDEStatio,
+    loss: LossPDEStatio,
     n_iter: int,
     optimizer: optax.GradientTransformation | optax.GradientTransformationExtraArgs,
-    initial_condition_fun,
-    n_iter_ic: int,
-    optimizer_ic: optax.GradientTransformation | optax.GradientTransformationExtraArgs,
-    data_ic: AbstractDataGenerator | None = None,
     print_loss_every: int | None = None,
-    opt_state_ic: optax.OptState | NGDState | None = None,
     param_data: DataGeneratorParameter | None = None,
-    param_data_ic: DataGeneratorParameter | None = None,
-    init_params_ic: Params[Array] | None = None,
     verbose: bool = True,
-    ahead_of_time: bool = True,
     extra_optax_args_and_kwargs: dict[str, Callable | GetJinnsVariableName]
-    | None = None,
-    extra_optax_args_and_kwargs_ic: dict[str, Callable | GetJinnsVariableName]
     | None = None,
     key: PRNGKeyArray | None = None,
     scheme: Literal[
@@ -95,70 +77,10 @@ def solve_discrete_pinn(
     - Physics-informed neural networks: A deep learning framework for solving forward and inverse problems involving nonlinear partial differential equations, M. Raissi et al., 2019
     - Neural semi-Lagrangian method for high-dimensional advection-diffusion problems, E. Franck et al., 2025
     """
-    if data.rar_parameters is not None and key is None:
-        raise ValueError(
-            "`key` argument must be passed to jinns.solve() when using RAR procedure"
-        )
-
-    assert isinstance(loss, LossPDEStatio)
-    assert loss.boundary_condition is None
-    assert loss.norm_samples is None
-    assert isinstance(data, CubicMeshPDEStatio)
 
     dt = times[1] - times[0]
     n_time_steps = len(times)
-    initialization_time = time.time()
-
-    if print_loss_every is None:
-        print_loss_every = max(n_time_steps // 10, 1)
-
-    if data_ic is None:
-        data_ic = data
-
-    if param_data_ic is None:
-        param_data_ic = param_data
-
-    if init_params_ic is None:
-        init_params_ic = init_params
-
-    if param_data is not None:
-        if param_data.param_batch_size is not None:
-            # We need to check that batch sizes will all be compliant for
-            # correct vectorization
-            _check_batch_size(param_data, data, "param_batch_size")
-        else:
-            # If DataGeneratorParameter does not have a batch size we will
-            # vectorization using `n`, and the same checks must be done
-            _check_batch_size(param_data, data, "n")
-
-    # initialize the PyTree for stored loss weights values
-    if loss.update_weight_method is not None:
-        raise ValueError(
-            " Cannot set a value for `loss.update_weight_method` with solve_discrete_pinn"
-        )
-
-    if verbose:
-        print("Initialization time:", time.time() - initialization_time)
-
-    ################################################
-    # 1) Fit the initial condition for t0=times[0] #
-    ################################################
-
-    print("\n\n #-- Fitting the initial condition for t0=", times[0])
-    params_t0 = _fit_ic(
-        n_iter_ic,
-        optimizer_ic,
-        opt_state_ic,
-        data_ic,
-        param_data_ic,
-        loss,
-        init_params_ic,
-        extra_optax_args_and_kwargs_ic,
-        ahead_of_time,
-        initial_condition_fun,
-        verbose,
-    )
-
+    assert loss.dynamic_loss is not None  # for pyright
     ################################
     # 2) Get the parameter dynamic #
     ################################
@@ -379,6 +301,8 @@ def solve_discrete_pinn(
                 tmax=times[-1],
             )
 
+        # TODO Here we could have a RAR step...
+
         carry = compiled_solve(carry)
 
         carry, new_params = update_carry_and_xxx_params(carry)
@@ -401,18 +325,20 @@ def solve_discrete_pinn(
 
     params_saved = tuple(
         eqx.tree_at(
-            lambda pt: pt.nn_params, init_params, unravel_params(nn_params_saved[i])
+            lambda pt: pt.nn_params, params_t0, unravel_params(nn_params_saved[i])
         )
         for i in range(nn_params_saved.shape[0])
     )
 
-    loss = carry[1]
+    loss = cast(LossPDEStatio, carry[1])
     train_data = carry[4]
+    params_final = carry[2].params
 
     return (
         loss,
         train_data.data,
         train_data.param_data,
+        params_final,
         params_saved,
         all_train_loss_values_saved,
     )

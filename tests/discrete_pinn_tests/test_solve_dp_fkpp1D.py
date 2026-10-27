@@ -152,7 +152,8 @@ def solve_discrete_pinn_FKPP1D_rk1(discrete_pinn_fkpp1d_init):
             1,
         ]
     )
-    _, _, _, _, train_loss_values = jinns.solve_discrete_pinn(
+    _, _, _, _, _, train_loss_values = jinns.solve_discrete_time(
+        method="discrete_pinn",
         times=times,
         times_saved=times_saved,
         init_params=init_params_pinn_ode,
@@ -190,7 +191,8 @@ def solve_discrete_pinn_FKPP1D_rk2(discrete_pinn_fkpp1d_init):
             1,
         ]
     )
-    _, _, _, _, train_loss_values = jinns.solve_discrete_pinn(
+    _, _, _, _, _, train_loss_values = jinns.solve_discrete_time(
+        method="discrete_pinn",
         times=times,
         times_saved=times_saved,
         init_params=init_params_pinn_ode,
@@ -228,7 +230,8 @@ def solve_discrete_pinn_FKPP1D_rk4(discrete_pinn_fkpp1d_init):
             1,
         ]
     )
-    _, _, _, _, train_loss_values = jinns.solve_discrete_pinn(
+    _, _, _, _, _, train_loss_values = jinns.solve_discrete_time(
+        method="discrete_pinn",
         times=times,
         times_saved=times_saved,
         init_params=init_params_pinn_ode,

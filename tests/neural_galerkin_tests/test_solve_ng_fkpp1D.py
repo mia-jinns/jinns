@@ -155,7 +155,8 @@ def solve_neural_galerkin_FKPP1D_rk4(neural_galerkin_fkpp1d_init):
             1,
         ]
     )
-    loss, data, _, params_final, _ = jinns.solve_neural_galerkin(
+    loss, data, _, params_final, _, _ = jinns.solve_discrete_time(
+        method="neural_galerkin",
         times=times,
         times_saved=times_saved,
         init_params=init_params_pinn_ode,
@@ -198,7 +199,8 @@ def solve_neural_galerkin_FKPP1D_rk1(neural_galerkin_fkpp1d_init):
             1,
         ]
     )
-    loss, data, _, params_final, _ = jinns.solve_neural_galerkin(
+    loss, data, _, params_final, _, _ = jinns.solve_discrete_time(
+        method="neural_galerkin",
         times=times,
         times_saved=times_saved,
         init_params=init_params_pinn_ode,

@@ -19,7 +19,6 @@ def _fit_ic(
     loss,
     init_params_ic,
     extra_optax_args_and_kwargs_ic,
-    ahead_of_time,
     initial_condition_fun,
     verbose,
 ):
@@ -52,7 +51,7 @@ def _fit_ic(
             opt_state=opt_state_ic,
             param_data=param_data_ic,
             extra_optax_args_and_kwargs=extra_optax_args_and_kwargs_ic,
-            ahead_of_time=ahead_of_time,
+            ahead_of_time=True,
             verbose=verbose,
         )
     return res[0]
@@ -64,7 +63,7 @@ def _save_nn_params(t, times_saved, params, nn_params_saved):
     nn_params_saved = jax.lax.cond(
         jnp.isin(t, times_saved),
         lambda _: nn_params_saved.at[idx_traced_int64].set(
-            jax.flatten_util.ravel_pytree(params.nn_params)[0]
+            jax.flatten_util.ravel_pytree(params.nn_params)[0]  # pyright: ignore
         ),
         lambda _: nn_params_saved,
         None,
