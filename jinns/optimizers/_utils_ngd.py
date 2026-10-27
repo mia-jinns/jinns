@@ -11,6 +11,7 @@ from jaxtyping import Float, Array
 from jinns.utils._types import (
     AnyLossComponents,
 )
+from jinns.loss._loss_components import ODEComponents
 from jinns.parameters._params import Params
 from jinns.nn._hyperpinn import _get_param_nb
 
@@ -158,6 +159,22 @@ def unravel_array_to_pytree(
     )
 
 
+def _loss_weights_to_components(lw, r):
+    # --
+    # Preprocess loss_weights if needed: we want to have tuples at field boundary_loss in d>1
+    # because of multiple facets.
+    if not isinstance(r, ODEComponents) and r.boundary_loss is not None:
+        lw_ = eqx.tree_at(
+            lambda pt: pt.boundary_loss,
+            lw,
+            tuple(lw.boundary_loss for _ in range(len(r.boundary_loss))),
+        )
+    else:
+        lw_ = lw
+
+    return lw_
+
+
 def _get_sqrt_weights_per_sample(
     lw: Component, r: Component, batch_norm: bool = True
 ) -> Component:
@@ -212,19 +229,21 @@ def weighted_jac_and_residuals(
     reweighted_g = _reweight_pytree(pt=g, lw=sqrt_weights_per_sample)
 
     # ---
-    # Flatten the pytree of params gradient as a tuple of (n, n_equations, p)
+    # Flatten the pytree of loss terms' jacobians as a tuple of (n * n_equations, p)
     # arrays
-    Ms = ravel_pytree_of_grad(reweighted_g, "nn_params")
-    Rs = reweighted_r
+    jacobians = ravel_pytree_of_grad(reweighted_g, "nn_params")
+    reweighted_r
 
-    Ms_eq_params = None
+    jacobians_eq_params = None
     if with_eq_params_update:
-        Ms_eq_params = ravel_pytree_of_grad(reweighted_g, "eq_params")
+        jacobians_eq_params = ravel_pytree_of_grad(reweighted_g, "eq_params")
 
-    return Ms, Rs, Ms_eq_params
+    return jacobians, reweighted_r, jacobians_eq_params
 
 
-def get_euclidean_grads(Ms, Rs, Ms_eq_params=None, with_eq_params_update=False):
+def get_euclidean_grads(
+    jacobians, residuals, jacobians_eq_params=None, with_eq_params_update=False
+):
     # --
     # Form the complete euclidean gradient
 
@@ -236,7 +255,7 @@ def get_euclidean_grads(Ms, Rs, Ms_eq_params=None, with_eq_params_update=False):
     # See tests/optimizer_tests/test_euclidean_gradient_equality.py
 
     euclidean_grad_pytree_nn_params = jax.tree.map(
-        lambda M, R: jnp.einsum("ij,ij->j", M, R), Ms, Rs
+        lambda M, R: jnp.einsum("ij,ij->j", M, R), jacobians, residuals
     )
     # which is equivalent to
     # >>> euclidean_grad_array = jnp.sum(
@@ -253,13 +272,13 @@ def get_euclidean_grads(Ms, Rs, Ms_eq_params=None, with_eq_params_update=False):
     # (if requested, usually for inverse pb)
     euclidean_grad_array_eq_params = None
     if with_eq_params_update:
-        if Ms_eq_params is None:
+        if jacobians_eq_params is None:
             raise ValueError(
                 "Gradient wrt to `eq_params` requested but necessary"
                 "quantity `Ms_eq_params` not provided."
             )
         euclidean_grad_pytree_eq_params = jax.tree.map(
-            lambda M, R: jnp.einsum("ij,ij->j", M, R), Ms_eq_params, Rs
+            lambda M, R: jnp.einsum("ij,ij->j", M, R), jacobians_eq_params, residuals
         )
         euclidean_grad_array_eq_params = jax.tree.reduce(
             jnp.add, euclidean_grad_pytree_eq_params
@@ -268,21 +287,16 @@ def get_euclidean_grads(Ms, Rs, Ms_eq_params=None, with_eq_params_update=False):
     return euclidean_grad_array_nn_params, euclidean_grad_array_eq_params
 
 
-def form_jacobian_nn_params(Ms_nn):
-    wJ = Ms_nn.reshape((-1, Ms_nn.shape[-1]))
-    return wJ
-
-
-def full_gramian_from_jacobian(Ms_nn) -> Float[Array, "n_params n_params"]:
+def full_gramian_from_jacobian(jacobians) -> Float[Array, "n_params n_params"]:
     # --
     # Assemble the Gram Matrix
-    #   1. Do the mean over the `n` collocation points -> get a `(n_equation, p, p)` array.
+    #   1. Do the mean over the `n` collocation points -> get a `(p, p)` array.
     #      NOTE: jnp.einsum instead of a mean here because averaging is in reweighting above.
-    #   2. Then, do the sum over `n_equation` (axis=0)
+    #   2. Then, sum over loss terms (axis=0)
     gram_mat_pytree = jax.tree.map(
         f=lambda M: jnp.einsum("ij,ik->jk", M, M),
         # <=> lambda M: (M.transpose((1, 0)) @ M.transpose((0, 1))).sum(axis=0),
-        tree=Ms_nn,
+        tree=jacobians,
     )
 
     gram_mat: Array = jax.tree.reduce(function=jnp.add, tree=gram_mat_pytree)
