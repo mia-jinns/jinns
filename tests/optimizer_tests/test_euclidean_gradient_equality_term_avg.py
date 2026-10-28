@@ -88,11 +88,6 @@ def test_euclidean_gradients_equality():
         initial_condition=jnp.array(2.4),
         boundary_loss=None if boundary_condition is None else jnp.array(0.678),
     )
-    loss_weights = jinns.loss.LossWeightsPDENonStatio(
-        dyn_loss=jnp.array(1.0),
-        initial_condition=jnp.array(1.0),
-        boundary_loss=None if boundary_condition is None else jnp.array(1.0),
-    )
 
     def u0(x):
         return jnp.sin(jnp.pi * x[0]) * jnp.sin(jnp.pi * x[1])
