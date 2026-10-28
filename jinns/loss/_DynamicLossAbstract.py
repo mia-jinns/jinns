@@ -18,11 +18,11 @@ import jax.numpy as jnp
 from jinns.parameters._params import EqParams
 from jinns.nn import SPINN
 
+from jinns.parameters import Params
 
 # See : https://docs.kidger.site/equinox/api/module/advanced_fields/#equinox.AbstractClassVar--known-issues
 if TYPE_CHECKING:
     from typing import ClassVar as AbstractClassVar
-    from jinns.parameters import Params
     from jinns.nn._abstract_pinn import AbstractPINN
 else:
     from equinox import AbstractClassVar
@@ -136,6 +136,7 @@ class DynamicLoss(eqx.Module, Generic[InputDim]):
             ),
             params.eq_params,
             eq_params_heterogeneity,
+            is_leaf=lambda x: isinstance(x, Params),
         )
         return eq_params_
 

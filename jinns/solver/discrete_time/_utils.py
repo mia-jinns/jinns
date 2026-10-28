@@ -27,7 +27,9 @@ def _fit_ic(
         def equation(self, x, u, params):
             return u(x, params) - initial_condition_fun(x)
 
-    ic_as_dyn_loss = InitialConditionAsDynamicLoss()
+    ic_as_dyn_loss = InitialConditionAsDynamicLoss(
+        eq_params_heterogeneity=loss.dynamic_loss[0].eq_params_heterogeneity
+    )
     with warnings.catch_warnings():
         # Here we catch the "Missing BC" warning as it is intended
         # in the neural Galerking approach
