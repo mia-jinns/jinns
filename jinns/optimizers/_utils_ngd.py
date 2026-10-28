@@ -229,8 +229,13 @@ def weighted_jac_and_residuals(
     reweighted_g = _reweight_pytree(pt=g, lw=sqrt_weights_per_sample)
 
     # ---
-    # Flatten the pytree of loss terms' jacobians as a tuple of (n * n_equations, p)
-    # arrays
+    # Flatten the pytree of loss terms' resiudals & jacobians as a tuple of shape
+    # (n * n_equation,) & (n * n_equations, p) arrays respectively
+    reweighted_r = jax.tree.map(
+        lambda a: jnp.reshape(a, (-1, 1)),  # reshape to (n,)
+        reweighted_r,
+        is_leaf=eqx.is_inexact_array,
+    )
     jacobians = ravel_pytree_of_grad(reweighted_g, "nn_params")
 
     jacobians_eq_params = None
@@ -246,13 +251,6 @@ def get_euclidean_grads(
     # --
     # Form the complete euclidean gradient
     # We differentiate an MSE so we need to multiply by 2 to get the exact euclidean grad
-
-    # NOTE: this is subtile but beware that euclidean gradient (might) differs from
-    # jax.grad(loss.evaluate)(params) here.
-    # Indeed jinns takes the sum(mean(loss_type)) while here we compute mean(sum(all_loss_types).
-    # These might differs when different number of samples per terms are used.
-    # Equality can be matched by changing the jinns reduction function internally.
-    # See tests/optimizer_tests/test_euclidean_gradient_equality.py
 
     euclidean_grad_pytree_nn_params = jax.tree.map(
         lambda M, R: jnp.einsum("ij,ij->j", M, R), jacobians, residuals
