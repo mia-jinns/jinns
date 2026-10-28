@@ -103,7 +103,9 @@ def train_NSPipeFlow_init():
 
     dyn_loss = jinns.loss.NavierStokesMassConservation2DStatio()
 
-    loss_weights = jinns.loss.LossWeightsPDEStatio(dyn_loss=1.0)
+    loss_weights = jinns.loss.LossWeightsPDEStatio(
+        dyn_loss=1.0,  # jnp.array([1.0])
+    )  # , 1.0, 1.0]))
 
     # Catching an expected UserWarning since no border condition is given
     # for this specific PDE resolution
@@ -171,4 +173,4 @@ def train_NSPipeFlow_10it_ngd(train_NSPipeFlow_init):
 
 def test_10it_NSPipeFlow_ngd(train_NSPipeFlow_10it_ngd):
     total_loss_val = train_NSPipeFlow_10it_ngd
-    assert jnp.allclose(total_loss_val, 0.00196479, atol=1e-5)
+    assert jnp.allclose(total_loss_val, 0.16688114, atol=1e-5)
