@@ -232,7 +232,6 @@ def weighted_jac_and_residuals(
     # Flatten the pytree of loss terms' jacobians as a tuple of (n * n_equations, p)
     # arrays
     jacobians = ravel_pytree_of_grad(reweighted_g, "nn_params")
-    reweighted_r
 
     jacobians_eq_params = None
     if with_eq_params_update:
@@ -246,6 +245,7 @@ def get_euclidean_grads(
 ):
     # --
     # Form the complete euclidean gradient
+    # We differentiate an MSE so we need to multiply by 2 to get the exact euclidean grad
 
     # NOTE: this is subtile but beware that euclidean gradient (might) differs from
     # jax.grad(loss.evaluate)(params) here.
@@ -257,15 +257,18 @@ def get_euclidean_grads(
     euclidean_grad_pytree_nn_params = jax.tree.map(
         lambda M, R: jnp.einsum("ij,ij->j", M, R), jacobians, residuals
     )
-    # which is equivalent to
-    # >>> euclidean_grad_array = jnp.sum(
-    #    M.transpose((0, 2, 1)) @ R[..., None],
-    #    axis=0,
+    # which is equivalent for each term of the loss to
+    # jnp.sum(
+    #    J.T @ R, # shape (n_params, n_channels)
+    #    axis=1,
     # ).squeeze()  # shape (n_params,)
     # # NOTE jnp.sum because averaging is done via the (1 / sqrt(n)) reweighting above
+
+    # Sum contribution of each loss term
     euclidean_grad_array_nn_params: Array = jax.tree.reduce(
         function=jnp.add, tree=euclidean_grad_pytree_nn_params
     )
+    euclidean_grad_array_nn_params *= 2  # MSE : (r^2)' = 2*r
 
     # --
     # Form eq_params euclidean gradient
@@ -275,7 +278,7 @@ def get_euclidean_grads(
         if jacobians_eq_params is None:
             raise ValueError(
                 "Gradient wrt to `eq_params` requested but necessary"
-                "quantity `Ms_eq_params` not provided."
+                "quantity `jacobians_eq_params` not provided."
             )
         euclidean_grad_pytree_eq_params = jax.tree.map(
             lambda M, R: jnp.einsum("ij,ij->j", M, R), jacobians_eq_params, residuals
@@ -283,6 +286,7 @@ def get_euclidean_grads(
         euclidean_grad_array_eq_params = jax.tree.reduce(
             jnp.add, euclidean_grad_pytree_eq_params
         )
+        euclidean_grad_array_eq_params *= 2  # MSE : (r^2)' = 2*r
 
     return euclidean_grad_array_nn_params, euclidean_grad_array_eq_params
 
