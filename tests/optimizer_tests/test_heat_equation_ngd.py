@@ -134,7 +134,7 @@ def test_heat_vanilla_ngd_10it(train_heat_init):
 def test_heat_matrix_free_ngd_10it(train_heat_init):
     init_params, loss, train_data, key = train_heat_init
     n_iter = 10
-    tx = vanilla_ngd(solver="matrix-free", maxit=1000, rtol=1e-10)
+    tx = vanilla_ngd(method="matrix-free", maxit=1000, rtol=1e-10)
     ngd_params = init_params
 
     key, subkey = random.split(key, 2)

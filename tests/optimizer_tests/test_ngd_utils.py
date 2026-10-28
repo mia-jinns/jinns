@@ -1,7 +1,8 @@
 """
-Test equality of euclidean gradients when the loss is
-$ \sum_{term} w_{term}/n_{term} L_{term}$
+Test equality of euclidean gradients when the loss is $\sum_{term} w_{term}/n_{term} L_{term}$
 """
+
+import pytest
 
 import jinns
 
@@ -20,8 +21,15 @@ from jinns.optimizers._utils_ngd import (
     _get_sqrt_weights_per_sample,
 )
 
+from jinns.optimizers._natural_gradient import (
+    vanilla_ngd,
+    compute_ng_full_gramian,
+    compute_ng_matrix_free,
+)
 
-def test_euclidean_gradients_equality():
+
+@pytest.fixture
+def create_loss_and_params():
     jax.config.update("jax_enable_x64", True)
     key = random.PRNGKey(2)
     key, subkey = random.split(key)
@@ -102,6 +110,12 @@ def test_euclidean_gradients_equality():
     )
 
     _, batch = train_data.get_batch()
+
+    return loss, init_params, batch
+
+
+def test_euclidean_gradients_equality(create_loss_and_params):
+    loss, init_params, batch = create_loss_and_params
 
     ############################################
     ## STANDARD WAY TO GET EUCLIDEAN GRADIENT ##
@@ -191,3 +205,53 @@ def test_euclidean_gradients_equality():
     assert jnp.allclose(euclidean_grad_std_flat_nn, euclidean_grad_array_ngd), (
         "Flattened version of the gradient (std vs NGD) do not coincide. If the test before passes, this means our custom jinns unravel/ravel functions do not flatten in a similar fashion as jax.flatten_util."
     )
+
+
+def test_ng_all_methods(create_loss_and_params):
+    loss, init_params, batch = create_loss_and_params
+
+    tx = vanilla_ngd(method="full")
+    ngd_state = tx.init(init_params)
+
+    # Full gram
+    (
+        natural_grad_array_nn_full_gram,
+        euclidean_grad_array_nn_params_full_gram,
+        euclidean_grad_array_eq_params_full_gram,
+        train_loss_value_full_gram,
+        _,
+        r_full_gram,
+    ) = compute_ng_full_gramian(loss, init_params, batch, ngd_state)
+
+    # Matrix-free via conjugate gradient
+    MAXIT = 1000
+    RTOL = 1e-6
+    (
+        natural_grad_array_nn_matrix_free,
+        euclidean_grad_array_nn_params_matrix_free,
+        euclidean_grad_array_eq_params_matrix_free,
+        train_loss_value_matrix_free,
+        _,
+        r_matrix_free,
+    ) = compute_ng_matrix_free(
+        loss, init_params, batch, ngd_state, maxit=MAXIT, rtol=RTOL
+    )
+
+    assert jnp.allclose(
+        euclidean_grad_array_nn_params_full_gram,
+        euclidean_grad_array_nn_params_matrix_free,
+    ), (
+        "[NN params] Euclidan grad do not agress for full gramian vs matrix-free ConjGrad."
+    )
+
+    assert jnp.allclose(
+        natural_grad_array_nn_full_gram,
+        natural_grad_array_nn_matrix_free,
+    ), (
+        "[NN params] Natural grad are not close up (full gramian vs matrix-free ConjGrad). Try raising maxit. Maybe the allclose tolerance should be higher."
+    )
+
+    assert jnp.allclose(
+        train_loss_value_full_gram,
+        train_loss_value_matrix_free,
+    ), "Different loss value between Full gram and matrix-free method"
