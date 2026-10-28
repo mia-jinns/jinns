@@ -18,12 +18,12 @@ def train_heat_init():
     key = random.PRNGKey(2)
     key, subkey = random.split(key)
 
-    n = 10000
+    n = 20
     ni = n
     nb = n
-    domain_batch_size = 400
-    initial_batch_size = domain_batch_size
-    border_batch_size = domain_batch_size // 4
+    domain_batch_size = 19
+    initial_batch_size = domain_batch_size - 1
+    border_batch_size = domain_batch_size // 4 - 2
     dim = 2
     xmin = -1
     xmax = 1
@@ -48,11 +48,11 @@ def train_heat_init():
     )
 
     eqx_list = (
-        (eqx.nn.Linear, 3, 25),  # 3 = t + x (2D)
+        (eqx.nn.Linear, 3, 2),  # 3 = t + x (2D)
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 25, 25),
+        (eqx.nn.Linear, 2, 5),
         (jax.nn.tanh,),
-        (eqx.nn.Linear, 25, 1),
+        (eqx.nn.Linear, 5, 1),
     )
 
     key, subkey = random.split(key)
@@ -99,37 +99,36 @@ def train_heat_init():
 
 
 def test_heat_vanilla_ngd_10it(train_heat_init):
-    pass
-    # init_params, loss, train_data, key = train_heat_init
-    # n_iter = 10
-    # tx = vanilla_ngd()
-    # ngd_params = init_params
+    init_params, loss, train_data, key = train_heat_init
+    n_iter = 10
+    tx = vanilla_ngd()
+    ngd_params = init_params
 
-    # key, subkey = random.split(key, 2)
-    # (
-    #     ngd_params,
-    #     total_loss_list,
-    #     loss_by_term_dict,
-    #     train_data,
-    #     loss,
-    #     _,
-    #     _,
-    #     _,
-    #     _,
-    #     _,
-    #     _,
-    #     _,
-    # ) = jinns.solve(
-    #     init_params=ngd_params,
-    #     data=train_data,
-    #     optimizer=tx,
-    #     loss=loss,
-    #     n_iter=n_iter,
-    #     print_loss_every=n_iter // 10,
-    # )
+    key, subkey = random.split(key, 2)
+    (
+        ngd_params,
+        total_loss_list,
+        loss_by_term_dict,
+        train_data,
+        loss,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+    ) = jinns.solve(
+        init_params=ngd_params,
+        data=train_data,
+        optimizer=tx,
+        loss=loss,
+        n_iter=n_iter,
+        print_loss_every=n_iter // 10,
+    )
 
-    # assert jnp.allclose(total_loss_list[-1], 0.23563605, atol=1e-4)
-    # assert ngd_params.eq_params.D == init_params.eq_params.D  # should not move
+    assert jnp.allclose(total_loss_list[-1], 0.18881796, atol=1e-4)
+    assert ngd_params.eq_params.D == init_params.eq_params.D  # should not move
 
 
 def test_heat_matrix_free_ngd_10it(train_heat_init):

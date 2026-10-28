@@ -16,7 +16,12 @@ import jax.numpy as jnp
 import equinox as eqx
 
 from jinns.loss._loss_components import PDENonStatioComponents
-from jinns.optimizers._utils_ngd import ravel_pytree_of_grad
+
+from jinns.optimizers._utils_ngd import (
+    _loss_weights_to_components,
+    weighted_jac_and_residuals,
+    _get_sqrt_weights_per_sample,
+)
 
 
 class LossPDENonStatio_(jinns.loss.LossPDENonStatio):
@@ -112,9 +117,9 @@ def test_euclidean_gradients_equality():
     boundary_condition = jinns.loss.Dirichlet()
 
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
-        dyn_loss=jnp.array(1.0),
-        initial_condition=jnp.array(1.0),
-        boundary_loss=None if boundary_condition is None else jnp.array(1.0),
+        dyn_loss=jnp.array(1.32),
+        initial_condition=jnp.array(2.4),
+        boundary_loss=None if boundary_condition is None else jnp.array(0.678),
     )
 
     def u0(x):
@@ -144,25 +149,18 @@ def test_euclidean_gradients_equality():
     )
 
     # sum gradients for each loss term
-    euclidean_grad_std = jax.tree.map(
-        lambda a, b, c: a + b + c,
-        euclidean_grad_std.dyn_loss[0].nn_params,
-        euclidean_grad_std.boundary_loss.nn_params,
-        euclidean_grad_std.initial_condition.nn_params,
-        is_leaf=eqx.is_inexact_array,
+    euclidean_grad_std = loss.ponderate_and_sum_gradient(euclidean_grad_std)
+
+    # Get the nn_params gradient (the one of interest for this test
+    # and make the gradients a flat array for the final comparison
+    euclidean_grad_nn_std, _ = jax.flatten_util.ravel_pytree(
+        euclidean_grad_std.nn_params
     )
-    # make the gradients a flat array for the final comparison
-    euclidean_grad_std = jnp.concatenate(
-        [
-            l.flatten()
-            for l in jax.tree.leaves(euclidean_grad_std, is_leaf=eqx.is_inexact_array)
-        ],
-        axis=0,
-    )
+
     # divide by the total number of samples to simulate a global average
     # (similar to what's done in NGD)
     n_sample_std = domain_batch_size + (border_batch_size * 2**dim) + initial_batch_size
-    euclidean_grad_std /= n_sample_std
+    euclidean_grad_nn_std /= n_sample_std
     train_loss_value_std = loss.ponderate_and_sum_loss(train_loss_terms) / n_sample_std
 
     ############################################
@@ -174,12 +172,23 @@ def test_euclidean_gradients_equality():
         batch,
     )
 
-    # Flatten the pytree of jacobians as a big (n * n_equations, p) array
-    jacobians = ravel_pytree_of_grad(g)
+    # Preprocess loss weights
+    # NOTE: Here we use batch_norm=False since this test is for the global average computation
+    # (no local avging per term)
+    lw_ = _loss_weights_to_components(loss.loss_weights, residuals)
+    sqrt_weights_per_sample = _get_sqrt_weights_per_sample(
+        lw=lw_, r=residuals, batch_norm=False
+    )
+
+    # -- Compute the weighted version of r, g and aggregte terms
+    # We get a flattenned version of the pytree of jacobians as a big (n * n_equations, p) array
+    jacobians_nn, weighted_residuals, _ = weighted_jac_and_residuals(
+        residuals, g, sqrt_weights_per_sample, with_eq_params_update=None
+    )
 
     # Get global number of samples
     n_samples_ngd = jax.tree.reduce(
-        jnp.add, jax.tree.leaves(jax.tree.map(lambda x: x.shape[0], residuals))
+        jnp.add, jax.tree.leaves(jax.tree.map(lambda x: x.shape[0], weighted_residuals))
     )
 
     assert n_samples_ngd == n_sample_std, (
@@ -187,13 +196,8 @@ def test_euclidean_gradients_equality():
     )
 
     euclidean_grad_pytree = jax.tree.map(
-        lambda J, R: jnp.einsum("ij,ij->j", J, R), jacobians, residuals
+        lambda J, R: jnp.einsum("ij,ij->j", J, R), jacobians_nn, weighted_residuals
     )
-    # <=>
-    # euclidean_grad_array = jnp.sum(  # NOTE sum because averageing is thanks to reweighting
-    #    M.transpose((0, 2, 1)) @ R[..., None],
-    #    axis=0,
-    # ).squeeze()  # shape (n_params,)
     # multiply by 2 which is a factor that appears in a complete derivation of
     # NGD (from the mean square error)
 
@@ -207,19 +211,13 @@ def test_euclidean_gradients_equality():
 
     # Loss value equality
     train_loss_value_ngd = jnp.sum(
-        jnp.concatenate(
-            jax.tree.leaves(
-                jax.tree.map(
-                    lambda arr: jnp.sum(arr**2, axis=-1),
-                    residuals,
-                ),
-            ),
-            axis=0,
-        )
+        jax.flatten_util.ravel_pytree(weighted_residuals)[0] ** 2
     )
-    train_loss_value_ngd /= n_samples_ngd  # average manually
+    train_loss_value_ngd /= n_samples_ngd  # do global average manually
     assert jnp.allclose(train_loss_value_std, train_loss_value_ngd), (
         "Train loss values do not agree btween the two method of computation"
     )
-    # gradient
-    assert jnp.allclose(euclidean_grad_ngd, euclidean_grad_std)
+    # gradient equality
+    assert jnp.allclose(euclidean_grad_ngd, euclidean_grad_nn_std), (
+        "Euclidean gradients do not agree between the two method of computation"
+    )

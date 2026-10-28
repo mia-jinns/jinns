@@ -1,6 +1,6 @@
 """
 Test equality of euclidean gradients when the loss is
- $ \sum_term w_{term}/n_{term} L_{term}$
+$ \sum_{term} w_{term}/n_{term} L_{term}$
 """
 
 import jinns
@@ -84,6 +84,11 @@ def test_euclidean_gradients_equality():
     boundary_condition = jinns.loss.Dirichlet()
 
     loss_weights = jinns.loss.LossWeightsPDENonStatio(
+        dyn_loss=jnp.array(1.32),
+        initial_condition=jnp.array(2.4),
+        boundary_loss=None if boundary_condition is None else jnp.array(0.678),
+    )
+    loss_weights = jinns.loss.LossWeightsPDENonStatio(
         dyn_loss=jnp.array(1.0),
         initial_condition=jnp.array(1.0),
         boundary_loss=None if boundary_condition is None else jnp.array(1.0),
@@ -152,9 +157,6 @@ def test_euclidean_gradients_equality():
         euclidean_grad_array_ngd, init_params, eq_params_array=None
     )
 
-    # we need *2 since its an MSE !
-    euclidean_grad_pytree_ngd = jax.tree.map(lambda l: 2 * l, euclidean_grad_pytree_ngd)
-
     ##############
     # COMPARISON #
     ##############
@@ -179,8 +181,8 @@ def test_euclidean_gradients_equality():
     assert jax.tree.all(
         jax.tree.map(
             lambda a, b: jnp.allclose(a, b),
-            euclidean_grad_pytree_std,
             euclidean_grad_pytree_ngd,
+            euclidean_grad_pytree_std,
         )
     ), (
         "Some leaves in both gradient (grad(jinns.evaluate) vs 2 * sum(J * R)) PyTree are not the same"
@@ -191,6 +193,6 @@ def test_euclidean_gradients_equality():
         euclidean_grad_pytree_std.nn_params
     )
 
-    assert jnp.allclose(euclidean_grad_std_flat_nn, 2 * euclidean_grad_array_ngd), (
+    assert jnp.allclose(euclidean_grad_std_flat_nn, euclidean_grad_array_ngd), (
         "Flattened version of the gradient (std vs NGD) do not coincide. If the test before passes, this means our custom jinns unravel/ravel functions do not flatten in a similar fashion as jax.flatten_util."
     )
