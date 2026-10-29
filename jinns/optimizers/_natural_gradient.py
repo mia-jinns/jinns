@@ -410,7 +410,7 @@ def compute_ng_matrix_free(
     stacked_r, jvp, r = jax.linearize(scaled_residuals, flat_nn, has_aux=True)
     vjp = jax.linear_transpose(jvp, flat_nn)
 
-    def mf_gram_product(v: Array[Float, " n_params"]) -> Array[Float, " n_params"]:
+    def mf_gram_product(v: Float[Array, " n_params"]) -> Float[Array, " n_params"]:
         """Matrix-free version of v -> J^T (J v) + reg v"""
         return vjp(jvp(v))[0] + ngd_state.gram_reg * v
 
