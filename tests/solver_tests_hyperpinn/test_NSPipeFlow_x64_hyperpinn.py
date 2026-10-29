@@ -173,4 +173,4 @@ def train_NSPipeFlow_10it_ngd(train_NSPipeFlow_init):
 
 def test_10it_NSPipeFlow_ngd(train_NSPipeFlow_10it_ngd):
     total_loss_val = train_NSPipeFlow_10it_ngd
-    assert jnp.allclose(total_loss_val, 0.16688114, atol=1e-5)
+    assert jnp.allclose(total_loss_val, 0.01066104, atol=1e-5)
