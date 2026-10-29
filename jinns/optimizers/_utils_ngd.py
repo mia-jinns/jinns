@@ -198,9 +198,9 @@ def _get_sqrt_weights_per_sample(
                 jnp.array(
                     jax.tree.leaves(
                         jax.tree.map(
-                            lambda l: (
-                                l.shape[0] * l.shape[1]
-                            ),  # [0]: nb_point & [1]: nb_equations in system
+                            # [0]: nb_point & [1]: nb_equations in system
+                            lambda l: l.shape[0],  # mimic jinns `mean_sum_reduction`
+                            # NOTE: l.shape[0] * l.shape[1] would be equivalent to `mean_mean_reduction`
                             r,
                         )
                     )
