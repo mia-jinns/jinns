@@ -81,24 +81,27 @@ def create_loss_and_params():
     )
 
     class HeatEquation(jinns.loss.PDENonStatio):
-        def equation(self, t_x, u, params):
+        def equation(self, t_x, u, params) -> jnp.ndarray:  # shape 2
             u_t_x = lambda t_x: u(t_x, params).squeeze()
             u_dt = jax.grad(u_t_x)(t_x)[0:1]
             lap = jinns.loss.laplacian_rev(t_x, u, params, eq_type="PDENonStatio")
-            return u_dt - params.eq_params.D * lap
+            res = u_dt - params.eq_params.D * lap
+            return jnp.stack(
+                [res, res * u_dt], axis=-1
+            ).squeeze()  # dummy adaptation of the loss to shape (2,) vectorial
 
     dyn_loss_heat = HeatEquation()
 
-    boundary_condition = jinns.loss.Dirichlet()
-
-    loss_weights = jinns.loss.LossWeightsPDENonStatio(
-        dyn_loss=jnp.array(1.32),
-        initial_condition=jnp.array(2.4),
-        boundary_loss=None if boundary_condition is None else jnp.array(0.678),
-    )
-
     def u0(x):
         return jnp.sin(jnp.pi * x[0]) * jnp.sin(jnp.pi * x[1])
+
+    boundary_condition = jinns.loss.Dirichlet()
+    # u0 = None
+    loss_weights = jinns.loss.LossWeightsPDENonStatio(
+        dyn_loss=jnp.array(1.32),
+        initial_condition=None if u0 is None else jnp.array(2.4),
+        boundary_loss=None if boundary_condition is None else jnp.array(0.678),
+    )
 
     loss = LossPDENonStatio(
         u=u,
@@ -182,8 +185,9 @@ def test_euclidean_gradients_equality(create_loss_and_params):
             axis=0,
         )
     )
+
     assert jnp.allclose(train_loss_value_std, train_loss_value_ngd), (
-        "Train loss values do not agree btween the two method of computation"
+        "Train loss values do not agree between the two method of computation"
     )
 
     # Gradient equality at each leaf of Params pytree
@@ -241,7 +245,7 @@ def test_ng_all_methods(create_loss_and_params):
         euclidean_grad_array_nn_params_full_gram,
         euclidean_grad_array_nn_params_matrix_free,
     ), (
-        "[NN params] Euclidan grad do not agress for full gramian vs matrix-free ConjGrad."
+        "[NN params] Euclidan grad do not agree for full gramian vs matrix-free ConjGrad."
     )
 
     assert jnp.allclose(

@@ -110,7 +110,10 @@ def test_euclidean_gradients_equality():
             u_t_x = lambda t_x: u(t_x, params).squeeze()
             u_dt = jax.grad(u_t_x)(t_x)[0:1]
             lap = jinns.loss.laplacian_rev(t_x, u, params, eq_type="PDENonStatio")
-            return u_dt - params.eq_params.D * lap
+            res = u_dt - params.eq_params.D * lap
+            return jnp.stack(
+                [res, res * u_dt], axis=-1
+            ).squeeze()  # dummy adaptation of the loss to shape (2,) vectorial
 
     dyn_loss_heat = HeatEquation()
 
@@ -188,7 +191,7 @@ def test_euclidean_gradients_equality():
 
     # Get global number of samples
     n_samples_ngd = jax.tree.reduce(
-        jnp.add, jax.tree.leaves(jax.tree.map(lambda x: x.shape[0], weighted_residuals))
+        jnp.add, jax.tree.leaves(jax.tree.map(lambda x: x.shape[0], residuals))
     )
 
     assert n_samples_ngd == n_sample_std, (
