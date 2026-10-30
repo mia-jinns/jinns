@@ -13,7 +13,7 @@ import optax
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-from jaxtyping import Array, PRNGKeyArray
+from jaxtyping import Array, PRNGKeyArray, PyTree
 from jinns.loss._DynamicLossAbstract import PDEStatio
 from jinns.loss._loss_weights import LossWeightsPDEStatio
 from jinns.parameters._derivative_keys import DerivativeKeysPDEStatio
@@ -99,23 +99,38 @@ def _solve_discrete_pinn(
     # we precompile the solve functions that will be used iteratively
     # many times
     if scheme in ["rk1", "rk-1", "explicit-euler"]:
-        _eq_params = _EqParams(
-            asdict(params_t0.eq_params) | {"prev_params": params_t0}, "_EqParams"
+
+        class ParamsRK(Params[Array]):
+            """
+            Subclass of Params to store the relevant intermediate nn_params needed
+            in the discrete time scheme.
+            The new fields added to Params are transparent for the rest of jinns!
+            """
+
+            prev_nn_params: PyTree[Array]
+
+            def __init__(
+                self,
+                *,
+                nn_params: PyTree[Array],
+                eq_params: PyTree[Array],
+                prev_nn_params: PyTree[Array],
+            ):
+                self.prev_nn_params = prev_nn_params
+                super().__init__(nn_params, eq_params)
+
+        params_t0_rk1 = ParamsRK(
+            nn_params=params_t0.nn_params,
+            eq_params=params_t0.eq_params,
+            prev_nn_params=params_t0.nn_params,
         )
-        params_t0_ = eqx.tree_at(lambda pt: pt.eq_params, params_t0, _eq_params)
-        # we need to recreate _eq_params_heterogeneity as a _EqParams instance
-        _eq_params_heterogeneity = _EqParams(
-            asdict(loss.dynamic_loss[0].eq_params_heterogeneity)
-            | {"prev_params": None},
-            "_EqParams",  # type: ignore
-        )
-        dyn_loss_rk = _get_dyn_loss_rk1or2(loss.dynamic_loss[0], "prev_params", dt)(
-            eq_params_heterogeneity=_eq_params_heterogeneity,
+        dyn_loss_rk = _get_dyn_loss_rk1or2(loss.dynamic_loss[0], "prev_nn_params", dt)(
+            eq_params_heterogeneity=loss.dynamic_loss[0].eq_params_heterogeneity,
         )
         compiled_solve_rk1, carry = _get_compiled_solve_rk(
             dyn_loss_rk,
             loss,
-            params_t0_,
+            params_t0_rk1,
             n_iter,
             data,
             optimizer,
@@ -127,43 +142,75 @@ def _solve_discrete_pinn(
             return compiled_solve_rk1(carry)
 
     elif scheme in ["rk2", "rk-2"]:
-        # The second equation of RK2 needs 3 sets of parameters
-        _eq_params = _EqParams(
-            asdict(params_t0.eq_params)
-            | {"prev_params": params_t0, "rk2_params": params_t0},
-            "_EqParams",
+
+        class ParamsRK(Params[Array]):
+            """
+            Subclass of Params to store the relevant intermediate nn_params needed
+            in the discrete time scheme.
+            The new fields added to Params are transparent for the rest of jinns!
+            """
+
+            prev_nn_params: PyTree[Array]
+            prev_nn_params2: PyTree[Array]
+
+            def __init__(
+                self,
+                *,
+                nn_params: PyTree[Array],
+                eq_params: PyTree[Array],
+                prev_nn_params: PyTree[Array],
+                prev_nn_params2: PyTree[Array],
+            ):
+                self.prev_nn_params = prev_nn_params
+                self.prev_nn_params2 = prev_nn_params2
+                super().__init__(nn_params, eq_params)
+
+        params_t0_rk2 = ParamsRK(
+            nn_params=params_t0.nn_params,
+            eq_params=params_t0.eq_params,
+            prev_nn_params=params_t0.nn_params,
+            prev_nn_params2=params_t0.nn_params,
         )
-        params_t0_ = eqx.tree_at(lambda pt: pt.eq_params, params_t0, _eq_params)
-        _eq_params_heterogeneity = _EqParams(
-            asdict(loss.dynamic_loss[0].eq_params_heterogeneity)
-            | {"prev_params": None}
-            | {"rk2_params": None},
-            "_EqParams",  # type: ignore
-        )
+        # # The second equation of RK2 needs 3 sets of parameters
+        # _eq_params = _EqParams(
+        #     asdict(params_t0.eq_params)
+        #     | {"prev_params": params_t0, "rk2_params": params_t0},
+        #     "_EqParams",
+        # )
+        # params_t0_ = eqx.tree_at(lambda pt: pt.eq_params, params_t0, _eq_params)
+        # _eq_params_heterogeneity = _EqParams(
+        #     asdict(loss.dynamic_loss[0].eq_params_heterogeneity)
+        #     | {"prev_params": None}
+        #     | {"rk2_params": None},
+        #     "_EqParams",  # type: ignore
+        # )
         # https://fr.wikipedia.org/wiki/M%C3%A9thodes_de_Runge-Kutta#Sch%C3%A9ma_pr%C3%A9dicteur-correcteur_explicite_(RK2)
         # equations from the previous linked paragraph with f being the stationary differential operator
         dyn_loss_rk1 = _get_dyn_loss_rk1or2(
-            loss.dynamic_loss[0], "prev_params", dt / 2
+            loss.dynamic_loss[0], "prev_nn_params", dt / 2
         )(
-            eq_params_heterogeneity=_eq_params_heterogeneity,
+            eq_params_heterogeneity=loss.dynamic_loss[0].eq_params_heterogeneity,
         )
         compiled_solve_rk1, carry = _get_compiled_solve_rk(
             dyn_loss_rk1,
             loss,
-            params_t0_,
+            params_t0_rk2,
             n_iter,
             data,
             optimizer,
             param_data,
             extra_optax_args_and_kwargs,
         )
-        dyn_loss_rk2 = _get_dyn_loss_rk1or2(loss.dynamic_loss[0], "rk2_params", dt)(
-            eq_params_heterogeneity=_eq_params_heterogeneity, params=params_t0_
+        dyn_loss_rk2 = _get_dyn_loss_rk1or2(
+            loss.dynamic_loss[0], "prev_nn_params2", dt
+        )(
+            eq_params_heterogeneity=loss.dynamic_loss[0].eq_params_heterogeneity,
+            params=params_t0_rk2,
         )
         compiled_solve_rk2, carry2 = _get_compiled_solve_rk(
             dyn_loss_rk2,
             loss,
-            params_t0_,
+            params_t0_rk2,
             n_iter,
             data,
             optimizer,
@@ -185,9 +232,9 @@ def _solve_discrete_pinn(
                 lambda pt: pt[1].dynamic_loss[0], carry, dyn_loss2
             )
             carry, _ = update_carry_and_xxx_params(
-                carry, "rk2_params"
-            )  # prev_params stays the same and
-            # rk2_params enters the place ie the parameters which parameterize the solution of the first equation
+                carry, "prev_nn_params2"
+            )  # prev_nn_params stays the same and
+            # prev_nn_params2 enters the place ie the parameters which parameterize the solution of the first equation
             # ie. the derivative at the middle of the integration step
             carry = compiled_solve_rk2(carry)  # this computes second equation XXX
             return carry
@@ -380,18 +427,16 @@ def _solve_discrete_pinn(
 
 
 @jax.jit(static_argnames=["xxx_params"])
-def update_carry_and_xxx_params(carry, xxx_params="prev_params"):
+def update_carry_and_xxx_params(carry, xxx_params="prev_nn_params"):
     """
-    Set the value of xxx_params of eq_params of the carry current parameters (carry[2].params)
+    Set the value of xxx_params of the carry current parameters (carry[2].params)
     to the value of nn_params of the carry current parameters (carry[2].params)
 
     Also reset the carry counter to 0
     """
     new_params = carry[2].params
     new_params = eqx.tree_at(
-        lambda pt: getattr(
-            pt.eq_params, xxx_params
-        ).nn_params,  # NOTE this forbids eq_params updates!
+        lambda pt: getattr(pt, xxx_params),  # NOTE this forbids eq_params updates!
         new_params,
         new_params.nn_params,
     )
@@ -417,30 +462,26 @@ def _get_dyn_loss_rk1or2(dyn_loss, space_operator_params_name, dt):
     From the PDE residuals (without the time derivative component) (ie the space operator <=> dyn_loss),
     construct the dyn_loss (ie the residuals) that will be minimized in the RK step
 
-    RK1 <=> space_operator_params_name == "prev_params"
+    RK1 <=> space_operator_params_name == "prev_nn_params"
     """
 
     # we modify the dynamic loss accordingly
     class DynLossRK(PDEStatio):
         def equation(self, x, u, params):
+            # NOTE we need to make sure that params.eq_params are the actual eq_params that are used
+            # because they have undergone the eq_params_heterogeneity function
+            # hence the tree_at to just swap the nn_params
+            # NOTE also, the dyn_loss.equation (the original will call nn_params so we should place prev_prams )
+            prev_params = eqx.tree_at(
+                lambda pt: pt.nn_params,
+                params,
+                getattr(params, space_operator_params_name),
+            )
             return (
                 u(x, params)
-                - jax.lax.stop_gradient(
-                    u(x, params.eq_params.prev_params)
-                    - dt
-                    * dyn_loss.equation(
-                        x,
-                        u,
-                        eqx.tree_at(  # NOTE we need to make sure that params.eq_params are the actual eq_params that are used
-                            # because they have undergone the eq_params_heterogeneity function
-                            # hence the tree_at to just swap the nn_params
-                            lambda pt: pt.nn_params,
-                            params,
-                            getattr(
-                                params.eq_params, space_operator_params_name
-                            ).nn_params,
-                        ),
-                    )
+                - jax.lax.stop_gradient(  # NOTE need stop gradient because stop gradient have not been set around prev_params in
+                    # non updated DerivativeKeys
+                    u(x, prev_params) - dt * dyn_loss.equation(x, u, prev_params)
                 )
             )
 
