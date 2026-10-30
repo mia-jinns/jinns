@@ -100,7 +100,7 @@ def _solve_discrete_pinn(
     # many times
     if scheme in ["rk1", "rk-1", "explicit-euler"]:
 
-        class ParamsRK(Params[Array]):
+        class ParamsRK1(Params[Array]):
             """
             Subclass of Params to store the relevant intermediate nn_params needed
             in the discrete time scheme.
@@ -119,7 +119,7 @@ def _solve_discrete_pinn(
                 self.prev_nn_params = prev_nn_params
                 super().__init__(nn_params, eq_params)
 
-        params_t0_rk1 = ParamsRK(
+        params_t0_rk1 = ParamsRK1(
             nn_params=params_t0.nn_params,
             eq_params=params_t0.eq_params,
             prev_nn_params=params_t0.nn_params,
@@ -143,7 +143,7 @@ def _solve_discrete_pinn(
 
     elif scheme in ["rk2", "rk-2"]:
 
-        class ParamsRK(Params[Array]):
+        class ParamsRK2(Params[Array]):
             """
             Subclass of Params to store the relevant intermediate nn_params needed
             in the discrete time scheme.
@@ -165,7 +165,7 @@ def _solve_discrete_pinn(
                 self.prev_nn_params2 = prev_nn_params2
                 super().__init__(nn_params, eq_params)
 
-        params_t0_rk2 = ParamsRK(
+        params_t0_rk2 = ParamsRK2(
             nn_params=params_t0.nn_params,
             eq_params=params_t0.eq_params,
             prev_nn_params=params_t0.nn_params,
@@ -475,13 +475,19 @@ def _get_dyn_loss_rk1or2(dyn_loss, space_operator_params_name, dt):
             prev_params = eqx.tree_at(
                 lambda pt: pt.nn_params,
                 params,
+                params.prev_nn_params,
+            )
+            space_operator_params_name_params = eqx.tree_at(
+                lambda pt: pt.nn_params,
+                params,
                 getattr(params, space_operator_params_name),
             )
             return (
                 u(x, params)
                 - jax.lax.stop_gradient(  # NOTE need stop gradient because stop gradient have not been set around prev_params in
                     # non updated DerivativeKeys
-                    u(x, prev_params) - dt * dyn_loss.equation(x, u, prev_params)
+                    u(x, prev_params)
+                    - dt * dyn_loss.equation(x, u, space_operator_params_name_params)
                 )
             )
 
