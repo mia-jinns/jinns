@@ -142,9 +142,8 @@ def params_array_to_pytree(
         # by default eq_params is filled with Zeros so that additive updates
         # leave them unchanged.
         eq_params_pt = optax.tree.zeros_like(params.eq_params)
-    return Params(
-        nn_params=nn_params_pt,
-        eq_params=eq_params_pt,
+    return eqx.tree_at(
+        lambda pt: (pt.nn_params, pt.eq_params), params, (nn_params_pt, eq_params_pt)
     )
 
 
