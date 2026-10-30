@@ -19,10 +19,10 @@ def _get_masked_parameters(
     """
     # start with a params object with True everywhere. We will update to False
     # for parameters wrt which we do want not to differentiate the loss
-    diff_params = Params(
-        nn_params=True, eq_params=jax.tree.map(lambda _: True, params.eq_params)
-    )  # do not travers nn_params, more
-    # granularity could be imagined here, in the future
+    diff_params = jax.tree.map(lambda _: True, params)
+    # BUT do not traverse nn_params, more
+    # granularity could be imagined here, in the future:
+    diff_params = eqx.tree_at(lambda pt: pt.nn_params, diff_params, True)
     if derivative_mask_str == "both":
         return diff_params
     if derivative_mask_str == "eq_params":
@@ -506,17 +506,21 @@ def _set_derivatives(
             "Params.eq_params. This is often due to a wrong Params[bool] "
             "passed when initializing the derivative key object."
         )
-        return Params(
-            nn_params=jax.lax.cond(
-                derivative_mask.nn_params,
-                lambda p: p,
-                jax.lax.stop_gradient,
-                params_.nn_params,
-            ),
-            eq_params=jax.tree.map(
-                lambda p, d: jax.lax.cond(d, lambda p: p, jax.lax.stop_gradient, p),
-                params_.eq_params,
-                derivative_mask.eq_params,
+        return eqx.tree_at(
+            lambda pt: (pt.nn_params, pt.eq_params),
+            params_,
+            (
+                jax.lax.cond(
+                    derivative_mask.nn_params,
+                    lambda p: p,
+                    jax.lax.stop_gradient,
+                    params_.nn_params,
+                ),
+                jax.tree.map(
+                    lambda p, d: jax.lax.cond(d, lambda p: p, jax.lax.stop_gradient, p),
+                    params_.eq_params,
+                    derivative_mask.eq_params,
+                ),
             ),
         )
         # NOTE that currently we do not travers nn_params, more
