@@ -5,6 +5,7 @@ Formalize the data structure for the parameters
 from __future__ import annotations
 from dataclasses import fields
 from typing import Generic, TypeVar
+import jax
 import equinox as eqx
 from jaxtyping import Array, PyTree
 
@@ -121,9 +122,8 @@ def _get_vmap_in_axes_params(
         for k in fields(params.eq_params)
     }
     eq_param_vmap_axes = type(params.eq_params)(**vmap_axes_dict)
+    params_ = jax.tree.map(lambda _: None, params)
     vmap_in_axes_params = (
-        eqx.tree_at(
-            lambda pt: (pt.nn_params, pt.eq_params), params, (None, eq_param_vmap_axes)
-        ),
+        eqx.tree_at(lambda pt: (pt.eq_params), params_, eq_param_vmap_axes),
     )
     return vmap_in_axes_params
