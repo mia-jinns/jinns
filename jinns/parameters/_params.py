@@ -121,7 +121,9 @@ def _get_vmap_in_axes_params(
         for k in fields(params.eq_params)
     }
     eq_param_vmap_axes = type(params.eq_params)(**vmap_axes_dict)
-    vmap_in_axes_params = eqx.tree_at(
-        lambda pt: pt.eq_params, params, eq_param_vmap_axes
+    vmap_in_axes_params = (
+        eqx.tree_at(
+            lambda pt: (pt.nn_params, pt.eq_params), params, (None, eq_param_vmap_axes)
+        ),
     )
     return vmap_in_axes_params
