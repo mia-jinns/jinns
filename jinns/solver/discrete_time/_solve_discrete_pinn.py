@@ -18,7 +18,6 @@ from jinns.loss._loss_weights import LossWeightsPDEStatio
 from jinns.parameters._derivative_keys import DerivativeKeysPDEStatio
 from jinns.solver._solve import solve
 from jinns.parameters._params import Params
-from jinns.utils._DictToModuleMeta import DictToModuleMeta
 from jinns.data._CubicMeshPDEStatio import CubicMeshPDEStatio
 from jinns.loss._LossPDE import LossPDEStatio
 from jinns.utils._containers import OptimizationContainer
@@ -86,14 +85,6 @@ def _solve_discrete_pinn(
     print("\n\n #-- Starting the optimizations at each time step.")
     times_saved = jnp.array(times_saved)
     n_times_saved = len(times_saved)
-
-    # We need to modify internally Params to be able to store the previous parameters
-    # for evaluation in the dynamic loss.abs
-    # # We then make a little abuse of what Params.eq_params is meant for
-    class _EqParams(metaclass=DictToModuleMeta):
-        """ """
-
-        pass
 
     # we precompile the solve functions that will be used iteratively
     # many times
