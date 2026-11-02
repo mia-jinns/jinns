@@ -104,11 +104,11 @@ def _solve_discrete_pinn(
         )
         params_t0_ = eqx.tree_at(lambda pt: pt.eq_params, params_t0, _eq_params)
         # we need to recreate _eq_params_heterogeneity as a _EqParams instance
-        _eq_params_heterogeneity = _EqParams(
-            asdict(loss.dynamic_loss[0].eq_params_heterogeneity)
-            | {"prev_params": None},
-            "_EqParams",  # type: ignore
-        )
+        _eq_params_heterogeneity = None  # _EqParams(
+        #     asdict(loss.dynamic_loss[0].eq_params_heterogeneity)
+        #     | {"prev_params": None},
+        #     "_EqParams",  # type: ignore
+        # )
         dyn_loss_rk = _get_dyn_loss_rk1or2(loss.dynamic_loss[0], "prev_params", dt)(
             eq_params_heterogeneity=_eq_params_heterogeneity,
         )
@@ -134,12 +134,12 @@ def _solve_discrete_pinn(
             "_EqParams",
         )
         params_t0_ = eqx.tree_at(lambda pt: pt.eq_params, params_t0, _eq_params)
-        _eq_params_heterogeneity = _EqParams(
-            asdict(loss.dynamic_loss[0].eq_params_heterogeneity)
-            | {"prev_params": None}
-            | {"rk2_params": None},
-            "_EqParams",  # type: ignore
-        )
+        _eq_params_heterogeneity = None  # _EqParams(
+        #     asdict(loss.dynamic_loss[0].eq_params_heterogeneity)
+        #     | {"prev_params": None}
+        #     | {"rk2_params": None},
+        #     "_EqParams",  # type: ignore
+        # )
         # https://fr.wikipedia.org/wiki/M%C3%A9thodes_de_Runge-Kutta#Sch%C3%A9ma_pr%C3%A9dicteur-correcteur_explicite_(RK2)
         # equations from the previous linked paragraph with f being the stationary differential operator
         dyn_loss_rk1 = _get_dyn_loss_rk1or2(
@@ -203,14 +203,14 @@ def _solve_discrete_pinn(
             "_EqParams",
         )
         params_t0_ = eqx.tree_at(lambda pt: pt.eq_params, params_t0, _eq_params)
-        _eq_params_heterogeneity = _EqParams(
-            asdict(loss.dynamic_loss[0].eq_params_heterogeneity)
-            | {"prev_params": None}
-            | {"rk4_params_1": None}
-            | {"rk4_params_2": None}
-            | {"rk4_params_3": None},
-            "_EqParams",
-        )
+        _eq_params_heterogeneity = None  # _EqParams(
+        #     asdict(loss.dynamic_loss[0].eq_params_heterogeneity)
+        #     | {"prev_params": None}
+        #     | {"rk4_params_1": None}
+        #     | {"rk4_params_2": None}
+        #     | {"rk4_params_3": None},
+        #     "_EqParams",
+        # )
         dyn_loss_rk1 = _get_dyn_loss_rk1or2(
             loss.dynamic_loss[0], "prev_params", dt / 2
         )(
