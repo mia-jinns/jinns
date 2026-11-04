@@ -88,6 +88,9 @@ def _solve_discrete_pinn(
     times_saved = jnp.array(times_saved)
     n_times_saved = len(times_saved)
 
+    n_iter_pretrain = 100
+    tx_pretrain = optax.adam(1e-3)
+
     # We need to modify internally Params to be able to store the previous parameters
     # for evaluation in the dynamic loss.abs
     # # We then make a little abuse of what Params.eq_params is meant for
@@ -112,6 +115,16 @@ def _solve_discrete_pinn(
         dyn_loss_rk = _get_dyn_loss_rk1or2(loss.dynamic_loss[0], "prev_params", dt)(
             eq_params_heterogeneity=_eq_params_heterogeneity,
         )
+        compiled_solve_rk1_pretrain, carry_pretrain = _get_compiled_solve_rk(
+            dyn_loss_rk,
+            loss,
+            params_t0_,
+            n_iter_pretrain,
+            data,
+            tx_pretrain,
+            param_data,
+            extra_optax_args_and_kwargs,
+        )
         compiled_solve_rk1, carry = _get_compiled_solve_rk(
             dyn_loss_rk,
             loss,
@@ -123,8 +136,12 @@ def _solve_discrete_pinn(
             extra_optax_args_and_kwargs,
         )
 
-        def compiled_solve(carry):
-            return compiled_solve_rk1(carry)
+        def compiled_solve(carry, carry_pretrain):
+            carry_pretrain = compiled_solve_rk1_pretrain(carry_pretrain)
+            carry = eqx.tree_at(
+                lambda pt: pt[2].params, carry, carry_pretrain[2].params
+            )
+            return compiled_solve_rk1(carry), carry_pretrain
 
     elif scheme in ["rk2", "rk-2"]:
         # The second equation of RK2 needs 3 sets of parameters
@@ -146,6 +163,16 @@ def _solve_discrete_pinn(
             loss.dynamic_loss[0], "prev_params", dt / 2
         )(
             eq_params_heterogeneity=_eq_params_heterogeneity,
+        )
+        compiled_solve_rk1_pretrain, carry_pretrain = _get_compiled_solve_rk(
+            dyn_loss_rk1,
+            loss,
+            params_t0_,
+            n_iter_pretrain,
+            data,
+            tx_pretrain,
+            param_data,
+            extra_optax_args_and_kwargs,
         )
         compiled_solve_rk1, carry = _get_compiled_solve_rk(
             dyn_loss_rk1,
@@ -173,14 +200,16 @@ def _solve_discrete_pinn(
         dyn_loss1 = carry[1].dynamic_loss[0]  # pyright: ignore
         dyn_loss2 = carry2[1].dynamic_loss[0]  # pyright: ignore
 
-        def compiled_solve(carry):
-            carry = eqx.tree_at(  # we need to change the loss of the carry because the dynamic loss is a static
-                # arg which is different in each compiled function
-                lambda pt: pt[1].dynamic_loss[0],
-                carry,
+        def compiled_solve(carry, carry_pretrain):
+            # only first optimization problem needs pretraining
+            carry, carry_pretrain = pretrain_train_block(
                 dyn_loss1,
+                compiled_solve_rk1,
+                compiled_solve_rk1_pretrain,
+                carry,
+                carry_pretrain,
             )
-            carry = compiled_solve_rk1(carry)  # this computes first equation XXX
+
             carry = eqx.tree_at(  # see comment above
                 lambda pt: pt[1].dynamic_loss[0], carry, dyn_loss2
             )
@@ -190,7 +219,7 @@ def _solve_discrete_pinn(
             # rk2_params enters the place ie the parameters which parameterize the solution of the first equation
             # ie. the derivative at the middle of the integration step
             carry = compiled_solve_rk2(carry)  # this computes second equation XXX
-            return carry
+            return carry, carry_pretrain
     elif scheme in ["rk4", "rk-4"]:
         _eq_params = _EqParams(
             asdict(params_t0.eq_params)
@@ -215,6 +244,16 @@ def _solve_discrete_pinn(
             loss.dynamic_loss[0], "prev_params", dt / 2
         )(
             eq_params_heterogeneity=_eq_params_heterogeneity,
+        )
+        compiled_solve_rk1_pretrain, carry_pretrain = _get_compiled_solve_rk(
+            dyn_loss_rk1,
+            loss,
+            params_t0_,
+            n_iter_pretrain,
+            data,
+            tx_pretrain,
+            param_data,
+            extra_optax_args_and_kwargs,
         )
         compiled_solve_rk1, carry = _get_compiled_solve_rk(
             dyn_loss_rk1,
@@ -273,14 +312,18 @@ def _solve_discrete_pinn(
         dyn_loss3 = carry3[1].dynamic_loss[0]  # pyright: ignore
         dyn_loss4 = carry4[1].dynamic_loss[0]  # pyright: ignore
 
-        def compiled_solve(carry):
-            carry = eqx.tree_at(  # we need to change the loss of the carry because the dynamic loss is a static
-                # arg which is different in each compiled function
-                lambda pt: pt[1].dynamic_loss[0],
-                carry,
+        def compiled_solve(carry, carry_pretrain):
+            # only first optimization problem needs pretraining
+
+            # this first block computes y_n + h / 2 * k_1
+            carry, carry_pretrain = pretrain_train_block(
                 dyn_loss1,
+                compiled_solve_rk1,
+                compiled_solve_rk1_pretrain,
+                carry,
+                carry_pretrain,
             )
-            carry = compiled_solve_rk1(carry)  # this computes y_n + h / 2 * k_1
+
             carry = eqx.tree_at(  # see comment above
                 lambda pt: pt[1].dynamic_loss[0], carry, dyn_loss2
             )
@@ -305,7 +348,7 @@ def _solve_discrete_pinn(
             )  # prev_params stays the same and rk2_params are added
             carry = compiled_solve_rk4(carry)  # this computes y_n + h * k_3
 
-            return carry
+            return carry, carry_pretrain
     else:
         raise ValueError("Wrong value for scheme!")
 
@@ -329,8 +372,13 @@ def _solve_discrete_pinn(
 
         # TODO Here we could have a RAR step...
 
-        carry = compiled_solve(carry)
-
+        carry, carry_pretrain = compiled_solve(carry, carry_pretrain)
+        # # carry_pretrain = eqx.tree_at( # NOTE WHY DOES THIS MAKE THE TRAINNIG DIVERGE ?
+        # #     lambda pt: pt[2].params,
+        # #     carry_pretrain,
+        # #     carry[2].params
+        # # )
+        carry_pretrain, _ = update_carry_and_xxx_params(carry_pretrain)
         carry, new_params = update_carry_and_xxx_params(carry)
 
         # save the loss terms
@@ -345,7 +393,10 @@ def _solve_discrete_pinn(
         if verbose:
             _print_fn_time_discrete(
                 step,
-                carry[6].train_loss_values[-1],
+                (
+                    carry_pretrain[6].train_loss_values[-1],
+                    carry[6].train_loss_values[-1],
+                ),
                 step
                 if step in [1, 2]
                 else print_loss_every,  # always print the first for loss monitoring
@@ -544,3 +595,24 @@ def _get_compiled_solve_rk(
         compiled_solve_rk = cast(Callable[[SolveCarry], SolveCarry], compiled_solve_rk)
 
     return compiled_solve_rk, carry
+
+
+def pretrain_train_block(
+    dyn_loss, compiled_solve_fn, compiled_solve_fn_pretrain, carry, carry_pretrain
+):
+    carry = eqx.tree_at(  # we need to change the loss of the carry because the dynamic loss is a static
+        # arg which is different in each compiled function
+        lambda pt: pt[1].dynamic_loss[0],
+        carry,
+        dyn_loss,
+    )
+    carry_pretrain = eqx.tree_at(  # we need to change the loss of the carry because the dynamic loss is a static
+        # arg which is different in each compiled function
+        lambda pt: pt[1].dynamic_loss[0],
+        carry_pretrain,
+        dyn_loss,
+    )
+    carry_pretrain = compiled_solve_fn_pretrain(carry_pretrain)
+    carry = eqx.tree_at(lambda pt: pt[2].params, carry, carry_pretrain[2].params)
+    carry = compiled_solve_fn(carry)  # this computes first equation XXX
+    return carry, carry_pretrain
