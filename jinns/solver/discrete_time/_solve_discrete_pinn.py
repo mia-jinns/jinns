@@ -326,15 +326,6 @@ def _solve_discrete_pinn(
     start = time.time()
     while step < n_time_steps:
         t = times[step]
-        if verbose:
-            _print_fn_time_discrete(
-                step,
-                carry[6].train_loss_values[-1],
-                print_loss_every,
-                prefix="[Train Discrete PINN] ",
-                t=jnp.round(t, 2),
-                tmax=times[-1],
-            )
 
         # TODO Here we could have a RAR step...
 
@@ -350,6 +341,18 @@ def _solve_discrete_pinn(
 
         # save the parameters at requested times
         nn_params_saved = _save_nn_params(t, times_saved, new_params, nn_params_saved)
+
+        if verbose:
+            _print_fn_time_discrete(
+                step,
+                carry[6].train_loss_values[-1],
+                step
+                if step in [1, 2]
+                else print_loss_every,  # always print the first for loss monitoring
+                prefix="[Train Discrete PINN] ",
+                t=jnp.round(t, 2),
+                tmax=times[-1],
+            )
 
         step += 1
 
