@@ -39,6 +39,7 @@ def solve_discrete_time(
     | None = None,
     data_ic: CubicMeshPDEStatio | None = None,
     print_loss_every: int | None = None,
+    init_params_ic: Params[Array] | None = None,
     opt_state_ic: optax.OptState | NGDState | None = None,
     param_data: DataGeneratorParameter | None = None,
     param_data_ic: DataGeneratorParameter | None = None,
@@ -74,6 +75,8 @@ def solve_discrete_time(
         The initial condition to be fitted
     n_iter_ic
         The maximum number of iterations in the optimization for the initial condition
+    init_params_ic
+        XXX useful when the optimization between ic and the rest leads to different State
     optimizer_ic
         The optimizer for the fitting of the initial condition
     n_iter
@@ -144,6 +147,9 @@ def solve_discrete_time(
     if param_data_ic is None:
         param_data_ic = param_data
 
+    if init_params_ic is None:
+        init_params_ic = init_params
+
     if param_data is not None:
         if param_data.param_batch_size is not None:
             # We need to check that batch sizes will all be compliant for
@@ -176,7 +182,7 @@ def solve_discrete_time(
         data_ic,
         param_data_ic,
         loss,
-        init_params,
+        init_params_ic,
         extra_optax_args_and_kwargs_ic,
         initial_condition_fun,
         verbose,
