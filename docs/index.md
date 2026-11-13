@@ -6,7 +6,7 @@
  * inverse problem: learning the parameters of a PDE. Checkout `jinns.solve_alternate()` for fine-grained and efficient inverse problems.
  * meta-modeling: learning a family of PDE indexed by its parameters.
  * **New in jinns v1.9.2:** Second order optimizers which greatly enhances the training of PINNs. We recommend testing them as default optimizers. Checkout the notebooks [Tutorial Forward Problem](Notebooks/Tutorials/implementing_your_own_PDE_problem), [Tutorial Inverse Problem](Notebooks/Tutorials/1D_non_stationary_Burgers_JointEstimation_Vanilla) or the [documentation page](api/optimizers/preconditionners.md) to get a feeling of the improvement on toy examples :rocket:.
- * **New in jinns v1.10.2:** Neural-Galerkin approach for solving spatio-temporal PDEs. Checkout the notebook [Tutorial on Neural Galerkin](Notebooks/Tutorials/NeuralGalerkin_tuto) or the [documentation page](api/solve/solve_neural_galerkin.md).
+ * **New in jinns v1.10.3:** Discrete PINNs and Neural-Galerkin approaches for solving spatio-temporal PDEs. Checkout the notebooks [Tutorial on Neural Galerkin](Notebooks/Tutorials/NeuralGalerkin_tuto) and [Tutorial on Discrete PINNs](Notebooks/Tutorials/DiscretePINNs_tuto) or the [documentation page](api/solve/solve_time_discrete.md).
 
 !!! success "Pro tip"
     We recommend always trying small network with NGD optimizer rather than big network with first order methods. We also recommend using Float64 for computation whenever possible.
