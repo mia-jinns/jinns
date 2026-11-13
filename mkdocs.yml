@@ -141,7 +141,7 @@ nav:
       - Solve:
         - Solve: 'api/solve/solve.md'
         - Alternate solve: 'api/solve/solve_alternate.md'
-        - Neural Galerkin: 'api/solve/solve_neural_galerkin.md'
+        - Discrete time: 'api/solve/solve_discrete_time.md'
       - Optimizers: 
         - Optax: 'api/optimizers/optax.md'
         - Second order: 'api/optimizers/preconditionners.md'

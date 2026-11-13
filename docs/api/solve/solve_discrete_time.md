@@ -1,6 +1,6 @@
-# jinns' `solve_time_discrete()` function
+# jinns' `solve_discrete_time()` function
 
-The `solve_time_discrete()` function is the entry point for solving temporal PDEs with discrete time methods. Two are implemented: Discrete PINNs and Neural Galerkin.
+The `solve_discrete_time()` function is the entry point for solving temporal PDEs with discrete time methods. Two are implemented: Discrete PINNs and Neural Galerkin.
 
 ## Discrete PINNs
 
@@ -112,6 +112,6 @@ The method works in two steps:
 1. Fit the initial condition to get the initial set of parameters $\nu_0$.
 2. Resolve the ODE to get $\nu(t_i)$ at each queried time step.
 
-::: jinns.solve_time_discrete
+::: jinns.solve_discrete_time
     options:
         heading_level: 3
