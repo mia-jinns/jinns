@@ -7,7 +7,7 @@ from __future__ import (
 )  # https://docs.python.org/3/library/typing.html#constant
 
 import time
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 import jax
 import jax.numpy as jnp
 import equinox as eqx
@@ -184,7 +184,7 @@ def _solve_neural_galerkin(
 
     return (
         loss,
-        train_data.data,
+        cast(CubicMeshPDEStatio, train_data.data),
         train_data.param_data,
         params_final,
         params_saved,

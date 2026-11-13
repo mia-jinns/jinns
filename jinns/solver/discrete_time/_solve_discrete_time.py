@@ -51,7 +51,14 @@ def solve_discrete_time(
     scheme: Literal[
         "rk4", "rk-4", "explicit-euler", "rk1", "rk-1", "rk2", "rk-2"
     ] = "rk4",
-):
+) -> tuple[
+    LossPDEStatio,
+    CubicMeshPDEStatio,
+    DataGeneratorParameter | None,
+    Params[Array],
+    tuple[Params[Array], ...],
+    Array | None,
+]:
     """
 
     Parameters
@@ -59,7 +66,8 @@ def solve_discrete_time(
     times
         The time discretization for of the discrete time method as a jnp array
     times_saved
-        The times at which the parameters will be saved
+        The times at which the parameters will be saved. Make sure that the elements of `times_saved`
+        are in `times`!
     init_params
         The initial set of parameters
     method
@@ -120,7 +128,19 @@ def solve_discrete_time(
 
     Returns
     -------
-    XXX
+    loss
+        The `jinns.loss.LossPDEStatio` object at the end of the training
+    data
+        The `jinns.data.CubicMeshPDEStatio` object at the end of the training
+    param_data
+        The `jinns.data.DataGeneratorParameter` object at the end of the training or None.
+    params_final
+        The final set of parameters
+    params_saved
+        A tuple with the parameters saved at the times specified in `times_saved`.
+    all_train_loss_values_saved
+        An array containing the concatenation of the total loss values of all the optimization if
+        `method==discrete_pinn`. None if `method==neural_galerkin`.
     """
     if data.rar_parameters is not None and key is None:
         raise ValueError(

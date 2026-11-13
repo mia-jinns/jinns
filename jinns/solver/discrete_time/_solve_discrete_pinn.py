@@ -63,7 +63,8 @@ def _solve_discrete_pinn(
     Same for the DataGenerator, it must then be a CubicMeshPDEStatio.
     On the other hand, the initial condition and the time at which we start the resolution is passed directly as arguments
 
-    The methodology starts with fitting the initial condition and then XXX
+    The methodology starts with fitting the initial condition and then solving an optimization problem for each of the
+    discretization step
 
     NOTE the initial condition is the function that that network must fit at times[0]
 
@@ -78,7 +79,7 @@ def _solve_discrete_pinn(
 
     dt = times[1] - times[0]
     n_time_steps = len(times)
-    assert loss.dynamic_loss is not None  # for pyright
+    assert loss.dynamic_loss[0] is not None  # for pyright
     ################################
     # 2) Get the parameter dynamic #
     ################################
@@ -410,13 +411,14 @@ def _solve_discrete_pinn(
     )
 
     loss = cast(LossPDEStatio, carry[1])
-    train_data = carry[4]
+    data = cast(CubicMeshPDEStatio, carry[4].data)
+    param_data = carry[4].param_data
     params_final = carry[2].params
 
     return (
         loss,
-        train_data.data,
-        train_data.param_data,
+        data,
+        param_data,
         params_final,
         params_saved,
         all_train_loss_values_saved,
@@ -472,7 +474,7 @@ def _get_dyn_loss_rk1or2(dyn_loss, space_operator_params_name, dt):
             prev_params = eqx.tree_at(
                 lambda pt: pt.nn_params,
                 params,
-                params.prev_nn_params,
+                params.prev_nn_params,  # type: ignore
             )
             space_operator_params_name_params = eqx.tree_at(
                 lambda pt: pt.nn_params,
@@ -497,22 +499,22 @@ def _get_dyn_loss_rk4(dyn_loss, dt):
             prev_params = eqx.tree_at(
                 lambda pt: pt.nn_params,
                 params,
-                params.prev_nn_params,
+                params.prev_nn_params,  # type: ignore
             )
             prev_params2 = eqx.tree_at(
                 lambda pt: pt.nn_params,
                 params,
-                params.prev_nn_params2,
+                params.prev_nn_params2,  # type: ignore
             )
             prev_params3 = eqx.tree_at(
                 lambda pt: pt.nn_params,
                 params,
-                params.prev_nn_params3,
+                params.prev_nn_params3,  # type: ignore
             )
             prev_params4 = eqx.tree_at(
                 lambda pt: pt.nn_params,
                 params,
-                params.prev_nn_params4,
+                params.prev_nn_params4,  # type: ignore
             )
             return u(x, params) - jax.lax.stop_gradient(
                 u(x, prev_params)
