@@ -11,6 +11,7 @@ from jinns.optimizers._utils_ngd import Component, _reweight_pytree
 from jinns.optimizers._utils_ngd import (
     assemble_ngd_gram_matrix_and_euclidean_gradient,
     params_array_to_pytree,
+    zeros_all_other_updates,
 )
 
 
@@ -243,6 +244,13 @@ def vanilla_ngd(
             # to handle
             value_fn = ngd_value_fn
 
+        ngd_pytree = zeros_all_other_updates(
+            ngd_pytree, optax.tree.zeros_like(ngd_pytree)
+        )
+        euclidean_grads = zeros_all_other_updates(
+            euclidean_grads, optax.tree.zeros_like(euclidean_grads)
+        )
+
         tx_state = ngd_state.tx_state
         ngd_pytree, new_tx_state = ngd_optim.update(
             ngd_pytree,  # type: ignore
@@ -254,6 +262,9 @@ def vanilla_ngd(
             value_fn=value_fn,
         )
 
+        ngd_pytree = zeros_all_other_updates(
+            ngd_pytree, optax.tree.zeros_like(ngd_pytree)
+        )
         return (
             ngd_pytree,
             eqx.tree_at(lambda pt: pt.tx_state, ngd_state, new_tx_state),

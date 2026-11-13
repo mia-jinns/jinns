@@ -273,3 +273,16 @@ def assemble_ngd_gram_matrix_and_euclidean_gradient(
         )
 
     return gram_mat, euclidean_grad_array, euclidean_grad_array_eq_params
+
+
+def zeros_all_other_updates(pytree, zeros_pytree):
+    """
+    kill all the updates that are not for nn_params or eq_params (for more complex internal Params structure)
+    this can be done with DerivativesKeys (ie. stop gradients for other classical optax optimizers)
+    but here gradients are computed a la main
+    """
+    return eqx.tree_at(
+        lambda pt: (pt.nn_params, pt.eq_params),
+        zeros_pytree,
+        (pytree.nn_params, pytree.eq_params),
+    )
