@@ -148,7 +148,9 @@ def solve_discrete_time(
         )
 
     assert isinstance(loss, LossPDEStatio)
-    assert loss.boundary_condition is None
+    assert loss.boundary_condition is None, (
+        "Discrete time methods currently impose that boundary condition be hardcoded."
+    )
     assert loss.norm_samples is None
     assert isinstance(data, CubicMeshPDEStatio)
 
