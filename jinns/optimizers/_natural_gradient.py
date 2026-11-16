@@ -397,7 +397,7 @@ def compute_ng_matrix_free(
         nn_p = unravel_nn(flat_nn_p)
         r_per_term = loss.evaluate_per_sample(
             batch=batch,
-            params=jinns.parameters.Params(nn_params=nn_p, eq_params=params.eq_params),
+            params=eqx.tree_at(lambda pt: pt.nn_params, params, nn_p),
         )
 
         # Ponderate each residual for each term (dyn, bc, init, ...)
