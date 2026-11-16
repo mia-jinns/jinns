@@ -156,5 +156,5 @@ def train_Burgers_10it(create_problem):
 
 def test_10it_Burgers(train_Burgers_10it):
     total_loss_val, params = train_Burgers_10it
-    assert jnp.allclose(total_loss_val, 0.48387596, atol=1e-5)
+    assert jnp.allclose(total_loss_val, 0.63250097, atol=1e-5)
     assert jnp.allclose(params.eq_params.test, 5)

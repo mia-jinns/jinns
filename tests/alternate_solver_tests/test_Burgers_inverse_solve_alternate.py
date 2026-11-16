@@ -166,7 +166,7 @@ def train_solve_alternate_ngd_adam(test_init):
 def test_ngd_adam(train_solve_alternate_ngd_adam):
     total_loss_values = train_solve_alternate_ngd_adam
 
-    assert jnp.allclose(total_loss_values[-1], 0.59156366, atol=1e-5)
+    assert jnp.allclose(total_loss_values[-1], 1.87652965, atol=1e-5)
 
 
 @pytest.fixture
