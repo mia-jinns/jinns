@@ -7,6 +7,7 @@ from jaxtyping import Float, Int, Array
 
 # import warnings
 import jax
+import jax.flatten_util as jfu
 import jax.numpy as jnp
 import equinox as eqx
 import optax.tree
@@ -94,7 +95,7 @@ def scale_by_SSBroyden_family(
         grad_fn: Callable[..., tuple[jax.typing.ArrayLike, base.Updates]],
         **extra_args_for_fn,
     ) -> tuple[base.Updates, ScaleBySSBroydenFamilyState]:
-        gradk, unravelfn_params = jax.flatten_util.ravel_pytree(gradk_pt)
+        gradk, unravelfn_params = jfu.ravel_pytree(gradk_pt)
         dk = -state.hk @ gradk
         sk_pt, linesearch_state = linesearch.update(
             unravelfn_params(dk),
@@ -114,10 +115,10 @@ def scale_by_SSBroyden_family(
         # get the gradients at theta_kp1
         gradkp1_pt = grad_fn(thetakp1_pt, **extra_args_for_fn)
 
-        yk = jax.flatten_util.ravel_pytree(gradkp1_pt)[0] - gradk
+        yk = jfu.ravel_pytree(gradkp1_pt)[0] - gradk
         # Next operation is a scalar product of a PyTree distributed array
         # This can be handled leaf by leaf
-        sk = jax.flatten_util.ravel_pytree(sk_pt)[0]
+        sk = jfu.ravel_pytree(sk_pt)[0]
         yksk = jnp.dot(yk, sk)
 
         rhok = 1 / yksk

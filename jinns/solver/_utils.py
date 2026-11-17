@@ -28,6 +28,7 @@ from jinns.utils._containers import (
     LossContainer,
     StoredObjectContainer,
 )
+from jinns.optimizers._utils_ngd import Component
 from jinns.optimizers._natural_gradient import NGDState
 
 
@@ -511,7 +512,11 @@ def _natural_gradient_step(
     state,  # type: ignore
     # params_mask, TODO: is param_mask useful & possible in this new version ?
     batch,
-):
+) -> tuple[optax.Updates, NGDState, Float[Array, " 1"], Component]:
+    """
+    Necessary to separate from standard Optax transform because the `loss` object is
+    now directly passed to natural gradient optimizer (in the optimizer.update() method).
+    """
     updates, state, loss_val, loss_terms = optimizer.update(
         loss,  # type: ignore
         state,
