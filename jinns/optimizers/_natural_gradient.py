@@ -5,6 +5,7 @@ import equinox as eqx
 import optax
 import jinns
 import jax
+import jax.flatten_util as jfu
 import jax.numpy as jnp
 
 from jinns.optimizers._utils_ngd import (
@@ -16,7 +17,10 @@ from jinns.optimizers._utils_ngd import (
     full_gramian_from_jacobian,
     get_euclidean_grads,
     zeros_all_other_updates,
+    Component,
 )
+from jinns.optimizers._conjugate_gradient import conjugate_gradient
+
 from jaxtyping import Float, Array
 
 
@@ -166,9 +170,19 @@ def vanilla_ngd(
         params,
         batch,
         **_,
-    ) -> tuple[optax.Updates, NGDState]:
-        # --
-        # Final step : restructure the natural gradient as a Params PyTree
+    ) -> tuple[optax.Updates, NGDState, Float[Array, " 1"], Component]:
+        """The `update_fn` of our custom Optax.GradientTransformExtraArgs.
+        Note that contrary to usual Optax convention, the first argument `loss` is not
+        a (euclidean) gradient but rather a jinns.loss.AbstractLoss object which allows
+        to compute necessary quantities inside this update_fn.
+
+        We chose this internal API because a `jinns.loss` has many useful method such as
+         * loss.evaluate_per_sample
+         * loss.ponderate_and_sum
+         * loss.values_and_grads
+         * etc.
+        that proves useful when implementing several variants of Natural Gradient.
+        """
         # NOTE: if in inverse problem mode, the leaf at eq_params is filled with standard euclidean
         # gradients, and zeros if in forward problem mode.
 
@@ -178,7 +192,7 @@ def vanilla_ngd(
             euclidean_grad_array_eq,
             train_loss_value,
             loss_terms,
-            r,  # Would be nice to avoid to return `w_r` here. But need it for lw_ below in `value_fn`
+            r,  # Would be nice to avoid to return weighted residuals here. But need it for lw_ below in `value_fn`
         ) = ngd_solver.compute_ng(loss, params, batch, ngd_state)
         ngd_pytree = unravel_array_to_pytree(
             natural_grad_array_nn, params, euclidean_grad_array_eq
@@ -288,7 +302,18 @@ def compute_ng_full_gramian(
     Float[Array, " n_params"],
     Float[Array, " n_params"],
     Float[Array, " n_params"] | None,
+    Float[Array, " 1"],
+    Component,
+    Component,
 ]:
+    r"""This functions compute the Natural Gradient 101 by
+
+     1. forming the Gram matrix using the full jacobian $G = J^T J$
+     2. inverting the linear system $(G + \lambda I) x = \nabla_\nu \mathcal{L}$
+
+    Returns:
+        See AbstractNGDSolver
+    """
     # Get the unreduced residuals and their gradient (for each sample)
     # for each loss term
     r, g = loss.values_and_grad_per_sample(
@@ -375,8 +400,21 @@ def compute_ng_matrix_free(
     Float[Array, " n_params"],
     Float[Array, " n_params"],
     Float[Array, " n_params"] | None,
+    Float[Array, " 1"],
+    Component,
+    Component,
 ]:
-    from jinns.optimizers._conjugate_gradient import conjugate_gradient
+    r"""This functions compute the Natural Gradient in a matrix-free fashion.
+    This means the $n \times p$ jacobian is never explicitely stored, but we rather work with
+    jacobian-vector-product.
+
+     1. Form the weighted residuals map $\nu \mapsto r(\nu)$
+     2. At the current nn_params $\nu_k$, form the `jvp` map $v \mapsto J_{\nu_k} v$
+     2. Use the conjugate gradient algorithm for inverting the linear system  $J^T(J x) + \lambda x = \nabla_{\nu_k} L$
+
+    Returns:
+        See AbstractNGDSolver
+    """
 
     # Get gradient for each term as in jinns.solve
     train_loss_terms, euclidean_grad_terms = loss.values_and_grads(
@@ -388,8 +426,8 @@ def compute_ng_matrix_free(
     euclidean_grad_pytree = loss.ponderate_and_sum_gradient(euclidean_grad_terms)
 
     # Flatten param pytree to shape (p,)
-    flat_nn, unravel_nn = jax.flatten_util.ravel_pytree(params.nn_params)
-    euclidean_grad_array_nn_params, _ = jax.flatten_util.ravel_pytree(
+    flat_nn, unravel_nn = jfu.ravel_pytree(params.nn_params)
+    euclidean_grad_array_nn_params, _ = jfu.ravel_pytree(
         euclidean_grad_pytree.nn_params
     )
 
@@ -413,7 +451,7 @@ def compute_ng_matrix_free(
         )
 
         # Stack each term of the whole contribution
-        stacked_r, _ = jax.flatten_util.ravel_pytree(weighted_r_per_term)
+        stacked_r, _ = jfu.ravel_pytree(weighted_r_per_term)
         return stacked_r.squeeze(), r_per_term  # shape (n_tot,)
 
     # See doc of jax.linearize
@@ -448,7 +486,7 @@ def compute_ng_matrix_free(
     if ngd_state.with_eq_params_update:
         # Question (to sort out): when eq_params is a vector we need to ensure that
         # JAX ravel/unravel is the same as our custom one in jinns
-        euclidean_grad_array_eq_params, _ = jax.flatten_util.ravel_pytree(
+        euclidean_grad_array_eq_params, _ = jfu.ravel_pytree(
             euclidean_grad_pytree.eq_params
         )
     else:
@@ -471,8 +509,22 @@ class AbstractNGDSolver(eqx.Module):
         Float[Array, " n_params"],
         Float[Array, " n_params"],
         Float[Array, " n_params"] | None,
+        Float[Array, " 1"],
+        Component,
+        Component,
     ]:
-        """ """
+        """
+        Returns
+            a tuple of
+            (
+                natural_grad_array_nn: the `nn` natural gradient in jnp.ndarray form
+                euclidean_grad_array_nn_params: the `nn` euclidean gradient in jnp.ndarray form
+                euclidean_grad_array_eq_params: the `eq` euclidean gradient in jnp.ndarray form (only in inverse pb)
+                train_loss_value: the training loss value
+                loss_terms: the (weighted) value of each term of the loss
+                r: the weighted residuals per term & per sample
+            )
+        """
         raise NotImplementedError
         pass
 
