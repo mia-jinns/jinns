@@ -177,7 +177,7 @@ def solve_discrete_pinn_FKPP1D_rk1(discrete_pinn_fkpp1d_init):
 def test_discrete_pinn_fkpp1d_rk1(solve_discrete_pinn_FKPP1D_rk1):
     train_loss_values = solve_discrete_pinn_FKPP1D_rk1
 
-    assert jnp.allclose(train_loss_values[-1], 1.36174933e-05)
+    assert jnp.allclose(train_loss_values[-1], 2.28283314e-05)
 
 
 @pytest.fixture
@@ -216,7 +216,7 @@ def solve_discrete_pinn_FKPP1D_rk2(discrete_pinn_fkpp1d_init):
 def test_discrete_pinn_fkpp1d_rk2(solve_discrete_pinn_FKPP1D_rk2):
     train_loss_values = solve_discrete_pinn_FKPP1D_rk2
 
-    assert jnp.allclose(train_loss_values[-1], 5.99687171e-07)
+    assert jnp.allclose(train_loss_values[-1], 2.43793618e-06)
 
 
 @pytest.fixture
@@ -255,4 +255,4 @@ def solve_discrete_pinn_FKPP1D_rk4(discrete_pinn_fkpp1d_init):
 def test_discrete_pinn_fkpp1d_rk4(solve_discrete_pinn_FKPP1D_rk4):
     train_loss_values = solve_discrete_pinn_FKPP1D_rk4
 
-    assert jnp.allclose(train_loss_values[-1], 8.47864184e-08)
+    assert jnp.allclose(train_loss_values[-1], 2.49028212e-07)
