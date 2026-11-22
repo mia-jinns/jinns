@@ -131,7 +131,16 @@ def _solve_discrete_pinn(
         )
 
         def compiled_solve(carry):
-            return compiled_solve_rk1(carry)
+            carry = compiled_solve_rk1(carry)
+            # Manual reset of matrix regularization since it is a bad idea to reuse regularization
+            # factor from the previous time step
+            if isinstance(carry[2].opt_state, NGDState):
+                carry = eqx.tree_at(
+                    lambda pt: pt[2].opt_state,
+                    carry,
+                    carry[2].opt_state._reset_gram_reg(),
+                )
+            return carry
 
     elif scheme in ["rk2", "rk-2"]:
 
@@ -207,6 +216,14 @@ def _solve_discrete_pinn(
                 dyn_loss1,
             )
             carry = compiled_solve_rk1(carry)  # this computes first equation XXX
+            # Manual reset of matrix regularization since it is a bad idea to reuse regularization
+            # factor from the previous time step
+            if isinstance(carry[2].opt_state, NGDState):
+                carry = eqx.tree_at(
+                    lambda pt: pt[2].opt_state,
+                    carry,
+                    carry[2].opt_state._reset_gram_reg(),
+                )
             carry = eqx.tree_at(  # see comment above
                 lambda pt: pt[1].dynamic_loss[0], carry, dyn_loss2
             )
@@ -216,6 +233,14 @@ def _solve_discrete_pinn(
             # prev_nn_params2 enters the place ie the parameters which parameterize the solution of the first equation
             # ie. the derivative at the middle of the integration step
             carry = compiled_solve_rk2(carry)  # this computes second equation XXX
+            # Manual reset of matrix regularization since it is a bad idea to reuse regularization
+            # factor from the previous time step
+            if isinstance(carry[2].opt_state, NGDState):
+                carry = eqx.tree_at(
+                    lambda pt: pt[2].opt_state,
+                    carry,
+                    carry[2].opt_state._reset_gram_reg(),
+                )
             return carry
     elif scheme in ["rk4", "rk-4"]:
 
