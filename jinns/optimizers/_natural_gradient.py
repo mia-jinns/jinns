@@ -51,6 +51,10 @@ class NGDState(eqx.Module):
     with_eq_params_update: bool = eqx.field(static=True, default=False)
     sgd_learning_rate: float = 1.0
     gram_reg: float = 1e-5  # small ridge regularization on diag(G) when inverting
+    with_adaptive_gram_reg: bool = eqx.field(static=True, default=True)
+
+    def _reset_gram_reg(self):
+        return eqx.tree_at(lambda pt: pt.gram_reg, self, 1e-5)
 
 
 def vanilla_ngd(
@@ -62,6 +66,7 @@ def vanilla_ngd(
     ),
     method: str = "full",
     eq_params_tx: dict | None = None,
+    with_adaptive_gram_reg: bool = False,
     **kwargs,
 ) -> optax.GradientTransformationExtraArgs:
     r"""jinns implementation of vanilla Natural Gradient Descent (NGD).
@@ -98,6 +103,8 @@ def vanilla_ngd(
             conjugate gradient algorithm.
     eq_params_tx
         optional dictionnary of optax optimizers for each eq_params, by default None which means eq_params are not updated (forward problem)
+    with_adaptive_gram_reg
+        wether to update the gram regularization at each NGD step based on XXX
     **kwargs:
         Extra kwargs for the NGDSolver class.
 
@@ -162,6 +169,7 @@ def vanilla_ngd(
             sgd_learning_rate=sgd_learning_rate,
             gram_reg=gram_reg,
             with_eq_params_update=with_eq_params_update,
+            with_adaptive_gram_reg=with_adaptive_gram_reg,
         )
 
     def update(

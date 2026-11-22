@@ -15,6 +15,7 @@ import equinox as eqx
 from jaxtyping import Array, PRNGKeyArray, PyTree
 from jinns.loss._DynamicLossAbstract import PDEStatio
 from jinns.loss._loss_weights import LossWeightsPDEStatio
+from jinns.optimizers._natural_gradient import NGDState
 from jinns.parameters._derivative_keys import DerivativeKeysPDEStatio
 from jinns.solver._solve import solve
 from jinns.parameters._params import Params
@@ -326,6 +327,14 @@ def _solve_discrete_pinn(
                 dyn_loss1,
             )
             carry = compiled_solve_rk1(carry)  # this computes y_n + h / 2 * k_1
+            # # Manual reset of matrix regularization since it is a bad idea to reuse regularization
+            # # factor from the previous time step
+            # if isinstance(carry[2].opt_state, NGDState):
+            #     carry = eqx.tree_at(
+            #         lambda pt: pt[2].opt_state,
+            #         carry,
+            #         carry[2].opt_state._reset_gram_reg()
+            #     )
             carry = eqx.tree_at(  # see comment above
                 lambda pt: pt[1].dynamic_loss[0], carry, dyn_loss2
             )
@@ -334,6 +343,14 @@ def _solve_discrete_pinn(
             )  # prev_params stays the same and rk2_params are added
             # rk2_params are set (and fixed) to the values that parametrize y_n + h / 2 * k_1
             carry = compiled_solve_rk2(carry)  # this computes y_n + h / 2 * k_2
+            # # Manual reset of matrix regularization since it is a bad idea to reuse regularization
+            # # factor from the previous time step
+            # if isinstance(carry[2].opt_state, NGDState):
+            #     carry = eqx.tree_at(
+            #         lambda pt: pt[2].opt_state,
+            #         carry,
+            #         carry[2].opt_state._reset_gram_reg()
+            #     )
             carry = eqx.tree_at(  # see comment above
                 lambda pt: pt[1].dynamic_loss[0], carry, dyn_loss3
             )
@@ -342,6 +359,14 @@ def _solve_discrete_pinn(
             )  # prev_params stays the same and rk2_params are added
             # rk2_params are set (and fixed) to the values that parametrize y_n + h / 2 * k_2
             carry = compiled_solve_rk2_2(carry)  # this computes y_n + h * k_3
+            # # Manual reset of matrix regularization since it is a bad idea to reuse regularization
+            # # factor from the previous time step
+            # if isinstance(carry[2].opt_state, NGDState):
+            #     carry = eqx.tree_at(
+            #         lambda pt: pt[2].opt_state,
+            #         carry,
+            #         carry[2].opt_state._reset_gram_reg()
+            #     )
             carry = eqx.tree_at(  # see comment above
                 lambda pt: pt[1].dynamic_loss[0], carry, dyn_loss4
             )
@@ -349,7 +374,14 @@ def _solve_discrete_pinn(
                 carry, "prev_nn_params4"
             )  # prev_params stays the same and rk2_params are added
             carry = compiled_solve_rk4(carry)  # this computes y_n + h * k_3
-
+            # # Manual reset of matrix regularization since it is a bad idea to reuse regularization
+            # # factor from the previous time step
+            # if isinstance(carry[2].opt_state, NGDState):
+            #     carry = eqx.tree_at(
+            #         lambda pt: pt[2].opt_state,
+            #         carry,
+            #         carry[2].opt_state._reset_gram_reg()
+            #     )
             return carry
     else:
         raise ValueError("Wrong value for scheme!")
@@ -385,7 +417,14 @@ def _solve_discrete_pinn(
 
         carry = compiled_solve(carry)
 
-        carry, new_params = update_carry_and_xxx_params(carry)
+        carry, new_params = update_carry_and_xxx_params(carry, "prev_nn_params")
+
+        # Manual reset of matrix regularization since it is a bad idea to reuse regularization
+        # factor from the previous time step
+        if isinstance(carry[2].opt_state, NGDState):
+            carry = eqx.tree_at(
+                lambda pt: pt[2].opt_state, carry, carry[2].opt_state._reset_gram_reg()
+            )
 
         # save the loss terms
         idx = (step - 1) * n_loss_values_by_step

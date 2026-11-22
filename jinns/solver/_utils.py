@@ -238,8 +238,10 @@ def _loss_evaluate_and_euclidean_gradient_step(
 
 def _loss_evaluate_and_natural_gradient_step(
     *,
+    i: int,
     batch: AnyBatch,
     loss: AbstractLoss,
+    loss_container: LossContainer,
     params: Params[Array],
     last_non_nan_params: Params[Array],
     state: NGDState,
@@ -284,6 +286,26 @@ def _loss_evaluate_and_natural_gradient_step(
         state,  # type: ignore
         batch,
     )
+
+    if state.with_adaptive_gram_reg:
+        # Adaptative matrix regularization
+        trusted = state.tx_state[1].info.num_linesearch_steps <= 1
+        not_first_i = i > 0
+        loss_has_decreased = (
+            train_loss_value < loss_container.train_loss_values[i - 1]
+        ) & not_first_i
+        factor = jnp.where(
+            loss_has_decreased,
+            jnp.where(trusted, 0.5, 1.0),
+            10.0,
+        )
+        new_gram_reg = jnp.maximum(
+            state.gram_reg * factor,
+            1e-12,
+        )
+        # jax.debug.print("{x}", x=(state.gram_reg, loss_has_decreased, factor, new_gram_reg))
+
+        state = eqx.tree_at(lambda pt: pt.gram_reg, state, new_gram_reg)
 
     # check if any of the parameters is NaN
     last_non_nan_params = jax.lax.cond(
