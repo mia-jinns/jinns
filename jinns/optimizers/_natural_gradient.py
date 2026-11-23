@@ -51,8 +51,11 @@ class NGDState(eqx.Module):
     tx_state: optax.OptState  # optimizer state
     with_eq_params_update: bool = eqx.field(static=True, default=False)
     sgd_learning_rate: float = 1.0
-    gram_reg: float = 1e-5  # small ridge regularization on diag(G) when inverting
+    gram_reg: float = (
+        1e-5  # small damping/ridge regularization on diag(G) when inverting
+    )
     with_adaptive_gram_reg: bool = eqx.field(static=True, default=True)
+    tracked_gram_reg: None | Float[Array, " n_iter"] = None
 
     def _reset_gram_reg(self):
         return eqx.tree_at(lambda pt: pt.gram_reg, self, 1e-5)
@@ -68,6 +71,7 @@ def vanilla_ngd(
     method: str = "full",
     eq_params_tx: dict | None = None,
     with_adaptive_gram_reg: bool = False,
+    n_iter: None | int = None,  # necessary if we want to track gram_reg
     **kwargs,
 ) -> optax.GradientTransformationExtraArgs:
     r"""jinns implementation of vanilla Natural Gradient Descent (NGD).
@@ -81,13 +85,19 @@ def vanilla_ngd(
         \eta = (\hat{G} + \lambda I_p)^{-1} \nabla_{\nu} \mathcal{L}(\nu).
     $$
 
+    The regularization / damping parameter $\lambda_k$ can be made adaptive to iteration $k$
+    by setting `with_adaptive_gram_reg=True`. It is updated following the Levenberg-Marquard
+    heuristic controling the accuracy of the local quadratic approximation of the loss.
+    It is described in Section 4.1 of
+    [J. Martens (2010) - *Deep learning via Hessian-free optimization*](https://www.cs.toronto.edu/~jmartens/docs/Deep_HessianFree.pdf)
+
 
     Parameters
     ----------
     sgd_learning_rate
         the starting learning rate multiply the NGD update, by default 1.0
     gram_reg
-        the ridge regularization used before inverting the Gram matrix, by default 1e-5
+        the damping/ridge regularization used before inverting the Gram matrix, by default 1e-5
     linesearch
         it is recommended to use a linesearch method that computes a learning rate,
         a.k.a. stepsize, to satisfy some criterion such as a sufficient decrease of the objective
@@ -106,6 +116,8 @@ def vanilla_ngd(
         optional dictionnary of optax optimizers for each eq_params, by default None which means eq_params are not updated (forward problem)
     with_adaptive_gram_reg
         wether to update the gram regularization at each NGD step based on a specific criterion
+    n_iter
+        For tracking the gram_reg parameters in an (n_iter,)-shape array. Default to None (no tracking).
     **kwargs:
         Extra kwargs for the NGDSolver class.
 
@@ -165,12 +177,29 @@ def vanilla_ngd(
     ngd_solver: AbstractNGDSolver = NGD_SOLVERS[method](**kwargs)
 
     def init(params: optax.Params) -> NGDState:
+        if with_adaptive_gram_reg and n_iter is not None:
+            _do_track_reg = True
+        elif with_adaptive_gram_reg and n_iter is None:
+            raise Warning(
+                "You requested adaptive regularization in NGD without specifying `n_iter`."
+                "The `gram_reg` values will not be stored during optim."
+            )
+            _do_track_reg = False
+        else:
+            _do_track_reg = False
+
+        if _do_track_reg:
+            tracked_gram_reg = jnp.inf * jnp.ones((n_iter,))
+        else:
+            tracked_gram_reg = None
+
         return NGDState(
             tx_state=ngd_optim.init(params),
             sgd_learning_rate=sgd_learning_rate,
             gram_reg=gram_reg,
             with_eq_params_update=with_eq_params_update,
             with_adaptive_gram_reg=with_adaptive_gram_reg,
+            tracked_gram_reg=tracked_gram_reg,
         )
 
     def update(

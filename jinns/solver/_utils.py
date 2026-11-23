@@ -238,6 +238,7 @@ def _loss_evaluate_and_euclidean_gradient_step(
 
 def _loss_evaluate_and_natural_gradient_step(
     *,
+    i: int,
     batch: AnyBatch,
     loss: AbstractLoss,
     params: Params[Array],
@@ -292,6 +293,15 @@ def _loss_evaluate_and_natural_gradient_step(
         lambda _: params,
         None,
     )
+
+    # update tracked_gram_reg[i]
+    if state.tracked_gram_reg is not None:
+        state = eqx.tree_at(
+            lambda pt: pt.tracked_gram_reg,
+            state,
+            state.tracked_gram_reg.at[i].set(state.gram_reg),
+        )
+
     return train_loss_value, params, last_non_nan_params, state, loss, loss_terms
 
 
