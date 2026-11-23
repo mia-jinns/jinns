@@ -23,8 +23,8 @@ from jinns.optimizers._utils_ngd import (
 
 from jinns.optimizers._natural_gradient import (
     vanilla_ngd,
-    compute_ng_full_gramian,
-    compute_ng_matrix_free,
+    VanillaNGDSolver,
+    MatrixFreeNGDSolver,
 )
 
 
@@ -225,7 +225,8 @@ def test_ng_all_methods(create_loss_and_params):
         train_loss_value_full_gram,
         _,
         r_full_gram,
-    ) = compute_ng_full_gramian(loss, init_params, batch, ngd_state)
+        _,
+    ) = VanillaNGDSolver().compute_ng(loss, init_params, batch, ngd_state)
 
     # Matrix-free via conjugate gradient
     MAXIT = 1000
@@ -237,8 +238,9 @@ def test_ng_all_methods(create_loss_and_params):
         train_loss_value_matrix_free,
         _,
         r_matrix_free,
-    ) = compute_ng_matrix_free(
-        loss, init_params, batch, ngd_state, maxit=MAXIT, rtol=RTOL
+        _,
+    ) = MatrixFreeNGDSolver(maxit=MAXIT, rtol=RTOL).compute_ng(
+        loss, init_params, batch, ngd_state
     )
 
     assert jnp.allclose(
