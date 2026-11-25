@@ -24,6 +24,8 @@ from jinns.optimizers._conjugate_gradient import conjugate_gradient
 
 from jaxtyping import Float, Array
 
+from jinns.utils._types import AnyLossComponents
+
 
 def _process_solver_kwargs(method, **kwargs):
     if method not in NGD_SOLVERS.keys():
@@ -208,7 +210,7 @@ def vanilla_ngd(
         params,
         batch,
         **_,
-    ) -> tuple[optax.Updates, NGDState, Float[Array, " 1"], Component]:
+    ) -> tuple[optax.Updates, NGDState, Float[Array, " 1"], AnyLossComponents]:
         """The `update_fn` of our custom Optax.GradientTransformExtraArgs.
         Note that contrary to usual Optax convention, the first argument `loss` is not
         a (euclidean) gradient but rather a jinns.loss.AbstractLoss object which allows

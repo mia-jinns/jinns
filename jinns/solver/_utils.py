@@ -28,7 +28,6 @@ from jinns.utils._containers import (
     LossContainer,
     StoredObjectContainer,
 )
-from jinns.optimizers._utils_ngd import Component
 from jinns.optimizers._natural_gradient import NGDState
 
 
@@ -37,7 +36,12 @@ class GetJinnsVariableName(NamedTuple):
 
 
 if TYPE_CHECKING:
-    from jinns.utils._types import AnyBatch, SolveCarry, SolveAlternateCarry
+    from jinns.utils._types import (
+        AnyBatch,
+        SolveCarry,
+        SolveAlternateCarry,
+        AnyLossComponents,
+    )
     from jinns.loss._abstract_loss import AbstractLoss
     from jinns.data._DataGeneratorObservations import DataGeneratorObservations
     from jinns.data._AbstractDataGenerator import AbstractDataGenerator
@@ -490,7 +494,7 @@ def _natural_gradient_step(
     params,
     state,  # type: ignore
     batch,
-) -> tuple[optax.Updates, NGDState, Float[Array, " 1"], Component]:
+) -> tuple[optax.Updates, NGDState, Float[Array, " 1"], AnyLossComponents[Array]]:
     """
     Necessary to separate from standard Optax transform because the `loss` object is
     now directly passed to natural gradient optimizer (in the optimizer.update() method).
