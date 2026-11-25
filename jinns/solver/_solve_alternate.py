@@ -16,8 +16,6 @@ import equinox as eqx
 
 from jinns.parameters._params import Params
 from jinns.solver._utils import (
-    _get_masked_state,
-    _get_unmasked_state,
     _init_stored_weights_terms,
     _init_stored_params,
     _get_break_fun,
@@ -966,3 +964,41 @@ def _get_eq_param_masks_and_derivative_keys(eq_optimizers, init_params, loss):
     }
 
     return eq_params_masks, eq_gd_steps_derivative_keys
+
+
+def _get_masked_state(state, params_mask):
+    """
+    From the optimizer state, we use the
+    parameter mask `params_mask` to retrieve the partitioned version of the
+    objects, `opt_state` for the parameters that are optimized and
+    `non_opt_state` for those that are not optimized.
+    """
+    opt_state = jax.tree.map(
+        lambda l: l.partition(params_mask)[0] if isinstance(l, Params) else l,
+        state,
+        is_leaf=lambda x: isinstance(x, Params),
+    )
+    non_opt_state = jax.tree.map(
+        lambda l: l.partition(params_mask)[1] if isinstance(l, Params) else l,
+        state,
+        is_leaf=lambda x: isinstance(x, Params),
+    )
+
+    return opt_state, non_opt_state
+
+
+def _get_unmasked_state(state, opt_state, non_opt_state):
+    """
+    Reverse operations of `_get_masked_state`
+    """
+    state = jax.tree.map(
+        lambda a, b, c: eqx.combine(b, c) if isinstance(a, Params) else b,
+        # NOTE else b in order to take all non Params stuff from
+        # opt_state that may have been updated too
+        state,
+        opt_state,
+        non_opt_state,
+        is_leaf=lambda x: isinstance(x, Params),
+    )
+
+    return state

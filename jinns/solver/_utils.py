@@ -494,27 +494,6 @@ def _gradient_step(
     )
 
 
-def _get_masked_state(state, params_mask):
-    """
-    From the optimizer state, we use the
-    parameter mask `params_mask` to retrieve the partitioned version of the
-    objects, `opt_state` for the parameters that are optimized and
-    `non_opt_state` for those that are not optimized.
-    """
-    opt_state = jax.tree.map(
-        lambda l: l.partition(params_mask)[0] if isinstance(l, Params) else l,
-        state,
-        is_leaf=lambda x: isinstance(x, Params),
-    )
-    non_opt_state = jax.tree.map(
-        lambda l: l.partition(params_mask)[1] if isinstance(l, Params) else l,
-        state,
-        is_leaf=lambda x: isinstance(x, Params),
-    )
-
-    return opt_state, non_opt_state
-
-
 def _natural_gradient_step(
     loss,
     optimizer,
@@ -537,23 +516,6 @@ def _natural_gradient_step(
     new_params = optax.apply_updates(params, updates)  # type: ignore
 
     return (new_params, state, loss_val, loss_terms)
-
-
-def _get_unmasked_state(state, opt_state, non_opt_state):
-    """
-    Reverse operations of `_get_masked_state`
-    """
-    state = jax.tree.map(
-        lambda a, b, c: eqx.combine(b, c) if isinstance(a, Params) else b,
-        # NOTE else b in order to take all non Params stuff from
-        # opt_state that may have been updated too
-        state,
-        opt_state,
-        non_opt_state,
-        is_leaf=lambda x: isinstance(x, Params),
-    )
-
-    return state
 
 
 def _check_extra_optax_args_and_kwargs(
