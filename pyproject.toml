@@ -78,7 +78,7 @@ exclude_also = [
 [tool.pyright]
 include = ["jinns"]
 exclude = ["jinns/experimental"]
-pythonVersion = "3.11"
+pythonVersion = "3.12"
 typeCheckingMode = "basic"
 
 [tool.ruff]

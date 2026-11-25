@@ -49,10 +49,10 @@ Ruff Format:
 run_tests:
   stage: tests
   before_script:
-    - virtualenv venv
-    - source venv/bin/activate
-    - pip install pytest coverage pytest-cov
-    - pip install -e .
+    - uv python pin 3.12
+    - uv sync
+    - source .venv/bin/activate
+    - uv pip install coverage pytest-cov
   script:
     - pytest --cov=jinns
   coverage: '/TOTAL.*\s+(\d+%)$/'
@@ -63,10 +63,10 @@ build_doc:
   stage: build
   needs: [] # don't need to wait for other jobs
   before_script:
-    - virtualenv venv
-    - source venv/bin/activate
-    - pip install -e .
-    - pip install -r docs/doc_requirements.txt
+    - uv python pin 3.12
+    - uv sync
+    - source .venv/bin/activate
+    - uv pip install -r docs/doc_requirements.txt
   script:
     - mkdocs build
     - mkdocs build  # twice, see https://github.com/patrick-kidger/pytkdocs_tweaks
