@@ -125,6 +125,16 @@ def _loss_evaluate_and_euclidean_gradient_step(
      * `non_opt_state` refers to the the optimizer state for non-optimized
      params.
 
+    **When doing an alternate optimization** with jinns.solve_alternate(), the
+    params_mask will be True for the optimized parameters and False for the
+    others. This enables to use eqx.partition, to set None at non optimized
+    leaves (of the gradient pytree, of the
+    parameters pytree, ...) in order to save computations (and avoid the
+    default "fill with 0" behaviour of optax alternate. NOTE that the masking
+    for `opt_state`, is already done at an outer level (during `carry`
+    manipulations before and after a local while loop (on nn_params or
+    eq_params is started) for efficiency.
+
     Parameters
     ----------
 
@@ -245,7 +255,6 @@ def _loss_evaluate_and_natural_gradient_step(
     last_non_nan_params: Params[Array],
     state: NGDState,
     optimizer: optax.GradientTransformation,
-    params_mask: Params[bool] | None = None,
     **__,  # to ignore more arguments
 ):
     """Similar to ` _loss_evaluate_and_euclidean_gradient_step` but for natural gradient.
@@ -259,7 +268,23 @@ def _loss_evaluate_and_natural_gradient_step(
     For more details see docstring in jinns/optimizers/_natural_gradient.py
 
     All arguments are similar to `_loss_evaluate_and_gradient_step` above except for
-    one extra argument
+    one extra argument.
+
+    NOTE that there is no params masking inside NGD since we need the full params
+    in more complex updates:
+
+    - linesearch which reevaluates the loss.evaluate-> the callback fn is defined later in the jinns NGD update fn
+    hence, we must pass the full params further)
+    - Moreover in NGD in inverse problem has an optax.partition, where the
+    masking is done in the update, therefore we still have full params at
+    this point.
+
+    But this is not a computational burden since computing gradients wrt eq_params
+    is avoided explicitly is the current implementation.
+    Also this does not provoke any error since there is no additive update and general tree mapping
+    following the optax way (involving updates, states, params) since all the computations are done
+    customly and states are also custom. For example, in solve_alternate with NGD for nn_params:
+    `nn_opt_state = nn_optimizer.init(eqx.partition(init_params, nn_params_mask)[0])` is very particular!
 
     Parameters
     ----------
@@ -404,16 +429,6 @@ def _gradient_step(
 
     A plain old gradient step that takes into account parameter masking.
 
-    **When doing an alternate optimization** with jinns.solve_alternate(), the
-    params_mask will be True for the optimized parameters and False for the
-    others. This enables to use eqx.partition, to set None at non optimized
-    leaves (of the gradient pytree, of the
-    parameters pytree, ...) in order to save computations (and avoid the
-    default "fill with 0" behaviour of optax alternate. NOTE that the masking
-    for `opt_state`, is already done at an outer level (during `carry`
-    manipulations before and after a local while loop (on nn_params or
-    eq_params is started) for efficiency.
-
     All kwargs are passed to `optimizer.update()` in case user provided a
     optax.GradientTransformationExtraArgs
     """
@@ -423,29 +438,16 @@ def _gradient_step(
     # must be masked too to avoid errors of the type:
     # TypeError: unsupported operand type(s) for *: 'float' and 'NoneType'
     # Same for params (see below)
-    if isinstance(state, NGDState):
-        assert isinstance(grads, tuple)  # for type checking
-        # in this case the grads object if different
-        opt_grads = jax.tree.map(
-            lambda l: l.partition(params_mask)[0],
-            grads[1],
-            is_leaf=lambda x: isinstance(x, Params),
-        )
-        opt_grads = (grads[0], opt_grads, grads[2])
-    else:
-        assert isinstance(grads, Params)  # for type checking
-        opt_grads, _ = grads.partition(params_mask)
+    assert isinstance(grads, Params)  # for type checking
+    opt_grads, _ = grads.partition(params_mask)
 
     # NOTE that for jinns.solve() while compute gradients beforehand, we have computed
     # gradients for ALL parameters, even the non optimized ones: we hope that
     # JAX interal machinery will discard those computations from the
     # computational graph since the gradients for the non optimized parameters
-    # are finally not used.
-    # Making sure gradients are only computed for optimized (unmasked)
+    # are finally not used. Making sure gradients are only computed for optimized (unmasked)
     # parameters seem like a big jinns refactorization (future TODO)
-    if params_mask is not None and not isinstance(
-        state, NGDState
-    ):  # <=> jinns.solve_alternate is used and not NGD!
+    if params_mask is not None:  # <=> jinns.solve_alternate is used
         # NOTE that for the jinns.solve_alternate we only pass the optimized
         # params. Because if we are doing solve_alternate, this means state has already been masked and so grads
         # and thus updates contain None. Hence params
@@ -455,20 +457,8 @@ def _gradient_step(
         # optax.GradientTransformationExtraArgs with extra_args requiring a
         # the full parameters, the latter need to be reasemble via a callback
         # function
-        # The not NGD is important, because in the particular case of NGD, the
-        # callback fn is defined later in the jinns NGD update fn
-        # hence, we must pass the full params further
         opt_params, non_opt_params = params.partition(params_mask)
     else:
-        # NOTE, that for the jinns.solve() here we need to pass the full unmasked params for more complex
-        # optimizer updates to be done, e.g.:
-        # - updates which rely on params or more (linesearch which reevaluates
-        # the loss.evaluate)
-        # - complex optimizer such as optax.partition, where the
-        # masking is done in the update, therefore we still have full params at
-        # this point (unlike for jinns.solve_alternate at the previous
-        # conditional)
-        # - combination of both (case of NGD in inverse problem)
         opt_params = params
     updates, state = optimizer.update(
         opt_grads,  # type: ignore
@@ -480,7 +470,7 @@ def _gradient_step(
 
     opt_params = optax.apply_updates(opt_params, updates)  # type: ignore
 
-    if params_mask is not None and not isinstance(state, NGDState):
+    if params_mask is not None:
         # recombine the full Params if it has been splitted for the reasons
         # given above
         params = eqx.combine(opt_params, non_opt_params)  # type: ignore
@@ -499,7 +489,6 @@ def _natural_gradient_step(
     optimizer,
     params,
     state,  # type: ignore
-    # params_mask, TODO: is param_mask useful & possible in this new version ?
     batch,
 ) -> tuple[optax.Updates, NGDState, Float[Array, " 1"], Component]:
     """
