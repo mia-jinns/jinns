@@ -189,6 +189,6 @@ def train_Burgers_10it_ngd_matrix_free(create_problem):
 
 def test_10it_Burgers_ngd_matrix_free(train_Burgers_10it_ngd_matrix_free):
     total_loss_val, params = train_Burgers_10it_ngd_matrix_free
-    assert jnp.allclose(total_loss_val, 1.47763503, atol=1e-5)
-    assert jnp.allclose(params.eq_params.nu, 0.06478658, atol=1e-5)
+    assert jnp.allclose(total_loss_val, 2.08430984, atol=1e-5)
+    assert jnp.allclose(params.eq_params.nu, 0.06385212, atol=1e-5)
     assert jnp.allclose(params.eq_params.test, 5)

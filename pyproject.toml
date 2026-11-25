@@ -12,7 +12,7 @@ dynamic = ["version"]
 description = "Physics Informed Neural Network with JAX"
 readme = "README.md"
 license = {text = "Apache License 2.0"}
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 keywords = []
 authors = [
   {name = "Hugo Gangloff", email = "hugo.gangloff@inrae.fr"},
@@ -29,9 +29,9 @@ classifiers = [
 ]
 dependencies = [
     "numpy>=2.0.0",
-    "jax>=0.8.1",
-    "optax>=0.2.6",
-    "equinox>=0.13.2",
+    "jax>=0.12.1",
+    "optax>=0.2.9",
+    "equinox>=0.13.8",
     "matplotlib",
     "jaxtyping",
     "pyright>=1.1.407",
