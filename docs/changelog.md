@@ -1,5 +1,10 @@
 # Changelog
 
+* v1.10.3:
+
+    - jinns now implements a matrix-free version of the Natural Gradient Descent and an adaptive tuning
+    for the damping / ridge regularization of the Gram matrix. See [!112](https://gitlab.com/mia_jinns/jinns/-/merge_requests/112). Those two features are critical for addressing more complex problems!
+
 * v1.10.2:
 
     - jinns now implements the Neural Galerkin approach for solving time-dependent PDEs. See [!110](https://gitlab.com/mia_jinns/jinns/-/merge_requests/110) and the new tutorial notebooks
