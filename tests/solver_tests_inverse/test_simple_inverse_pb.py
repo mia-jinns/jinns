@@ -157,4 +157,38 @@ def train_Burgers_10it(create_problem):
 def test_10it_Burgers(train_Burgers_10it):
     total_loss_val, params = train_Burgers_10it
     assert jnp.allclose(total_loss_val, 0.63250097, atol=1e-5)
+    assert jnp.allclose(params.eq_params.nu, 0.05982933, atol=1e-5)
+    assert jnp.allclose(params.eq_params.test, 5)
+
+
+@pytest.fixture
+def train_Burgers_10it_ngd_matrix_free(create_problem):
+    """
+    Simple test for inverse problem workflow with NGD on nn_params and a SGD on eq_params
+    This tests the specific construction in the NGD workflow which needs to be done since
+    using NGD on eq_params does not make sense
+    """
+
+    loss, params, train_data, obs_data = create_problem
+
+    tx = jinns.optimizers.vanilla_ngd(
+        method="matrix-free", eq_params_tx={"nu": optax.adam(1e-3), "test": None}
+    )
+
+    n_iter = 10
+    params, total_loss_list, loss_by_term_dict, _, _, _, _, _, _, _, _, _ = jinns.solve(
+        init_params=params,
+        data=train_data,
+        optimizer=tx,
+        loss=loss,
+        n_iter=n_iter,
+        obs_data=obs_data,
+    )
+    return total_loss_list[9], params
+
+
+def test_10it_Burgers_ngd_matrix_free(train_Burgers_10it_ngd_matrix_free):
+    total_loss_val, params = train_Burgers_10it_ngd_matrix_free
+    assert jnp.allclose(total_loss_val, 1.47763503, atol=1e-5)
+    assert jnp.allclose(params.eq_params.nu, 0.06478658, atol=1e-5)
     assert jnp.allclose(params.eq_params.test, 5)
