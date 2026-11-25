@@ -253,6 +253,11 @@ def solve_alternate(
     nn_opt_state = nn_optimizer.init(
         eqx.partition(init_params, nn_params_mask)[0],
     )
+    if isinstance(nn_opt_state, NGDState):
+        if nn_opt_state.with_eq_params_update:
+            raise ValueError(
+                "Attribute with_eq_params_update must be False when using NGD for nn_params in solve_alternate"
+            )
 
     if extra_optax_args_and_kwargs_for_solvers is None:
         _extra_optax_args_and_kwargs_for_solvers = jax.tree.map(
@@ -327,7 +332,7 @@ def solve_alternate(
     optimization = OptimizationContainer(
         params=init_params,
         last_non_nan_params=init_params,
-        opt_state=(nn_opt_state, eq_opt_states),  # NOTE that this field changes
+        opt_state=(nn_opt_state, eq_opt_states),  # type: ignore # NOTE that this field changes
         # between the outer while loop and inner loops
     )
     optimization_extra = OptimizationExtraContainer(

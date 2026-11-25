@@ -274,20 +274,20 @@ def _loss_evaluate_and_natural_gradient_step(
     All arguments are similar to `_loss_evaluate_and_gradient_step` above except for
     one extra argument.
 
-    NOTE that there is no params masking inside NGD since we need the full params
-    in more complex updates:
-
-    - linesearch which reevaluates the loss.evaluate-> the callback fn is defined later in the jinns NGD update fn
+    Note that there cannot be no parameter masking before NGD since we need the full params
+    in more complex updates such as linesearch which reevaluates the `loss.evaluate`
+    -> the callback fn is defined later in the jinns NGD update fn
     hence, we must pass the full params further)
-    - Moreover in NGD in inverse problem has an optax.partition, where the
-    masking is done in the update, therefore we still have full params at
-    this point.
 
-    But this is not a computational burden since computing gradients wrt eq_params
-    is avoided explicitly is the current implementation.
-    Also this does not provoke any error since there is no additive update and general tree mapping
-    following the optax way (involving updates, states, params) since all the computations are done
-    customly and states are also custom. For example, in solve_alternate with NGD for nn_params:
+    But this is OK since computing gradients wrt `eq_params`
+    is avoided explicitly in the current implementation of NGD (to avoid undefined behaviour we also require
+    that `with_eq_params_updates` be `False` when using NGD for `nn_params` in `solve_alternate`,
+    see the beginning of `solve_alternate` function).
+    Also note that no parameter masking does not provoke any error since there
+    is no additive update and general tree mapping following the optax way
+    (involving updates, states, params) since all the computations are done
+    customly and states are also custom. For example, have a look to the following line
+    in solve_alternate with NGD for nn_params:
     `nn_opt_state = nn_optimizer.init(eqx.partition(init_params, nn_params_mask)[0])` is very particular!
 
     Parameters
