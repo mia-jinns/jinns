@@ -28,7 +28,7 @@ classifiers = [
   "Programming Language :: Python",
 ]
 dependencies = [
-    "numpy>=2.0.0",
+    "numpy>=2.5.5",
     "jax>=0.12.1",
     "optax>=0.2.9",
     "equinox>=0.13.8",
@@ -40,9 +40,9 @@ dependencies = [
 
 [project.optional-dependencies]
 notebook = ["jupyter", "seaborn", "pandas", "diffrax"]
-gpu_cuda13 = ["jax[cuda13]>=0.8.1"]
-gpu_cuda12 = ["jax[cuda12]>=0.8.1"]
-cpu = ["jax>=0.8.1"]
+gpu_cuda13 = ["jax[cuda13]>=0.12.1"]
+gpu_cuda12 = ["jax[cuda12]>=0.12.1"]
+cpu = ["jax>=0.12.1"]
 dev = [
   "pre-commit", "pylint"
 ]
@@ -84,6 +84,3 @@ typeCheckingMode = "basic"
 [tool.ruff]
 [tool.ruff.lint]
 ignore = ["F722", "E741", "E731", "E722"]
-
-[tool.uv]
-package = false
