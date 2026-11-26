@@ -49,7 +49,7 @@ Ruff Format:
 run_tests:
   stage: tests
   before_script:
-    - uv python pin 3.12
+    - uv python pin 3.13
     - uv sync
     - source .venv/bin/activate
     - uv pip install coverage pytest-cov
@@ -63,7 +63,7 @@ build_doc:
   stage: build
   needs: [] # don't need to wait for other jobs
   before_script:
-    - uv python pin 3.12
+    - uv python pin 3.13
     - uv sync
     - source .venv/bin/activate
     - uv pip install -r docs/doc_requirements.txt
