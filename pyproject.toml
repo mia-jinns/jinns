@@ -84,3 +84,6 @@ typeCheckingMode = "basic"
 [tool.ruff]
 [tool.ruff.lint]
 ignore = ["F722", "E741", "E731", "E722"]
+
+[tool.uv]
+package = false
