@@ -49,6 +49,7 @@ Ruff Format:
 run_tests:
   stage: tests
   before_script:
+    - uv self update
     - uv python pin 3.13
     - uv sync
     - source .venv/bin/activate
@@ -63,6 +64,7 @@ build_doc:
   stage: build
   needs: [] # don't need to wait for other jobs
   before_script:
+    - uv self update
     - uv python pin 3.13
     - uv sync
     - source .venv/bin/activate
